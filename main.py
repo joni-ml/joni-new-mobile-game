@@ -102,6 +102,26 @@
   #wsCodeWrap { display:flex; gap:6px; width:min(88vw,340px); margin-top:4px; }
   #wsCodeWrap input { flex:1; background:#222; color:#fff; border:1px solid #4a4230; padding:8px; border-radius:6px; font-size:16px; font-family:inherit; }
   #wsCodeWrap button { padding:8px 14px; background:#5a4a2a; color:#fff; border:none; border-radius:6px; cursor:pointer; font-family:inherit; }
+  .sharedTypeCard { width:min(88vw,340px); }
+  .sharedTypeCard.sel { border-color:#73c745; box-shadow:0 0 0 2px rgba(115,199,69,0.3); }
+  .sharedBtn { flex:1; padding:12px 4px; background:#2f5a8a; color:#fff; border:none; border-radius:8px; font-family:inherit; font-size:12px; cursor:pointer; }
+  .sharedBack { margin-top:12px; padding:8px 18px; background:#3a3226; color:#d9c98a; border:1px solid #6a5a3a; border-radius:8px; font-family:inherit; cursor:pointer; }
+  .saveRow { display:flex; align-items:center; gap:6px; background:rgba(20,22,28,0.9); border:1px solid #4a4230; border-radius:8px; padding:8px 10px; margin-bottom:6px; font-size:12px; }
+  .saveRow .sName { flex:1; color:#e8e0c8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .saveRow button { padding:6px 10px; border:none; border-radius:5px; font-family:inherit; font-size:11px; cursor:pointer; }
+  .saveRow .loadB { background:#3a5a2a; color:#fff; } .saveRow .delB { background:#5a3a3a; color:#fff; }
+
+  /* ---- Net (P2P) connection panel ---- */
+  #netPanel { position:absolute; inset:0; background:rgba(0,0,0,0.82); display:none; flex-direction:column; align-items:center; justify-content:center; z-index:58; pointer-events:auto; padding:16px; }
+  #netPanel.open { display:flex; }
+  #netPanel .bx { position:relative; background:rgba(18,20,26,0.98); border:2px solid #2f7aea; border-radius:14px; padding:18px 16px; width:min(94vw, 400px); max-height:88vh; overflow-y:auto; }
+  #netPanel h2 { color:#4a9aff; font-size:18px; text-align:center; margin-bottom:2px; }
+  #netPanel .bsub { color:#9a927a; font-size:11px; text-align:center; margin-bottom:12px; }
+  #netPanel .netLbl { display:block; font-size:11px; color:#b0a888; margin:10px 0 4px; }
+  #netPanel textarea { width:100%; background:#111; color:#8fe08f; border:1px solid #4a4230; border-radius:6px; padding:8px; font-family:monospace; font-size:10px; resize:vertical; word-break:break-all; }
+  #netPanel .netBtn { width:100%; padding:9px; margin-top:6px; background:#2f5a8a; color:#fff; border:none; border-radius:6px; font-family:inherit; font-size:12px; cursor:pointer; }
+  #netX { position:absolute; top:8px; left:12px; color:#c94a3d; font-size:22px; cursor:pointer; line-height:1; }
+  /* remote players are drawn on the game canvas; name tags reuse toast styling */
 
   /* ---- Morning bonus / lucky choice modal ---- */
   #bonusModal { position:absolute; inset:0; background:rgba(0,0,0,0.72); display:none; flex-direction:column; align-items:center; justify-content:center; z-index:55; pointer-events:auto; padding:16px; }
@@ -170,6 +190,10 @@
     <div class="settingRow"><label>🔎 מרחק מצלמה (Zoom):</label><input type="range" min="0.6" max="2.6" step="0.1" value="1.5" oninput="changeZoom(this.value)"></div>
     <div class="settingRow"><label>🕹️ גודל ג'ויסטיק תנועה:</label><input type="range" min="80" max="260" step="5" value="120" oninput="changeJoySize(this.value)"></div>
     <div class="settingRow"><label>🔴 גודל לחצן תקיפה (⚔️):</label><input type="range" min="65" max="180" step="5" value="80" oninput="changeActionSize(this.value)"></div>
+    <div style="display:flex; gap:6px; margin-top:6px;">
+      <button onclick="saveWorld()" style="flex:1; padding:8px; background:#3a5a2a; color:#fff; border:none; border-radius:6px; font-family:inherit; cursor:pointer;">💾 שמור עולם</button>
+      <button onclick="showWorldSelect()" style="flex:1; padding:8px; background:#5a4a2a; color:#fff; border:none; border-radius:6px; font-family:inherit; cursor:pointer;">🏠 תפריט ראשי</button>
+    </div>
     <button onclick="toggleSettings()" style="width:100%; padding:8px; background:#4a3a2a; color:#fff; border:none; border-radius:6px; margin-top:6px; font-family:inherit; cursor:pointer;">סגור הגדרות</button>
 
     <div class="settingRow" style="margin-top:10px; border-top:1px dashed #4a4230; padding-top:10px;">
@@ -238,7 +262,7 @@
     <div id="btnHolder"><div id="interactBtn" onclick="tryInteract()">🖐️</div><div id="actionBtn">⚔️</div></div>
   </div>
 
-  <div id="msg"><h2 id="msgTitle" style="color:#c94a3d; margin-bottom:10px;">מתת!</h2><p id="msgBody">שרדת <span id="survivedDays">0</span> ימים</p><button onclick="restart()">התחל מחדש</button></div>
+  <div id="msg"><h2 id="msgTitle" style="color:#c94a3d; margin-bottom:10px;">מתת!</h2><p id="msgBody">שרדת <span id="survivedDays">0</span> ימים</p><button onclick="restart()">התחל מחדש</button><button onclick="showWorldSelect()" style="background:#5a4a2a; margin-right:8px;">🏠 תפריט ראשי</button></div>
 
   <div id="bonusModal">
     <div class="bx">
@@ -261,25 +285,71 @@
   <div id="worldSelect">
     <h1>🌍 שרידות</h1>
     <div class="sub">בחר עולם כדי להתחיל</div>
-    <div class="worldCard" onclick="startWorld('crystal')">
-      <div class="wt">💎 עולם הקריסטל</div>
-      <div class="wd">המשחק הרגיל. מצא ובנה את הקריסטל לפני היום החמישי כדי לעצור את הלילה הנצחי.</div>
+    <div id="wsMain">
+      <div class="worldCard" onclick="startWorld('crystal')">
+        <div class="wt">💎 עולם הקריסטל</div>
+        <div class="wd">המשחק הרגיל. מצא ובנה את הקריסטל לפני היום החמישי כדי לעצור את הלילה הנצחי.</div>
+      </div>
+      <div class="worldCard" onclick="startWorld('eternal')">
+        <div class="wt">🌑 עולם ללא קריסטל</div>
+        <div class="wd">אין קריסטל — לילה נצחי מההתחלה. המטרה: לשרוד כמה שיותר זמן. מסוכן מאוד!</div>
+      </div>
+      <div class="worldCard" onclick="openSharedMenu()">
+        <div class="wt">🌐 עולם משותף (עם חברים)</div>
+        <div class="wd">שחק יחד עם המשפחה/חברים באותה רשת או נקודה חמה, דרך קוד חיבור. אפשר גם לשחק לבד.</div>
+      </div>
+      <div class="worldCard locked" onclick="askWorldCode()">
+        <div class="wt">🔒 עולם ניסיון (דורש קוד)</div>
+        <div class="wd">עולם בדיקה עם כל הבלוקים והחומרים מוכנים, כדי לבדוק באגים במהירות. הזן קוד סודי.</div>
+      </div>
+      <div id="wsCodeWrap" style="display:none;">
+        <input type="text" id="wsCodeInput" inputmode="numeric" placeholder="קוד סודי">
+        <button onclick="submitWorldCode()">פתח</button>
+      </div>
+      <div id="savesSection" style="display:none;">
+        <div class="sub" style="margin-top:18px;">📂 עולמות שמורים</div>
+        <div id="savesList" style="width:min(88vw,340px);"></div>
+      </div>
     </div>
-    <div class="worldCard" onclick="startWorld('eternal')">
-      <div class="wt">🌑 עולם ללא קריסטל</div>
-      <div class="wd">אין קריסטל — לילה נצחי מההתחלה. המטרה: לשרוד כמה שיותר זמן. מסוכן מאוד!</div>
+
+    <div id="sharedMenu" style="display:none; flex-direction:column; align-items:center;">
+      <div class="sub">🌐 עולם משותף — בחר סוג עולם</div>
+      <div class="worldCard sharedTypeCard sel" id="sharedCrystalCard" onclick="setSharedMode('crystal')">
+        <div class="wt">💎 קריסטל</div><div class="wd">משחקים יחד עם מטרת הקריסטל.</div>
+      </div>
+      <div class="worldCard sharedTypeCard" id="sharedSurvivalCard" onclick="setSharedMode('eternal')">
+        <div class="wt">🌑 הישרדות פשוטה</div><div class="wd">שורדים יחד כמה שיותר זמן.</div>
+      </div>
+      <div style="display:flex; gap:8px; width:min(88vw,340px); margin-top:6px;">
+        <button class="sharedBtn" onclick="sharedSolo()">🎮 לבד</button>
+        <button class="sharedBtn" onclick="sharedHost()">📡 פתח לחברים</button>
+        <button class="sharedBtn" onclick="sharedJoin()">🔗 הצטרף</button>
+      </div>
+      <button class="sharedBack" onclick="closeSharedMenu()">← חזור</button>
     </div>
-    <div class="worldCard" onclick="comingSoonWorld()">
-      <div class="wt">🌐 עולם משותף (בקרוב)</div>
-      <div class="wd">לשחק יחד עם חברים באותו עולם. בפיתוח — דורש אירוח אונליין ושרת חיבור. לחץ לפרטים.</div>
-    </div>
-    <div class="worldCard locked" onclick="askWorldCode()">
-      <div class="wt">🔒 עולם ניסיון (דורש קוד)</div>
-      <div class="wd">עולם בדיקה עם כל הבלוקים והחומרים מוכנים, כדי לבדוק באגים במהירות. הזן קוד סודי.</div>
-    </div>
-    <div id="wsCodeWrap" style="display:none;">
-      <input type="text" id="wsCodeInput" inputmode="numeric" placeholder="קוד סודי">
-      <button onclick="submitWorldCode()">פתח</button>
+  </div>
+
+  <div id="netPanel">
+    <div class="bx">
+      <span id="netX" onclick="closeNetPanel()">✕</span>
+      <h2 id="netTitle">📡 חיבור</h2>
+      <div class="bsub" id="netStatus">ממתין...</div>
+      <div id="netStep1" style="display:none;">
+        <label class="netLbl" id="netOutLbl">1) שלח את הקוד הזה לחבר:</label>
+        <textarea id="netOutCode" readonly rows="3"></textarea>
+        <button class="netBtn" onclick="copyNetCode()">📋 העתק קוד</button>
+        <label class="netLbl" id="netInLbl">2) הדבק כאן את קוד התשובה של החבר:</label>
+        <textarea id="netInCode" rows="3" placeholder="הדבק קוד תשובה..."></textarea>
+        <button class="netBtn" id="netInBtn" onclick="netAcceptAnswer()">✅ התחבר</button>
+      </div>
+      <div id="netJoinStep" style="display:none;">
+        <label class="netLbl">1) הדבק את הקוד שקיבלת מהמארח:</label>
+        <textarea id="netJoinOffer" rows="3" placeholder="הדבק קוד מהמארח..."></textarea>
+        <button class="netBtn" onclick="netCreateAnswer()">➡️ צור קוד תשובה</button>
+        <label class="netLbl" id="netAnsLbl" style="display:none;">2) שלח את קוד התשובה הזה למארח:</label>
+        <textarea id="netAnswerOut" readonly rows="3" style="display:none;"></textarea>
+        <button class="netBtn" id="netAnsCopy" style="display:none;" onclick="copyNetAnswer()">📋 העתק תשובה</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1228,10 +1298,81 @@ function startWorld(mode){
   if (mode==='eternal') showToast('🌑 עולם ללא קריסטל — שרוד כמה שתוכל!');
   else if (mode==='test') showToast('🧪 עולם ניסיון — כל הבלוקים והחומרים אצלך');
 }
-function comingSoonWorld(){
-  alert('🌐 עולם משותף — בקרוב!\n\nמשחק משותף אמיתי (שאנשים אחרים מתחברים ומשחקים איתך) עדיין לא זמין.\n\nכדי שזה יעבוד צריך:\n• לארח את המשחק אונליין (לא כקובץ מקומי)\n• שרת חיבור בין השחקנים\n• סנכרון של השחקנים, העולם והמפלצות\n\nזה פרויקט נפרד וגדול יותר — כשתרצה, נבנה אותו בשלבים.');
+/* ---- shared-world submenu ---- */
+let sharedMode = 'crystal';
+function openSharedMenu(){ document.getElementById('wsMain').style.display='none'; document.getElementById('sharedMenu').style.display='flex'; setSharedMode('crystal'); }
+function closeSharedMenu(){ document.getElementById('sharedMenu').style.display='none'; document.getElementById('wsMain').style.display='block'; }
+function setSharedMode(m){ sharedMode = m; document.getElementById('sharedCrystalCard').classList.toggle('sel', m==='crystal'); document.getElementById('sharedSurvivalCard').classList.toggle('sel', m==='eternal'); }
+function sharedSolo(){ startWorld(sharedMode); }
+function sharedHost(){ showToast('📡 החיבור מגיע בשלב הבא — כרגע אפשר לשחק לבד'); }
+function sharedJoin(){ showToast('🔗 החיבור מגיע בשלב הבא — כרגע אפשר לשחק לבד'); }
+function closeNetPanel(){ document.getElementById('netPanel').classList.remove('open'); }
+function copyNetCode(){}
+function netAcceptAnswer(){}
+function netCreateAnswer(){}
+function copyNetAnswer(){}
+
+function showWorldSelect(){
+  gameStarted = false;
+  document.getElementById('msg').style.display='none';
+  document.getElementById('sharedMenu').style.display='none';
+  document.getElementById('wsMain').style.display='block';
+  document.getElementById('worldSelect').style.display='flex';
+  refreshSavesUI();
 }
 function askWorldCode(){ document.getElementById('wsCodeWrap').style.display = 'flex'; document.getElementById('wsCodeInput').focus(); }
+
+/* ============ World save / load (localStorage) ============ */
+const SAVE_INDEX_KEY = 'sv_index';
+function serializeWorld(){
+  const w = new Array(MAPH);
+  for (let y=0;y<MAPH;y++){ const row=new Array(MAPW); for(let x=0;x<MAPW;x++){ const t=world[y][x]; const o={t:t.type,hp:t.hp}; if(t.maxHp!=null)o.m=t.maxHp; if(t.stage!=null)o.s=t.stage; if(t.reinforced)o.r=t.reinforced; row[x]=o; } w[y]=row; }
+  return w;
+}
+function deserializeWorld(w){
+  world=[]; for(let y=0;y<MAPH;y++){ world[y]=[]; for(let x=0;x<MAPW;x++){ const o=w[y][x]; const tile={type:o.t,hp:o.hp,timer:0}; if(o.m!=null)tile.maxHp=o.m; if(o.s!=null)tile.stage=o.s; if(o.r)tile.reinforced=o.r; world[y][x]=tile; } }
+}
+function getSaveIndex(){ try{ return JSON.parse(localStorage.getItem(SAVE_INDEX_KEY)||'[]'); }catch(e){ return []; } }
+function setSaveIndex(idx){ try{ localStorage.setItem(SAVE_INDEX_KEY, JSON.stringify(idx)); }catch(e){} }
+function saveWorld(){
+  if (!gameStarted){ showToast('אין עולם פעיל לשמור'); return; }
+  const def = 'עולם יום '+dayNum;
+  const name = (prompt('שם לעולם:', def) || def).slice(0,40);
+  const id = 'sv_'+Date.now();
+  const playerCopy = JSON.parse(JSON.stringify(Object.assign({}, player, {placingItem:null})));
+  const data = { v:1, name, ts:Date.now(), gameMode, dayNum, time, eternalNightDay, eternalNightActive, crystalPlaced, crystalActivated, crystalBonusDays, crystalDevicePos, player:playerCopy, stats:JSON.parse(JSON.stringify(stats)), chests:JSON.parse(JSON.stringify(chests)), world:serializeWorld() };
+  try{ localStorage.setItem(id, JSON.stringify(data)); }catch(e){ showToast('שמירה נכשלה (אין מקום פנוי)'); return; }
+  const idx = getSaveIndex(); idx.unshift({ id, name, ts:data.ts, dayNum, gameMode }); setSaveIndex(idx.slice(0,30));
+  showToast('💾 העולם נשמר: '+name); refreshSavesUI();
+}
+function loadWorld(id){
+  let data; try{ data = JSON.parse(localStorage.getItem(id)); }catch(e){}
+  if (!data){ showToast('טעינה נכשלה'); return; }
+  gameMode = data.gameMode||'crystal';
+  initEntities();
+  deserializeWorld(data.world);
+  initPlayer(); Object.assign(player, data.player); player.placingItem=null;
+  dayNum=data.dayNum||1; time=data.time||0; eternalNightDay=data.eternalNightDay||5;
+  eternalNightActive=!!data.eternalNightActive; crystalPlaced=!!data.crystalPlaced; crystalActivated=!!data.crystalActivated; crystalBonusDays=data.crystalBonusDays||0; crystalDevicePos=data.crystalDevicePos||null;
+  stats = Object.assign({ animalsKilled:0,monstersKilled:0,blocksDestroyed:0,maxBreakDist:2,luckyOpened:0,dailyChoices:[] }, data.stats||{});
+  chests = (data.chests||[]).map(c=>({x:c.x,y:c.y,items:c.items||{}}));
+  cropTiles = []; for(let y=0;y<MAPH;y++)for(let x=0;x<MAPW;x++){ if(world[y][x].type===T.CROP){ world[y][x].growAt = performance.now()+opCropGrowSeconds*1000; cropTiles.push(world[y][x]); } }
+  bonusShownForDay=dayNum; luckyQueue=[]; gameOver=false; tickAcc=0; countTimer=0;
+  camX=player.x; camY=player.y;
+  document.getElementById('worldSelect').style.display='none';
+  document.getElementById('msg').style.display='none';
+  gameStarted=true; ensureAudio();
+  updateHUD(); renderBag(); changeUIScale(1.2); updateResourceCounts();
+  showToast('📂 נטען: '+(data.name||''));
+}
+function deleteSave(id){ localStorage.removeItem(id); setSaveIndex(getSaveIndex().filter(s=>s.id!==id)); refreshSavesUI(); }
+function refreshSavesUI(){
+  const idx = getSaveIndex(); const sec=document.getElementById('savesSection'); const list=document.getElementById('savesList');
+  if (!sec) return;
+  if (!idx.length){ sec.style.display='none'; return; }
+  sec.style.display='block';
+  list.innerHTML = idx.map(s=>`<div class="saveRow"><span class="sName">${s.name} (יום ${s.dayNum})</span><button class="loadB" onclick="loadWorld('${s.id}')">טען</button><button class="delB" onclick="deleteSave('${s.id}')">🗑️</button></div>`).join('');
+}
 function submitWorldCode(){
   const val = (document.getElementById('wsCodeInput').value||'').trim();
   if (val !== WORLD_TEST_CODE){ showToast('קוד שגוי'); return; }
@@ -1732,7 +1873,7 @@ function showToast(msg){ const t = document.getElementById('toast'); t.textConte
 
 let lastTime = performance.now(); function loop(now){ const dt = Math.min(0.05, (now-lastTime)/1000); lastTime = now; update(dt); draw(); requestAnimationFrame(loop); }
 // Build a valid world behind the start screen (gameStarted stays false so it's paused) and wait for the player's choice.
-gameMode = 'crystal'; initGame(); gameStarted = false; requestAnimationFrame(loop);
+gameMode = 'crystal'; initGame(); gameStarted = false; refreshSavesUI(); requestAnimationFrame(loop);
 </script>
 </body>
 </html>
