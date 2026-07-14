@@ -269,6 +269,10 @@
       <div class="wt">🌑 עולם ללא קריסטל</div>
       <div class="wd">אין קריסטל — לילה נצחי מההתחלה. המטרה: לשרוד כמה שיותר זמן. מסוכן מאוד!</div>
     </div>
+    <div class="worldCard" onclick="comingSoonWorld()">
+      <div class="wt">🌐 עולם משותף (בקרוב)</div>
+      <div class="wd">לשחק יחד עם חברים באותו עולם. בפיתוח — דורש אירוח אונליין ושרת חיבור. לחץ לפרטים.</div>
+    </div>
     <div class="worldCard locked" onclick="askWorldCode()">
       <div class="wt">🔒 עולם ניסיון (דורש קוד)</div>
       <div class="wd">עולם בדיקה עם כל הבלוקים והחומרים מוכנים, כדי לבדוק באגים במהירות. הזן קוד סודי.</div>
@@ -1223,6 +1227,9 @@ function startWorld(mode){
   ensureAudio();
   if (mode==='eternal') showToast('🌑 עולם ללא קריסטל — שרוד כמה שתוכל!');
   else if (mode==='test') showToast('🧪 עולם ניסיון — כל הבלוקים והחומרים אצלך');
+}
+function comingSoonWorld(){
+  alert('🌐 עולם משותף — בקרוב!\n\nמשחק משותף אמיתי (שאנשים אחרים מתחברים ומשחקים איתך) עדיין לא זמין.\n\nכדי שזה יעבוד צריך:\n• לארח את המשחק אונליין (לא כקובץ מקומי)\n• שרת חיבור בין השחקנים\n• סנכרון של השחקנים, העולם והמפלצות\n\nזה פרויקט נפרד וגדול יותר — כשתרצה, נבנה אותו בשלבים.');
 }
 function askWorldCode(){ document.getElementById('wsCodeWrap').style.display = 'flex'; document.getElementById('wsCodeInput').focus(); }
 function submitWorldCode(){
