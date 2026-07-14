@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>שרידות</title>
+<!-- PeerJS: enables short-code co-op over the internet/hotspot. Loaded async; game works fine without it (single-player). -->
+<script async src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
   html, body { width:100%; height:100%; }
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none; }
@@ -119,6 +121,8 @@
   #netPanel .bsub { color:#9a927a; font-size:11px; text-align:center; margin-bottom:12px; }
   #netPanel .netLbl { display:block; font-size:11px; color:#b0a888; margin:10px 0 4px; }
   #netPanel textarea { width:100%; background:#111; color:#8fe08f; border:1px solid #4a4230; border-radius:6px; padding:8px; font-family:monospace; font-size:10px; resize:vertical; word-break:break-all; }
+  #netHostCode { font-size:44px; font-weight:bold; text-align:center; color:#4a9aff; letter-spacing:8px; padding:14px; background:#0d1018; border-radius:10px; user-select:text; -webkit-user-select:text; }
+  #netJoinCode { width:100%; font-size:30px; text-align:center; letter-spacing:6px; background:#111; color:#8fe08f; border:1px solid #4a4230; border-radius:8px; padding:12px; user-select:text; -webkit-user-select:text; }
   #netPanel .netBtn { width:100%; padding:9px; margin-top:6px; background:#2f5a8a; color:#fff; border:none; border-radius:6px; font-family:inherit; font-size:12px; cursor:pointer; }
   #netX { position:absolute; top:8px; left:12px; color:#c94a3d; font-size:22px; cursor:pointer; line-height:1; }
   /* remote players are drawn on the game canvas; name tags reuse toast styling */
@@ -288,15 +292,19 @@
     <div id="wsMain">
       <div class="worldCard" onclick="startWorld('crystal')">
         <div class="wt">💎 עולם הקריסטל</div>
-        <div class="wd">המשחק הרגיל. מצא ובנה את הקריסטל לפני היום החמישי כדי לעצור את הלילה הנצחי.</div>
+        <div class="wd">מצא ובנה את הקריסטל לפני היום החמישי כדי לעצור את הלילה הנצחי.</div>
       </div>
-      <div class="worldCard" onclick="startWorld('eternal')">
-        <div class="wt">🌑 עולם ללא קריסטל</div>
-        <div class="wd">אין קריסטל — לילה נצחי מההתחלה. המטרה: לשרוד כמה שיותר זמן. מסוכן מאוד!</div>
+      <div class="worldCard" onclick="startWorld('survival')">
+        <div class="wt">🌙 הישרדות רגילה</div>
+        <div class="wd">בלי קריסטל ובלי לילה נצחי — רק לילות רגילים. פשוט לשרוד ולבנות כמה שרוצים.</div>
+      </div>
+      <div class="worldCard" onclick="startWorld('challenge')">
+        <div class="wt">⚔️ אתגר — לילה נצחי</div>
+        <div class="wd">בלי קריסטל. הלילה הנצחי מתחיל כבר ביום השני. קשה מאוד — שרוד כמה שתוכל!</div>
       </div>
       <div class="worldCard" onclick="openSharedMenu()">
         <div class="wt">🌐 עולם משותף (עם חברים)</div>
-        <div class="wd">שחק יחד עם המשפחה/חברים באותה רשת או נקודה חמה, דרך קוד חיבור. אפשר גם לשחק לבד.</div>
+        <div class="wd">שחק יחד עם המשפחה/חברים דרך קוד קצר. אפשר גם לשחק לבד.</div>
       </div>
       <div class="worldCard locked" onclick="askWorldCode()">
         <div class="wt">🔒 עולם ניסיון (דורש קוד)</div>
@@ -317,8 +325,8 @@
       <div class="worldCard sharedTypeCard sel" id="sharedCrystalCard" onclick="setSharedMode('crystal')">
         <div class="wt">💎 קריסטל</div><div class="wd">משחקים יחד עם מטרת הקריסטל.</div>
       </div>
-      <div class="worldCard sharedTypeCard" id="sharedSurvivalCard" onclick="setSharedMode('eternal')">
-        <div class="wt">🌑 הישרדות פשוטה</div><div class="wd">שורדים יחד כמה שיותר זמן.</div>
+      <div class="worldCard sharedTypeCard" id="sharedSurvivalCard" onclick="setSharedMode('survival')">
+        <div class="wt">🌙 הישרדות רגילה</div><div class="wd">לילות רגילים, בלי לילה נצחי — פשוט לשרוד יחד.</div>
       </div>
       <div style="display:flex; gap:8px; width:min(88vw,340px); margin-top:6px;">
         <button class="sharedBtn" onclick="sharedSolo()">🎮 לבד</button>
@@ -334,21 +342,16 @@
       <span id="netX" onclick="closeNetPanel()">✕</span>
       <h2 id="netTitle">📡 חיבור</h2>
       <div class="bsub" id="netStatus">ממתין...</div>
-      <div id="netStep1" style="display:none;">
-        <label class="netLbl" id="netOutLbl">1) שלח את הקוד הזה לחבר:</label>
-        <textarea id="netOutCode" readonly rows="3"></textarea>
-        <button class="netBtn" onclick="copyNetCode()">📋 העתק קוד</button>
-        <label class="netLbl" id="netInLbl">2) הדבק כאן את קוד התשובה של החבר:</label>
-        <textarea id="netInCode" rows="3" placeholder="הדבק קוד תשובה..."></textarea>
-        <button class="netBtn" id="netInBtn" onclick="netAcceptAnswer()">✅ התחבר</button>
+      <div id="netHostView" style="display:none;">
+        <div class="netLbl">הקוד שלך — מסור אותו לחבר שיצטרף:</div>
+        <div id="netHostCode">----</div>
+        <button class="netBtn" onclick="copyHostCode()">📋 העתק קוד</button>
+        <div class="bsub" style="margin-top:10px;">החבר בוחר "עולם משותף → 🔗 הצטרף" ומקליד את הקוד. צריך שלשניכם יהיה אינטרנט (נקודה חמה סלולרית עובדת).</div>
       </div>
-      <div id="netJoinStep" style="display:none;">
-        <label class="netLbl">1) הדבק את הקוד שקיבלת מהמארח:</label>
-        <textarea id="netJoinOffer" rows="3" placeholder="הדבק קוד מהמארח..."></textarea>
-        <button class="netBtn" onclick="netCreateAnswer()">➡️ צור קוד תשובה</button>
-        <label class="netLbl" id="netAnsLbl" style="display:none;">2) שלח את קוד התשובה הזה למארח:</label>
-        <textarea id="netAnswerOut" readonly rows="3" style="display:none;"></textarea>
-        <button class="netBtn" id="netAnsCopy" style="display:none;" onclick="copyNetAnswer()">📋 העתק תשובה</button>
+      <div id="netJoinView" style="display:none;">
+        <div class="netLbl">הכנס את הקוד שקיבלת מהמארח:</div>
+        <input id="netJoinCode" inputmode="numeric" placeholder="למשל 1234">
+        <button class="netBtn" onclick="netDoJoin()">🔗 התחבר</button>
       </div>
     </div>
   </div>
@@ -421,9 +424,9 @@ function tryCheatCode(){
     showToast('תפריט מפתח נפתח 🔑');
   } else if (val === '2020'){
     document.getElementById('cheatCodeInput').value='';
-    const d = prompt('כמה ימים עד הלילה הנצחי? (נוכחי: '+eternalNightDay+')', String(eternalNightDay));
+    const d = prompt('כמה ימים עד הלילה הנצחי? (נוכחי: '+userEternalDay+')', String(userEternalDay));
     const parsed = parseInt(d);
-    if (!isNaN(parsed) && parsed >= 1){ eternalNightDay = parsed; showToast('🔑 כמות הימים עודכנה ל-'+parsed); }
+    if (!isNaN(parsed) && parsed >= 1){ userEternalDay = parsed; if(gameMode==='crystal'||gameMode==='test') eternalNightDay = parsed; showToast('🔑 כמות הימים עודכנה ל-'+parsed); }
   } else { showToast('קוד שגוי'); }
   clearMobileZoomReset();
 }
@@ -476,6 +479,22 @@ function sfxShoot(){ beep(500,0.05,'square',0.05); }
 
 let keys = {};
 window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; ensureAudio(); }); window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+// Tap-to-build: while placing, tap anywhere on the map (within reach) to drop a block right there.
+let tapTarget = null;
+function buildFromScreen(clientX, clientY){
+  if (!player.placingItem) return false;
+  const rect = canvas.getBoundingClientRect();
+  const wx = (clientX - rect.left - W/2)/gameZoom + player.x;
+  const wy = (clientY - rect.top  - H/2)/gameZoom + player.y;
+  if (Math.hypot(wx-player.x, wy-player.y) > TILE*4.5){ showToast('רחוק מדי — התקרב כדי לבנות שם'); return false; }
+  tapTarget = { tx: Math.floor(wx/TILE), ty: Math.floor(wy/TILE) };
+  tryInteract();
+  tapTarget = null;
+  return true;
+}
+canvas.addEventListener('touchstart', e=>{ if(!player.placingItem) return; ensureAudio(); const t=e.changedTouches[0]; if(buildFromScreen(t.clientX, t.clientY)) e.preventDefault(); }, {passive:false});
+canvas.addEventListener('mousedown', e=>{ if(!player.placingItem) return; buildFromScreen(e.clientX, e.clientY); });
 let joyActive=false, joyDX=0, joyDY=0, joyTouchId=null; const joyZone = document.getElementById('joyZone'); const joyStick = document.getElementById('joyStick'); let JOY_R = 48;
 function joyStart(e){ ensureAudio(); const t = e.changedTouches?e.changedTouches[0]:e; joyTouchId = e.changedTouches?t.identifier:'mouse'; joyActive=true; joyMove(e); }
 function joyMove(e){ if(!joyActive) return; let t; if (e.changedTouches){ t = Array.from(e.changedTouches).find(tt=>tt.identifier===joyTouchId); if(!t) return; } else t = e; const rect = joyZone.getBoundingClientRect(); const cx = rect.left+rect.width/2, cy = rect.top+rect.height/2; let dx = t.clientX-cx, dy = t.clientY-cy; const dist = Math.hypot(dx,dy); if (dist > JOY_R){ dx = dx/dist*JOY_R; dy = dy/dist*JOY_R; } joyStick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`; joyDX = dx/JOY_R; joyDY = dy/JOY_R; }
@@ -509,6 +528,14 @@ function tileHP(t){
   if (t===T.TRUNK) return 2; if (t===T.CRAFTING_TABLE) return 4; if (t===T.SAPLING) return 1; if(t===T.UPGRADED_TABLE) return 6; if(t===T.FURNACE) return 8; if(t===T.CROP) return 1;
   if (t===T.TABLET) return 999999; if (t===T.CRYSTAL_ORE) return 10; if (t===T.CRYSTAL_DEVICE) return 40; if (t===T.PLACED_TORCH) return 3; if (t===T.WALL_THORN) return 20; if (t===T.BONE_WALL) return 22; if (t===T.LUCKY) return 2; return 0;
 }
+// How many monster hits it takes to destroy each built item (separate from the small player-mining hp).
+function enemyHitsFor(type){
+  if (type===T.WALL) return 200;
+  if (type===T.BONE_WALL) return 250;
+  if (type===T.WALL_THORN) return 150;
+  return 50; // furnace, crafting table, upgraded table, campfire
+}
+const REINFORCE_SHIELD = 100; // each iron reinforcement adds a 100-hit grey ring around the item
 function genWorld(){
   world = []; const riverX = Math.floor(MAPW*0.5);
   for(let y=0;y<MAPH;y++){
@@ -526,26 +553,27 @@ function genWorld(){
     }
   }
 
-  // Central altar: a 4-tile-radius circle of grey stone floor with a tablet in the exact center.
-  const acx = Math.floor(MAPW/2), acy = Math.floor(MAPH/2);
-  for (let y=acy-4; y<=acy+4; y++){
-    for (let x=acx-4; x<=acx+4; x++){
-      if (y<0||y>=MAPH||x<0||x>=MAPW) continue;
-      if (Math.hypot(x-acx, y-acy) <= 4.2){ world[y][x] = { type:T.ALTAR_FLOOR, hp:0, timer:0 }; }
+  // Crystal-only content: the central altar + tablet and the single crystal ore. Skipped in survival/challenge.
+  if (worldHasCrystal()){
+    const acx = Math.floor(MAPW/2), acy = Math.floor(MAPH/2);
+    for (let y=acy-4; y<=acy+4; y++){
+      for (let x=acx-4; x<=acx+4; x++){
+        if (y<0||y>=MAPH||x<0||x>=MAPW) continue;
+        if (Math.hypot(x-acx, y-acy) <= 4.2){ world[y][x] = { type:T.ALTAR_FLOOR, hp:0, timer:0 }; }
+      }
     }
-  }
-  world[acy][acx] = { type:T.TABLET, hp:tileHP(T.TABLET), timer:0 };
+    world[acy][acx] = { type:T.TABLET, hp:tileHP(T.TABLET), timer:0 };
 
-  // The one and only crystal ore in the world - somewhere away from the altar.
-  let placedCrystalOre = false, tries=0;
-  while(!placedCrystalOre && tries<400){
-    tries++;
-    const rx = 4+Math.floor(Math.random()*(MAPW-8)), ry = 4+Math.floor(Math.random()*(MAPH-8));
-    if (Math.hypot(rx-acx, ry-acy) < 10) continue;
-    const t = world[ry][rx];
-    if (t.type===T.GRASS||t.type===T.SAND||t.type===T.SNOW){
-      world[ry][rx] = { type:T.CRYSTAL_ORE, hp:tileHP(T.CRYSTAL_ORE), maxHp:tileHP(T.CRYSTAL_ORE), timer:0 };
-      placedCrystalOre = true;
+    let placedCrystalOre = false, tries=0;
+    while(!placedCrystalOre && tries<400){
+      tries++;
+      const rx = 4+Math.floor(Math.random()*(MAPW-8)), ry = 4+Math.floor(Math.random()*(MAPH-8));
+      if (Math.hypot(rx-acx, ry-acy) < 10) continue;
+      const t = world[ry][rx];
+      if (t.type===T.GRASS||t.type===T.SAND||t.type===T.SNOW){
+        world[ry][rx] = { type:T.CRYSTAL_ORE, hp:tileHP(T.CRYSTAL_ORE), maxHp:tileHP(T.CRYSTAL_ORE), timer:0 };
+        placedCrystalOre = true;
+      }
     }
   }
 }
@@ -560,13 +588,14 @@ let player, camX, camY, time, dayNum, gameOver, countTimer=0;
 let gameMode = 'crystal';      // 'crystal' | 'eternal' | 'test'
 let gameStarted = false;       // stays false until a world is picked
 let bonusModalOpen = false;    // pauses the world while the morning-bonus modal is up
-let eternalNightDay = 5;       // day the eternal night begins (editable via secret code 2020)
+let eternalNightDay = 5;       // effective day the eternal night begins for the current world
+let userEternalDay = 5;        // the crystal-world day chosen via secret code 2020 (persists across mode switches)
 let stats = { animalsKilled:0, monstersKilled:0, blocksDestroyed:0, maxBreakDist:2, luckyOpened:0, dailyChoices:[] };
 let bonusShownForDay = 0;      // guards against re-triggering the morning bonus in the same day
 let luckyQueue = [];           // pending saved choice-sets, attached to lucky blocks in order they're placed
 let adminNightlyAll = false;   // admin toggle: every night auto-grant a lucky block + every bonus power
 /* ---- P2P co-op networking (WebRTC, copy-paste signaling, works on a hotspot with no server) ---- */
-let net = { active:false, isHost:false, peers:[], selfId: Math.random().toString(36).slice(2,7), name:'שחקן', _pendingHostPeer:null };
+let net = { active:false, isHost:false, peers:[], selfId: Math.random().toString(36).slice(2,7), name:'שחקן', _pendingHostPeer:null, peerObj:null, myCode:null };
 let remotePlayers = {};        // id -> {x,y,facing,hp,name,last}
 let netShadow = null;          // last-broadcast tile-type grid, for diffing structural world changes
 let netLastPos = 0, netLastDiff = 0;
@@ -584,16 +613,23 @@ function initPlayer(){
   };
 }
 function initGame(){
+  // per-mode: 'survival' = normal nights forever (no crystal, no eternal);
+  //           'challenge' = eternal night from day 2 (no crystal);
+  //           'crystal' = build the crystal before the eternal night (default day 5, editable);
+  //           'test' = sandbox.
+  if (gameMode==='survival') eternalNightDay = 999999;
+  else if (gameMode==='challenge') eternalNightDay = 2;
+  else eternalNightDay = userEternalDay;   // crystal & test use the 2020-editable day
   genWorld(); initEntities(); initPlayer(); resetStats();
   time = 0; dayNum = 1; gameOver=false; tickAcc=0; countTimer=0;
   bonusShownForDay = 0; luckyQueue = [];
   // reset run-scoped crystal / eternal-night state (important on restart)
   crystalPlaced=false; crystalActivated=false; crystalDevicePos=null; crystalBonusDays=0;
   eternalNightActive=false; forcedDayUntil=0; enemyProjectiles=[];
-  if (gameMode==='eternal'){ eternalNightActive = true; }        // no crystal, night from the start
-  else if (gameMode==='test'){ setupTestWorld(); }
+  if (gameMode==='test') setupTestWorld();
   camX = player.x; camY = player.y; updateHUD(); renderBag(); changeUIScale(1.2); updateResourceCounts();
 }
+function worldHasCrystal(){ return gameMode==='crystal'; }   // only the crystal world spawns the crystal/tablet
 // Test/sandbox world: hands you every tool, block and material so glitches can be reproduced fast.
 function setupTestWorld(){
   player.equipment = { axe:1, pickaxe:1, sword:1, bow:1, iron_axe:1, iron_pickaxe:1, iron_sword:1, shovel:1 };
@@ -759,13 +795,14 @@ window.eatItem = function(k) {
   sfxGather(); renderBag(); updateHUD(); 
 }
 
-window.tryInteract = function() { 
+window.tryInteract = function() {
     if (player.placingItem) {
         let r = player.placingItem;
-        
-        let p = frontPos();
-        let tx = Math.floor(p.fx / TILE);
-        let ty = Math.floor(p.fy / TILE);
+
+        // tapTarget (set when you tap the map directly) overrides the joystick-direction target
+        let tx, ty;
+        if (tapTarget){ tx = tapTarget.tx; ty = tapTarget.ty; }
+        else { let p = frontPos(); tx = Math.floor(p.fx / TILE); ty = Math.floor(p.fy / TILE); }
         if (ty < 0 || ty >= MAPH || tx < 0 || tx >= MAPW) { showToast('מחוץ לגבולות המפה!'); return; }
         
         let t = world[ty][tx];
@@ -774,17 +811,18 @@ window.tryInteract = function() {
         // Iron reinforcement: wrap an EXISTING built object to add a big chunk of durability.
         if (r.type === 'reinforce'){
           if ((player.inv.reinforcement||0) <= 0){ showToast('אין לך חיזוק ברזל בתיק!'); player.placingItem = null; return; }
-          if (PLAYER_BUILT_TILES.includes(t.type) || t.type===T.CRYSTAL_DEVICE){
+          if (PLAYER_BUILT_TILES.includes(t.type)){
             player.inv.reinforcement -= 1;
-            const add = 100; // each iron reinforcement adds ~100 hits of durability
-            t.maxHp = (t.maxHp || tileHP(t.type)) + add;
-            t.hp = (t.hp || tileHP(t.type)) + add;
-            t.reinforced = (t.reinforced || 0) + 1;
-            showToast('⛓️ חיזקת את המבנה בברזל! +100 עמידות');
+            // A separate grey ring that absorbs 100 hits, then breaks. It does NOT heal the item.
+            if (t.def==null){ t.def=enemyHitsFor(t.type); t.defMax=t.def; }
+            t.shield = (t.shield||0) + REINFORCE_SHIELD;
+            t.shieldMax = (t.shieldMax||0) + REINFORCE_SHIELD;
+            t.reinforced = (t.reinforced||0) + 1;
+            showToast('⛓️ הוספת הגנת ברזל! טבעת אפורה של '+REINFORCE_SHIELD+' מכות מסביב למבנה');
             if ((player.inv.reinforcement||0) <= 0) player.placingItem = null;
             renderBag();
           } else {
-            showToast('כוון אל מבנה שבנית כדי לחזק אותו');
+            showToast('כוון אל מבנה שבנית כדי לחזק אותו (קיר/תנור/מדורה...)');
           }
           return;
         }
@@ -839,6 +877,7 @@ window.tryInteract = function() {
 
             const placedHp = tileHP(placedType);
             world[ty][tx] = { type: placedType, hp: placedHp, maxHp: placedHp, timer: 0 };
+            if (PLAYER_BUILT_TILES.includes(placedType)) { world[ty][tx].def = enemyHitsFor(placedType); world[ty][tx].defMax = world[ty][tx].def; }
             if (placedType===T.LUCKY) { world[ty][tx].luckyChoices = luckyQueue.length ? luckyQueue.shift() : null; }
             player.inv[itemKey] -= 1;
 
@@ -1186,7 +1225,8 @@ function destroyBuiltTile(bt, bxi, byi, e){
   world[byi][bxi] = { type: (bb===BIOME.DESERT?T.SAND:bb===BIOME.SNOW?T.SNOW:T.GRASS), hp:0, timer:0 };
 }
 function updateEnemies(dt){
-  const canBreakBlocks = dayNum >= eternalNightDay || (eternalNightActive && !crystalActivated);
+  // monsters attack your base at night from day 2 (or day 5 in the crystal world), and always in eternal night
+  const canBreakBlocks = eternalNightActive || dayNum >= (gameMode==='crystal' ? eternalNightDay : 2);
   for (const e of enemies){
     let tx = player.x, ty = player.y;
     if (e.targetsCrystal && crystalPlaced && crystalDevicePos && !crystalActivated){ tx = crystalDevicePos.x; ty = crystalDevicePos.y; }
@@ -1214,26 +1254,25 @@ function updateEnemies(dt){
     if (!isSolid(tileAt(e.x, tryY))) e.y = tryY;
     e.x = Math.max(TILE*2.2, Math.min((MAPW-2.2)*TILE, e.x)); e.y = Math.max(TILE*2.2, Math.min((MAPH-2.2)*TILE, e.y));
 
-    // Check directly ahead every frame (independent of whether they slid a bit sideways) so they reliably chew through blocks
-    e.stuck = e.stuck||0;
+    // Chew the block directly ahead in discrete hits: shield ring first, then the item's own hit-count.
+    // Campfire is NOT meleeable (monsters just cross/burn on it) — only archer arrows can destroy it.
+    e.chewCd = (e.chewCd||0) - dt;
     if (canBreakBlocks){
       const bx = e.x + Math.cos(ang)*TILE*0.75, by = e.y + Math.sin(ang)*TILE*0.75;
       const bt = tileAt(bx,by);
-      if (PLAYER_BUILT_TILES.includes(bt.type)){
-        e.stuck += dt;
-        if (e.stuck > 0.4){
-          const toughness = bt.type===T.WALL ? opWallToughnessHits : (bt.type===T.WALL_THORN ? 3 : 8);
-          bt.hp -= dt * (tileHP(bt.type)/toughness);
-          if (Math.random()<dt*3) spawnParticle(bx,by,'#fff',3);
-          if (bt.type===T.WALL_THORN){ e.hp -= dt*6; spawnParticle(e.x,e.y,'#8fae4a',3); } // thorns bite back
-          if (bt.hp<=0){
-            const bxi=Math.floor(bx/TILE), byi=Math.floor(by/TILE);
-            destroyBuiltTile(bt, bxi, byi, e);
-            e.stuck = 0;
+      if (PLAYER_BUILT_TILES.includes(bt.type) && bt.type!==T.CAMPFIRE){
+        if (bt.def==null){ bt.def = enemyHitsFor(bt.type); bt.defMax = bt.def; }
+        if (e.chewCd <= 0){
+          e.chewCd = 0.5; // one hit every half second of contact
+          if (bt.shield && bt.shield > 0){ bt.shield--; spawnParticle(bx,by,'#c8c8c8',3); }
+          else {
+            bt.def--; spawnParticle(bx,by,'#fff',3);
+            if (bt.type===T.WALL_THORN){ e.hp -= 6; spawnParticle(e.x,e.y,'#8fae4a',3); } // thorns bite back
+            if (bt.def <= 0){ const bxi=Math.floor(bx/TILE), byi=Math.floor(by/TILE); destroyBuiltTile(bt, bxi, byi, e); }
           }
         }
-      } else { e.stuck = 0; }
-    } else { e.stuck = 0; }
+      } else { e.chewCd = 0; }
+    } else { e.chewCd = 0; }
 
     // Standing on/near a campfire burns enemies (they can cross it, but it hurts)
     const curTile = tileAt(e.x, e.y);
@@ -1253,7 +1292,12 @@ function updateEnemies(dt){
     if (Math.hypot(player.x-p.x, player.y-p.y) < 14){ if(!cheatGodMode) player.health -= p.dmg; p.life=0; sfxHurt(); }
     else {
       const bt = tileAt(p.x,p.y);
-      if (PLAYER_BUILT_TILES.includes(bt.type)){ bt.hp -= p.dmg*0.6; p.life=0; if (bt.hp<=0){ const bxi=Math.floor(p.x/TILE), byi=Math.floor(p.y/TILE); destroyBuiltTile(bt, bxi, byi, {eatenLoot:{}}); } }
+      if (PLAYER_BUILT_TILES.includes(bt.type)){   // arrows can hit any built item incl. campfire
+        if (bt.def==null){ bt.def = enemyHitsFor(bt.type); bt.defMax = bt.def; }
+        if (bt.shield && bt.shield > 0) bt.shield--; else bt.def--;
+        p.life=0; spawnParticle(p.x,p.y,'#fff',3);
+        if (bt.def <= 0){ const bxi=Math.floor(p.x/TILE), byi=Math.floor(p.y/TILE); destroyBuiltTile(bt, bxi, byi, {eatenLoot:{}}); }
+      }
     }
   }
   enemyProjectiles = enemyProjectiles.filter(p=>p.life>0);
@@ -1303,78 +1347,81 @@ function startWorld(mode){
   initGame();
   gameStarted = true;
   ensureAudio();
-  if (mode==='eternal') showToast('🌑 עולם ללא קריסטל — שרוד כמה שתוכל!');
+  if (mode==='survival') showToast('🌙 הישרדות רגילה — לילות רגילים, בלי לילה נצחי');
+  else if (mode==='challenge') showToast('⚔️ אתגר! הלילה הנצחי יתחיל ביום השני');
   else if (mode==='test') showToast('🧪 עולם ניסיון — כל הבלוקים והחומרים אצלך');
 }
 /* ---- shared-world submenu ---- */
 let sharedMode = 'crystal';
 function openSharedMenu(){ document.getElementById('wsMain').style.display='none'; document.getElementById('sharedMenu').style.display='flex'; setSharedMode('crystal'); }
 function closeSharedMenu(){ document.getElementById('sharedMenu').style.display='none'; document.getElementById('wsMain').style.display='block'; }
-function setSharedMode(m){ sharedMode = m; document.getElementById('sharedCrystalCard').classList.toggle('sel', m==='crystal'); document.getElementById('sharedSurvivalCard').classList.toggle('sel', m==='eternal'); }
+function setSharedMode(m){ sharedMode = m; document.getElementById('sharedCrystalCard').classList.toggle('sel', m==='crystal'); document.getElementById('sharedSurvivalCard').classList.toggle('sel', m==='survival'); }
 function sharedSolo(){ startWorld(sharedMode); }
 
-/* ============ P2P co-op (WebRTC data channel, manual copy-paste signaling) ============ */
-function netMakePc(){ return new RTCPeerConnection({ iceServers:[{ urls:'stun:stun.l.google.com:19302' }] }); }
-function sdpEncode(desc){ return btoa(JSON.stringify({ type:desc.type, sdp:desc.sdp })); }
-function sdpDecode(code){ return new RTCSessionDescription(JSON.parse(atob(code.trim()))); }
-function waitIce(pc){ return new Promise(res=>{ if(pc.iceGatheringState==='complete') return res(); let done=false; const fin=()=>{ if(done)return; done=true; res(); }; pc.addEventListener('icegatheringstatechange', ()=>{ if(pc.iceGatheringState==='complete') fin(); }); setTimeout(fin, 2500); }); }
+/* ============ P2P co-op via PeerJS: short numeric room codes, auto-connect, works on a hotspot with internet ============ */
+const NET_PREFIX = 'joni-surv-';   // namespaced so our 4-digit codes don't clash with other apps on the public broker
+function peerReady(){ return typeof Peer !== 'undefined'; }
 function initShadow(){ netShadow = []; for(let y=0;y<MAPH;y++){ netShadow[y]=[]; for(let x=0;x<MAPW;x++) netShadow[y][x]=world[y][x].type; } }
+function makeShortCode(){ return String(1 + Math.floor(Math.random()*9998)); } // 1..9999 (not 10000)
 
 function openNetPanel(mode){
   document.getElementById('netPanel').classList.add('open');
-  document.getElementById('netStep1').style.display = mode==='host'?'block':'none';
-  document.getElementById('netJoinStep').style.display = mode==='join'?'block':'none';
+  document.getElementById('netHostView').style.display = mode==='host'?'block':'none';
+  document.getElementById('netJoinView').style.display = mode==='join'?'block':'none';
   document.getElementById('netTitle').textContent = mode==='host'?'📡 פתח לחברים':'🔗 הצטרף לחבר';
-  document.getElementById('netStatus').textContent = mode==='host'?'יוצר קוד חיבור...':'הדבק את קוד המארח';
+  document.getElementById('netStatus').textContent = mode==='host'?'יוצר קוד...':'הכנס את הקוד מהמארח';
 }
 function closeNetPanel(){ document.getElementById('netPanel').classList.remove('open'); }
 
-function netWireChannel(peer){
-  const dc = peer.dc; if(!dc) return;
-  dc.onopen = ()=>{ document.getElementById('netStatus').textContent='מחובר! 🎉'; showToast('🔗 שחקן התחבר לעולם!'); if(net.isHost) netSendInitTo(peer); setTimeout(closeNetPanel, 900); };
-  dc.onmessage = (e)=> netOnMessage(peer, e.data);
-  dc.onclose = ()=>{ net.peers = net.peers.filter(p=>p!==peer); };
+function netWireConn(peer){
+  const c = peer.conn; if(!c) return;
+  c.on('open', ()=>{ peer.open=true; document.getElementById('netStatus').textContent='מחובר! 🎉'; showToast('🔗 שחקן התחבר לעולם!'); if(net.isHost) netSendInitTo(peer); setTimeout(closeNetPanel, 900); });
+  c.on('data', d=> netOnMessage(peer, d));
+  c.on('close', ()=>{ peer.open=false; net.peers = net.peers.filter(p=>p!==peer); });
+  c.on('error', ()=>{});
 }
-async function sharedHost(){
+function sharedHost(){
+  if (!peerReady()){ showToast('צריך חיבור לאינטרנט כדי לשחק עם חבר'); return; }
   startWorld(sharedMode);
   net.active=true; net.isHost=true; net.name='מארח'; net.peers=[]; initShadow();
   openNetPanel('host');
-  const pc = netMakePc(); const dc = pc.createDataChannel('game');
-  const peer = { pc, dc, id:'g'+Math.random().toString(36).slice(2,6) };
-  netWireChannel(peer); net.peers.push(peer); net._pendingHostPeer = peer;
-  const offer = await pc.createOffer(); await pc.setLocalDescription(offer); await waitIce(pc);
-  document.getElementById('netOutCode').value = sdpEncode(pc.localDescription);
-  document.getElementById('netStatus').textContent = 'שלח את הקוד לחבר, ואז הדבק את קוד התשובה שלו';
+  document.getElementById('netHostCode').textContent = '····';
+  netHostRetry(0);
 }
-async function netAcceptAnswer(){
-  const code = document.getElementById('netInCode').value.trim(); if(!code) return;
-  try{ await net._pendingHostPeer.pc.setRemoteDescription(sdpDecode(code)); document.getElementById('netStatus').textContent='מתחבר...'; }
-  catch(e){ showToast('קוד תשובה לא תקין'); }
+function netHostRetry(attempt){
+  if (attempt > 8){ document.getElementById('netStatus').textContent='לא הצלחתי ליצור קוד — נסה שוב'; return; }
+  const code = makeShortCode();
+  try{ net.peerObj = new Peer(NET_PREFIX+code, { debug:0 }); }catch(e){ document.getElementById('netStatus').textContent='שגיאה ביצירת חיבור'; return; }
+  net.myCode = code;
+  net.peerObj.on('open', ()=>{ document.getElementById('netHostCode').textContent = code; document.getElementById('netStatus').textContent='מסור לחבר את הקוד והמתן שיצטרף'; });
+  net.peerObj.on('connection', conn=>{ const peer={ conn, id:conn.peer, open:false }; net.peers.push(peer); netWireConn(peer); });
+  net.peerObj.on('error', err=>{ const t=String(err&&err.type||err||''); if (t.includes('unavailable-id')||t.includes('taken')){ try{net.peerObj.destroy();}catch(e){} netHostRetry(attempt+1); } else if (t.includes('network')||t.includes('server')){ document.getElementById('netStatus').textContent='אין חיבור לשרת — בדוק אינטרנט'; } });
 }
-function sharedJoin(){ net.active=true; net.isHost=false; net.name='אורח'; net.peers=[]; openNetPanel('join'); }
-async function netCreateAnswer(){
-  const offerCode = document.getElementById('netJoinOffer').value.trim(); if(!offerCode) return;
-  const pc = netMakePc(); const peer = { pc, dc:null, id:'host' };
-  pc.ondatachannel = (e)=>{ peer.dc = e.channel; netWireChannel(peer); };
-  net.peers = [peer];
-  try{ await pc.setRemoteDescription(sdpDecode(offerCode)); }
-  catch(e){ showToast('קוד מארח לא תקין'); return; }
-  const answer = await pc.createAnswer(); await pc.setLocalDescription(answer); await waitIce(pc);
-  document.getElementById('netAnswerOut').value = sdpEncode(pc.localDescription);
-  document.getElementById('netAnsLbl').style.display='block';
-  document.getElementById('netAnswerOut').style.display='block';
-  document.getElementById('netAnsCopy').style.display='block';
-  document.getElementById('netStatus').textContent = 'שלח את קוד התשובה למארח, והמתן לחיבור';
+function sharedJoin(){
+  if (!peerReady()){ showToast('צריך חיבור לאינטרנט כדי לשחק עם חבר'); return; }
+  net.active=true; net.isHost=false; net.name='אורח'; net.peers=[];
+  openNetPanel('join');
 }
-function copyToClip(el){ const t=document.getElementById(el); t.select(); try{ navigator.clipboard.writeText(t.value); }catch(e){ try{document.execCommand('copy');}catch(_){} } showToast('הקוד הועתק 📋'); }
-function copyNetCode(){ copyToClip('netOutCode'); }
-function copyNetAnswer(){ copyToClip('netAnswerOut'); }
+function netDoJoin(){
+  const code = (document.getElementById('netJoinCode').value||'').trim();
+  if (!code){ showToast('הכנס קוד'); return; }
+  if (!peerReady()){ showToast('צריך אינטרנט'); return; }
+  document.getElementById('netStatus').textContent='מתחבר...';
+  try{ net.peerObj = new Peer({ debug:0 }); }catch(e){ document.getElementById('netStatus').textContent='שגיאת חיבור'; return; }
+  net.peerObj.on('open', ()=>{
+    const conn = net.peerObj.connect(NET_PREFIX+code, { reliable:true });
+    const peer = { conn, id:'host', open:false }; net.peers=[peer]; netWireConn(peer);
+    setTimeout(()=>{ if(!peer.open) document.getElementById('netStatus').textContent='לא נמצא מארח עם הקוד הזה — בדוק את הקוד ואת האינטרנט'; }, 7000);
+  });
+  net.peerObj.on('error', err=>{ document.getElementById('netStatus').textContent='שגיאה — בדוק את הקוד והאינטרנט'; });
+}
+function copyHostCode(){ const c=document.getElementById('netHostCode').textContent; try{ navigator.clipboard.writeText(c); }catch(e){} showToast('הקוד הועתק 📋: '+c); }
 
-function netSend(obj){ const s=JSON.stringify(obj); for(const p of net.peers){ if(p.dc && p.dc.readyState==='open'){ try{ p.dc.send(s); }catch(e){} } } }
-function netRelay(except, s){ for(const p of net.peers){ if(p!==except && p.dc && p.dc.readyState==='open'){ try{ p.dc.send(s); }catch(e){} } } }
+function sendToPeer(peer, obj){ if(peer && peer.conn && peer.open){ try{ peer.conn.send(obj); }catch(e){} } }
+function netSend(obj){ for(const p of net.peers) sendToPeer(p, obj); }
+function netRelay(except, obj){ for(const p of net.peers){ if(p!==except) sendToPeer(p, obj); } }
 function netSendInitTo(peer){
-  const msg = { t:'init', world:serializeWorld(), dayNum, time, gameMode, eternalNightDay, en:(eternalNightActive&&!crystalActivated), crystalPlaced, crystalActivated, crystalDevicePos };
-  try{ peer.dc.send(JSON.stringify(msg)); }catch(e){}
+  sendToPeer(peer, { t:'init', world:serializeWorld(), dayNum, time, gameMode, eternalNightDay, en:(eternalNightActive&&!crystalActivated), crystalPlaced, crystalActivated, crystalDevicePos });
 }
 function applyNetInit(msg){
   gameMode = msg.gameMode||'crystal';
@@ -1390,11 +1437,11 @@ function applyNetInit(msg){
 function applyNetTiles(cells){
   for(const c of cells){ const [x,y,type,hp,maxHp,stage]=c; if(world[y]&&world[y][x]){ const tile={type,hp,timer:0}; if(maxHp)tile.maxHp=maxHp; if(stage)tile.stage=stage; world[y][x]=tile; if(netShadow) netShadow[y][x]=type; } }
 }
-function netOnMessage(peer, data){
-  let msg; try{ msg=JSON.parse(data); }catch(e){ return; }
+function netOnMessage(peer, msg){
+  if (!msg || typeof msg!=='object') { try{ msg=JSON.parse(msg); }catch(e){ return; } }
   if (msg.t==='init'){ applyNetInit(msg); return; }
-  if (msg.t==='p'){ remotePlayers[msg.id]={ x:msg.x, y:msg.y, facing:msg.facing, hp:msg.hp, name:msg.name, last:performance.now() }; if(net.isHost) netRelay(peer, data); return; }
-  if (msg.t==='tiles'){ applyNetTiles(msg.cells); if(net.isHost) netRelay(peer, data); return; }
+  if (msg.t==='p'){ remotePlayers[msg.id]={ x:msg.x, y:msg.y, facing:msg.facing, hp:msg.hp, name:msg.name, last:performance.now() }; if(net.isHost) netRelay(peer, msg); return; }
+  if (msg.t==='tiles'){ applyNetTiles(msg.cells); if(net.isHost) netRelay(peer, msg); return; }
   if (msg.t==='time'){ if(!net.isHost){ dayNum=msg.dayNum; time=msg.time; eternalNightActive=msg.en; } return; }
 }
 function netSendDiff(){
@@ -1410,7 +1457,8 @@ function netTick(dt){
   for (const id in remotePlayers){ if (now - remotePlayers[id].last > 3500) delete remotePlayers[id]; }
 }
 function netReset(){
-  for (const p of net.peers){ try{ p.pc && p.pc.close(); }catch(e){} }
+  for (const p of net.peers){ try{ p.conn && p.conn.close(); }catch(e){} }
+  if (net.peerObj){ try{ net.peerObj.destroy(); }catch(e){} net.peerObj=null; }
   net.active=false; net.isHost=false; net.peers=[]; net._pendingHostPeer=null;
   remotePlayers={}; netShadow=null; closeNetPanel();
 }
@@ -1441,13 +1489,38 @@ function askWorldCode(){ document.getElementById('wsCodeWrap').style.display = '
 
 /* ============ World save / load (localStorage) ============ */
 const SAVE_INDEX_KEY = 'sv_index';
+// Compact serialization: run-length-encoded tile types + sparse extras (only tiles carrying state).
+// Keeps a full 80x60 world down to a few KB so it fits in localStorage.
 function serializeWorld(){
-  const w = new Array(MAPH);
-  for (let y=0;y<MAPH;y++){ const row=new Array(MAPW); for(let x=0;x<MAPW;x++){ const t=world[y][x]; const o={t:t.type,hp:t.hp}; if(t.maxHp!=null)o.m=t.maxHp; if(t.stage!=null)o.s=t.stage; if(t.reinforced)o.r=t.reinforced; row[x]=o; } w[y]=row; }
-  return w;
+  const types = new Array(MAPW*MAPH); const extras = {};
+  for (let y=0;y<MAPH;y++) for (let x=0;x<MAPW;x++){
+    const t=world[y][x]; const i=y*MAPW+x; types[i]=t.type; const e={};
+    if (t.hp!=null && t.hp!==tileHP(t.type)) e.hp=t.hp;
+    if (t.maxHp!=null) e.m=t.maxHp;
+    if (t.def!=null) e.d=t.def; if (t.defMax!=null) e.dm=t.defMax;
+    if (t.shield) e.sh=t.shield; if (t.shieldMax) e.shm=t.shieldMax;
+    if (t.reinforced) e.r=t.reinforced; if (t.stage!=null) e.s=t.stage;
+    if (Object.keys(e).length) extras[i]=e;
+  }
+  const rle=[]; let prev=types[0], cnt=1;
+  for (let i=1;i<types.length;i++){ if(types[i]===prev) cnt++; else { rle.push(prev,cnt); prev=types[i]; cnt=1; } }
+  rle.push(prev,cnt);
+  return { rle, extras };
 }
 function deserializeWorld(w){
-  world=[]; for(let y=0;y<MAPH;y++){ world[y]=[]; for(let x=0;x<MAPW;x++){ const o=w[y][x]; const tile={type:o.t,hp:o.hp,timer:0}; if(o.m!=null)tile.maxHp=o.m; if(o.s!=null)tile.stage=o.s; if(o.r)tile.reinforced=o.r; world[y][x]=tile; } }
+  world=[]; for(let y=0;y<MAPH;y++) world[y]=new Array(MAPW);
+  if (Array.isArray(w)){ // legacy array-of-rows format
+    for(let y=0;y<MAPH;y++) for(let x=0;x<MAPW;x++){ const o=w[y][x]; const tile={type:o.t,hp:o.hp,timer:0}; if(o.m!=null)tile.maxHp=o.m; if(o.s!=null)tile.stage=o.s; if(o.r)tile.reinforced=o.r; world[y][x]=tile; }
+    return;
+  }
+  const types=new Array(MAPW*MAPH); let idx=0;
+  const rle=w.rle||[]; for(let i=0;i<rle.length;i+=2){ const val=rle[i], n=rle[i+1]; for(let k=0;k<n;k++) types[idx++]=val; }
+  const extras=w.extras||{};
+  for(let i=0;i<MAPW*MAPH;i++){ const x=i%MAPW, y=Math.floor(i/MAPW); const type=types[i]==null?T.GRASS:types[i]; const tile={type,timer:0}; const e=extras[i];
+    tile.hp = (e && e.hp!=null) ? e.hp : tileHP(type);
+    if (e){ if(e.m!=null)tile.maxHp=e.m; if(e.d!=null)tile.def=e.d; if(e.dm!=null)tile.defMax=e.dm; if(e.sh)tile.shield=e.sh; if(e.shm)tile.shieldMax=e.shm; if(e.r)tile.reinforced=e.r; if(e.s!=null)tile.stage=e.s; }
+    world[y][x]=tile;
+  }
 }
 function getSaveIndex(){ try{ return JSON.parse(localStorage.getItem(SAVE_INDEX_KEY)||'[]'); }catch(e){ return []; } }
 function setSaveIndex(idx){ try{ localStorage.setItem(SAVE_INDEX_KEY, JSON.stringify(idx)); }catch(e){} }
@@ -1458,7 +1531,7 @@ function saveWorld(){
   const id = 'sv_'+Date.now();
   const playerCopy = JSON.parse(JSON.stringify(Object.assign({}, player, {placingItem:null})));
   const data = { v:1, name, ts:Date.now(), gameMode, dayNum, time, eternalNightDay, eternalNightActive, crystalPlaced, crystalActivated, crystalBonusDays, crystalDevicePos, player:playerCopy, stats:JSON.parse(JSON.stringify(stats)), chests:JSON.parse(JSON.stringify(chests)), world:serializeWorld() };
-  try{ localStorage.setItem(id, JSON.stringify(data)); }catch(e){ showToast('שמירה נכשלה (אין מקום פנוי)'); return; }
+  try{ localStorage.setItem(id, JSON.stringify(data)); }catch(e){ showToast('שמירה נכשלה — פתח את הקובץ בדפדפן רגיל (לא בתוך אפליקציה)'); return; }
   const idx = getSaveIndex(); idx.unshift({ id, name, ts:data.ts, dayNum, gameMode }); setSaveIndex(idx.slice(0,30));
   showToast('💾 העולם נשמר: '+name); refreshSavesUI();
 }
@@ -1487,17 +1560,18 @@ function deleteSave(id){ localStorage.removeItem(id); setSaveIndex(getSaveIndex(
 function refreshSavesUI(){
   const idx = getSaveIndex(); const sec=document.getElementById('savesSection'); const list=document.getElementById('savesList');
   if (!sec) return;
-  if (!idx.length){ sec.style.display='none'; return; }
-  sec.style.display='block';
-  list.innerHTML = idx.map(s=>`<div class="saveRow"><span class="sName">${s.name} (יום ${s.dayNum})</span><button class="loadB" onclick="loadWorld('${s.id}')">טען</button><button class="delB" onclick="deleteSave('${s.id}')">🗑️</button></div>`).join('');
+  sec.style.display='block';   // always visible so the player knows where saved worlds live
+  list.innerHTML = idx.length
+    ? idx.map(s=>`<div class="saveRow"><span class="sName">${s.name} (יום ${s.dayNum})</span><button class="loadB" onclick="loadWorld('${s.id}')">טען</button><button class="delB" onclick="deleteSave('${s.id}')">🗑️</button></div>`).join('')
+    : '<div class="saveRow"><span class="sName" style="color:#8a8266;">עדיין אין עולמות שמורים — שמור עולם דרך ⚙️ הגדרות</span></div>';
 }
 function submitWorldCode(){
   const val = (document.getElementById('wsCodeInput').value||'').trim();
   if (val !== WORLD_TEST_CODE){ showToast('קוד שגוי'); return; }
   // secret code also unlocks editing how many days pass before the eternal night
-  const d = prompt('כמה ימים עד הלילה הנצחי? (ברירת מחדל 5)', String(eternalNightDay));
+  const d = prompt('כמה ימים עד הלילה הנצחי? (ברירת מחדל 5)', String(userEternalDay));
   const parsed = parseInt(d);
-  if (!isNaN(parsed) && parsed >= 1) eternalNightDay = parsed;
+  if (!isNaN(parsed) && parsed >= 1) userEternalDay = parsed;
   startWorld('test');
 }
 
@@ -1509,9 +1583,12 @@ function scaledRound(base){
   v = Math.round(v/5)*5; return Math.max(5, v);
 }
 function mkBonus(emoji, name, value, applyFn){ return { emoji, name, value, valueStr:'+'+value, apply:()=>applyFn(value) }; }
+// Health/food gains are capped at 30 (never scale higher, never doubled) — per request.
+function bonusHF(){ if (Math.random()<0.05) return 6+Math.floor(Math.random()*2); const opts=[10,15,20,25,30]; return opts[Math.floor(Math.random()*opts.length)]; }
+// Bonuses only ever give: max health/food (≤30), blocks/reinforcements, torches or resources. No speed / reach / mining-power.
 const BONUS_POOL = [
-  () => mkBonus('❤️','חיים מקסימליים', scaledRound(30), v=>{ player.maxHealth+=v; player.health=Math.min(player.maxHealth, player.health+v); }),
-  () => mkBonus('🍖','אוכל מקסימלי', scaledRound(30), v=>{ player.maxHunger+=v; player.hunger=Math.min(player.maxHunger, player.hunger+v); }),
+  () => mkBonus('❤️','חיים מקסימליים', bonusHF(), v=>{ player.maxHealth+=v; player.health=Math.min(player.maxHealth, player.health+v); }),
+  () => mkBonus('🍖','אוכל מקסימלי', bonusHF(), v=>{ player.maxHunger+=v; player.hunger=Math.min(player.maxHunger, player.hunger+v); }),
   () => mkBonus('🧱','קירות לתיק', scaledRound(10), v=>{ player.inv.item_wall=(player.inv.item_wall||0)+v; }),
   () => mkBonus('🌵','קירות קוצים', scaledRound(10), v=>{ player.inv.item_wall_thorn=(player.inv.item_wall_thorn||0)+v; }),
   () => mkBonus('🦴','קירות עצמות', scaledRound(10), v=>{ player.inv.item_bone_wall=(player.inv.item_bone_wall||0)+v; }),
@@ -1519,9 +1596,6 @@ const BONUS_POOL = [
   () => mkBonus('🔥','לפידים', scaledRound(10), v=>{ player.inv.torch=(player.inv.torch||0)+v; }),
   () => mkBonus('📦','עץ + אבן', scaledRound(30), v=>{ player.inv.wood+=v; player.inv.stone+=v; }),
   () => mkBonus('🍞','בשר לאכילה', scaledRound(10), v=>{ player.inv.meat=(player.inv.meat||0)+v; }),
-  () => mkBonus('⛏️','כוח חציבה קבוע', Math.max(1, Math.round(scaledRound(5)/5)), v=>{ player.gatherBonus=(player.gatherBonus||0)+v; }),
-  () => mkBonus('📏','מרחק שבירה', 1, v=>{ player.breakReach=Math.min(5, (player.breakReach||2)+v); }),
-  () => mkBonus('🏃','מהירות תנועה', 1, v=>{ player.speedBonus=(player.speedBonus||0)+0.3; }),
 ];
 function generateBonusChoices(n){
   const idx = BONUS_POOL.map((_,i)=>i);
@@ -1534,7 +1608,7 @@ function maybeShowMorningBonus(){
   // (unless the admin "every night" toggle is on, which is handled separately).
   if (gameMode==='test') return;
   if (net.active) return;   // no pausing modal during co-op (would freeze one player)
-  const eligible = (gameMode==='eternal' && dayNum>=2) || (dayNum > eternalNightDay);
+  const eligible = (dayNum > 5) || (gameMode==='challenge' && dayNum>=2) || (eternalNightActive && dayNum>=2);
   if (!eligible || bonusShownForDay >= dayNum) return;
   bonusShownForDay = dayNum;
   openBonusModal(generateBonusChoices(3), false);
@@ -1625,6 +1699,19 @@ function drawGrain(x, y, w, h, color){
   for (let gy=0; gy<h; gy+=step){ for (let gx=0; gx<w; gx+=step){ if (hash2(Math.floor(x+gx), Math.floor(y+gy)) < 0.32){ ctx.fillRect(x+gx, y+gy, 2, 2); } } }
   ctx.globalAlpha = 1; ctx.restore();
 }
+// durability fraction for a built item: prefer the monster hit-count (def), else the player-mining hp
+function builtFrac(o, type){ if(!o) return 1; if(o.defMax) return Math.max(0,o.def||0)/o.defMax; return Math.max(0,o.hp)/((o.maxHp)||tileHP(type)); }
+// grey square ring shown around a reinforced item; brighter when the shield still has charge
+function drawReinforceRing(sx, sy, o){
+  if (!o || !o.reinforced) return;
+  const sf = o.shieldMax ? Math.max(0,(o.shield||0))/o.shieldMax : 0;
+  ctx.save();
+  ctx.strokeStyle = sf>0 ? '#c0c0c0' : '#5a5a5a';
+  ctx.lineWidth = 2.5; ctx.strokeRect(sx+1.5, sy+1.5, TILE-3, TILE-3);
+  ctx.strokeStyle = 'rgba(210,210,210,'+(0.25+0.55*sf)+')'; ctx.lineWidth = 1;
+  ctx.strokeRect(sx+4, sy+4, TILE-8, TILE-8);
+  ctx.restore();
+}
 function drawCracks(cx, cy, frac){
   if (frac >= 0.98) return;
   const cracks = Math.min(10, Math.round((1-frac)*10));
@@ -1707,7 +1794,7 @@ function drawResourceShape(t, sx, sy, tileObj){
   } else if (t===T.CACTUS){
     if (gfxLevel === 5) { ctx.fillStyle='#1e5c2b'; ctx.fillRect(cx-3, cy-13, 6, 22); ctx.fillRect(cx-9, cy-3, 6, 3); ctx.fillRect(cx-9, cy-8, 3, 6); ctx.fillRect(cx+3, cy-7, 6, 3); ctx.fillRect(cx+6, cy-12, 3, 6); ctx.fillStyle='#fff'; ctx.fillRect(cx-1, cy-9, 1, 1); ctx.fillRect(cx+1, cy+1, 1, 1); } else { ctx.fillStyle='#2f7a3f'; ctx.fillRect(cx-3, cy-13, 6, 22); }
   } else if (t===T.WALL){
-    const frac = tileObj ? Math.max(0, tileObj.hp)/((tileObj.maxHp)||tileHP(T.WALL)) : 1;
+    const frac = builtFrac(tileObj, T.WALL);
     // last 10% of durability -> the wall glows red as a warning it's about to give
     let base = '#616161';
     if (frac <= 0.10) base = '#b03a2e'; else if (frac <= 0.35) base = '#8a5a4a';
@@ -1717,7 +1804,7 @@ function drawResourceShape(t, sx, sy, tileObj){
     drawCracks(cx, cy, frac);
   }
   else if (t===T.WALL_THORN) {
-    const frac = tileObj ? Math.max(0, tileObj.hp)/((tileObj.maxHp)||tileHP(T.WALL_THORN)) : 1;
+    const frac = builtFrac(tileObj, T.WALL_THORN);
     ctx.fillStyle= frac<=0.10 ? '#5a3a1a' : '#3a5a2a'; ctx.fillRect(sx+3, sy+3, TILE-6, TILE-6); ctx.strokeStyle='#1e3a15'; ctx.strokeRect(sx+3, sy+3, TILE-6, TILE-6);
     ctx.fillStyle='#8fae4a';
     const spikes=[[cx-8,cy-8],[cx+8,cy-8],[cx-8,cy+8],[cx+8,cy+8],[cx,cy]];
@@ -1725,7 +1812,7 @@ function drawResourceShape(t, sx, sy, tileObj){
     drawCracks(cx, cy, frac);
   }
   else if (t===T.BONE_WALL) {
-    const frac = tileObj ? Math.max(0, tileObj.hp)/((tileObj.maxHp)||tileHP(T.BONE_WALL)) : 1;
+    const frac = builtFrac(tileObj, T.BONE_WALL);
     ctx.fillStyle= frac<=0.10 ? '#c9857a' : '#e8e0d0'; ctx.fillRect(sx+2, sy+2, TILE-4, TILE-4);
     ctx.strokeStyle='#a89e88'; ctx.strokeRect(sx+2, sy+2, TILE-4, TILE-4);
     // stacked bone segments
@@ -1786,6 +1873,8 @@ function drawResourceShape(t, sx, sy, tileObj){
     ctx.fillStyle='#ff9a3d'; ctx.beginPath(); ctx.ellipse(cx, cy-10, 6, 9, 0,0,6.3); ctx.fill();
     ctx.fillStyle='#ffd77a'; ctx.beginPath(); ctx.ellipse(cx, cy-9, 3, 5, 0,0,6.3); ctx.fill();
   }
+  // grey reinforcement ring drawn on top of ANY reinforced built item (wall, furnace, campfire, table...)
+  drawReinforceRing(sx, sy, tileObj);
   ctx.restore();
 }
 
