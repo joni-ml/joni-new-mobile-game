@@ -182,6 +182,7 @@
     <h3>🔑 תפריט מפתח (OP Controls)</h3>
     <div class="toggleRow"><span>👾 מפלצות פעילות</span><input type="checkbox" id="cheatEnemiesToggle" checked onchange="cheatToggleEnemies(this.checked)"></div>
     <div class="toggleRow"><span>🛡️ מצב אלוהים (חסין)</span><input type="checkbox" id="cheatGodToggle" onchange="cheatToggleGod(this.checked)"></div>
+    <div class="toggleRow"><span>🌙 כל לילה: לאקי בלוק + כל הכוחות</span><input type="checkbox" id="cheatNightlyToggle" onchange="cheatToggleNightly(this.checked)"></div>
 
     <h4 style="font-size:11px; margin:10px 0 6px; color:#d9c98a;">⏱️ מנוע בלוקים רנדומליים</h4>
     <div class="settingRow"><label>מרווח זמן לחיפוש (בשניות, 0=כבוי):</label><input type="number" value="1" min="0" step="0.1" onchange="opSetTickDelay(this.value)"></div>
@@ -361,6 +362,7 @@ function opSetTickDelay(val) { opTickDelay = parseFloat(val); if (opTickDelay < 
 function opSetBlocksPerTick(val) { opBlocksPerTick = parseInt(val); if (opBlocksPerTick < 1) opBlocksPerTick = 1; }
 function cheatToggleEnemies(checked){ cheatNoEnemies = !checked; if (cheatNoEnemies) enemies = []; showToast(checked ? 'מפלצות הופעלו' : 'מפלצות כובו'); }
 function cheatToggleGod(checked){ cheatGodMode = checked; showToast(checked ? 'מצב אלוהים פעיל' : 'מצב אלוהים כבוי'); }
+function cheatToggleNightly(checked){ adminNightlyAll = checked; showToast(checked ? '🌙 כל לילה תקבל לאקי בלוק + כל הכוחות' : 'מצב לילה-הכל כבוי'); }
 function cheatSetHealth(){ const v = parseFloat(document.getElementById('cheatHpInput').value); if (!isNaN(v)){ player.maxHealth = Math.max(100, v); player.health = v; showToast('חיים נקבעו ל-'+v); } clearMobileZoomReset(); }
 function cheatGiveRes(){ const k = document.getElementById('cheatResSelect').value; const amt = parseInt(document.getElementById('cheatResAmount').value) || 0; player.inv[k] = (player.inv[k]||0) + amt; showToast('קיבלת '+amt+' '+(names[k]||k)); renderBag(); clearMobileZoomReset(); }
 function cheatSetDarkness(val){ nightDarkness = parseInt(val)/100; document.getElementById('cheatDarkVal').textContent = val+'%'; }
@@ -488,6 +490,7 @@ let eternalNightDay = 5;       // day the eternal night begins (editable via sec
 let stats = { animalsKilled:0, monstersKilled:0, blocksDestroyed:0, maxBreakDist:2, luckyOpened:0, dailyChoices:[] };
 let bonusShownForDay = 0;      // guards against re-triggering the morning bonus in the same day
 let luckyQueue = [];           // pending saved choice-sets, attached to lucky blocks in order they're placed
+let adminNightlyAll = false;   // admin toggle: every night auto-grant a lucky block + every bonus power
 function resetStats(){ stats = { animalsKilled:0, monstersKilled:0, blocksDestroyed:0, maxBreakDist:2, luckyOpened:0, dailyChoices:[] }; }
 function initEntities(){ enemies=[]; animals=[]; particles=[]; projectiles=[]; placedTorches=[]; chests=[]; cropTiles=[]; enemyProjectiles=[]; }
 function initPlayer(){
@@ -895,7 +898,7 @@ function update(dt){
   if (gameOver || !gameStarted || bonusModalOpen) return;
   time += dt; if (time >= CYCLE_LEN){ time = 0; dayNum++; showToast('יום '+dayNum+' מתחיל'); if (dayNum>=eternalNightDay && !crystalActivated){ if(!eternalNightActive){ eternalNightActive = true; showToast('🌑 הלילה הנצחי החל! מפלצות שונות יגיעו וינסו לשבור מה שבנית'); } }
     if (crystalActivated){ crystalBonusDays++; player.maxHealth += 10; player.maxHunger += 10; player.health = Math.min(player.maxHealth, player.health+10); player.hunger = Math.min(player.maxHunger, player.hunger+10); showToast(`💎 כוח הקריסטל גדל! +10 חיים מקס׳, +10 אוכל מקס׳, נזק גבוה יותר (יום ${crystalBonusDays} עם הקריסטל)`); }
-    maybeShowMorningBonus();
+    if (adminNightlyAll) grantNightlyAll(); else maybeShowMorningBonus();
   }
   const isNight = getNightFactor() > 0.45;
   
@@ -1261,10 +1264,22 @@ function generateBonusChoices(n){
 }
 let activeBonusChoices = null, bonusFromLucky = false;
 function maybeShowMorningBonus(){
+  // The bug-testing world keeps the lucky-block / morning bonus OFF so it never interrupts testing
+  // (unless the admin "every night" toggle is on, which is handled separately).
+  if (gameMode==='test') return;
   const eligible = (gameMode==='eternal' && dayNum>=2) || (dayNum > eternalNightDay);
   if (!eligible || bonusShownForDay >= dayNum) return;
   bonusShownForDay = dayNum;
   openBonusModal(generateBonusChoices(3), false);
+}
+// Admin convenience: every passing night, hand over a lucky block AND apply every bonus power at once.
+function grantNightlyAll(){
+  const choices = generateBonusChoices(3);
+  luckyQueue.push(choices);
+  player.inv.item_lucky = (player.inv.item_lucky||0) + 1;
+  BONUS_POOL.forEach(gen => { const c = gen(); c.apply(); stats.dailyChoices.push({ day: dayNum, label: c.emoji + ' ' + c.name + ' ' + c.valueStr }); });
+  showToast('🌙 מצב מנהל: קיבלת לאקי בלוק + כל הכוחות ללילה הזה!');
+  renderBag(); updateHUD();
 }
 function openBonusModal(choices, fromLucky){
   activeBonusChoices = choices; bonusFromLucky = !!fromLucky;
