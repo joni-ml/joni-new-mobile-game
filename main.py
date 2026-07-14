@@ -61,13 +61,21 @@
 
   #toast { position:absolute; top:210px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.85); border:1px solid #d9c98a; padding:6px 16px; border-radius:6px; font-size:11px; color:#d9c98a; opacity:0; transition:opacity 0.3s; pointer-events:none; white-space:nowrap; z-index:30; }
 
-  #chestPanel { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(15,15,20,0.95); border:2px solid #7a6a3a; border-radius:10px; padding:14px; width:240px; display:none; z-index:35; pointer-events:auto; }
+  #chestPanel { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(15,15,20,0.95); border:2px solid #7a6a3a; border-radius:10px; padding:14px; width:240px; display:none; z-index:35; pointer-events:auto; max-height:82vh; }
+  #chestPanel.open { display:flex; flex-direction:column; }
+  #chestList { overflow-y:auto; flex:1; min-height:0; }
+  #chestClose { position:absolute; top:6px; left:10px; color:#c94a3d; font-size:20px; cursor:pointer; line-height:1; z-index:2; }
   .chestRow { display:flex; justify-content:space-between; align-items:center; font-size:12px; padding:5px 0; border-bottom:1px solid #3a3226; }
   .chestRow button { background:#3a5a2a; border:none; color:#fff; padding:4px 10px; border-radius:4px; font-size:11px; }
 
   #touchControls { position:absolute; bottom:0; left:0; right:0; height:48%; display:flex; justify-content:space-between; align-items:flex-end; padding:0 24px 24px; pointer-events:none; z-index:15; }
   #joyZone { width:120px; height:120px; border-radius:50%; background:rgba(255,255,255,0.08); border:2px solid rgba(255,255,255,0.25); position:relative; pointer-events:auto; touch-action:none; }
   #joyStick { width:52px; height:52px; border-radius:50%; background:rgba(217,201,138,0.55); border:2px solid rgba(217,201,138,0.8); position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); pointer-events:none; }
+
+  /* quick-place button that appears next to the joystick while building, so you aim with the left thumb and tap to drop blocks fast */
+  #placeBtn { position:absolute; left:26px; bottom:150px; width:62px; height:62px; border-radius:50%; background:rgba(47,122,234,0.8); border:3px solid #fff; display:none; align-items:center; justify-content:center; font-size:26px; color:#fff; pointer-events:auto; box-shadow:0 4px 10px rgba(0,0,0,0.45); z-index:17; touch-action:none; }
+  #placeBtn.show { display:flex; }
+  #placeBtn:active { transform:scale(0.9); }
 
   #btnHolder { display:flex; flex-direction:column; gap:12px; align-items:center; pointer-events:auto; }
   #interactBtn { width:56px; height:56px; border-radius:50%; background:rgba(217,201,138,0.45); border:2px solid rgba(217,201,138,0.8); display:flex; align-items:center; justify-content:center; font-size:20px; cursor:pointer; color:#fff; box-shadow: 0 4px 8px rgba(0,0,0,0.3); transition: background 0.2s, transform 0.1s; }
@@ -152,7 +160,12 @@
     <h3>⚙️ הגדרות משחק</h3>
     <div class="settingRow"><label>☀️ תאורת מסך (למשחק בשמש):</label><input type="range" min="0.8" max="1.8" step="0.1" value="1.0" oninput="changeAppBrightness(this.value)"></div>
     <div class="settingRow"><label>🕹️ סוג רשת תנועה (Grid Mode):</label><select id="gridMode" onchange="changeGridMode(this.value)"><option value="smooth">🏃 תנועה חופשית (Smooth)</option><option value="quarter">📐 רבע בלוק (1/4 Tile)</option><option value="half">📏 חצי בלוק (1/2 Tile)</option><option value="full">🧱 בלוק מלא (Full Tile)</option></select></div>
-    <div class="settingRow"><label>🎨 רמת יופי וגרפיקה (1-5):</label><input type="range" min="1" max="5" step="1" value="1" oninput="changeGraphics(this.value)"></div>
+    <div class="settingRow"><label>🎨 רמת יופי וגרפיקה (1-6):</label><input type="range" min="1" max="6" step="1" value="1" oninput="changeGraphics(this.value)"></div>
+    <div class="settingRow" id="noiseSection" style="display:none; border-top:1px dashed #4a4230; padding-top:8px;">
+      <label>🎛️ טקסטורה 6 — רעש (סאונד) לבלוקים:</label>
+      <div class="noiseToggleRow"><span>הכל</span><input type="checkbox" id="noiseAll" checked onchange="setAllNoise(this.checked)"></div>
+      <div id="noiseList"></div>
+    </div>
     <div class="settingRow"><label>📱 גודל כללי לממשק (UI Scale):</label><input type="range" min="1.0" max="2.0" step="0.1" value="1.2" oninput="changeUIScale(this.value)"></div>
     <div class="settingRow"><label>🔎 מרחק מצלמה (Zoom):</label><input type="range" min="0.6" max="2.6" step="0.1" value="1.5" oninput="changeZoom(this.value)"></div>
     <div class="settingRow"><label>🕹️ גודל ג'ויסטיק תנועה:</label><input type="range" min="80" max="260" step="5" value="120" oninput="changeJoySize(this.value)"></div>
@@ -212,13 +225,15 @@
   <div id="toast"></div>
 
   <div id="chestPanel">
+    <span id="chestClose" onclick="closeChest()">✕</span>
     <h3>📦 תיבת אחסון</h3>
     <div id="chestList"></div>
-    <button style="width:100%; padding:8px; background:#4a3a2a; color:#fff; border:none; border-radius:6px; margin-top:8px;" onclick="closeChest()">סגור</button>
+    <button style="width:100%; padding:8px; background:#4a3a2a; color:#fff; border:none; border-radius:6px; margin-top:8px; flex-shrink:0;" onclick="closeChest()">סגור</button>
   </div>
 
   <div id="touchControls">
     <div id="joyZone"><div id="joyStick"></div></div>
+    <div id="placeBtn">📍</div>
     <div id="btnHolder"><div id="interactBtn" onclick="tryInteract()">🖐️</div><div id="actionBtn">⚔️</div></div>
   </div>
 
@@ -329,6 +344,11 @@ function tryCheatCode(){
     document.getElementById('settingsPanel').style.display='none';
     document.getElementById('cheatPanel').style.display='block';
     showToast('תפריט מפתח נפתח 🔑');
+  } else if (val === '2020'){
+    document.getElementById('cheatCodeInput').value='';
+    const d = prompt('כמה ימים עד הלילה הנצחי? (נוכחי: '+eternalNightDay+')', String(eternalNightDay));
+    const parsed = parseInt(d);
+    if (!isNaN(parsed) && parsed >= 1){ eternalNightDay = parsed; showToast('🔑 כמות הימים עודכנה ל-'+parsed); }
   } else { showToast('קוד שגוי'); }
   clearMobileZoomReset();
 }
@@ -349,12 +369,26 @@ function cheatSetCycleLength(val){ CYCLE_LEN = parseInt(val); DUSK_LEN = Math.ma
 function cheatSetTimeOfDay(which){ const nightCore = CYCLE_LEN * NIGHT_CORE_RATIO; const dayLen = CYCLE_LEN - nightCore - DUSK_LEN - DAWN_LEN; if (which==='day'){ time = dayLen*0.5; showToast('הפכת ליום'); } else { time = dayLen + DUSK_LEN + nightCore*0.5; showToast('הפכת ללילה'); } }
 function toggleSettings(){ const p = document.getElementById('settingsPanel'); p.style.display = p.style.display === 'block' ? 'none' : 'block'; if(p.style.display === 'block'){ document.getElementById('bagPanel').classList.remove('open'); document.getElementById('cheatPanel').style.display='none'; document.getElementById('statsPanel').style.display='none'; } clearMobileZoomReset(); }
 function changeZoom(val) { gameZoom = parseFloat(val); }
-function changeGraphics(val) { gfxLevel = parseInt(val); showToast('איכות גרפיקה שונתה לרמה ' + val); }
+function changeGraphics(val) {
+  gfxLevel = parseInt(val);
+  const ns = document.getElementById('noiseSection');
+  if (ns){ ns.style.display = gfxLevel >= 6 ? 'flex' : 'none'; if (gfxLevel >= 6) renderNoiseList(); }
+  showToast(gfxLevel>=6 ? 'טקסטורה 6 פעילה — אפשר לכוון רעש לכל בלוק' : ('איכות גרפיקה שונתה לרמה ' + val));
+}
+const NOISE_LABELS = { wall:'🧱 קיר אפור', bone_wall:'🦴 קיר עצמות', temple:'🏛️ רצפת המקדש', floor_grass:'🌿 רצפת דשא', floor_sand:'🏜️ רצפת מדבר', floor_snow:'❄️ רצפת שלג' };
+function renderNoiseList(){
+  const list = document.getElementById('noiseList'); if (!list) return;
+  list.innerHTML = Object.keys(NOISE_LABELS).map(k=>`<div class="noiseToggleRow"><span>${NOISE_LABELS[k]}</span><input type="checkbox" ${blockNoise[k]?'checked':''} onchange="toggleBlockNoise('${k}', this.checked)"></div>`).join('');
+  const all = Object.keys(NOISE_LABELS).every(k=>blockNoise[k]);
+  const allBox = document.getElementById('noiseAll'); if (allBox) allBox.checked = all;
+}
+function toggleBlockNoise(k, on){ blockNoise[k] = on; }
+function setAllNoise(on){ for (const k in NOISE_LABELS) blockNoise[k] = on; renderNoiseList(); }
 function changeGridMode(val) { motionGrid = val; showToast('רשת תנועה שונתה!'); player.moving = false; }
 function changeAppBrightness(val) { document.getElementById('game').style.filter = `brightness(${val})`; }
 function changeJoySize(val) { const zone = document.getElementById('joyZone'); zone.style.width = val + 'px'; zone.style.height = val + 'px'; JOY_R = parseInt(val) * 0.4; }
 function changeActionSize(val) { const btn = document.getElementById('actionBtn'); btn.style.width = val + 'px'; btn.style.height = val + 'px'; btn.style.fontSize = (parseInt(val) * 0.33) + 'px'; const ibtn = document.getElementById('interactBtn'); ibtn.style.width = (parseInt(val) * 0.7) + 'px'; ibtn.style.height = (parseInt(val) * 0.7) + 'px'; ibtn.style.fontSize = (parseInt(val) * 0.25) + 'px'; }
-function changeUIScale(val) { document.getElementById('hudLeft').style.transform = `scale(${val})`; document.getElementById('minimap').style.transform = `scale(${val})`; document.getElementById('actionMenu').style.transform = `scale(${val})`; document.getElementById('bagPanel').style.transform = `scale(${val})`; document.getElementById('settingsPanel').style.transform = `scale(${val})`; }
+function changeUIScale(val) { document.getElementById('hudLeft').style.transform = `scale(${val})`; document.getElementById('minimap').style.transform = `scale(${val})`; document.getElementById('actionMenu').style.transform = `scale(${val})`; document.getElementById('bagPanel').style.transform = `scale(${val})`; document.getElementById('settingsPanel').style.transform = `scale(${val})`; document.getElementById('statsPanel').style.transform = `scale(${val})`; }
 
 let actx = null;
 function ensureAudio(){ if (!actx){ try{ actx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } }
@@ -372,6 +406,10 @@ function joyMove(e){ if(!joyActive) return; let t; if (e.changedTouches){ t = Ar
 function joyEnd(){ joyActive=false; joyDX=0; joyDY=0; joyTouchId=null; joyStick.style.transform='translate(-50%,-50%)'; }
 joyZone.addEventListener('touchstart', e=>{e.preventDefault(); joyStart(e);}, {passive:false}); joyZone.addEventListener('touchmove', e=>{e.preventDefault(); joyMove(e);}, {passive:false}); joyZone.addEventListener('touchend', e=>{e.preventDefault(); joyEnd();}, {passive:false}); joyZone.addEventListener('touchcancel', e=>{e.preventDefault(); joyEnd();}, {passive:false});
 let actionHeld = false; const actionBtn = document.getElementById('actionBtn'); actionBtn.addEventListener('touchstart', e=>{e.preventDefault(); ensureAudio(); actionHeld=true;}, {passive:false}); actionBtn.addEventListener('touchend', e=>{e.preventDefault(); actionHeld=false;}, {passive:false});
+// Quick-place button: aim with the joystick (frontPos already follows it) and tap here to drop a block instantly.
+const placeBtnEl = document.getElementById('placeBtn');
+placeBtnEl.addEventListener('touchstart', e=>{ e.preventDefault(); ensureAudio(); tryInteract(); }, {passive:false});
+placeBtnEl.addEventListener('click', e=>{ e.preventDefault(); if (player.placingItem) tryInteract(); });
 function toggleBag(){ 
     const p = document.getElementById('bagPanel'); 
     p.classList.toggle('open'); 
@@ -680,7 +718,7 @@ window.tryInteract = function() {
             world[ty][tx] = newTile;
             cropTiles.push(newTile);
             showToast('שתלת זרעים! 🌱 יגדל עם הזמן');
-            player.placingItem = null;
+            if (!canCraft(r)) player.placingItem = null;   // keep planting while you still have seeds
             renderBag();
             return;
         }
@@ -690,7 +728,7 @@ window.tryInteract = function() {
             player.inv.torch -= 1;
             world[ty][tx] = { type:T.PLACED_TORCH, hp:tileHP(T.PLACED_TORCH), timer:0 };
             showToast('הצבת לפיד על הרצפה! 🔥');
-            player.placingItem = null;
+            if ((player.inv.torch||0) <= 0) player.placingItem = null;   // keep placing while torches remain
             renderBag();
             return;
         }
@@ -703,7 +741,8 @@ window.tryInteract = function() {
                 chests.push({x: tx*TILE + TILE/2, y: ty*TILE + TILE/2, items:{}});
                 player.inv[itemKey] -= 1;
                 showToast('הצבת ' + r.name + ' בהצלחה! 🎉');
-                player.placingItem = null; renderBag(); return;
+                if ((player.inv[itemKey]||0) <= 0) player.placingItem = null;
+                renderBag(); return;
             }
 
             let placedType = T.WALL;
@@ -725,14 +764,32 @@ window.tryInteract = function() {
                 crystalPlaced = true; crystalActivated = false;
                 crystalDevicePos = { x: tx*TILE+TILE/2, y: ty*TILE+TILE/2, tx, ty };
                 showToast('הצבת את מכשיר הקריסטל! גש אליו ולחץ 🖐️ כדי להפעיל אותו 💎');
+                player.placingItem = null;   // crystal device is one-off
             } else {
                 showToast('הצבת ' + r.name + ' בהצלחה! 🎉');
+                if ((player.inv[itemKey]||0) <= 0) player.placingItem = null;   // keep building the same block until you run out
             }
-            player.placingItem = null; 
             renderBag();
             return;
         }
         return;
+    }
+
+    // Shovel: dig ground that touches water and the water spreads into it — lets you carve your own lakes/canals.
+    if (player.equipment && player.equipment.shovel){
+        const dp = frontPos(); const dtx = Math.floor(dp.fx/TILE), dty = Math.floor(dp.fy/TILE);
+        if (world[dty] && world[dty][dtx]){
+            const dg = world[dty][dtx];
+            if (dg.type===T.GRASS || dg.type===T.SAND || dg.type===T.SNOW){
+                const nearWater = [[0,-1],[0,1],[-1,0],[1,0]].some(([ox,oy])=> world[dty+oy] && world[dty+oy][dtx+ox] && world[dty+oy][dtx+ox].type===T.WATER);
+                if (nearWater){
+                    world[dty][dtx] = { type:T.WATER, hp:0, timer:0 };
+                    stats.blocksDestroyed++; sfxGather(); spawnParticle(dp.fx, dp.fy, '#2a5a8a', 5);
+                    showToast('🥄 חפרת תעלה — המים התפשטו!');
+                    return;
+                }
+            }
+        }
     }
 
     // Crystal device activation
@@ -898,13 +955,16 @@ function update(dt){
   updateEnemies(dt); updateAnimals(dt); updateProjectiles(dt); updateParticles(dt);
   
   const ibtn = document.getElementById('interactBtn');
+  const pbtn = document.getElementById('placeBtn');
   if (player.placingItem) {
       let bEmoji = player.placingItem.name.split(' ')[0] || '🧱';
       ibtn.innerHTML = bEmoji;
       ibtn.style.background = "rgba(47, 122, 234, 0.85)";
+      pbtn.classList.add('show'); pbtn.textContent = bEmoji;
   } else {
       ibtn.innerHTML = '🖐️';
       ibtn.style.background = "rgba(217, 201, 138, 0.45)";
+      pbtn.classList.remove('show');
   }
 
   if (player.health<=0 && !cheatGodMode) endGame(); updateHUD();
@@ -1147,7 +1207,7 @@ function updateAnimals(dt){
 function updateProjectiles(dt){ for (const p of projectiles){ p.x += p.vx*TILE*dt*4; p.y += p.vy*TILE*dt*4; p.life -= dt; for (const e of enemies){ if (Math.hypot(e.x-p.x,e.y-p.y) < 14){ e.hp -= p.dmg; p.life=0; if(e.hp<=0){ enemies=enemies.filter(x=>x!==e); stats.monstersKilled++; player.inv.bones+=2; if(e.eatenLoot){ for(const k in e.eatenLoot) player.inv[k]=(player.inv[k]||0)+e.eatenLoot[k]; } renderBag(); } } } } projectiles = projectiles.filter(p=>p.life>0); }
 function spawnParticle(x,y,color,r){ particles.push({x,y,color,r:r||4,life:0.6,vy:-20}); } function updateParticles(dt){ for(const p of particles){ p.life-=dt; p.y+=p.vy*dt; } particles = particles.filter(p=>p.life>0); }
 
-let openChestRef = null; function openChest(c){ openChestRef = c; document.getElementById('chestPanel').style.display = 'block'; renderChest(); } function closeChest(){ document.getElementById('chestPanel').style.display='none'; openChestRef=null; } function renderChest(){ const list = document.getElementById('chestList'); list.innerHTML = ''; const keys = ['wood','stone','coal','iron','iron_ingot','berry','meat','bones','wheat','seeds','bowl','dough','bread','cooked_meat','fruit_salad']; keys.forEach(k=>{ if(player.inv[k]!==undefined){ const row = document.createElement('div'); row.className='chestRow'; row.innerHTML = `<span>${names[k]}: תיק ${player.inv[k]||0} | תיבה ${openChestRef.items[k]||0}</span><span><button onclick="chestTransfer('${k}',1)">➡️</button><button onclick="chestTransfer('${k}',-1)">⬅️</button></span>`; list.appendChild(row); } }); } function chestTransfer(k, dir){ if (!openChestRef) return; if (dir>0){ if ((player.inv[k]||0)>0){ player.inv[k]--; openChestRef.items[k]=(openChestRef.items[k]||0)+1; } } else { if ((openChestRef.items[k]||0)>0){ openChestRef.items[k]--; player.inv[k]=(player.inv[k]||0)+1; } } renderChest(); renderBag(); }
+let openChestRef = null; function openChest(c){ openChestRef = c; document.getElementById('chestPanel').classList.add('open'); renderChest(); } function closeChest(){ document.getElementById('chestPanel').classList.remove('open'); openChestRef=null; } function renderChest(){ const list = document.getElementById('chestList'); list.innerHTML = ''; const keys = ['wood','stone','coal','iron','iron_ingot','berry','meat','bones','wheat','seeds','bowl','dough','bread','cooked_meat','fruit_salad']; keys.forEach(k=>{ if(player.inv[k]!==undefined){ const row = document.createElement('div'); row.className='chestRow'; row.innerHTML = `<span>${names[k]}: תיק ${player.inv[k]||0} | תיבה ${openChestRef.items[k]||0}</span><span><button onclick="chestTransfer('${k}',1)">➡️</button><button onclick="chestTransfer('${k}',-1)">⬅️</button></span>`; list.appendChild(row); } }); } function chestTransfer(k, dir){ if (!openChestRef) return; if (dir>0){ if ((player.inv[k]||0)>0){ player.inv[k]--; openChestRef.items[k]=(openChestRef.items[k]||0)+1; } } else { if ((openChestRef.items[k]||0)>0){ openChestRef.items[k]--; player.inv[k]=(player.inv[k]||0)+1; } } renderChest(); renderBag(); }
 function endGame(){ gameOver=true; document.getElementById('msg').style.display='block'; document.getElementById('survivedDays').textContent=dayNum; } function restart(){ document.getElementById('msg').style.display='none'; initGame(); }
 
 /* ============ World selection start screen ============ */
@@ -1604,7 +1664,7 @@ function drawMinimap(){ mmCtx.clearRect(0,0,90,90); const scale = 90/(28*TILE); 
 function updateHUD(){ document.querySelector('#health .bar-fill').style.width = Math.max(0,(player.health/player.maxHealth)*100)+'%'; document.querySelector('#hunger .bar-fill').style.width = Math.max(0,(player.hunger/player.maxHunger)*100)+'%'; document.getElementById('dayNum').textContent = dayNum; const nf = getNightFactor(); let label = '☀️ יום'; if (eternalNightActive && !crystalActivated) label = '🌑 לילה נצחי'; else if (nf>0.66) label = '🌙 לילה'; else if (nf>0.05) label = '🌆 דמדומים'; document.getElementById('timeOfDay').textContent = label; }
 function renderBag(){ 
     const wr = document.getElementById('weaponRow'); wr.innerHTML=''; 
-    const weapons = [{id:'sword',icon:'🗡️'},{id:'iron_sword',icon:'🗡️ (ברזל)'},{id:'bow',icon:'🏹'}]; 
+    const weapons = [{id:'sword',icon:'🗡️'},{id:'iron_sword',icon:'⚔️'},{id:'bow',icon:'🏹'}];
     weapons.forEach(w=>{ 
         if ((w.id==='bow' && !player.equipment.bow) || (w.id==='iron_sword' && !player.equipment.iron_sword) || (w.id==='sword' && player.equipment.iron_sword)) return; 
         const d = document.createElement('div'); d.className = 'weaponIcon' + (player.activeWeapon===w.id ? ' active':''); d.textContent = w.icon; d.onclick = ()=>{ player.activeWeapon=w.id; renderBag(); }; wr.appendChild(d); 
