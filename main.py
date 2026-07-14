@@ -80,6 +80,43 @@
   .cheatBtnRow button, .fullBtn { flex:1; padding:7px; background:#3a5a2a; color:#fff; border:none; border-radius:5px; font-size:10px; cursor:pointer; }
   .fullBtn { width:100%; margin-bottom:8px; }
   .toggleRow { display:flex; justify-content:space-between; align-items:center; font-size:11px; margin-bottom:10px; }
+
+  /* ---- World-select start screen ---- */
+  #worldSelect { position:absolute; inset:0; background:radial-gradient(circle at 50% 30%, #1a2f1a, #0a0d10 80%); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:60; pointer-events:auto; padding:20px; overflow-y:auto; }
+  #worldSelect h1 { color:#d9c98a; font-size:26px; margin-bottom:6px; text-shadow:0 2px 6px #000; }
+  #worldSelect .sub { color:#8a8266; font-size:12px; margin-bottom:20px; }
+  .worldCard { width:min(88vw, 340px); background:rgba(20,22,28,0.92); border:2px solid #4a4230; border-radius:12px; padding:14px 16px; margin-bottom:12px; cursor:pointer; transition:transform 0.1s, border-color 0.2s; }
+  .worldCard:active { transform:scale(0.97); }
+  .worldCard:hover { border-color:#d9c98a; }
+  .worldCard .wt { font-size:16px; color:#e8e0c8; margin-bottom:4px; }
+  .worldCard .wd { font-size:11px; color:#9a927a; line-height:1.5; }
+  .worldCard.locked { border-color:#5a3a3a; }
+  #wsCodeWrap { display:flex; gap:6px; width:min(88vw,340px); margin-top:4px; }
+  #wsCodeWrap input { flex:1; background:#222; color:#fff; border:1px solid #4a4230; padding:8px; border-radius:6px; font-size:16px; font-family:inherit; }
+  #wsCodeWrap button { padding:8px 14px; background:#5a4a2a; color:#fff; border:none; border-radius:6px; cursor:pointer; font-family:inherit; }
+
+  /* ---- Morning bonus / lucky choice modal ---- */
+  #bonusModal { position:absolute; inset:0; background:rgba(0,0,0,0.72); display:none; flex-direction:column; align-items:center; justify-content:center; z-index:55; pointer-events:auto; padding:16px; }
+  #bonusModal.open { display:flex; }
+  #bonusModal .bx { position:relative; background:rgba(18,20,26,0.98); border:2px solid #d9c98a; border-radius:14px; padding:18px 16px 16px; width:min(92vw, 380px); box-shadow:0 8px 30px rgba(0,0,0,0.6); }
+  #bonusModal h2 { color:#f5c518; font-size:18px; text-align:center; margin-bottom:2px; }
+  #bonusModal .bsub { color:#9a927a; font-size:11px; text-align:center; margin-bottom:14px; }
+  .bonusChoice { display:flex; align-items:center; gap:10px; background:rgba(255,255,255,0.04); border:1px solid #4a4230; border-radius:10px; padding:12px; margin-bottom:10px; cursor:pointer; transition:transform 0.1s, border-color 0.2s; }
+  .bonusChoice:active { transform:scale(0.98); }
+  .bonusChoice:hover { border-color:#f5c518; }
+  .bonusChoice .bemoji { font-size:26px; width:34px; text-align:center; }
+  .bonusChoice .binfo { flex:1; }
+  .bonusChoice .bname { font-size:14px; color:#e8e0c8; }
+  .bonusChoice .bval { font-size:12px; color:#73c745; font-weight:bold; }
+  #bonusLater { width:100%; padding:10px; background:#3a3226; color:#d9c98a; border:1px dashed #6a5a3a; border-radius:8px; cursor:pointer; font-family:inherit; font-size:12px; margin-top:2px; }
+  #bonusX { position:absolute; top:8px; left:12px; color:#c94a3d; font-size:22px; cursor:pointer; line-height:1; }
+
+  /* ---- Stats panel ---- */
+  #statsPanel { position:absolute; top:58px; right:10px; background:rgba(15,15,20,0.97); border:1px solid #d9c98a; border-radius:10px; padding:12px; width:230px; display:none; max-height:70vh; overflow-y:auto; pointer-events:auto; z-index:26; box-shadow:0 6px 16px rgba(0,0,0,0.6); }
+  #statsPanel h3 { font-size:12px; margin:8px 0 6px; color:#d9c98a; border-bottom:1px solid #4a4230; padding-bottom:4px; }
+  #statsPanel .statRow { display:flex; justify-content:space-between; font-size:11px; padding:4px 2px; border-bottom:1px solid rgba(255,255,255,0.05); }
+  #statsPanel .statRow b { color:#73c745; }
+  .noiseToggleRow { display:flex; justify-content:space-between; align-items:center; font-size:11px; margin-bottom:8px; }
 </style>
 </head>
 <body>
@@ -98,6 +135,7 @@
 
   <div id="actionMenu">
     <div class="menuBtn" onclick="toggleBag()">🎒</div>
+    <div class="menuBtn" onclick="toggleStats()">📊</div>
     <div class="menuBtn" onclick="toggleSettings()">⚙️</div>
   </div>
 
@@ -185,6 +223,45 @@
   </div>
 
   <div id="msg"><h2 id="msgTitle" style="color:#c94a3d; margin-bottom:10px;">מתת!</h2><p id="msgBody">שרדת <span id="survivedDays">0</span> ימים</p><button onclick="restart()">התחל מחדש</button></div>
+
+  <div id="bonusModal">
+    <div class="bx">
+      <span id="bonusX" onclick="bonusDefer()">✕</span>
+      <h2 id="bonusTitle">🌅 בוקר טוב! בחר בונוס</h2>
+      <div class="bsub" id="bonusSub">בחר אחד מהשלושה — או קח לאקי בלוק לאחר כך</div>
+      <div id="bonusChoices"></div>
+      <button id="bonusLater" onclick="bonusDefer()">📦 אחר כך (קבל לאקי בלוק לתיק)</button>
+    </div>
+  </div>
+
+  <div id="statsPanel">
+    <h3>📊 סטטיסטיקות</h3>
+    <div id="statsBody"></div>
+    <h3>🏆 שדרוגים שבחרת</h3>
+    <div id="statsChoices"></div>
+    <button style="width:100%; padding:8px; background:#4a3a2a; color:#fff; border:none; border-radius:6px; margin-top:8px;" onclick="toggleStats()">סגור</button>
+  </div>
+
+  <div id="worldSelect">
+    <h1>🌍 שרידות</h1>
+    <div class="sub">בחר עולם כדי להתחיל</div>
+    <div class="worldCard" onclick="startWorld('crystal')">
+      <div class="wt">💎 עולם הקריסטל</div>
+      <div class="wd">המשחק הרגיל. מצא ובנה את הקריסטל לפני היום החמישי כדי לעצור את הלילה הנצחי.</div>
+    </div>
+    <div class="worldCard" onclick="startWorld('eternal')">
+      <div class="wt">🌑 עולם ללא קריסטל</div>
+      <div class="wd">אין קריסטל — לילה נצחי מההתחלה. המטרה: לשרוד כמה שיותר זמן. מסוכן מאוד!</div>
+    </div>
+    <div class="worldCard locked" onclick="askWorldCode()">
+      <div class="wt">🔒 עולם ניסיון (דורש קוד)</div>
+      <div class="wd">עולם בדיקה עם כל הבלוקים והחומרים מוכנים, כדי לבדוק באגים במהירות. הזן קוד סודי.</div>
+    </div>
+    <div id="wsCodeWrap" style="display:none;">
+      <input type="text" id="wsCodeInput" inputmode="numeric" placeholder="קוד סודי">
+      <button onclick="submitWorldCode()">פתח</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -270,7 +347,7 @@ function cheatSetDarkness(val){ nightDarkness = parseInt(val)/100; document.getE
 function cheatSetLightRadius(val){ torchLightRadius = parseInt(val); document.getElementById('cheatLightVal').textContent = val; }
 function cheatSetCycleLength(val){ CYCLE_LEN = parseInt(val); DUSK_LEN = Math.max(5, CYCLE_LEN*0.08); DAWN_LEN = DUSK_LEN; document.getElementById('cheatCycleVal').textContent = val; showToast('אורך מחזור יום/לילה: '+val+' שניות'); }
 function cheatSetTimeOfDay(which){ const nightCore = CYCLE_LEN * NIGHT_CORE_RATIO; const dayLen = CYCLE_LEN - nightCore - DUSK_LEN - DAWN_LEN; if (which==='day'){ time = dayLen*0.5; showToast('הפכת ליום'); } else { time = dayLen + DUSK_LEN + nightCore*0.5; showToast('הפכת ללילה'); } }
-function toggleSettings(){ const p = document.getElementById('settingsPanel'); p.style.display = p.style.display === 'block' ? 'none' : 'block'; if(p.style.display === 'block'){ document.getElementById('bagPanel').classList.remove('open'); document.getElementById('cheatPanel').style.display='none'; } clearMobileZoomReset(); }
+function toggleSettings(){ const p = document.getElementById('settingsPanel'); p.style.display = p.style.display === 'block' ? 'none' : 'block'; if(p.style.display === 'block'){ document.getElementById('bagPanel').classList.remove('open'); document.getElementById('cheatPanel').style.display='none'; document.getElementById('statsPanel').style.display='none'; } clearMobileZoomReset(); }
 function changeZoom(val) { gameZoom = parseFloat(val); }
 function changeGraphics(val) { gfxLevel = parseInt(val); showToast('איכות גרפיקה שונתה לרמה ' + val); }
 function changeGridMode(val) { motionGrid = val; showToast('רשת תנועה שונתה!'); player.moving = false; }
@@ -298,9 +375,10 @@ let actionHeld = false; const actionBtn = document.getElementById('actionBtn'); 
 function toggleBag(){ 
     const p = document.getElementById('bagPanel'); 
     p.classList.toggle('open'); 
-    if(p.classList.contains('open')){ 
-        document.getElementById('settingsPanel').style.display = 'none'; 
-        document.getElementById('cheatPanel').style.display='none'; 
+    if(p.classList.contains('open')){
+        document.getElementById('settingsPanel').style.display = 'none';
+        document.getElementById('cheatPanel').style.display='none';
+        document.getElementById('statsPanel').style.display='none';
         player.placingItem = null; // ביטול הנחת חפץ כשפותחים תיק שוב
         renderBag(); 
     } 
@@ -365,10 +443,14 @@ function isWater(t){ return t.type===T.WATER; }
 
 let enemies, animals, particles, projectiles, placedTorches, chests, cropTiles;
 let player, camX, camY, time, dayNum, gameOver, countTimer=0;
+let gameMode = 'crystal';      // 'crystal' | 'eternal' | 'test'
+let gameStarted = false;       // stays false until a world is picked
+let bonusModalOpen = false;    // pauses the world while the morning-bonus modal is up
+let eternalNightDay = 5;       // day the eternal night begins (editable via secret code 2020)
 let stats = { animalsKilled:0, monstersKilled:0, blocksDestroyed:0, maxBreakDist:2, luckyOpened:0, dailyChoices:[] };
+let bonusShownForDay = 0;      // guards against re-triggering the morning bonus in the same day
+let luckyQueue = [];           // pending saved choice-sets, attached to lucky blocks in order they're placed
 function resetStats(){ stats = { animalsKilled:0, monstersKilled:0, blocksDestroyed:0, maxBreakDist:2, luckyOpened:0, dailyChoices:[] }; }
-// Fully implemented in the bonus/lucky UI stage; stub keeps early builds safe.
-function openLuckyBlock(choices){ stats.luckyOpened++; showToast('🟨 פתחת לאקי בלוק!'); }
 function initEntities(){ enemies=[]; animals=[]; particles=[]; projectiles=[]; placedTorches=[]; chests=[]; cropTiles=[]; enemyProjectiles=[]; }
 function initPlayer(){
   const gx = Math.floor(MAPW/2), gy = Math.floor(MAPH*0.42);
@@ -377,12 +459,32 @@ function initPlayer(){
     inv:{ wood:0, stone:0, coal:0, iron:0, iron_ingot:0, berry:0, meat:0, torch:0, bones:0, wheat:0, seeds:0, bowl:0, dough:0, bread:0, cooked_meat:0, fruit_salad:0, crystal:0, reinforcement:0,
           item_wall:0, item_wall_thorn:0, item_bone_wall:0, item_campfire:0, item_furnace:0, item_crafting_table:0, item_upgraded_table:0, item_chest:0, item_crystal_device:0, item_lucky:0 },
     equipment:{}, activeWeapon:'sword', attackCd:0, stepSfxCd:0, nearFire:0, walkFrame:0, isWalking:false, hurtSfxCd:0,
-    placingItem: null, speedBoostTimer: 0, efficiencyBoostTimer: 0
+    placingItem: null, speedBoostTimer: 0, efficiencyBoostTimer: 0,
+    gatherBonus: 0, breakReach: 2, speedBonus: 0   // permanent bonuses from morning choices
   };
 }
 function initGame(){
-  genWorld(); initEntities(); initPlayer(); resetStats(); time = 0; dayNum = 1; gameOver=false; tickAcc=0; countTimer=0;
+  genWorld(); initEntities(); initPlayer(); resetStats();
+  time = 0; dayNum = 1; gameOver=false; tickAcc=0; countTimer=0;
+  bonusShownForDay = 0; luckyQueue = [];
+  // reset run-scoped crystal / eternal-night state (important on restart)
+  crystalPlaced=false; crystalActivated=false; crystalDevicePos=null; crystalBonusDays=0;
+  eternalNightActive=false; forcedDayUntil=0; enemyProjectiles=[];
+  if (gameMode==='eternal'){ eternalNightActive = true; }        // no crystal, night from the start
+  else if (gameMode==='test'){ setupTestWorld(); }
   camX = player.x; camY = player.y; updateHUD(); renderBag(); changeUIScale(1.2); updateResourceCounts();
+}
+// Test/sandbox world: hands you every tool, block and material so glitches can be reproduced fast.
+function setupTestWorld(){
+  player.equipment = { axe:1, pickaxe:1, sword:1, bow:1, iron_axe:1, iron_pickaxe:1, iron_sword:1, shovel:1 };
+  player.activeWeapon = 'iron_sword';
+  const give = { wood:200, stone:200, coal:200, iron:200, iron_ingot:200, berry:50, meat:50, torch:50, bones:200, wheat:50, seeds:50, bowl:20, dough:20, bread:20, cooked_meat:20, fruit_salad:20, crystal:5, reinforcement:30, arrowWood:99, arrowIron:99,
+    item_wall:50, item_wall_thorn:50, item_bone_wall:50, item_campfire:20, item_furnace:20, item_crafting_table:20, item_upgraded_table:20, item_chest:20, item_crystal_device:5, item_lucky:20 };
+  for (const k in give) player.inv[k] = give[k];
+  // drop one of each work-station near spawn so every craft menu is reachable immediately
+  const gx = player.gridX, gy = player.gridY;
+  const samples = [[T.CRAFTING_TABLE,2,0],[T.UPGRADED_TABLE,3,0],[T.FURNACE,4,0],[T.CAMPFIRE,2,2]];
+  for (const [tt,ox,oy] of samples){ const cx=gx+ox, cy=gy+oy; if (world[cy] && world[cy][cx] && !isWater(world[cy][cx])){ const hp=tileHP(tt); world[cy][cx]={type:tt,hp,maxHp:hp,timer:0}; } }
 }
 
 const RECIPES = [ 
@@ -616,7 +718,7 @@ window.tryInteract = function() {
 
             const placedHp = tileHP(placedType);
             world[ty][tx] = { type: placedType, hp: placedHp, maxHp: placedHp, timer: 0 };
-            if (placedType===T.LUCKY && player._pendingLuckyChoices) { world[ty][tx].luckyChoices = player._pendingLuckyChoices; }
+            if (placedType===T.LUCKY) { world[ty][tx].luckyChoices = luckyQueue.length ? luckyQueue.shift() : null; }
             player.inv[itemKey] -= 1;
 
             if (r.id==='crystal_device') {
@@ -733,9 +835,10 @@ function updateCrops(){
 }
 
 function update(dt){
-  if (gameOver) return;
-  time += dt; if (time >= CYCLE_LEN){ time = 0; dayNum++; showToast('יום '+dayNum+' מתחיל'); if (dayNum>=5 && !crystalActivated){ if(!eternalNightActive){ eternalNightActive = true; showToast('🌑 הלילה הנצחי החל! מפלצות שונות יגיעו וינסו לשבור מה שבנית'); } }
+  if (gameOver || !gameStarted || bonusModalOpen) return;
+  time += dt; if (time >= CYCLE_LEN){ time = 0; dayNum++; showToast('יום '+dayNum+' מתחיל'); if (dayNum>=eternalNightDay && !crystalActivated){ if(!eternalNightActive){ eternalNightActive = true; showToast('🌑 הלילה הנצחי החל! מפלצות שונות יגיעו וינסו לשבור מה שבנית'); } }
     if (crystalActivated){ crystalBonusDays++; player.maxHealth += 10; player.maxHunger += 10; player.health = Math.min(player.maxHealth, player.health+10); player.hunger = Math.min(player.maxHunger, player.hunger+10); showToast(`💎 כוח הקריסטל גדל! +10 חיים מקס׳, +10 אוכל מקס׳, נזק גבוה יותר (יום ${crystalBonusDays} עם הקריסטל)`); }
+    maybeShowMorningBonus();
   }
   const isNight = getNightFactor() > 0.45;
   
@@ -755,7 +858,7 @@ function update(dt){
   if (joyActive && (Math.abs(joyDX)>0.2||Math.abs(joyDY)>0.2)){ dx=joyDX; dy=joyDY; }
   let isWaterTile = isWater(tileAt(player.x, player.y)); 
   
-  let currentSpeed = player.speed * (isWaterTile ? 0.5 : 1.0);
+  let currentSpeed = (player.speed + (player.speedBonus||0)) * (isWaterTile ? 0.5 : 1.0);
   if (player.speedBoostTimer && player.speedBoostTimer > 0) {
       player.speedBoostTimer -= dt;
       currentSpeed *= 1.5;
@@ -830,16 +933,16 @@ function tryAction(){
     projectiles.push({ x:player.x, y:player.y, vx:dirX*7, vy:dirY*7, dmg: (arrowType==='arrowIron'?7:3) + (crystalActivated?crystalBonusDays+2:0), life:1.2 }); sfxShoot(); return; 
   }
 
-  let toolPower = 1 + (player.equipment.axe?1:0) + (player.equipment.iron_axe?2:0) + (player.equipment.pickaxe?1:0) + (player.equipment.iron_pickaxe?2:0); 
+  let toolPower = 1 + (player.equipment.axe?1:0) + (player.equipment.iron_axe?2:0) + (player.equipment.pickaxe?1:0) + (player.equipment.iron_pickaxe?2:0) + (player.gatherBonus||0);
   if (player.efficiencyBoostTimer && player.efficiencyBoostTimer > 0) {
-      toolPower += 2; 
+      toolPower += 2;
   }
 
   const breakables = [T.TREE,T.PINE,T.ROCK,T.COAL,T.IRONROCK,T.BUSH,T.CACTUS,T.WALL,T.WALL_THORN,T.BONE_WALL,T.LUCKY,T.CAMPFIRE,T.TRUNK,T.CRAFTING_TABLE,T.UPGRADED_TABLE,T.FURNACE,T.SAPLING,T.SKULL,T.WHEAT,T.CROP,T.CRYSTAL_ORE,T.PLACED_TORCH];
   
   let hitBlock = false;
-  // Mining distance strictly set to exactly 2 blocks
-  for (let d = 0; d <= 2; d += 0.5) {
+  // Mining reach (upgradable via morning bonuses)
+  for (let d = 0; d <= (player.breakReach||2); d += 0.5) {
       let fx = player.x + dirX * (d * TILE); let fy = player.y + dirY * (d * TILE); let t = tileAt(fx, fy);
       if (breakables.includes(t.type)){
         t.hp -= toolPower; sfxGather(); spawnParticle(fx,fy,'#fff',5);
@@ -939,7 +1042,7 @@ function destroyBuiltTile(bt, bxi, byi, e){
   world[byi][bxi] = { type: (bb===BIOME.DESERT?T.SAND:bb===BIOME.SNOW?T.SNOW:T.GRASS), hp:0, timer:0 };
 }
 function updateEnemies(dt){
-  const canBreakBlocks = dayNum >= 5;
+  const canBreakBlocks = dayNum >= eternalNightDay || (eternalNightActive && !crystalActivated);
   for (const e of enemies){
     let tx = player.x, ty = player.y;
     if (e.targetsCrystal && crystalPlaced && crystalDevicePos && !crystalActivated){ tx = crystalDevicePos.x; ty = crystalDevicePos.y; }
@@ -1046,6 +1149,125 @@ function spawnParticle(x,y,color,r){ particles.push({x,y,color,r:r||4,life:0.6,v
 
 let openChestRef = null; function openChest(c){ openChestRef = c; document.getElementById('chestPanel').style.display = 'block'; renderChest(); } function closeChest(){ document.getElementById('chestPanel').style.display='none'; openChestRef=null; } function renderChest(){ const list = document.getElementById('chestList'); list.innerHTML = ''; const keys = ['wood','stone','coal','iron','iron_ingot','berry','meat','bones','wheat','seeds','bowl','dough','bread','cooked_meat','fruit_salad']; keys.forEach(k=>{ if(player.inv[k]!==undefined){ const row = document.createElement('div'); row.className='chestRow'; row.innerHTML = `<span>${names[k]}: תיק ${player.inv[k]||0} | תיבה ${openChestRef.items[k]||0}</span><span><button onclick="chestTransfer('${k}',1)">➡️</button><button onclick="chestTransfer('${k}',-1)">⬅️</button></span>`; list.appendChild(row); } }); } function chestTransfer(k, dir){ if (!openChestRef) return; if (dir>0){ if ((player.inv[k]||0)>0){ player.inv[k]--; openChestRef.items[k]=(openChestRef.items[k]||0)+1; } } else { if ((openChestRef.items[k]||0)>0){ openChestRef.items[k]--; player.inv[k]=(player.inv[k]||0)+1; } } renderChest(); renderBag(); }
 function endGame(){ gameOver=true; document.getElementById('msg').style.display='block'; document.getElementById('survivedDays').textContent=dayNum; } function restart(){ document.getElementById('msg').style.display='none'; initGame(); }
+
+/* ============ World selection start screen ============ */
+const WORLD_TEST_CODE = '2020';
+function startWorld(mode){
+  gameMode = mode;
+  document.getElementById('worldSelect').style.display = 'none';
+  initGame();
+  gameStarted = true;
+  ensureAudio();
+  if (mode==='eternal') showToast('🌑 עולם ללא קריסטל — שרוד כמה שתוכל!');
+  else if (mode==='test') showToast('🧪 עולם ניסיון — כל הבלוקים והחומרים אצלך');
+}
+function askWorldCode(){ document.getElementById('wsCodeWrap').style.display = 'flex'; document.getElementById('wsCodeInput').focus(); }
+function submitWorldCode(){
+  const val = (document.getElementById('wsCodeInput').value||'').trim();
+  if (val !== WORLD_TEST_CODE){ showToast('קוד שגוי'); return; }
+  // secret code also unlocks editing how many days pass before the eternal night
+  const d = prompt('כמה ימים עד הלילה הנצחי? (ברירת מחדל 5)', String(eternalNightDay));
+  const parsed = parseInt(d);
+  if (!isNaN(parsed) && parsed >= 1) eternalNightDay = parsed;
+  startWorld('test');
+}
+
+/* ============ Morning bonus + lucky block system ============ */
+function bonusMul(){ return (eternalNightActive && !crystalActivated) ? 2 : 1; }   // eternal night = double reward
+function scaledRound(base){
+  let v = base * (1 + Math.max(0, dayNum - eternalNightDay) * 0.12) * bonusMul();
+  if (Math.random() < 0.05) return 6 + Math.floor(Math.random()*2);   // rare "un-round" 6 or 7
+  v = Math.round(v/5)*5; return Math.max(5, v);
+}
+function mkBonus(emoji, name, value, applyFn){ return { emoji, name, value, valueStr:'+'+value, apply:()=>applyFn(value) }; }
+const BONUS_POOL = [
+  () => mkBonus('❤️','חיים מקסימליים', scaledRound(30), v=>{ player.maxHealth+=v; player.health=Math.min(player.maxHealth, player.health+v); }),
+  () => mkBonus('🍖','אוכל מקסימלי', scaledRound(30), v=>{ player.maxHunger+=v; player.hunger=Math.min(player.maxHunger, player.hunger+v); }),
+  () => mkBonus('🧱','קירות לתיק', scaledRound(10), v=>{ player.inv.item_wall=(player.inv.item_wall||0)+v; }),
+  () => mkBonus('🌵','קירות קוצים', scaledRound(10), v=>{ player.inv.item_wall_thorn=(player.inv.item_wall_thorn||0)+v; }),
+  () => mkBonus('🦴','קירות עצמות', scaledRound(10), v=>{ player.inv.item_bone_wall=(player.inv.item_bone_wall||0)+v; }),
+  () => mkBonus('⛓️','חיזוקי ברזל', Math.max(2, Math.round(scaledRound(10)/3)), v=>{ player.inv.reinforcement=(player.inv.reinforcement||0)+v; }),
+  () => mkBonus('🔥','לפידים', scaledRound(10), v=>{ player.inv.torch=(player.inv.torch||0)+v; }),
+  () => mkBonus('📦','עץ + אבן', scaledRound(30), v=>{ player.inv.wood+=v; player.inv.stone+=v; }),
+  () => mkBonus('🍞','בשר לאכילה', scaledRound(10), v=>{ player.inv.meat=(player.inv.meat||0)+v; }),
+  () => mkBonus('⛏️','כוח חציבה קבוע', Math.max(1, Math.round(scaledRound(5)/5)), v=>{ player.gatherBonus=(player.gatherBonus||0)+v; }),
+  () => mkBonus('📏','מרחק שבירה', 1, v=>{ player.breakReach=Math.min(5, (player.breakReach||2)+v); }),
+  () => mkBonus('🏃','מהירות תנועה', 1, v=>{ player.speedBonus=(player.speedBonus||0)+0.3; }),
+];
+function generateBonusChoices(n){
+  const idx = BONUS_POOL.map((_,i)=>i);
+  for (let i=idx.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [idx[i],idx[j]]=[idx[j],idx[i]]; }
+  return idx.slice(0, n).map(i => BONUS_POOL[i]());
+}
+let activeBonusChoices = null, bonusFromLucky = false;
+function maybeShowMorningBonus(){
+  const eligible = (gameMode==='eternal' && dayNum>=2) || (dayNum > eternalNightDay);
+  if (!eligible || bonusShownForDay >= dayNum) return;
+  bonusShownForDay = dayNum;
+  openBonusModal(generateBonusChoices(3), false);
+}
+function openBonusModal(choices, fromLucky){
+  activeBonusChoices = choices; bonusFromLucky = !!fromLucky;
+  const wrap = document.getElementById('bonusChoices'); wrap.innerHTML='';
+  choices.forEach((c, i)=>{
+    const d = document.createElement('div'); d.className='bonusChoice';
+    d.innerHTML = `<div class="bemoji">${c.emoji}</div><div class="binfo"><div class="bname">${c.name}</div><div class="bval">${c.valueStr}</div></div>`;
+    d.onclick = ()=> pickBonus(i);
+    wrap.appendChild(d);
+  });
+  document.getElementById('bonusTitle').textContent = fromLucky ? '🟨 לאקי בלוק' : '🌅 בוקר טוב! בחר בונוס';
+  document.getElementById('bonusSub').textContent = fromLucky ? 'בחר אחד — אלו הבחירות ששמרת' : (bonusMul()>1 ? 'לילה נצחי: הבונוסים כפולים! בחר אחד' : 'בחר אחד מהשלושה — או קח לאקי בלוק לאחר כך');
+  // from a lucky block you must commit to a pick (no defer/close)
+  document.getElementById('bonusLater').style.display = fromLucky ? 'none' : 'block';
+  document.getElementById('bonusX').style.display = fromLucky ? 'none' : 'block';
+  document.getElementById('bonusModal').classList.add('open');
+  bonusModalOpen = true;
+}
+function pickBonus(i){
+  if (!activeBonusChoices || !activeBonusChoices[i]) return;
+  const c = activeBonusChoices[i];
+  c.apply();
+  stats.dailyChoices.push({ day: dayNum, label: c.emoji + ' ' + c.name + ' ' + c.valueStr });
+  showToast(`${c.emoji} קיבלת ${c.name} ${c.valueStr}`);
+  closeBonusModal(); renderBag(); updateHUD();
+}
+function bonusDefer(){
+  // stash this exact choice-set and hand over a lucky block to open later
+  if (activeBonusChoices) luckyQueue.push(activeBonusChoices);
+  player.inv.item_lucky = (player.inv.item_lucky||0) + 1;
+  showToast('📦 קיבלת לאקי בלוק! הצב אותו ושבור כדי לבחור מאוחר יותר');
+  closeBonusModal(); renderBag();
+}
+function closeBonusModal(){ document.getElementById('bonusModal').classList.remove('open'); bonusModalOpen=false; activeBonusChoices=null; }
+// Breaking a placed lucky block re-opens its saved 3 choices (no infinite rerolling for a wanted item).
+function openLuckyBlock(savedChoices){
+  stats.luckyOpened++;
+  const choices = (savedChoices && savedChoices.length) ? savedChoices : generateBonusChoices(3);
+  openBonusModal(choices, true);
+}
+
+/* ============ Stats panel ============ */
+function toggleStats(){
+  const p = document.getElementById('statsPanel');
+  const show = p.style.display !== 'block';
+  p.style.display = show ? 'block' : 'none';
+  if (show){ document.getElementById('settingsPanel').style.display='none'; document.getElementById('bagPanel').classList.remove('open'); document.getElementById('cheatPanel').style.display='none'; renderStats(); }
+}
+function renderStats(){
+  const rows = [
+    ['👾 מפלצות שהרגת', stats.monstersKilled],
+    ['🐇 חיות שהרגת', stats.animalsKilled],
+    ['⛏️ בלוקים ששברת', stats.blocksDestroyed],
+    ['📏 מרחק שבירה מקסימלי', (player.breakReach||2) + ' בלוקים'],
+    ['❤️ חיים מקסימליים', Math.round(player.maxHealth)],
+    ['🍖 אוכל מקסימלי', Math.round(player.maxHunger)],
+    ['🟨 לאקי בלוקים שפתחת', stats.luckyOpened],
+    ['📅 יום נוכחי', dayNum],
+  ];
+  document.getElementById('statsBody').innerHTML = rows.map(r=>`<div class="statRow"><span>${r[0]}</span><b>${r[1]}</b></div>`).join('');
+  const ch = stats.dailyChoices;
+  document.getElementById('statsChoices').innerHTML = ch.length ? ch.map(c=>`<div class="statRow"><span>יום ${c.day}</span><b>${c.label}</b></div>`).join('') : '<div class="statRow"><span>עדיין לא בחרת שדרוגים</span></div>';
+}
 
 /* ============ Texture-6 visual grain ("סאונד") + damage cracks ============ */
 // Per-surface toggle for the grainy noise texture unlocked at graphics level 6.
@@ -1426,7 +1648,9 @@ function renderBag(){
 }
 function showToast(msg){ const t = document.getElementById('toast'); t.textContent = msg; t.style.opacity=1; clearTimeout(t._to); t._to = setTimeout(()=>{ t.style.opacity=0; }, 1500); }
 
-let lastTime = performance.now(); function loop(now){ const dt = Math.min(0.05, (now-lastTime)/1000); lastTime = now; update(dt); draw(); requestAnimationFrame(loop); } initGame(); requestAnimationFrame(loop);
+let lastTime = performance.now(); function loop(now){ const dt = Math.min(0.05, (now-lastTime)/1000); lastTime = now; update(dt); draw(); requestAnimationFrame(loop); }
+// Build a valid world behind the start screen (gameStarted stays false so it's paused) and wait for the player's choice.
+gameMode = 'crystal'; initGame(); gameStarted = false; requestAnimationFrame(loop);
 </script>
 </body>
 </html>
