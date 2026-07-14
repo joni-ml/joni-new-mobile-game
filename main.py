@@ -565,6 +565,11 @@ let stats = { animalsKilled:0, monstersKilled:0, blocksDestroyed:0, maxBreakDist
 let bonusShownForDay = 0;      // guards against re-triggering the morning bonus in the same day
 let luckyQueue = [];           // pending saved choice-sets, attached to lucky blocks in order they're placed
 let adminNightlyAll = false;   // admin toggle: every night auto-grant a lucky block + every bonus power
+/* ---- P2P co-op networking (WebRTC, copy-paste signaling, works on a hotspot with no server) ---- */
+let net = { active:false, isHost:false, peers:[], selfId: Math.random().toString(36).slice(2,7), name:'שחקן', _pendingHostPeer:null };
+let remotePlayers = {};        // id -> {x,y,facing,hp,name,last}
+let netShadow = null;          // last-broadcast tile-type grid, for diffing structural world changes
+let netLastPos = 0, netLastDiff = 0;
 function resetStats(){ stats = { animalsKilled:0, monstersKilled:0, blocksDestroyed:0, maxBreakDist:2, luckyOpened:0, dailyChoices:[] }; }
 function initEntities(){ enemies=[]; animals=[]; particles=[]; projectiles=[]; placedTorches=[]; chests=[]; cropTiles=[]; enemyProjectiles=[]; }
 function initPlayer(){
@@ -970,7 +975,9 @@ function updateCrops(){
 
 function update(dt){
   if (gameOver || !gameStarted || bonusModalOpen) return;
-  time += dt; if (time >= CYCLE_LEN){ time = 0; dayNum++; showToast('יום '+dayNum+' מתחיל'); if (dayNum>=eternalNightDay && !crystalActivated){ if(!eternalNightActive){ eternalNightActive = true; showToast('🌑 הלילה הנצחי החל! מפלצות שונות יגיעו וינסו לשבור מה שבנית'); } }
+  if (net.active) netTick(dt);
+  const netClient = net.active && !net.isHost;   // guests take world time & simulation from the host
+  time += dt; if (!netClient && time >= CYCLE_LEN){ time = 0; dayNum++; showToast('יום '+dayNum+' מתחיל'); if (dayNum>=eternalNightDay && !crystalActivated){ if(!eternalNightActive){ eternalNightActive = true; showToast('🌑 הלילה הנצחי החל! מפלצות שונות יגיעו וינסו לשבור מה שבנית'); } }
     if (crystalActivated){ crystalBonusDays++; player.maxHealth += 10; player.maxHunger += 10; player.health = Math.min(player.maxHealth, player.health+10); player.hunger = Math.min(player.maxHunger, player.hunger+10); showToast(`💎 כוח הקריסטל גדל! +10 חיים מקס׳, +10 אוכל מקס׳, נזק גבוה יותר (יום ${crystalBonusDays} עם הקריסטל)`); }
     if (adminNightlyAll) grantNightlyAll(); else maybeShowMorningBonus();
   }
@@ -978,14 +985,14 @@ function update(dt){
   
   countTimer += dt; if (countTimer >= 1.0) { countTimer = 0; updateResourceCounts(); }
 
-  if (opTickDelay > 0) {
+  if (!netClient && opTickDelay > 0) {
     tickAcc += dt;
     while (tickAcc >= opTickDelay) {
       tickAcc -= opTickDelay;
       for (let i = 0; i < opBlocksPerTick; i++) runRandomTickEngine();
     }
   }
-  updateCrops();
+  if (!netClient) updateCrops();
 
   if (player.hurtSfxCd > 0) player.hurtSfxCd -= dt;
   let dx=0, dy=0; if (keys['w']||keys['arrowup']) dy-=1; if (keys['s']||keys['arrowdown']) dy+=1; if (keys['a']||keys['arrowleft']) dx-=1; if (keys['d']||keys['arrowright']) dx+=1;
@@ -1290,6 +1297,7 @@ function endGame(){ gameOver=true; document.getElementById('msg').style.display=
 /* ============ World selection start screen ============ */
 const WORLD_TEST_CODE = '2020';
 function startWorld(mode){
+  netReset();
   gameMode = mode;
   document.getElementById('worldSelect').style.display = 'none';
   initGame();
@@ -1304,15 +1312,124 @@ function openSharedMenu(){ document.getElementById('wsMain').style.display='none
 function closeSharedMenu(){ document.getElementById('sharedMenu').style.display='none'; document.getElementById('wsMain').style.display='block'; }
 function setSharedMode(m){ sharedMode = m; document.getElementById('sharedCrystalCard').classList.toggle('sel', m==='crystal'); document.getElementById('sharedSurvivalCard').classList.toggle('sel', m==='eternal'); }
 function sharedSolo(){ startWorld(sharedMode); }
-function sharedHost(){ showToast('📡 החיבור מגיע בשלב הבא — כרגע אפשר לשחק לבד'); }
-function sharedJoin(){ showToast('🔗 החיבור מגיע בשלב הבא — כרגע אפשר לשחק לבד'); }
+
+/* ============ P2P co-op (WebRTC data channel, manual copy-paste signaling) ============ */
+function netMakePc(){ return new RTCPeerConnection({ iceServers:[{ urls:'stun:stun.l.google.com:19302' }] }); }
+function sdpEncode(desc){ return btoa(JSON.stringify({ type:desc.type, sdp:desc.sdp })); }
+function sdpDecode(code){ return new RTCSessionDescription(JSON.parse(atob(code.trim()))); }
+function waitIce(pc){ return new Promise(res=>{ if(pc.iceGatheringState==='complete') return res(); let done=false; const fin=()=>{ if(done)return; done=true; res(); }; pc.addEventListener('icegatheringstatechange', ()=>{ if(pc.iceGatheringState==='complete') fin(); }); setTimeout(fin, 2500); }); }
+function initShadow(){ netShadow = []; for(let y=0;y<MAPH;y++){ netShadow[y]=[]; for(let x=0;x<MAPW;x++) netShadow[y][x]=world[y][x].type; } }
+
+function openNetPanel(mode){
+  document.getElementById('netPanel').classList.add('open');
+  document.getElementById('netStep1').style.display = mode==='host'?'block':'none';
+  document.getElementById('netJoinStep').style.display = mode==='join'?'block':'none';
+  document.getElementById('netTitle').textContent = mode==='host'?'📡 פתח לחברים':'🔗 הצטרף לחבר';
+  document.getElementById('netStatus').textContent = mode==='host'?'יוצר קוד חיבור...':'הדבק את קוד המארח';
+}
 function closeNetPanel(){ document.getElementById('netPanel').classList.remove('open'); }
-function copyNetCode(){}
-function netAcceptAnswer(){}
-function netCreateAnswer(){}
-function copyNetAnswer(){}
+
+function netWireChannel(peer){
+  const dc = peer.dc; if(!dc) return;
+  dc.onopen = ()=>{ document.getElementById('netStatus').textContent='מחובר! 🎉'; showToast('🔗 שחקן התחבר לעולם!'); if(net.isHost) netSendInitTo(peer); setTimeout(closeNetPanel, 900); };
+  dc.onmessage = (e)=> netOnMessage(peer, e.data);
+  dc.onclose = ()=>{ net.peers = net.peers.filter(p=>p!==peer); };
+}
+async function sharedHost(){
+  startWorld(sharedMode);
+  net.active=true; net.isHost=true; net.name='מארח'; net.peers=[]; initShadow();
+  openNetPanel('host');
+  const pc = netMakePc(); const dc = pc.createDataChannel('game');
+  const peer = { pc, dc, id:'g'+Math.random().toString(36).slice(2,6) };
+  netWireChannel(peer); net.peers.push(peer); net._pendingHostPeer = peer;
+  const offer = await pc.createOffer(); await pc.setLocalDescription(offer); await waitIce(pc);
+  document.getElementById('netOutCode').value = sdpEncode(pc.localDescription);
+  document.getElementById('netStatus').textContent = 'שלח את הקוד לחבר, ואז הדבק את קוד התשובה שלו';
+}
+async function netAcceptAnswer(){
+  const code = document.getElementById('netInCode').value.trim(); if(!code) return;
+  try{ await net._pendingHostPeer.pc.setRemoteDescription(sdpDecode(code)); document.getElementById('netStatus').textContent='מתחבר...'; }
+  catch(e){ showToast('קוד תשובה לא תקין'); }
+}
+function sharedJoin(){ net.active=true; net.isHost=false; net.name='אורח'; net.peers=[]; openNetPanel('join'); }
+async function netCreateAnswer(){
+  const offerCode = document.getElementById('netJoinOffer').value.trim(); if(!offerCode) return;
+  const pc = netMakePc(); const peer = { pc, dc:null, id:'host' };
+  pc.ondatachannel = (e)=>{ peer.dc = e.channel; netWireChannel(peer); };
+  net.peers = [peer];
+  try{ await pc.setRemoteDescription(sdpDecode(offerCode)); }
+  catch(e){ showToast('קוד מארח לא תקין'); return; }
+  const answer = await pc.createAnswer(); await pc.setLocalDescription(answer); await waitIce(pc);
+  document.getElementById('netAnswerOut').value = sdpEncode(pc.localDescription);
+  document.getElementById('netAnsLbl').style.display='block';
+  document.getElementById('netAnswerOut').style.display='block';
+  document.getElementById('netAnsCopy').style.display='block';
+  document.getElementById('netStatus').textContent = 'שלח את קוד התשובה למארח, והמתן לחיבור';
+}
+function copyToClip(el){ const t=document.getElementById(el); t.select(); try{ navigator.clipboard.writeText(t.value); }catch(e){ try{document.execCommand('copy');}catch(_){} } showToast('הקוד הועתק 📋'); }
+function copyNetCode(){ copyToClip('netOutCode'); }
+function copyNetAnswer(){ copyToClip('netAnswerOut'); }
+
+function netSend(obj){ const s=JSON.stringify(obj); for(const p of net.peers){ if(p.dc && p.dc.readyState==='open'){ try{ p.dc.send(s); }catch(e){} } } }
+function netRelay(except, s){ for(const p of net.peers){ if(p!==except && p.dc && p.dc.readyState==='open'){ try{ p.dc.send(s); }catch(e){} } } }
+function netSendInitTo(peer){
+  const msg = { t:'init', world:serializeWorld(), dayNum, time, gameMode, eternalNightDay, en:(eternalNightActive&&!crystalActivated), crystalPlaced, crystalActivated, crystalDevicePos };
+  try{ peer.dc.send(JSON.stringify(msg)); }catch(e){}
+}
+function applyNetInit(msg){
+  gameMode = msg.gameMode||'crystal';
+  initEntities(); deserializeWorld(msg.world); initShadow(); initPlayer();
+  dayNum=msg.dayNum||1; time=msg.time||0; eternalNightDay=msg.eternalNightDay||5;
+  eternalNightActive=!!msg.en; crystalPlaced=!!msg.crystalPlaced; crystalActivated=!!msg.crystalActivated; crystalDevicePos=msg.crystalDevicePos||null;
+  resetStats(); gameOver=false; tickAcc=0; countTimer=0; bonusShownForDay=dayNum; luckyQueue=[];
+  camX=player.x; camY=player.y;
+  document.getElementById('worldSelect').style.display='none'; closeNetPanel();
+  gameStarted=true; ensureAudio(); updateHUD(); renderBag(); changeUIScale(1.2); updateResourceCounts();
+  showToast('🔗 נכנסת לעולם המשותף!');
+}
+function applyNetTiles(cells){
+  for(const c of cells){ const [x,y,type,hp,maxHp,stage]=c; if(world[y]&&world[y][x]){ const tile={type,hp,timer:0}; if(maxHp)tile.maxHp=maxHp; if(stage)tile.stage=stage; world[y][x]=tile; if(netShadow) netShadow[y][x]=type; } }
+}
+function netOnMessage(peer, data){
+  let msg; try{ msg=JSON.parse(data); }catch(e){ return; }
+  if (msg.t==='init'){ applyNetInit(msg); return; }
+  if (msg.t==='p'){ remotePlayers[msg.id]={ x:msg.x, y:msg.y, facing:msg.facing, hp:msg.hp, name:msg.name, last:performance.now() }; if(net.isHost) netRelay(peer, data); return; }
+  if (msg.t==='tiles'){ applyNetTiles(msg.cells); if(net.isHost) netRelay(peer, data); return; }
+  if (msg.t==='time'){ if(!net.isHost){ dayNum=msg.dayNum; time=msg.time; eternalNightActive=msg.en; } return; }
+}
+function netSendDiff(){
+  if (!netShadow) return;
+  const cells=[];
+  for(let y=0;y<MAPH;y++) for(let x=0;x<MAPW;x++){ const t=world[y][x]; if(netShadow[y][x]!==t.type){ netShadow[y][x]=t.type; cells.push([x,y,t.type,t.hp,t.maxHp||0,t.stage||0]); } }
+  if (cells.length) netSend({ t:'tiles', cells });
+}
+function netTick(dt){
+  const now=performance.now();
+  if (now-netLastPos > 80){ netLastPos=now; netSend({ t:'p', id:net.selfId, x:Math.round(player.x), y:Math.round(player.y), facing:player.facing, hp:Math.round(player.health), name:net.name }); }
+  if (now-netLastDiff > 500){ netLastDiff=now; netSendDiff(); if(net.isHost) netSend({ t:'time', dayNum, time, en:(eternalNightActive&&!crystalActivated) }); }
+  for (const id in remotePlayers){ if (now - remotePlayers[id].last > 3500) delete remotePlayers[id]; }
+}
+function netReset(){
+  for (const p of net.peers){ try{ p.pc && p.pc.close(); }catch(e){} }
+  net.active=false; net.isHost=false; net.peers=[]; net._pendingHostPeer=null;
+  remotePlayers={}; netShadow=null; closeNetPanel();
+}
+function drawRemotePlayers(){
+  for (const id in remotePlayers){ const rp=remotePlayers[id];
+    ctx.save(); ctx.translate(rp.x, rp.y);
+    ctx.fillStyle='rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(0,9,8,3,0,0,6.3); ctx.fill();
+    ctx.fillStyle='#8a5f2f'; ctx.fillRect(-5,-4,10,10);
+    ctx.fillStyle='#ffd1a9'; ctx.beginPath(); ctx.arc(0,-9,5,0,6.3); ctx.fill();
+    ctx.fillStyle='#3a2212'; ctx.fillRect(-4,6,3,3); ctx.fillRect(1,6,3,3);
+    const nm=(rp.name||'שחקן'); ctx.font='9px "Courier New", monospace'; ctx.textAlign='center';
+    const w=ctx.measureText(nm).width+8; ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(-w/2,-27,w,12);
+    ctx.fillStyle='#8fe08f'; ctx.fillText(nm, 0, -18); ctx.textAlign='start';
+    ctx.restore();
+  }
+}
 
 function showWorldSelect(){
+  netReset();
   gameStarted = false;
   document.getElementById('msg').style.display='none';
   document.getElementById('sharedMenu').style.display='none';
@@ -1348,6 +1465,7 @@ function saveWorld(){
 function loadWorld(id){
   let data; try{ data = JSON.parse(localStorage.getItem(id)); }catch(e){}
   if (!data){ showToast('טעינה נכשלה'); return; }
+  netReset();
   gameMode = data.gameMode||'crystal';
   initEntities();
   deserializeWorld(data.world);
@@ -1415,6 +1533,7 @@ function maybeShowMorningBonus(){
   // The bug-testing world keeps the lucky-block / morning bonus OFF so it never interrupts testing
   // (unless the admin "every night" toggle is on, which is handled separately).
   if (gameMode==='test') return;
+  if (net.active) return;   // no pausing modal during co-op (would freeze one player)
   const eligible = (gameMode==='eternal' && dayNum>=2) || (dayNum > eternalNightDay);
   if (!eligible || bonusShownForDay >= dayNum) return;
   bonusShownForDay = dayNum;
@@ -1703,6 +1822,8 @@ function draw(){
     else if (e.kind === 'spider') { ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=2; for(let s=-1;s<=1;s+=2){ for(let li=0; li<3; li++){ ctx.beginPath(); ctx.moveTo(0, bob); ctx.lineTo(s*(9+li*2), bob - 6 + li*6); ctx.stroke(); } } ctx.fillStyle='#2a2a2e'; ctx.beginPath(); ctx.ellipse(0, bob, 7, 6, 0, 0, 6.3); ctx.fill(); ctx.beginPath(); ctx.arc(0, -4+bob, 4, 0, 6.3); ctx.fill(); ctx.fillStyle='#ff3030'; ctx.fillRect(-2.5,-5+bob,1.8,1.8); ctx.fillRect(1,-5+bob,1.8,1.8); }
     ctx.fillStyle='#222'; ctx.fillRect(-14, -18 + bob, 28, 3); ctx.fillStyle='#c94a3d'; ctx.fillRect(-14, -18 + bob, 28*(e.hp/e.maxHp), 3); ctx.restore();
   }
+
+  if (net.active) drawRemotePlayers();
 
   // GHOST PREVIEW RENDER SYSTEM
   if (player.placingItem) {
