@@ -95,6 +95,9 @@
   #worldSelect { position:absolute; inset:0; background:radial-gradient(circle at 50% 30%, #1a2f1a, #0a0d10 80%); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:60; pointer-events:auto; padding:20px; overflow-y:auto; }
   #worldSelect h1 { color:#d9c98a; font-size:26px; margin-bottom:6px; text-shadow:0 2px 6px #000; }
   #worldSelect .sub { color:#8a8266; font-size:12px; margin-bottom:20px; }
+  #skinRow { display:flex; align-items:center; gap:7px; margin-bottom:16px; flex-wrap:wrap; justify-content:center; }
+  .skinSwatch { width:26px; height:26px; border-radius:50%; border:2px solid rgba(255,255,255,0.25); cursor:pointer; transition:transform 0.1s; }
+  .skinSwatch.sel { border-color:#fff; transform:scale(1.2); }
   .worldCard { width:min(88vw, 340px); background:rgba(20,22,28,0.92); border:2px solid #4a4230; border-radius:12px; padding:14px 16px; margin-bottom:12px; cursor:pointer; transition:transform 0.1s, border-color 0.2s; }
   .worldCard:active { transform:scale(0.97); }
   .worldCard:hover { border-color:#d9c98a; }
@@ -289,6 +292,16 @@
   <div id="worldSelect">
     <h1>🌍 שרידות</h1>
     <div class="sub">בחר עולם כדי להתחיל</div>
+    <div id="skinRow">
+      <span style="font-size:11px; color:#9a927a; margin-left:6px;">👕 צבע:</span>
+      <div class="skinSwatch sel" style="background:#2f5f8a" onclick="setSkin('#2f5f8a', this)"></div>
+      <div class="skinSwatch" style="background:#c94a3d" onclick="setSkin('#c94a3d', this)"></div>
+      <div class="skinSwatch" style="background:#3a8a4a" onclick="setSkin('#3a8a4a', this)"></div>
+      <div class="skinSwatch" style="background:#8a4fe0" onclick="setSkin('#8a4fe0', this)"></div>
+      <div class="skinSwatch" style="background:#d69a3e" onclick="setSkin('#d69a3e', this)"></div>
+      <div class="skinSwatch" style="background:#e0e0e0" onclick="setSkin('#e0e0e0', this)"></div>
+      <div class="skinSwatch" style="background:#e05fa8" onclick="setSkin('#e05fa8', this)"></div>
+    </div>
     <div id="wsMain">
       <div class="worldCard" onclick="startWorld('crystal')">
         <div class="wt">💎 עולם הקריסטל</div>
@@ -327,6 +340,9 @@
       </div>
       <div class="worldCard sharedTypeCard" id="sharedSurvivalCard" onclick="setSharedMode('survival')">
         <div class="wt">🌙 הישרדות רגילה</div><div class="wd">לילות רגילים, בלי לילה נצחי — פשוט לשרוד יחד.</div>
+      </div>
+      <div class="worldCard sharedTypeCard" id="sharedChallengeCard" onclick="setSharedMode('challenge')">
+        <div class="wt">⚔️ אתגר — לילה נצחי</div><div class="wd">בלי קריסטל, לילה נצחי מיום 2. קשה מאוד — יחד תשרדו יותר!</div>
       </div>
       <div style="display:flex; gap:8px; width:min(88vw,340px); margin-top:6px;">
         <button class="sharedBtn" onclick="sharedSolo()">🎮 לבד</button>
@@ -596,9 +612,22 @@ let luckyQueue = [];           // pending saved choice-sets, attached to lucky b
 let adminNightlyAll = false;   // admin toggle: every night auto-grant a lucky block + every bonus power
 /* ---- P2P co-op networking (WebRTC, copy-paste signaling, works on a hotspot with no server) ---- */
 let net = { active:false, isHost:false, peers:[], selfId: Math.random().toString(36).slice(2,7), name:'שחקן', _pendingHostPeer:null, peerObj:null, myCode:null };
-let remotePlayers = {};        // id -> {x,y,facing,hp,name,last}
+let remotePlayers = {};        // id -> {x,y,facing,hp,name,last,color,torch}
+let playerSkin = '#2f5f8a';    // chosen shirt color (shown to yourself and to teammates)
+function setSkin(color, el){ playerSkin = color; document.querySelectorAll('.skinSwatch').forEach(s=>s.classList.remove('sel')); if(el) el.classList.add('sel'); }
+let netGuestDmg = {};          // host-side accumulator of damage owed to each guest, flushed over the network
+let netPlayerCount = 1;        // 1 + connected guests (host view)
+let enemyIdSeq = 0;            // host-assigned enemy ids for network sync
+// all player positions the host must consider (its own + every connected guest)
+function allPlayers(){ const arr=[{x:player.x, y:player.y, id:null}]; for(const id in remotePlayers){ const r=remotePlayers[id]; arr.push({x:r.x, y:r.y, id}); } return arr; }
+function nearestPlayer(x,y){ let best=null, bd=Infinity; for(const pl of allPlayers()){ const d=Math.hypot(pl.x-x, pl.y-y); if(d<bd){ bd=d; best=pl; } } return best||{x:player.x,y:player.y,id:null}; }
+// route damage to whichever player an enemy reached: local player directly, guests via the network
+function damagePlayer(targetId, amount){
+  if (targetId==null){ if(!cheatGodMode) player.health -= amount; if (!player.hurtSfxCd || player.hurtSfxCd<=0){ sfxHurt(); player.hurtSfxCd=0.5; } }
+  else { netGuestDmg[targetId] = (netGuestDmg[targetId]||0) + amount; }
+}
 let netShadow = null;          // last-broadcast tile-type grid, for diffing structural world changes
-let netLastPos = 0, netLastDiff = 0;
+let netLastPos = 0, netLastDiff = 0, netLastEnt = 0;
 function resetStats(){ stats = { animalsKilled:0, monstersKilled:0, blocksDestroyed:0, maxBreakDist:2, luckyOpened:0, dailyChoices:[] }; }
 function initEntities(){ enemies=[]; animals=[]; particles=[]; projectiles=[]; placedTorches=[]; chests=[]; cropTiles=[]; enemyProjectiles=[]; }
 function initPlayer(){
@@ -1024,10 +1053,13 @@ function update(dt){
   
   countTimer += dt; if (countTimer >= 1.0) { countTimer = 0; updateResourceCounts(); }
 
-  if (!netClient && opTickDelay > 0) {
+  netPlayerCount = net.active ? (1 + net.peers.filter(p=>p.open).length) : 1;
+  // resource regen speeds up with more players in the world (host runs the sim): 1 player = every 0.5s, 2 = 0.25s, ...
+  let effTickDelay = (net.active && net.isHost) ? Math.max(0.05, 0.5/netPlayerCount) : opTickDelay;
+  if (!netClient && effTickDelay > 0) {
     tickAcc += dt;
-    while (tickAcc >= opTickDelay) {
-      tickAcc -= opTickDelay;
+    while (tickAcc >= effTickDelay) {
+      tickAcc -= effTickDelay;
       for (let i = 0; i < opBlocksPerTick; i++) runRandomTickEngine();
     }
   }
@@ -1073,9 +1105,14 @@ function update(dt){
   if (player.attackCd>0) player.attackCd -= dt; if (keys[' '] || actionHeld) tryAction();
   const curBiome = biomeAt(Math.floor(player.x/TILE), Math.floor(player.y/TILE));
   const inEternalNight = eternalNightActive && !crystalActivated;
-  if (!cheatNoEnemies && (isNight || inEternalNight)){ const cap = (inEternalNight ? 10 : 5) + Math.floor(dayNum/2); if (Math.random() < dt*(inEternalNight?0.28:0.16) && enemies.length < cap) spawnEnemy(curBiome); } else if (!isNight) { enemies = []; if (Math.random() < dt*0.08 && animals.length < 6 && curBiome!==BIOME.SNOW) spawnAnimal(); }
-  if (cheatNoEnemies && enemies.length) enemies = [];
-  updateEnemies(dt); updateAnimals(dt); updateProjectiles(dt); updateParticles(dt);
+  // Only the host (or a solo player) spawns & simulates enemies/animals; guests render what the host sends.
+  if (!netClient){
+    const pc = netPlayerCount;   // more players -> more monsters, spawned around a random player
+    if (!cheatNoEnemies && (isNight || inEternalNight)){ const cap = ((inEternalNight ? 10 : 5) + Math.floor(dayNum/2)) * pc; if (Math.random() < dt*(inEternalNight?0.28:0.16)*pc && enemies.length < cap) { const a=allPlayers()[Math.floor(Math.random()*pc)]; spawnEnemy(curBiome, a.x, a.y); } } else if (!isNight) { enemies = []; if (Math.random() < dt*0.08*pc && animals.length < 6*pc && curBiome!==BIOME.SNOW) spawnAnimal(); }
+    if (cheatNoEnemies && enemies.length) enemies = [];
+    updateEnemies(dt); updateAnimals(dt);
+  }
+  updateProjectiles(dt); updateParticles(dt);
   
   const ibtn = document.getElementById('interactBtn');
   const pbtn = document.getElementById('placeBtn');
@@ -1090,7 +1127,15 @@ function update(dt){
       pbtn.classList.remove('show');
   }
 
-  if (player.health<=0 && !cheatGodMode) endGame(); updateHUD();
+  if (player.health<=0 && !cheatGodMode){ if(net.active) respawnInCoop(); else endGame(); }
+  updateHUD();
+}
+// In co-op, dying does NOT reset the shared world (that caused duplicate crystals/items). You respawn and keep your items.
+function respawnInCoop(){
+  const gx=Math.floor(MAPW/2), gy=Math.floor(MAPH*0.42);
+  player.x=gx*TILE+TILE/2; player.y=gy*TILE+TILE/2; player.gridX=gx; player.gridY=gy;
+  player.health=player.maxHealth; player.hunger=Math.max(player.hunger, Math.floor(player.maxHunger*0.5));
+  showToast('💀 מתת — אבל חזרת לחיים! העולם המשותף ממשיך');
 }
 function getNightFactor() {
   if (performance.now() < forcedDayUntil) return 0;
@@ -1168,9 +1213,14 @@ function tryAction(){
   }
   if (hitBlock) return; 
 
-  let meleeDmg = 4 + (player.equipment.iron_sword ? 4 : 0) + (crystalActivated ? crystalBonusDays+2 : 0); 
-  for (const e of enemies){ if (Math.hypot(e.x-player.x, e.y-player.y) < TILE*1.5){ e.hp -= meleeDmg; sfxHit(); spawnParticle(e.x,e.y,'#e04a30',5); if(e.hp<=0){ enemies=enemies.filter(x=>x!==e); stats.monstersKilled++; player.inv.bones += e.kind==='wolf'?3:e.kind==='siberian_wolf'?4:e.kind==='brute'?5:1; if(e.eatenLoot){ for(const k in e.eatenLoot) player.inv[k]=(player.inv[k]||0)+e.eatenLoot[k]; if(Object.keys(e.eatenLoot).length) showToast('קיבלת בחזרה חומרים שהמפלצת שברה! 🦴📦'); else showToast(`הרגת מפלצת! 🦴`); } else showToast(`הרגת מפלצת! 🦴`); renderBag(); } return; } }
-  for (const a of animals){ if (Math.hypot(a.x-player.x, a.y-player.y) < TILE*1.5){ a.hp -= meleeDmg; sfxHit(); if(a.hp<=0){ animals=animals.filter(x=>x!==a); stats.animalsKilled++; player.inv.meat+=2; player.inv.bones+=1; player.hunger=Math.min(player.maxHunger,player.hunger+15); renderBag(); } return; } }
+  let meleeDmg = 4 + (player.equipment.iron_sword ? 4 : 0) + (crystalActivated ? crystalBonusDays+2 : 0);
+  const guest = net.active && !net.isHost;
+  for (const e of enemies){ if (Math.hypot(e.x-player.x, e.y-player.y) < TILE*1.5){ sfxHit(); spawnParticle(e.x,e.y,'#e04a30',5);
+    if (guest){ netSend({ t:'hit', id:e.id, dmg:meleeDmg }); return; }   // host is authoritative over enemy hp
+    e.hp -= meleeDmg; if(e.hp<=0){ enemies=enemies.filter(x=>x!==e); stats.monstersKilled++; player.inv.bones += e.kind==='wolf'?3:e.kind==='siberian_wolf'?4:e.kind==='brute'?5:1; if(e.eatenLoot){ for(const k in e.eatenLoot) player.inv[k]=(player.inv[k]||0)+e.eatenLoot[k]; if(Object.keys(e.eatenLoot).length) showToast('קיבלת בחזרה חומרים שהמפלצת שברה! 🦴📦'); else showToast(`הרגת מפלצת! 🦴`); } else showToast(`הרגת מפלצת! 🦴`); renderBag(); } return; } }
+  for (const a of animals){ if (Math.hypot(a.x-player.x, a.y-player.y) < TILE*1.5){ sfxHit();
+    if (guest){ netSend({ t:'ahit', x:a.x, y:a.y }); return; }
+    a.hp -= meleeDmg; if(a.hp<=0){ animals=animals.filter(x=>x!==a); stats.animalsKilled++; player.inv.meat+=2; player.inv.bones+=1; player.hunger=Math.min(player.maxHunger,player.hunger+15); renderBag(); } return; } }
 }
 
 // A position is "lit" if a torch/campfire/furnace is within ~4 tiles -> monsters refuse to spawn there (keeps your lit base safe).
@@ -1179,7 +1229,7 @@ function isNearLight(px, py){
   for (let oy=-R; oy<=R; oy++){ for (let ox=-R; ox<=R; ox++){ const cx=tx+ox, cy=ty+oy; if (world[cy] && world[cy][cx]){ const tt = world[cy][cx].type; if (tt===T.PLACED_TORCH || tt===T.CAMPFIRE || tt===T.FURNACE) return true; } } }
   return false;
 }
-function spawnEnemy(biome){ let angle=Math.random()*Math.PI*2; const dist=340+Math.random()*100; let kind='zombie'; if (biome===BIOME.FOREST) kind='wolf'; else if (biome===BIOME.SNOW) kind='siberian_wolf'; else if (biome===BIOME.DESERT) kind='scorpion';
+function spawnEnemy(biome, anchorX, anchorY){ const ancX = (anchorX==null)?player.x:anchorX, ancY = (anchorY==null)?player.y:anchorY; let angle=Math.random()*Math.PI*2; const dist=340+Math.random()*100; let kind='zombie'; if (biome===BIOME.FOREST) kind='wolf'; else if (biome===BIOME.SNOW) kind='siberian_wolf'; else if (biome===BIOME.DESERT) kind='scorpion';
   const inEternalNight = eternalNightActive && !crystalActivated;
   // Variety grows with days survived: day10+ brings the big brute, day15+ adds wraiths, day20+ adds archers.
   let r = Math.random();
@@ -1191,7 +1241,7 @@ function spawnEnemy(biome){ let angle=Math.random()*Math.PI*2; const dist=340+Ma
   const base = baseTable[kind];
   let ex, ey, ok=false;
   for (let attempt=0; attempt<10 && !ok; attempt++){
-    ex = player.x+Math.cos(angle)*dist; ey = player.y+Math.sin(angle)*dist;
+    ex = ancX+Math.cos(angle)*dist; ey = ancY+Math.sin(angle)*dist;
     ex = Math.max(TILE*3, Math.min((MAPW-3)*TILE, ex)); ey = Math.max(TILE*3, Math.min((MAPH-3)*TILE, ey));
     if (!isNearLight(ex, ey)) ok=true; else angle = Math.random()*Math.PI*2;
   }
@@ -1199,7 +1249,7 @@ function spawnEnemy(biome){ let angle=Math.random()*Math.PI*2; const dist=340+Ma
   const targetsCrystal = false; // monsters only ever hunt the player, never the crystal
   // late-game, monsters hit both the player and buildings harder over time
   const dmgScale = 1 + Math.max(0, dayNum-5)*0.05;
-  enemies.push({ x:ex, y:ey, kind, hp:Math.round(base.hp*scale), maxHp:Math.round(base.hp*scale), speed:base.spd*(1+dayNum*0.02), dmg:base.dmg*(1+dayNum*0.04)*dmgScale, facing:'left', stuck:0, eatenLoot:{}, targetsCrystal, shootCd:0 });
+  enemies.push({ id:(++enemyIdSeq), x:ex, y:ey, kind, hp:Math.round(base.hp*scale), maxHp:Math.round(base.hp*scale), speed:base.spd*(1+dayNum*0.02), dmg:base.dmg*(1+dayNum*0.04)*dmgScale, facing:'left', stuck:0, eatenLoot:{}, targetsCrystal, shootCd:0 });
 }
 // Disguised "spider-rabbit": looks like a rabbit, eyes glow at night, drifts toward you, and reveals as a spider when you get close.
 function rollSpider(){
@@ -1228,8 +1278,8 @@ function updateEnemies(dt){
   // monsters attack your base at night from day 2 (or day 5 in the crystal world), and always in eternal night
   const canBreakBlocks = eternalNightActive || dayNum >= (gameMode==='crystal' ? eternalNightDay : 2);
   for (const e of enemies){
-    let tx = player.x, ty = player.y;
-    if (e.targetsCrystal && crystalPlaced && crystalDevicePos && !crystalActivated){ tx = crystalDevicePos.x; ty = crystalDevicePos.y; }
+    // hunt the closest player (host or any teammate)
+    const tgt = nearestPlayer(e.x, e.y); let tx = tgt.x, ty = tgt.y; e.targetId = tgt.id;
     let ang = Math.atan2(ty-e.y, tx-e.x); let currentSpeed = e.speed * (isWater(tileAt(e.x, e.y)) ? 0.3 : 1.0);
     e.facing = (tx > e.x) ? 'right' : 'left';
 
@@ -1281,7 +1331,7 @@ function updateEnemies(dt){
       if (Math.random()<dt*4) spawnParticle(e.x, e.y-6, '#ff6a00', 3);
     }
 
-    if (!cheatGodMode && Math.hypot(player.x - e.x, player.y - e.y) < 14) { player.health -= dt * e.dmg; if (player.hurtSfxCd <= 0 || !player.hurtSfxCd) { sfxHurt(); player.hurtSfxCd = 0.5; } }
+    if (Math.hypot(tx - e.x, ty - e.y) < 14) { damagePlayer(e.targetId, dt * e.dmg); }
   }
   enemies = enemies.filter(e=>{
     if (e.hp<=0){ stats.monstersKilled++; if(e.eatenLoot){ for(const k in e.eatenLoot) player.inv[k]=(player.inv[k]||0)+e.eatenLoot[k]; } player.inv.bones+=1; renderBag(); return false; }
@@ -1289,7 +1339,8 @@ function updateEnemies(dt){
   });
   for (const p of enemyProjectiles){
     p.x += p.vx*TILE*dt*3; p.y += p.vy*TILE*dt*3; p.life -= dt;
-    if (Math.hypot(player.x-p.x, player.y-p.y) < 14){ if(!cheatGodMode) player.health -= p.dmg; p.life=0; sfxHurt(); }
+    let hitPl=null; for(const pl of allPlayers()){ if(Math.hypot(pl.x-p.x, pl.y-p.y)<14){ hitPl=pl; break; } }
+    if (hitPl){ damagePlayer(hitPl.id, p.dmg); p.life=0; if(hitPl.id==null) sfxHurt(); }
     else {
       const bt = tileAt(p.x,p.y);
       if (PLAYER_BUILT_TILES.includes(bt.type)){   // arrows can hit any built item incl. campfire
@@ -1305,7 +1356,7 @@ function updateEnemies(dt){
 function revealSpider(a){
   // turn the disguised rabbit into a fast spider enemy right where it stood
   const scale = 1 + dayNum*0.12;
-  enemies.push({ x:a.x, y:a.y, kind:'spider', hp:Math.round(8*scale), maxHp:Math.round(8*scale), speed:1.45*(1+dayNum*0.02), dmg:11*(1+dayNum*0.04), facing:'left', stuck:0, eatenLoot:{}, targetsCrystal:false, shootCd:0 });
+  enemies.push({ id:(++enemyIdSeq), x:a.x, y:a.y, kind:'spider', hp:Math.round(8*scale), maxHp:Math.round(8*scale), speed:1.45*(1+dayNum*0.02), dmg:11*(1+dayNum*0.04), facing:'left', stuck:0, eatenLoot:{}, targetsCrystal:false, shootCd:0 });
   animals = animals.filter(x=>x!==a);
   showToast('🕷️ זה היה עכביש מחופש לארנב! היזהר');
   sfxHurt();
@@ -1332,7 +1383,7 @@ function updateAnimals(dt){
   }
   for (const a of reveals) revealSpider(a);
 }
-function updateProjectiles(dt){ for (const p of projectiles){ p.x += p.vx*TILE*dt*4; p.y += p.vy*TILE*dt*4; p.life -= dt; for (const e of enemies){ if (Math.hypot(e.x-p.x,e.y-p.y) < 14){ e.hp -= p.dmg; p.life=0; if(e.hp<=0){ enemies=enemies.filter(x=>x!==e); stats.monstersKilled++; player.inv.bones+=2; if(e.eatenLoot){ for(const k in e.eatenLoot) player.inv[k]=(player.inv[k]||0)+e.eatenLoot[k]; } renderBag(); } } } } projectiles = projectiles.filter(p=>p.life>0); }
+function updateProjectiles(dt){ const guest = net.active && !net.isHost; for (const p of projectiles){ p.x += p.vx*TILE*dt*4; p.y += p.vy*TILE*dt*4; p.life -= dt; for (const e of enemies){ if (Math.hypot(e.x-p.x,e.y-p.y) < 14){ p.life=0; if(guest){ netSend({ t:'hit', id:e.id, dmg:p.dmg }); break; } e.hp -= p.dmg; if(e.hp<=0){ enemies=enemies.filter(x=>x!==e); stats.monstersKilled++; player.inv.bones+=2; if(e.eatenLoot){ for(const k in e.eatenLoot) player.inv[k]=(player.inv[k]||0)+e.eatenLoot[k]; } renderBag(); } } } } projectiles = projectiles.filter(p=>p.life>0); }
 function spawnParticle(x,y,color,r){ particles.push({x,y,color,r:r||4,life:0.6,vy:-20}); } function updateParticles(dt){ for(const p of particles){ p.life-=dt; p.y+=p.vy*dt; } particles = particles.filter(p=>p.life>0); }
 
 let openChestRef = null; function openChest(c){ openChestRef = c; document.getElementById('chestPanel').classList.add('open'); renderChest(); } function closeChest(){ document.getElementById('chestPanel').classList.remove('open'); openChestRef=null; } function renderChest(){ const list = document.getElementById('chestList'); list.innerHTML = ''; const keys = ['wood','stone','coal','iron','iron_ingot','berry','meat','bones','wheat','seeds','bowl','dough','bread','cooked_meat','fruit_salad']; keys.forEach(k=>{ if(player.inv[k]!==undefined){ const row = document.createElement('div'); row.className='chestRow'; row.innerHTML = `<span>${names[k]}: תיק ${player.inv[k]||0} | תיבה ${openChestRef.items[k]||0}</span><span><button onclick="chestTransfer('${k}',1)">➡️</button><button onclick="chestTransfer('${k}',-1)">⬅️</button></span>`; list.appendChild(row); } }); } function chestTransfer(k, dir){ if (!openChestRef) return; if (dir>0){ if ((player.inv[k]||0)>0){ player.inv[k]--; openChestRef.items[k]=(openChestRef.items[k]||0)+1; } } else { if ((openChestRef.items[k]||0)>0){ openChestRef.items[k]--; player.inv[k]=(player.inv[k]||0)+1; } } renderChest(); renderBag(); }
@@ -1355,7 +1406,11 @@ function startWorld(mode){
 let sharedMode = 'crystal';
 function openSharedMenu(){ document.getElementById('wsMain').style.display='none'; document.getElementById('sharedMenu').style.display='flex'; setSharedMode('crystal'); }
 function closeSharedMenu(){ document.getElementById('sharedMenu').style.display='none'; document.getElementById('wsMain').style.display='block'; }
-function setSharedMode(m){ sharedMode = m; document.getElementById('sharedCrystalCard').classList.toggle('sel', m==='crystal'); document.getElementById('sharedSurvivalCard').classList.toggle('sel', m==='survival'); }
+function setSharedMode(m){ sharedMode = m;
+  document.getElementById('sharedCrystalCard').classList.toggle('sel', m==='crystal');
+  document.getElementById('sharedSurvivalCard').classList.toggle('sel', m==='survival');
+  document.getElementById('sharedChallengeCard').classList.toggle('sel', m==='challenge');
+}
 function sharedSolo(){ startWorld(sharedMode); }
 
 /* ============ P2P co-op via PeerJS: short numeric room codes, auto-connect, works on a hotspot with internet ============ */
@@ -1466,14 +1521,31 @@ function applyNetInit(msg){
   showToast('🔗 נכנסת לעולם המשותף!');
 }
 function applyNetTiles(cells){
-  for(const c of cells){ const [x,y,type,hp,maxHp,stage]=c; if(world[y]&&world[y][x]){ const tile={type,hp,timer:0}; if(maxHp)tile.maxHp=maxHp; if(stage)tile.stage=stage; world[y][x]=tile; if(netShadow) netShadow[y][x]=type; } }
+  for(const c of cells){ const [x,y,type,hp,maxHp,stage]=c; if(world[y]&&world[y][x]){ const tile={type,hp,timer:0}; if(maxHp)tile.maxHp=maxHp; if(stage)tile.stage=stage;
+    if(PLAYER_BUILT_TILES.includes(type)){ tile.def=enemyHitsFor(type); tile.defMax=tile.def; }
+    if(type===T.CROP){ tile.growAt = performance.now()+opCropGrowSeconds*1000; tile.stage=stage||0; if(net.isHost) cropTiles.push(tile); }  // host grows teammate-planted crops
+    world[y][x]=tile; if(netShadow) netShadow[y][x]=type; } }
 }
 function netOnMessage(peer, msg){
   if (!msg || typeof msg!=='object') { try{ msg=JSON.parse(msg); }catch(e){ return; } }
   if (msg.t==='init'){ applyNetInit(msg); return; }
-  if (msg.t==='p'){ remotePlayers[msg.id]={ x:msg.x, y:msg.y, facing:msg.facing, hp:msg.hp, name:msg.name, last:performance.now() }; if(net.isHost) netRelay(peer, msg); return; }
+  if (msg.t==='p'){ const prev=remotePlayers[msg.id]; const moved = prev && (Math.abs(prev.x-msg.x)>0.5||Math.abs(prev.y-msg.y)>0.5); remotePlayers[msg.id]={ x:msg.x, y:msg.y, facing:msg.facing, hp:msg.hp, name:msg.name, color:msg.color, torch:msg.torch, last:performance.now(), lastMove: moved?performance.now():((prev&&prev.lastMove)||0), wf:((prev&&prev.wf)||0) }; if(net.isHost) netRelay(peer, msg); return; }
   if (msg.t==='tiles'){ applyNetTiles(msg.cells); if(net.isHost) netRelay(peer, msg); return; }
   if (msg.t==='time'){ if(!net.isHost){ dayNum=msg.dayNum; time=msg.time; eternalNightActive=msg.en; } return; }
+  if (msg.t==='ent'){ if(!net.isHost) applyNetEntities(msg); return; }               // guest: render host's monsters/animals
+  if (msg.t==='dmg'){ if(msg.to===net.selfId && !cheatGodMode){ player.health -= msg.amt; if(!player.hurtSfxCd||player.hurtSfxCd<=0){ sfxHurt(); player.hurtSfxCd=0.5; } } return; }  // a monster hit me on the host's sim
+  if (msg.t==='hit'){ if(net.isHost) hostApplyHit(msg); return; }                     // host: a guest damaged a monster
+  if (msg.t==='ahit'){ if(net.isHost){ const a=animals.find(an=>Math.hypot(an.x-msg.x,an.y-msg.y)<24); if(a){ if(a.isSpider){ revealSpider(a); } else { animals=animals.filter(x=>x!==a); } } } return; }  // host: a guest hit an animal
+}
+function applyNetEntities(msg){
+  enemies = (msg.e||[]).map(e=>({ id:e.id, x:e.x, y:e.y, kind:e.k, hp:e.hp, maxHp:e.mh, facing:e.f }));
+  animals = (msg.a||[]).map(a=>({ x:a.x, y:a.y, isSpider:!!a.s, hp:3, maxHp:3 }));
+}
+function hostApplyHit(msg){
+  const e = enemies.find(en=>en.id===msg.id); if(!e) return;
+  e.hp -= msg.dmg;
+  spawnParticle(e.x, e.y, '#e04a30', 4);
+  if (e.hp<=0){ enemies = enemies.filter(en=>en!==e); stats.monstersKilled++; player.inv.bones += 1; renderBag(); }
 }
 function netSendDiff(){
   if (!netShadow) return;
@@ -1483,23 +1555,37 @@ function netSendDiff(){
 }
 function netTick(dt){
   const now=performance.now();
-  if (now-netLastPos > 80){ netLastPos=now; netSend({ t:'p', id:net.selfId, x:Math.round(player.x), y:Math.round(player.y), facing:player.facing, hp:Math.round(player.health), name:net.name }); }
-  if (now-netLastDiff > 500){ netLastDiff=now; netSendDiff(); if(net.isHost) netSend({ t:'time', dayNum, time, en:(eternalNightActive&&!crystalActivated) }); }
+  if (now-netLastPos > 80){ netLastPos=now; netSend({ t:'p', id:net.selfId, x:Math.round(player.x), y:Math.round(player.y), facing:player.facing, hp:Math.round(player.health), name:net.name, color:playerSkin, torch:((player.inv.torch||0)>0)?1:0 }); }
+  if (net.isHost && now-netLastEnt > 90){
+    netLastEnt = now;
+    // broadcast every monster + animal so guests see (and can fight) the same threats
+    const es = enemies.map(e=>({ id:e.id, x:Math.round(e.x), y:Math.round(e.y), k:e.kind, hp:e.hp, mh:e.maxHp, f:e.facing }));
+    const as = animals.map(a=>({ x:Math.round(a.x), y:Math.round(a.y), s:a.isSpider?1:0 }));
+    netSend({ t:'ent', e:es, a:as });
+    // pay out accumulated damage to each guest
+    for (const id in netGuestDmg){ if (netGuestDmg[id] > 0.4){ netSend({ t:'dmg', to:id, amt:netGuestDmg[id] }); netGuestDmg[id]=0; } }
+  }
+  if (now-netLastDiff > 500){ netLastDiff=now; netSendDiff(); if(net.isHost) netSend({ t:'time', dayNum, time, en:(eternalNightActive&&!crystalActivated), day:dayNum }); }
   for (const id in remotePlayers){ if (now - remotePlayers[id].last > 3500) delete remotePlayers[id]; }
 }
 function netReset(){
   for (const p of net.peers){ try{ p.conn && p.conn.close(); }catch(e){} }
   if (net.peerObj){ try{ net.peerObj.destroy(); }catch(e){} net.peerObj=null; }
   net.active=false; net.isHost=false; net.peers=[]; net._pendingHostPeer=null;
-  remotePlayers={}; netShadow=null; closeNetPanel();
+  remotePlayers={}; netShadow=null; netGuestDmg={}; closeNetPanel();
 }
 function drawRemotePlayers(){
+  const now=performance.now();
   for (const id in remotePlayers){ const rp=remotePlayers[id];
+    const moving = (now - (rp.lastMove||0)) < 320;
+    if (moving) rp.wf = (rp.wf||0) + 0.35;
+    const bob = moving ? Math.sin(rp.wf)*2 : 0, feet = moving ? Math.sin(rp.wf)*4 : 0;
     ctx.save(); ctx.translate(rp.x, rp.y);
     ctx.fillStyle='rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(0,9,8,3,0,0,6.3); ctx.fill();
-    ctx.fillStyle='#8a5f2f'; ctx.fillRect(-5,-4,10,10);
-    ctx.fillStyle='#ffd1a9'; ctx.beginPath(); ctx.arc(0,-9,5,0,6.3); ctx.fill();
-    ctx.fillStyle='#3a2212'; ctx.fillRect(-4,6,3,3); ctx.fillRect(1,6,3,3);
+    ctx.fillStyle='#3a2212'; ctx.fillRect(-4+feet,6,3,3); ctx.fillRect(1-feet,6,3,3);
+    ctx.fillStyle = rp.color || '#8a5f2f'; ctx.fillRect(-5,-4+bob,10,10);
+    ctx.fillStyle='#ffd1a9'; ctx.beginPath(); ctx.arc(0,-9+bob,5,0,6.3); ctx.fill();
+    if (rp.torch){ ctx.fillStyle='#ff9a3d'; ctx.beginPath(); ctx.ellipse(6,-8+bob,3,5,0,0,6.3); ctx.fill(); }
     const nm=(rp.name||'שחקן'); ctx.font='9px "Courier New", monospace'; ctx.textAlign='center';
     const w=ctx.measureText(nm).width+8; ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(-w/2,-27,w,12);
     ctx.fillStyle='#8fe08f'; ctx.fillText(nm, 0, -18); ctx.textAlign='start';
@@ -1992,7 +2078,7 @@ function draw(){
   let df = player.facing;
   if (gfxLevel < 3 && df.includes('-')) df = df.split('-')[1];
 
-  ctx.fillStyle = '#2f5f8a'; ctx.fillRect(-5, -4 + pBob, 10, 10);
+  ctx.fillStyle = playerSkin; ctx.fillRect(-5, -4 + pBob, 10, 10);
   ctx.fillStyle = '#ffd1a9'; ctx.beginPath(); ctx.arc(0, -9 + pBob, 5, 0, 6.3); ctx.fill();
 
   if (df === 'down') { 
@@ -2056,6 +2142,8 @@ function draw(){
         lightCtx.fillStyle = fireGrad; lightCtx.beginPath(); lightCtx.arc(scrX, scrY, fireRadius, 0, 6.3); lightCtx.fill();
       }
     }
+    // teammates holding a torch light up their own area for you too
+    if (net.active){ for (const id in remotePlayers){ const rp=remotePlayers[id]; if(!rp.torch) continue; const rr=torchLightRadius*gameZoom; const rx=(rp.x-player.x)*gameZoom+W/2, ry=(rp.y-player.y)*gameZoom+H/2; const g2=lightCtx.createRadialGradient(rx,ry,5*gameZoom,rx,ry,rr); g2.addColorStop(0,'rgba(0,0,0,1)'); g2.addColorStop(1,'rgba(0,0,0,0)'); lightCtx.fillStyle=g2; lightCtx.beginPath(); lightCtx.arc(rx,ry,rr,0,6.3); lightCtx.fill(); } }
     lightCtx.globalCompositeOperation = 'source-over'; ctx.drawImage(lightCanvas, 0, 0);
   }
   if (gfxLevel === 5) { let vignGrad = ctx.createRadialGradient(W/2, H/2, Math.min(W, H) * 0.4, W/2, H/2, Math.max(W, H) * 0.75); vignGrad.addColorStop(0, 'rgba(0,0,0,0)'); vignGrad.addColorStop(1, 'rgba(0,0,0,0.5)'); ctx.fillStyle = vignGrad; ctx.fillRect(0, 0, W, H); }
