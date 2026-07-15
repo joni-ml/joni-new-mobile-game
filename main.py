@@ -201,6 +201,7 @@
     <div class="settingRow"><label>🔎 מרחק מצלמה (Zoom):</label><input type="range" min="0.6" max="2.6" step="0.1" value="1.5" oninput="changeZoom(this.value)"></div>
     <div class="settingRow"><label>🕹️ גודל ג'ויסטיק תנועה:</label><input type="range" min="80" max="260" step="5" value="120" oninput="changeJoySize(this.value)"></div>
     <div class="settingRow"><label>🔴 גודל לחצן תקיפה (⚔️):</label><input type="range" min="65" max="180" step="5" value="80" oninput="changeActionSize(this.value)"></div>
+    <div class="settingRow" style="flex-direction:row; justify-content:space-between; align-items:center;"><label>🏷️ הצג שמות של שחקנים אחרים</label><input type="checkbox" checked onchange="showPlayerNames=this.checked"></div>
     <div style="display:flex; gap:6px; margin-top:6px;">
       <button onclick="saveWorld()" style="flex:1; padding:8px; background:#3a5a2a; color:#fff; border:none; border-radius:6px; font-family:inherit; cursor:pointer;">💾 שמור עולם</button>
       <button onclick="showWorldSelect()" style="flex:1; padding:8px; background:#5a4a2a; color:#fff; border:none; border-radius:6px; font-family:inherit; cursor:pointer;">🏠 תפריט ראשי</button>
@@ -608,7 +609,9 @@ function tileAt(px,py){ const tx=Math.floor(px/TILE), ty=Math.floor(py/TILE); if
 function isSolid(t){ return [T.TREE, T.ROCK, T.COAL, T.IRONROCK, T.CACTUS, T.PINE, T.WALL, T.WALL_THORN, T.BONE_WALL, T.LUCKY, T.TRUNK, T.CRAFTING_TABLE, T.SAPLING, T.SKULL, T.UPGRADED_TABLE, T.FURNACE, T.TABLET, T.CRYSTAL_ORE, T.CRYSTAL_DEVICE].includes(t.type); }
 function isWater(t){ return t.type===T.WATER; }
 
-let enemies, animals, particles, projectiles, placedTorches, chests, cropTiles;
+let enemies, animals, particles, projectiles, placedTorches, chests, cropTiles, pickups;
+let pickupIdSeq = 0;           // host-assigned ids for dropped-item pickups
+let showPlayerNames = true;    // settings toggle for teammate name tags
 let player, camX, camY, time, dayNum, gameOver, countTimer=0;
 let gameMode = 'crystal';      // 'crystal' | 'eternal' | 'test'
 let gameStarted = false;       // stays false until a world is picked
@@ -639,7 +642,7 @@ function damagePlayer(targetId, amount){
 let netShadow = null;          // last-broadcast tile-type grid, for diffing structural world changes
 let netLastPos = 0, netLastDiff = 0, netLastEnt = 0;
 function resetStats(){ stats = { animalsKilled:0, monstersKilled:0, blocksDestroyed:0, maxBreakDist:2, luckyOpened:0, dailyChoices:[] }; }
-function initEntities(){ enemies=[]; animals=[]; particles=[]; projectiles=[]; placedTorches=[]; chests=[]; cropTiles=[]; enemyProjectiles=[]; }
+function initEntities(){ enemies=[]; animals=[]; particles=[]; projectiles=[]; placedTorches=[]; chests=[]; cropTiles=[]; enemyProjectiles=[]; pickups=[]; }
 function initPlayer(){
   const gx = Math.floor(MAPW/2), gy = Math.floor(MAPH*0.42);
   player = { 
@@ -922,6 +925,7 @@ window.tryInteract = function() {
 
             if (r.id === 'chest') {
                 chests.push({x: tx*TILE + TILE/2, y: ty*TILE + TILE/2, items:{}});
+                if (net.active && !net.isHost) netSend({ t:'chest_add', x: tx*TILE+TILE/2, y: ty*TILE+TILE/2 });
                 player.inv[itemKey] -= 1;
                 showToast('הצבת ' + r.name + ' בהצלחה! 🎉');
                 if ((player.inv[itemKey]||0) <= 0) player.placingItem = null;
@@ -1146,6 +1150,7 @@ function update(dt){
     if (cheatNoEnemies && enemies.length) enemies = [];
     updateEnemies(dt); updateAnimals(dt);
   }
+  if (!netClient) updatePickups();   // host/solo runs pickup collection for everyone
   updateProjectiles(dt); updateParticles(dt);
   
   const ibtn = document.getElementById('interactBtn');
@@ -1419,6 +1424,26 @@ function updateAnimals(dt){
 }
 function updateProjectiles(dt){ const guest = net.active && !net.isHost; for (const p of projectiles){ p.x += p.vx*TILE*dt*4; p.y += p.vy*TILE*dt*4; p.life -= dt; for (const e of enemies){ if (Math.hypot(e.x-p.x,e.y-p.y) < 14){ p.life=0; if(guest){ netSend({ t:'hit', id:e.id, dmg:p.dmg }); break; } e.hp -= p.dmg; if(e.hp<=0){ enemies=enemies.filter(x=>x!==e); stats.monstersKilled++; player.inv.bones+=2; if(e.eatenLoot){ for(const k in e.eatenLoot) player.inv[k]=(player.inv[k]||0)+e.eatenLoot[k]; } renderBag(); } } } } projectiles = projectiles.filter(p=>p.life>0); }
 function spawnParticle(x,y,color,r){ particles.push({x,y,color,r:r||4,life:0.6,vy:-20}); } function updateParticles(dt){ for(const p of particles){ p.life-=dt; p.y+=p.vy*dt; } particles = particles.filter(p=>p.life>0); }
+// Dropped-item pickups (used to hand materials to a teammate). Host authoritative in co-op.
+window.dropItem = function(k){
+  if ((player.inv[k]||0) <= 0) return;
+  player.inv[k] -= 1;
+  const dx = player.x + (Math.random()*16-8), dy = player.y + 22 + (Math.random()*8);
+  if (net.active && !net.isHost){ netSend({ t:'drop', x:dx, y:dy, item:k, count:1 }); }
+  else { pickups.push({ id:(++pickupIdSeq), x:dx, y:dy, item:k, count:1, st:performance.now() }); }
+  showToast('זרקת '+((names[k]||k).split(' ')[0])); sfxGather(); renderBag();
+}
+function updatePickups(){
+  if (!pickups || !pickups.length) return;
+  const now = performance.now();
+  for (let i=pickups.length-1;i>=0;i--){ const pk=pickups[i];
+    if (now - (pk.st||0) < 1200) continue;   // grace period so the dropper can walk away
+    if (Math.hypot(player.x-pk.x, player.y-pk.y) < TILE*0.9){ player.inv[pk.item]=(player.inv[pk.item]||0)+pk.count; sfxGather(); renderBag(); pickups.splice(i,1); continue; }
+    let taken=false;
+    for (const id in remotePlayers){ const rp=remotePlayers[id]; if (Math.hypot(rp.x-pk.x, rp.y-pk.y) < TILE*0.9){ if(rp._peer) sendToPeer(rp._peer, {t:'reward', items:{[pk.item]:pk.count}}); pickups.splice(i,1); taken=true; break; } }
+    if (taken) continue;
+  }
+}
 
 let openChestRef = null; function openChest(c){ openChestRef = c; document.getElementById('chestPanel').classList.add('open'); renderChest(); } function closeChest(){ document.getElementById('chestPanel').classList.remove('open'); openChestRef=null; } function renderChest(){ const list = document.getElementById('chestList'); list.innerHTML = ''; const keys = ['wood','stone','coal','iron','iron_ingot','berry','meat','bones','wheat','seeds','bowl','dough','bread','cooked_meat','fruit_salad']; keys.forEach(k=>{ if(player.inv[k]!==undefined){ const row = document.createElement('div'); row.className='chestRow'; row.innerHTML = `<span>${names[k]}: תיק ${player.inv[k]||0} | תיבה ${openChestRef.items[k]||0}</span><span><button onclick="chestTransfer('${k}',1)">➡️</button><button onclick="chestTransfer('${k}',-1)">⬅️</button></span>`; list.appendChild(row); } }); } function chestTransfer(k, dir){ if (!openChestRef) return; if (dir>0){ if ((player.inv[k]||0)>0){ player.inv[k]--; openChestRef.items[k]=(openChestRef.items[k]||0)+1; } } else { if ((openChestRef.items[k]||0)>0){ openChestRef.items[k]--; player.inv[k]=(player.inv[k]||0)+1; } } renderChest(); renderBag(); }
 function endGame(){ gameOver=true; document.getElementById('msg').style.display='block'; document.getElementById('survivedDays').textContent=dayNum; } function restart(){ document.getElementById('msg').style.display='none'; initGame(); }
@@ -1551,13 +1576,15 @@ function sendToPeer(peer, obj){ if(peer && peer.conn && peer.open){ try{ peer.co
 function netSend(obj){ for(const p of net.peers) sendToPeer(p, obj); }
 function netRelay(except, obj){ for(const p of net.peers){ if(p!==except) sendToPeer(p, obj); } }
 function netSendInitTo(peer){
-  sendToPeer(peer, { t:'init', world:serializeWorld(), dayNum, time, gameMode, eternalNightDay, en:(eternalNightActive&&!crystalActivated), crystalPlaced, crystalActivated, crystalDevicePos, perm:guestCheatsAllowed });
+  sendToPeer(peer, { t:'init', world:serializeWorld(), dayNum, time, gameMode, eternalNightDay, en:(eternalNightActive&&!crystalActivated), crystalPlaced, crystalActivated, crystalDevicePos, perm:guestCheatsAllowed, cyc:CYCLE_LEN, dusk:DUSK_LEN, dawn:DAWN_LEN, chests:chests.map(c=>({x:c.x,y:c.y,items:c.items})) });
 }
 function applyNetInit(msg){
   gameMode = msg.gameMode||'crystal';
   initEntities(); deserializeWorld(msg.world); initShadow(); initPlayer();
   dayNum=msg.dayNum||1; time=msg.time||0; eternalNightDay=msg.eternalNightDay||5;
   eternalNightActive=!!msg.en; crystalPlaced=!!msg.crystalPlaced; crystalActivated=!!msg.crystalActivated; crystalDevicePos=msg.crystalDevicePos||null;
+  if (msg.cyc) CYCLE_LEN=msg.cyc; if (msg.dusk) DUSK_LEN=msg.dusk; if (msg.dawn) DAWN_LEN=msg.dawn;   // match host's day length
+  chests = (msg.chests||[]).map(c=>({x:c.x,y:c.y,items:c.items||{}}));
   guestCheatsAllowed = !!msg.perm;
   resetStats(); gameOver=false; tickAcc=0; countTimer=0; bonusShownForDay=dayNum; luckyQueue=[];
   camX=player.x; camY=player.y;
@@ -1577,24 +1604,38 @@ function netOnMessage(peer, msg){
 function netHandleMessage(peer, msg){
   if (!msg || typeof msg!=='object') { try{ msg=JSON.parse(msg); }catch(e){ return; } }
   if (msg.t==='init'){ applyNetInit(msg); return; }
-  if (msg.t==='p'){ const prev=remotePlayers[msg.id]; const moved = prev && (Math.abs(prev.x-msg.x)>0.5||Math.abs(prev.y-msg.y)>0.5); remotePlayers[msg.id]={ x:msg.x, y:msg.y, facing:msg.facing, hp:msg.hp, name:msg.name, color:msg.color, torch:msg.torch, last:performance.now(), lastMove: moved?performance.now():((prev&&prev.lastMove)||0), wf:((prev&&prev.wf)||0) }; if(net.isHost) netRelay(peer, msg); return; }
+  if (msg.t==='p'){ const prev=remotePlayers[msg.id]; const moved = prev && (Math.abs((prev.tx!=null?prev.tx:prev.x)-msg.x)>0.5||Math.abs((prev.ty!=null?prev.ty:prev.y)-msg.y)>0.5);
+    remotePlayers[msg.id]={ x: prev?prev.x:msg.x, y: prev?prev.y:msg.y, tx:msg.x, ty:msg.y, facing:msg.facing, hp:msg.hp, name:msg.name, color:msg.color, torch:msg.torch, last:performance.now(), lastMove: moved?performance.now():((prev&&prev.lastMove)||0), wf:((prev&&prev.wf)||0), _peer: net.isHost?peer:null };
+    if(net.isHost) netRelay(peer, msg); return; }
   if (msg.t==='tiles'){ applyNetTiles(msg.cells); if(net.isHost) netRelay(peer, msg); return; }
-  if (msg.t==='time'){ if(!net.isHost){ dayNum=msg.dayNum; time=msg.time; eternalNightActive=msg.en; } return; }
-  if (msg.t==='ent'){ if(!net.isHost) applyNetEntities(msg); return; }               // guest: render host's monsters/animals
+  if (msg.t==='time'){ if(!net.isHost){ dayNum=msg.dayNum; time=msg.time; eternalNightActive=msg.en; if(msg.cyc)CYCLE_LEN=msg.cyc; if(msg.dusk)DUSK_LEN=msg.dusk; if(msg.dawn)DAWN_LEN=msg.dawn; } return; }
+  if (msg.t==='ent'){ if(!net.isHost) applyNetEntities(msg); return; }               // guest: render host's monsters/animals/pickups/chests
   if (msg.t==='dmg'){ if(msg.to===net.selfId && !cheatGodMode){ player.health -= msg.amt; if(!player.hurtSfxCd||player.hurtSfxCd<=0){ sfxHurt(); player.hurtSfxCd=0.5; } } return; }  // a monster hit me on the host's sim
-  if (msg.t==='hit'){ if(net.isHost) hostApplyHit(msg); return; }                     // host: a guest damaged a monster
-  if (msg.t==='ahit'){ if(net.isHost){ const a=animals.find(an=>Math.hypot(an.x-msg.x,an.y-msg.y)<24); if(a){ if(a.isSpider){ revealSpider(a); } else { animals=animals.filter(x=>x!==a); } } } return; }  // host: a guest hit an animal
+  if (msg.t==='hit'){ if(net.isHost) hostApplyHit(msg, peer); return; }               // host: a guest damaged a monster
+  if (msg.t==='ahit'){ if(net.isHost){ const a=animals.find(an=>Math.hypot(an.x-msg.x,an.y-msg.y)<24); if(a){ if(a.isSpider){ revealSpider(a); } else { animals=animals.filter(x=>x!==a); sendToPeer(peer,{t:'reward', items:{meat:2,bones:1}, hunger:15}); } } } return; }  // host: guest killed an animal -> reward the guest
+  if (msg.t==='reward'){ if(msg.items){ for(const k in msg.items) player.inv[k]=(player.inv[k]||0)+msg.items[k]; } if(msg.hunger) player.hunger=Math.min(player.maxHunger, player.hunger+msg.hunger); renderBag(); return; }  // guest: got loot for a kill
+  if (msg.t==='drop'){ if(net.isHost){ pickups.push({ id:(++pickupIdSeq), x:msg.x, y:msg.y, item:msg.item, count:msg.count }); } return; }  // host: register a dropped item
+  if (msg.t==='chest_add'){ if(net.isHost){ chests.push({x:msg.x, y:msg.y, items:{}}); } return; }
   if (msg.t==='perm'){ if(!net.isHost){ guestCheatsAllowed = !!msg.cheats; showToast(msg.cheats?'🤝 המארח איפשר לך צ׳יטים':'🔒 המארח חסם צ׳יטים'); } return; }
 }
 function applyNetEntities(msg){
-  enemies = (msg.e||[]).map(e=>({ id:e.id, x:e.x, y:e.y, kind:e.k, hp:e.hp, maxHp:e.mh, facing:e.f }));
+  // update enemies by id so we can smoothly interpolate them (targets tx/ty) instead of teleporting
+  const incoming = msg.e||[]; const byId={}; for(const e of enemies) byId[e.id]=e;
+  const next=[];
+  for(const s of incoming){ let e=byId[s.id]; if(e){ e.tx=s.x; e.ty=s.y; e.hp=s.hp; e.maxHp=s.mh; e.facing=s.f; } else { e={ id:s.id, x:s.x, y:s.y, tx:s.x, ty:s.y, kind:s.k, hp:s.hp, maxHp:s.mh, facing:s.f }; } next.push(e); }
+  enemies = next;
   animals = (msg.a||[]).map(a=>({ x:a.x, y:a.y, isSpider:!!a.s, hp:3, maxHp:3 }));
+  pickups = (msg.pk||[]).map(pk=>({ id:pk.id, x:pk.x, y:pk.y, item:pk.item, count:pk.count }));
+  if (msg.ch) chests = msg.ch.map(c=>({x:c.x,y:c.y,items:c.items||{}}));
 }
-function hostApplyHit(msg){
+function hostApplyHit(msg, peer){
   const e = enemies.find(en=>en.id===msg.id); if(!e) return;
   e.hp -= msg.dmg;
   spawnParticle(e.x, e.y, '#e04a30', 4);
-  if (e.hp<=0){ enemies = enemies.filter(en=>en!==e); stats.monstersKilled++; player.inv.bones += 1; renderBag(); }
+  if (e.hp<=0){ enemies = enemies.filter(en=>en!==e); stats.monstersKilled++;
+    const bones = e.kind==='wolf'?3:e.kind==='siberian_wolf'?4:e.kind==='brute'?5:2;
+    sendToPeer(peer, { t:'reward', items:{ bones } });   // the guest who killed it gets the loot
+  }
 }
 function netSendDiff(){
   if (!netShadow) return;
@@ -1617,17 +1658,22 @@ function netTick(dt){
       }catch(e){}
     }
   }
+  // smooth interpolation of remote players (and guest-side enemies) toward their latest network positions
+  for (const id in remotePlayers){ const rp=remotePlayers[id]; if(rp.tx!=null){ rp.x += (rp.tx-rp.x)*0.3; rp.y += (rp.ty-rp.y)*0.3; } }
+  if (!net.isHost){ for (const e of enemies){ if(e.tx!=null){ e.x += (e.tx-e.x)*0.35; e.y += (e.ty-e.y)*0.35; } } }
   if (now-netLastPos > 80){ netLastPos=now; netSend({ t:'p', id:net.selfId, x:Math.round(player.x), y:Math.round(player.y), facing:player.facing, hp:Math.round(player.health), name:net.name, color:playerSkin, torch:((player.inv.torch||0)>0)?1:0 }); }
   if (net.isHost && now-netLastEnt > 90){
     netLastEnt = now;
-    // broadcast every monster + animal so guests see (and can fight) the same threats
+    // broadcast every monster + animal + pickup + chest so guests see (and can fight) the same threats & items
     const es = enemies.map(e=>({ id:e.id, x:Math.round(e.x), y:Math.round(e.y), k:e.kind, hp:e.hp, mh:e.maxHp, f:e.facing }));
     const as = animals.map(a=>({ x:Math.round(a.x), y:Math.round(a.y), s:a.isSpider?1:0 }));
-    netSend({ t:'ent', e:es, a:as });
+    const pk = pickups.map(p=>({ id:p.id, x:Math.round(p.x), y:Math.round(p.y), item:p.item, count:p.count }));
+    const ch = chests.map(c=>({ x:c.x, y:c.y, items:c.items }));
+    netSend({ t:'ent', e:es, a:as, pk, ch });
     // pay out accumulated damage to each guest
     for (const id in netGuestDmg){ if (netGuestDmg[id] > 0.4){ netSend({ t:'dmg', to:id, amt:netGuestDmg[id] }); netGuestDmg[id]=0; } }
   }
-  if (now-netLastDiff > 500){ netLastDiff=now; netSendDiff(); if(net.isHost) netSend({ t:'time', dayNum, time, en:(eternalNightActive&&!crystalActivated), day:dayNum }); }
+  if (now-netLastDiff > 500){ netLastDiff=now; netSendDiff(); if(net.isHost) netSend({ t:'time', dayNum, time, en:(eternalNightActive&&!crystalActivated), cyc:CYCLE_LEN, dusk:DUSK_LEN, dawn:DAWN_LEN }); }
   for (const id in remotePlayers){ if (now - remotePlayers[id].last > 3500) delete remotePlayers[id]; }
 }
 function netReset(){
@@ -1646,8 +1692,12 @@ function drawRemotePlayers(){
     ctx.save(); ctx.translate(rp.x, rp.y);
     ctx.fillStyle='rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(0,9,8,3,0,0,6.3); ctx.fill();
     ctx.fillStyle='#3a2212'; ctx.fillRect(-4+feet,6,3,3); ctx.fillRect(1-feet,6,3,3);
+    // little backpack behind the body
+    ctx.fillStyle='#7a4a2a'; ctx.fillRect(-6,-3+bob,3,8);
     ctx.fillStyle = rp.color || '#8a5f2f'; ctx.fillRect(-5,-4+bob,10,10);
     ctx.fillStyle='#ffd1a9'; ctx.beginPath(); ctx.arc(0,-9+bob,5,0,6.3); ctx.fill();
+    // hair cap
+    ctx.fillStyle='#5a3a1e'; ctx.beginPath(); ctx.arc(0,-10+bob,5.2,3.14,0); ctx.fill();
     // show which way the teammate is looking
     let fdx=0, fdy=0; const f=rp.facing||'down';
     if(f.includes('right'))fdx=1; if(f.includes('left'))fdx=-1; if(f.includes('down'))fdy=1; if(f.includes('up'))fdy=-1;
@@ -1655,9 +1705,9 @@ function drawRemotePlayers(){
     ctx.strokeStyle='rgba(255,255,255,0.55)'; ctx.lineWidth=2; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(0,-2+bob); ctx.lineTo(fdx*20, -2+bob+fdy*20); ctx.stroke(); ctx.setLineDash([]);
     ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.arc(fdx*22, -2+bob+fdy*22, 2.5, 0, 6.3); ctx.fill();
     if (rp.torch){ ctx.fillStyle='#ff9a3d'; ctx.beginPath(); ctx.ellipse(6,-8+bob,3,5,0,0,6.3); ctx.fill(); }
-    const nm=(rp.name||'שחקן'); ctx.font='9px "Courier New", monospace'; ctx.textAlign='center';
-    const w=ctx.measureText(nm).width+8; ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(-w/2,-27,w,12);
-    ctx.fillStyle='#8fe08f'; ctx.fillText(nm, 0, -18); ctx.textAlign='start';
+    if (showPlayerNames){ const nm=(rp.name||'שחקן'); ctx.font='9px "Courier New", monospace'; ctx.textAlign='center';
+      const w=ctx.measureText(nm).width+8; ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(-w/2,-27,w,12);
+      ctx.fillStyle='#8fe08f'; ctx.fillText(nm, 0, -18); ctx.textAlign='start'; }
     ctx.restore();
   }
 }
@@ -2079,7 +2129,9 @@ function draw(){
     if (t.type!==T.GRASS && t.type!==T.WATER && t.type!==T.SAND && t.type!==T.SNOW && t.type!==T.ALTAR_FLOOR){ drawResourceShape(t.type, sx, sy, t); }
   }
 
-  for (const c of chests){ ctx.fillStyle='#7a5a2a'; ctx.fillRect(c.x-11, c.y-8, 22, 16); }
+  for (const c of chests){ ctx.fillStyle='#7a5a2a'; ctx.fillRect(c.x-11, c.y-8, 22, 16); ctx.fillStyle='#9a7a3a'; ctx.fillRect(c.x-11, c.y-2, 22, 3); }
+  // dropped items on the ground (transfer between teammates)
+  if (pickups) for (const pk of pickups){ ctx.save(); ctx.translate(pk.x, pk.y); ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(0,4,7,3,0,0,6.3); ctx.fill(); const bob=Math.sin(performance.now()*0.005+pk.x)*2; const emo=(names[pk.item]||'📦').split(' ')[0]; ctx.font='16px "Courier New", monospace'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(emo, 0, -4+bob); if(pk.count>1){ ctx.font='9px monospace'; ctx.fillStyle='#fff'; ctx.fillText('x'+pk.count, 6, 6); } ctx.textAlign='start'; ctx.textBaseline='alphabetic'; ctx.restore(); }
   for (const p of particles){ ctx.globalAlpha=Math.max(0,p.life/0.6); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.3); ctx.fill(); ctx.globalAlpha=1; }
   for (const p of projectiles){ ctx.fillStyle='#fff'; ctx.fillRect(p.x-2, p.y-2, 4, 4); }
   for (const p of enemyProjectiles){ ctx.fillStyle='#8a2f1a'; ctx.fillRect(p.x-2, p.y-2, 4, 4); }
@@ -2253,7 +2305,9 @@ function renderBag(){
           if (k.startsWith('item_')) { const baseId = k.replace('item_',''); placeBtn = `<button onclick="placeItemFromBag('${baseId}')" style="background:#2f7aea; border:none; color:white; padding:3px 7px; border-radius:4px; font-size:10px; margin-left:6px; cursor:pointer;">📍 הצב</button>`; }
           if (k === 'torch') { placeBtn = `<button onclick="placeTorchFromBag()" style="background:#2f7aea; border:none; color:white; padding:3px 7px; border-radius:4px; font-size:10px; margin-left:6px; cursor:pointer;">📍 הצב</button>`; }
           if (k === 'reinforcement') { placeBtn = `<button onclick="selectReinforcement()" style="background:#6a6a8a; border:none; color:white; padding:3px 7px; border-radius:4px; font-size:10px; margin-left:6px; cursor:pointer;">⛓️ חזק</button>`; }
-          row.innerHTML = `<span>${names[k]}</span><span>${eatBtn}${placeBtn} ${player.inv[k]||0}</span>`; resList.appendChild(row); 
+          // drop button for raw materials so you can hand them to a teammate on the ground
+          let dropBtn = ''; if (!k.startsWith('item_')) dropBtn = `<button onclick="dropItem('${k}')" style="background:#7a5a2a; border:none; color:white; padding:3px 6px; border-radius:4px; font-size:10px; margin-left:6px; cursor:pointer;">⬇️</button>`;
+          row.innerHTML = `<span>${names[k]}</span><span>${eatBtn}${placeBtn}${dropBtn} ${player.inv[k]||0}</span>`; resList.appendChild(row);
         }
     }); 
     
@@ -2291,6 +2345,8 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 // Build a valid world behind the start screen (gameStarted stays false so it's paused) and wait for the player's choice.
+// pick a random shirt color by default (and highlight its swatch)
+(function(){ const sw=document.querySelectorAll('.skinSwatch'); if(sw.length){ const i=Math.floor(Math.random()*sw.length); setSkin(sw[i].style.backgroundColor, sw[i]); } })();
 gameMode = 'crystal'; initGame(); gameStarted = false; refreshSavesUI(); requestAnimationFrame(loop);
 </script>
 </body>
