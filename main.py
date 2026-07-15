@@ -152,6 +152,8 @@
   #statsPanel .statRow { display:flex; justify-content:space-between; font-size:11px; padding:4px 2px; border-bottom:1px solid rgba(255,255,255,0.05); }
   #statsPanel .statRow b { color:#73c745; }
   .noiseToggleRow { display:flex; justify-content:space-between; align-items:center; font-size:11px; margin-bottom:8px; }
+  #connBanner { position:absolute; top:8px; left:50%; transform:translateX(-50%); background:rgba(180,60,40,0.92); color:#fff; padding:6px 16px; border-radius:8px; font-size:12px; z-index:45; display:none; pointer-events:none; box-shadow:0 4px 10px rgba(0,0,0,0.4); }
+  #connBanner.show { display:block; }
 </style>
 </head>
 <body>
@@ -258,6 +260,7 @@
   </div>
 
   <div id="toast"></div>
+  <div id="connBanner">🔄 החיבור נפל — מתחבר מחדש...</div>
 
   <div id="chestPanel">
     <span id="chestClose" onclick="closeChest()">✕</span>
@@ -618,7 +621,7 @@ let luckyQueue = [];           // pending saved choice-sets, attached to lucky b
 let adminNightlyAll = false;   // admin toggle: every night auto-grant a lucky block + every bonus power
 let guestCheatsAllowed = false; // host permission: may guests use the secret code / OP menu?
 /* ---- P2P co-op networking (WebRTC, copy-paste signaling, works on a hotspot with no server) ---- */
-let net = { active:false, isHost:false, peers:[], selfId: Math.random().toString(36).slice(2,7), name:'שחקן', _pendingHostPeer:null, peerObj:null, myCode:null };
+let net = { active:false, isHost:false, peers:[], selfId: Math.random().toString(36).slice(2,7), name:'שחקן', _pendingHostPeer:null, peerObj:null, myCode:null, hostCode:null, lastReconnect:0, wasConnected:false };
 let remotePlayers = {};        // id -> {x,y,facing,hp,name,last,color,torch}
 let playerSkin = '#2f5f8a';    // chosen shirt color (shown to yourself and to teammates)
 function setSkin(color, el){ playerSkin = color; document.querySelectorAll('.skinSwatch').forEach(s=>s.classList.remove('sel')); if(el) el.classList.add('sel'); }
@@ -1482,11 +1485,12 @@ function openNetPanel(mode){
 }
 function closeNetPanel(){ document.getElementById('netPanel').classList.remove('open'); }
 
+function setConnBanner(show){ const b=document.getElementById('connBanner'); if(b) b.classList.toggle('show', !!show); }
 function netWireConn(peer){
   const c = peer.conn; if(!c) return;
-  c.on('open', ()=>{ peer.open=true; document.getElementById('netStatus').textContent='מחובר! 🎉'; showToast('🔗 שחקן התחבר לעולם!'); if(net.isHost) netSendInitTo(peer); setTimeout(closeNetPanel, 900); });
+  c.on('open', ()=>{ peer.open=true; net.wasConnected=true; setConnBanner(false); document.getElementById('netStatus').textContent='מחובר! 🎉'; showToast('🔗 שחקן התחבר לעולם!'); if(net.isHost) netSendInitTo(peer); setTimeout(closeNetPanel, 900); });
   c.on('data', d=> netOnMessage(peer, d));
-  c.on('close', ()=>{ peer.open=false; net.peers = net.peers.filter(p=>p!==peer); });
+  c.on('close', ()=>{ peer.open=false; net.peers = net.peers.filter(p=>p!==peer); if(!net.isHost && net.active) setConnBanner(true); });
   c.on('error', ()=>{});
 }
 function sharedHost(){
@@ -1504,6 +1508,8 @@ function netHostRetry(attempt){
   net.myCode = code;
   net.peerObj.on('open', ()=>{ document.getElementById('netHostCode').textContent = code; document.getElementById('netStatus').textContent='מסור לחבר את הקוד והמתן שיצטרף'; });
   net.peerObj.on('connection', conn=>{ const peer={ conn, id:conn.peer, open:false }; net.peers.push(peer); netWireConn(peer); });
+  // if the broker link drops (internet blip), get back on it so guests keep the SAME code and can reconnect
+  net.peerObj.on('disconnected', ()=>{ if(net.active && net.isHost){ try{ net.peerObj.reconnect(); }catch(e){} } });
   net.peerObj.on('error', err=>{ const t=String(err&&err.type||err||''); if (t.includes('unavailable-id')||t.includes('taken')){ try{net.peerObj.destroy();}catch(e){} netHostRetry(attempt+1); } else if (t.includes('network')||t.includes('server')){ document.getElementById('netStatus').textContent='אין חיבור לשרת — בדוק אינטרנט'; } });
 }
 function sharedJoin(){
@@ -1516,19 +1522,26 @@ function sharedJoin(){
   if (inp){ inp.value=''; try{ inp.focus(); }catch(e){} }
   ensurePeerJs().then(ok=>{ if(!ok) document.getElementById('netStatus').textContent='אין אינטרנט או שהחיבור חסום — התחבר לאינטרנט'; });
 }
+function netGuestConnect(){
+  if (!net.peerObj || !net.hostCode) return;
+  const conn = net.peerObj.connect(NET_PREFIX+net.hostCode, { reliable:true });
+  const peer = { conn, id:'host', open:false }; net.peers=[peer]; netWireConn(peer);
+}
 function netDoJoin(){
   const code = (document.getElementById('netJoinCode').value||'').trim();
   if (!code){ showToast('הכנס קוד'); return; }
+  net.hostCode = code;
   document.getElementById('netStatus').textContent='טוען חיבור...';
   ensurePeerJs().then(ok=>{
     if (!ok){ document.getElementById('netStatus').textContent='אין אינטרנט או שהחיבור חסום — התחבר לאינטרנט ונסה שוב'; return; }
     document.getElementById('netStatus').textContent='מתחבר...';
     try{ net.peerObj = new Peer({ debug:0 }); }catch(e){ document.getElementById('netStatus').textContent='שגיאת חיבור'; return; }
     net.peerObj.on('open', ()=>{
-      const conn = net.peerObj.connect(NET_PREFIX+code, { reliable:true });
-      const peer = { conn, id:'host', open:false }; net.peers=[peer]; netWireConn(peer);
-      setTimeout(()=>{ if(!peer.open) document.getElementById('netStatus').textContent='לא נמצא מארח עם הקוד הזה — בדוק את הקוד ואת האינטרנט'; }, 7000);
+      netGuestConnect();
+      setTimeout(()=>{ if(net.peers[0] && !net.peers[0].open) document.getElementById('netStatus').textContent='לא נמצא מארח עם הקוד הזה — בדוק את הקוד ואת האינטרנט'; }, 7000);
     });
+    // keep the broker link alive so we can reconnect after an internet blip
+    net.peerObj.on('disconnected', ()=>{ if(net.active && !net.isHost){ try{ net.peerObj.reconnect(); }catch(e){} } });
     net.peerObj.on('error', err=>{ document.getElementById('netStatus').textContent='שגיאה — בדוק את הקוד והאינטרנט'; });
   });
 }
@@ -1559,6 +1572,9 @@ function applyNetTiles(cells){
     world[y][x]=tile; if(netShadow) netShadow[y][x]=type; } }
 }
 function netOnMessage(peer, msg){
+  try { netHandleMessage(peer, msg); } catch(e){ console.error('net message error', e); }
+}
+function netHandleMessage(peer, msg){
   if (!msg || typeof msg!=='object') { try{ msg=JSON.parse(msg); }catch(e){ return; } }
   if (msg.t==='init'){ applyNetInit(msg); return; }
   if (msg.t==='p'){ const prev=remotePlayers[msg.id]; const moved = prev && (Math.abs(prev.x-msg.x)>0.5||Math.abs(prev.y-msg.y)>0.5); remotePlayers[msg.id]={ x:msg.x, y:msg.y, facing:msg.facing, hp:msg.hp, name:msg.name, color:msg.color, torch:msg.torch, last:performance.now(), lastMove: moved?performance.now():((prev&&prev.lastMove)||0), wf:((prev&&prev.wf)||0) }; if(net.isHost) netRelay(peer, msg); return; }
@@ -1588,6 +1604,19 @@ function netSendDiff(){
 }
 function netTick(dt){
   const now=performance.now();
+  // guest self-heal: if the connection to the host is down, keep trying to reconnect to the same code
+  if (!net.isHost && net.active && net.hostCode){
+    const hasOpen = net.peers.some(p=>p.open);
+    if (hasOpen){ if(net.wasConnected===false){ net.wasConnected=true; } setConnBanner(false); }
+    else if (net.wasConnected && now - net.lastReconnect > 3000){
+      net.lastReconnect = now; setConnBanner(true);
+      try{
+        if (!net.peerObj || net.peerObj.destroyed){ net.peerObj = new Peer({ debug:0 }); net.peerObj.on('open', netGuestConnect); net.peerObj.on('disconnected', ()=>{ try{net.peerObj.reconnect();}catch(e){} }); }
+        else if (net.peerObj.disconnected){ try{ net.peerObj.reconnect(); }catch(e){} setTimeout(netGuestConnect, 800); }
+        else netGuestConnect();
+      }catch(e){}
+    }
+  }
   if (now-netLastPos > 80){ netLastPos=now; netSend({ t:'p', id:net.selfId, x:Math.round(player.x), y:Math.round(player.y), facing:player.facing, hp:Math.round(player.health), name:net.name, color:playerSkin, torch:((player.inv.torch||0)>0)?1:0 }); }
   if (net.isHost && now-netLastEnt > 90){
     netLastEnt = now;
@@ -1605,7 +1634,8 @@ function netReset(){
   for (const p of net.peers){ try{ p.conn && p.conn.close(); }catch(e){} }
   if (net.peerObj){ try{ net.peerObj.destroy(); }catch(e){} net.peerObj=null; }
   net.active=false; net.isHost=false; net.peers=[]; net._pendingHostPeer=null;
-  remotePlayers={}; netShadow=null; netGuestDmg={}; closeNetPanel();
+  net.hostCode=null; net.wasConnected=false; net.lastReconnect=0;
+  remotePlayers={}; netShadow=null; netGuestDmg={}; setConnBanner(false); closeNetPanel();
 }
 function drawRemotePlayers(){
   const now=performance.now();
@@ -2252,7 +2282,14 @@ function renderBag(){
 }
 function showToast(msg){ const t = document.getElementById('toast'); t.textContent = msg; t.style.opacity=1; clearTimeout(t._to); t._to = setTimeout(()=>{ t.style.opacity=0; }, 1500); }
 
-let lastTime = performance.now(); function loop(now){ const dt = Math.min(0.05, (now-lastTime)/1000); lastTime = now; update(dt); draw(); requestAnimationFrame(loop); }
+let lastTime = performance.now();
+function loop(now){
+  const dt = Math.min(0.05, (now-lastTime)/1000); lastTime = now;
+  // A single bad frame (e.g. a malformed network message) must never kill the whole game loop / freeze movement.
+  try { update(dt); } catch(e){ console.error('update error', e); }
+  try { draw(); } catch(e){ console.error('draw error', e); }
+  requestAnimationFrame(loop);
+}
 // Build a valid world behind the start screen (gameStarted stays false so it's paused) and wait for the player's choice.
 gameMode = 'crystal'; initGame(); gameStarted = false; refreshSavesUI(); requestAnimationFrame(loop);
 </script>
