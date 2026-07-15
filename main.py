@@ -177,6 +177,8 @@
   <div id="bagPanel">
     <h3>⚔️ נשק פעיל</h3>
     <div class="weaponRow" id="weaponRow"></div>
+    <h3>🛠️ כלים</h3>
+    <div class="weaponRow" id="toolRow"></div>
     <h3>📦 חומרים</h3>
     <div id="resList"></div>
     <h3>🛠️ קראפטינג</h3>
@@ -214,6 +216,7 @@
     <div class="toggleRow"><span>👾 מפלצות פעילות</span><input type="checkbox" id="cheatEnemiesToggle" checked onchange="cheatToggleEnemies(this.checked)"></div>
     <div class="toggleRow"><span>🛡️ מצב אלוהים (חסין)</span><input type="checkbox" id="cheatGodToggle" onchange="cheatToggleGod(this.checked)"></div>
     <div class="toggleRow"><span>🌙 כל לילה: לאקי בלוק + כל הכוחות</span><input type="checkbox" id="cheatNightlyToggle" onchange="cheatToggleNightly(this.checked)"></div>
+    <div class="toggleRow"><span>🤝 אפשר צ׳יטים לאורחים (במשחק משותף)</span><input type="checkbox" id="cheatGuestToggle" onchange="cheatToggleGuestCheats(this.checked)"></div>
 
     <h4 style="font-size:11px; margin:10px 0 6px; color:#d9c98a;">⏱️ מנוע בלוקים רנדומליים</h4>
     <div class="settingRow"><label>מרווח זמן לחיפוש (בשניות, 0=כבוי):</label><input type="number" value="1" min="0" step="0.1" onchange="opSetTickDelay(this.value)"></div>
@@ -433,6 +436,8 @@ function clearMobileZoomReset() {
 }
 function tryCheatCode(){
   const val = document.getElementById('cheatCodeInput').value.trim();
+  // In co-op, guests can't use the secret code to hand themselves items unless the host allows it.
+  if (net.active && !net.isHost && !guestCheatsAllowed){ showToast('🔒 המארח חסם שימוש בקוד סודי לאורחים'); document.getElementById('cheatCodeInput').value=''; return; }
   if (val === CHEAT_CODE){
     document.getElementById('cheatCodeInput').value='';
     document.getElementById('settingsPanel').style.display='none';
@@ -456,6 +461,7 @@ function opSetBlocksPerTick(val) { opBlocksPerTick = parseInt(val); if (opBlocks
 function cheatToggleEnemies(checked){ cheatNoEnemies = !checked; if (cheatNoEnemies) enemies = []; showToast(checked ? 'מפלצות הופעלו' : 'מפלצות כובו'); }
 function cheatToggleGod(checked){ cheatGodMode = checked; showToast(checked ? 'מצב אלוהים פעיל' : 'מצב אלוהים כבוי'); }
 function cheatToggleNightly(checked){ adminNightlyAll = checked; showToast(checked ? '🌙 כל לילה תקבל לאקי בלוק + כל הכוחות' : 'מצב לילה-הכל כבוי'); }
+function cheatToggleGuestCheats(checked){ guestCheatsAllowed = checked; if(net.active && net.isHost) netSend({ t:'perm', cheats:checked }); showToast(checked ? '🤝 אורחים יכולים להשתמש בצ׳יטים' : '🔒 צ׳יטים חסומים לאורחים'); }
 function cheatSetHealth(){ const v = parseFloat(document.getElementById('cheatHpInput').value); if (!isNaN(v)){ player.maxHealth = Math.max(100, v); player.health = v; showToast('חיים נקבעו ל-'+v); } clearMobileZoomReset(); }
 function cheatGiveRes(){ const k = document.getElementById('cheatResSelect').value; const amt = parseInt(document.getElementById('cheatResAmount').value) || 0; player.inv[k] = (player.inv[k]||0) + amt; showToast('קיבלת '+amt+' '+(names[k]||k)); renderBag(); clearMobileZoomReset(); }
 function cheatSetDarkness(val){ nightDarkness = parseInt(val)/100; document.getElementById('cheatDarkVal').textContent = val+'%'; }
@@ -610,6 +616,7 @@ let stats = { animalsKilled:0, monstersKilled:0, blocksDestroyed:0, maxBreakDist
 let bonusShownForDay = 0;      // guards against re-triggering the morning bonus in the same day
 let luckyQueue = [];           // pending saved choice-sets, attached to lucky blocks in order they're placed
 let adminNightlyAll = false;   // admin toggle: every night auto-grant a lucky block + every bonus power
+let guestCheatsAllowed = false; // host permission: may guests use the secret code / OP menu?
 /* ---- P2P co-op networking (WebRTC, copy-paste signaling, works on a hotspot with no server) ---- */
 let net = { active:false, isHost:false, peers:[], selfId: Math.random().toString(36).slice(2,7), name:'שחקן', _pendingHostPeer:null, peerObj:null, myCode:null };
 let remotePlayers = {};        // id -> {x,y,facing,hp,name,last,color,torch}
@@ -699,7 +706,7 @@ const RECIPES = [
   { id:'crystal_device', name:'💎 מכשיר הקריסטל', cost:{stone:8, iron:8, crystal:1}, type:'building', station:'upgraded' },
   { id:'reinforcement', name:'⛓️ חיזוק ברזל', cost:{iron_ingot:2}, type:'ammo', give:{reinforcement:1}, station:'upgraded' },
   
-  { id:'iron_bucket', name:'🪣 דלי ברזל', cost:{iron_ingot:3}, type:'ammo', give:{torch:1}, station:'furnace' }, 
+  { id:'bucket', name:'🪣 דלי ברזל', cost:{iron_ingot:3}, type:'tool', station:'furnace' },
   { id:'arrowIron', name:'➶ 5 חצי ברזל', cost:{wood:1, iron_ingot:1}, type:'ammo', give:{arrowIron:5}, station:'furnace' }, 
   { id:'iron_axe', name:'🪓 גרזן ברזל', cost:{wood:2, iron_ingot:2}, type:'tool', station:'furnace' }, 
   { id:'iron_pickaxe', name:'⛏️ מכוש ברזל', cost:{wood:2, iron_ingot:3}, type:'tool', station:'furnace' }, 
@@ -805,6 +812,11 @@ window.selectReinforcement = function(){
   toggleBag();
   showToast('בחרת חיזוק ברזל - כוון אל מבנה שבנית ולחץ 🖐️ כדי לחזק אותו');
 }
+function selectTool(kind){
+  if (kind==='dig'){ if(!player.equipment.shovel){ showToast('אין לך את חפירה'); return; } player.placingItem={ id:'dig', type:'dig', name:'🥄 חפירה', cost:{} }; showToast('🥄 את חפירה — לחץ על אדמה ליד מים כדי לחפור תעלה'); }
+  else if (kind==='bucket'){ if(!player.equipment.bucket){ showToast('אין לך דלי'); return; } player.placingItem={ id:'bucket', type:'bucket', name:'🪣 דלי', cost:{} }; showToast('🪣 דלי — לחץ על אדמה כדי לשפוך מים, או על מים כדי למלא'); }
+  toggleBag();
+}
 
 window.eatItem = function(k) { 
   if ((player.inv[k]||0) <= 0) return; 
@@ -853,6 +865,25 @@ window.tryInteract = function() {
           } else {
             showToast('כוון אל מבנה שבנית כדי לחזק אותו (קיר/תנור/מדורה...)');
           }
+          return;
+        }
+
+        // Shovel: dig ground that touches water so the water spreads into it (carve channels/lakes).
+        if (r.type === 'dig'){
+          if (!player.equipment.shovel){ showToast('אין לך את חפירה'); player.placingItem=null; return; }
+          if (t.type===T.GRASS || t.type===T.SAND || t.type===T.SNOW){
+            const nearW = [[0,-1],[0,1],[-1,0],[1,0]].some(([ox,oy])=> world[ty+oy] && world[ty+oy][tx+ox] && world[ty+oy][tx+ox].type===T.WATER);
+            if (nearW){ world[ty][tx] = { type:T.WATER, hp:0, timer:0 }; sfxGather(); spawnParticle(tx*TILE+16, ty*TILE+16, '#2a5a8a', 5); showToast('🥄 חפרת תעלה — המים התפשטו!'); }
+            else showToast('צריך לחפור ליד מים קיימים');
+          } else showToast('אפשר לחפור רק אדמה');
+          return;
+        }
+        // Bucket: pour water on any ground tile (or the message reminds you it fills on water). Reusable.
+        if (r.type === 'bucket'){
+          if (!player.equipment.bucket){ showToast('אין לך דלי'); player.placingItem=null; return; }
+          if (t.type===T.GRASS || t.type===T.SAND || t.type===T.SNOW){ world[ty][tx] = { type:T.WATER, hp:0, timer:0 }; sfxGather(); spawnParticle(tx*TILE+16, ty*TILE+16, '#2a5a8a', 5); showToast('🪣 שפכת מים!'); }
+          else if (isWater(t)){ showToast('🪣 הדלי מלא מים — לחץ על אדמה כדי לשפוך'); }
+          else showToast('אי אפשר לשפוך כאן');
           return;
         }
 
@@ -1507,13 +1538,14 @@ function sendToPeer(peer, obj){ if(peer && peer.conn && peer.open){ try{ peer.co
 function netSend(obj){ for(const p of net.peers) sendToPeer(p, obj); }
 function netRelay(except, obj){ for(const p of net.peers){ if(p!==except) sendToPeer(p, obj); } }
 function netSendInitTo(peer){
-  sendToPeer(peer, { t:'init', world:serializeWorld(), dayNum, time, gameMode, eternalNightDay, en:(eternalNightActive&&!crystalActivated), crystalPlaced, crystalActivated, crystalDevicePos });
+  sendToPeer(peer, { t:'init', world:serializeWorld(), dayNum, time, gameMode, eternalNightDay, en:(eternalNightActive&&!crystalActivated), crystalPlaced, crystalActivated, crystalDevicePos, perm:guestCheatsAllowed });
 }
 function applyNetInit(msg){
   gameMode = msg.gameMode||'crystal';
   initEntities(); deserializeWorld(msg.world); initShadow(); initPlayer();
   dayNum=msg.dayNum||1; time=msg.time||0; eternalNightDay=msg.eternalNightDay||5;
   eternalNightActive=!!msg.en; crystalPlaced=!!msg.crystalPlaced; crystalActivated=!!msg.crystalActivated; crystalDevicePos=msg.crystalDevicePos||null;
+  guestCheatsAllowed = !!msg.perm;
   resetStats(); gameOver=false; tickAcc=0; countTimer=0; bonusShownForDay=dayNum; luckyQueue=[];
   camX=player.x; camY=player.y;
   document.getElementById('worldSelect').style.display='none'; closeNetPanel();
@@ -1536,6 +1568,7 @@ function netOnMessage(peer, msg){
   if (msg.t==='dmg'){ if(msg.to===net.selfId && !cheatGodMode){ player.health -= msg.amt; if(!player.hurtSfxCd||player.hurtSfxCd<=0){ sfxHurt(); player.hurtSfxCd=0.5; } } return; }  // a monster hit me on the host's sim
   if (msg.t==='hit'){ if(net.isHost) hostApplyHit(msg); return; }                     // host: a guest damaged a monster
   if (msg.t==='ahit'){ if(net.isHost){ const a=animals.find(an=>Math.hypot(an.x-msg.x,an.y-msg.y)<24); if(a){ if(a.isSpider){ revealSpider(a); } else { animals=animals.filter(x=>x!==a); } } } return; }  // host: a guest hit an animal
+  if (msg.t==='perm'){ if(!net.isHost){ guestCheatsAllowed = !!msg.cheats; showToast(msg.cheats?'🤝 המארח איפשר לך צ׳יטים':'🔒 המארח חסם צ׳יטים'); } return; }
 }
 function applyNetEntities(msg){
   enemies = (msg.e||[]).map(e=>({ id:e.id, x:e.x, y:e.y, kind:e.k, hp:e.hp, maxHp:e.mh, facing:e.f }));
@@ -1585,6 +1618,12 @@ function drawRemotePlayers(){
     ctx.fillStyle='#3a2212'; ctx.fillRect(-4+feet,6,3,3); ctx.fillRect(1-feet,6,3,3);
     ctx.fillStyle = rp.color || '#8a5f2f'; ctx.fillRect(-5,-4+bob,10,10);
     ctx.fillStyle='#ffd1a9'; ctx.beginPath(); ctx.arc(0,-9+bob,5,0,6.3); ctx.fill();
+    // show which way the teammate is looking
+    let fdx=0, fdy=0; const f=rp.facing||'down';
+    if(f.includes('right'))fdx=1; if(f.includes('left'))fdx=-1; if(f.includes('down'))fdy=1; if(f.includes('up'))fdy=-1;
+    if(fdx!==0&&fdy!==0){ fdx*=0.7; fdy*=0.7; } else if(fdx===0&&fdy===0){ fdy=1; }
+    ctx.strokeStyle='rgba(255,255,255,0.55)'; ctx.lineWidth=2; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(0,-2+bob); ctx.lineTo(fdx*20, -2+bob+fdy*20); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.arc(fdx*22, -2+bob+fdy*22, 2.5, 0, 6.3); ctx.fill();
     if (rp.torch){ ctx.fillStyle='#ff9a3d'; ctx.beginPath(); ctx.ellipse(6,-8+bob,3,5,0,0,6.3); ctx.fill(); }
     const nm=(rp.name||'שחקן'); ctx.font='9px "Courier New", monospace'; ctx.textAlign='center';
     const w=ctx.measureText(nm).width+8; ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(-w/2,-27,w,12);
@@ -2157,10 +2196,23 @@ function updateHUD(){ document.querySelector('#health .bar-fill').style.width = 
 function renderBag(){ 
     const wr = document.getElementById('weaponRow'); wr.innerHTML=''; 
     const weapons = [{id:'sword',icon:'🗡️'},{id:'iron_sword',icon:'⚔️'},{id:'bow',icon:'🏹'}];
-    weapons.forEach(w=>{ 
-        if ((w.id==='bow' && !player.equipment.bow) || (w.id==='iron_sword' && !player.equipment.iron_sword) || (w.id==='sword' && player.equipment.iron_sword)) return; 
-        const d = document.createElement('div'); d.className = 'weaponIcon' + (player.activeWeapon===w.id ? ' active':''); d.textContent = w.icon; d.onclick = ()=>{ player.activeWeapon=w.id; renderBag(); }; wr.appendChild(d); 
-    }); 
+    weapons.forEach(w=>{
+        if ((w.id==='bow' && !player.equipment.bow) || (w.id==='iron_sword' && !player.equipment.iron_sword) || (w.id==='sword' && player.equipment.iron_sword)) return;
+        const d = document.createElement('div'); d.className = 'weaponIcon' + (player.activeWeapon===w.id ? ' active':''); d.textContent = w.icon; d.onclick = ()=>{ player.activeWeapon=w.id; renderBag(); }; wr.appendChild(d);
+    });
+
+    // Tools row: axe/pickaxe are passive (shown for info); shovel & bucket are selectable (tap the map to use them)
+    const tr = document.getElementById('toolRow'); tr.innerHTML='';
+    const tools = [ {id:'axe',icon:'🪓'},{id:'iron_axe',icon:'🪓'},{id:'pickaxe',icon:'⛏️'},{id:'iron_pickaxe',icon:'⛏️'},{id:'shovel',icon:'🥄',sel:'dig'},{id:'bucket',icon:'🪣',sel:'bucket'} ];
+    let anyTool=false;
+    tools.forEach(t=>{ if(!player.equipment[t.id]) return; anyTool=true;
+        const d=document.createElement('div');
+        const active = t.sel && player.placingItem && player.placingItem.type===t.sel;
+        d.className='weaponIcon'+(active?' active':''); d.textContent=t.icon; d.title=t.id;
+        if (t.sel){ d.onclick=()=>{ selectTool(t.sel); }; d.style.cursor='pointer'; }
+        tr.appendChild(d);
+    });
+    if(!anyTool){ tr.innerHTML='<span style="font-size:10px; color:#8a8266;">אין כלים עדיין — תבנה גרזן/מכוש/את חפירה/דלי</span>'; }
     
     const resList = document.getElementById('resList'); resList.innerHTML=''; 
     Object.keys(names).forEach(k=>{ 
