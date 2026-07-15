@@ -619,7 +619,7 @@ function genWorld(){
   while (caves<wantCaves && ctries<400){ ctries++;
     const rx=4+Math.floor(Math.random()*(MAPW-8)), ry=4+Math.floor(Math.random()*(MAPH-8));
     const t=world[ry][rx];
-    if (t.type===T.GRASS||t.type===T.SAND||t.type===T.SNOW){ world[ry][rx]={type:T.CAVE_IN, hp:tileHP(T.CAVE_IN), timer:0}; caves++; }
+    if (t.type===T.GRASS||t.type===T.SAND||t.type===T.SNOW){ world[ry][rx]={type:T.CAVE_IN, hp:tileHP(T.CAVE_IN), timer:0, caveId:'cave'+caves}; caves++; }
   }
 }
 
@@ -634,6 +634,8 @@ let showPlayerNames = true;    // settings toggle for teammate name tags
 let fishing = null;            // fishing state machine: { phase:'wait'|'bite', timer }
 let inCave = false;            // are we in the cave dimension?
 let surfaceState = null;       // saved surface world/player while inside a cave
+let caveWorlds = {};           // caveId -> persistent cave world (each entrance keeps its own maze)
+let currentCaveId = null;
 let bossActive = false, boss = null, bossSpawnedForDay = -1;  // scheduled siege boss
 let safeHouseActive = false, safeHousePrev = false;          // safe-house buff state
 let player, camX, camY, time, dayNum, gameOver, countTimer=0;
@@ -692,6 +694,7 @@ function initGame(){
   genWorld(); initEntities(); initPlayer(); resetStats();
   time = 0; dayNum = 1; gameOver=false; tickAcc=0; countTimer=0;
   bonusShownForDay = 0; luckyQueue = [];
+  inCave=false; surfaceState=null; caveWorlds={}; currentCaveId=null; bossActive=false; boss=null; bossSpawnedForDay=-1; fishing=null;
   // reset run-scoped crystal / eternal-night state (important on restart)
   crystalPlaced=false; crystalActivated=false; crystalDevicePos=null; crystalBonusDays=0;
   eternalNightActive=false; forcedDayUntil=0; enemyProjectiles=[];
@@ -1035,7 +1038,7 @@ window.tryInteract = function() {
     {
       const ptile = world[player.gridY] && world[player.gridY][player.gridX];
       if (ptile){
-        if (ptile.type===T.CAVE_IN){ enterCave(); return; }
+        if (ptile.type===T.CAVE_IN){ enterCave(ptile.caveId); return; }
         if (ptile.type===T.CAVE_UP){ exitCave(); return; }
       }
     }
@@ -1546,35 +1549,47 @@ function tryFishHook(){
 }
 
 /* ============ Caves dimension ============ */
+// A maze: solid rock carved into 1-tile corridors (dark stone floor). No biomes, no crystals.
+// Ore veins (iron/coal) are sprinkled into the rock walls, Minecraft-style. Staircase-up at the start.
 function genCaveMap(){
   const w=[];
-  for(let y=0;y<MAPH;y++){ w[y]=[]; for(let x=0;x<MAPW;x++){
-    const edge = x<2||y<2||x>MAPW-3||y>MAPH-3;
-    if (edge){ w[y][x]={type:T.ROCK, hp:tileHP(T.ROCK), timer:0}; continue; }
-    let type=T.ALTAR_FLOOR; const n=Math.random();
-    if (n<0.22) type=T.IRONROCK; else if (n<0.42) type=T.COAL; else if (n<0.5) type=T.ROCK; else if (n<0.53) type=T.CAVE_CRYSTAL;
-    w[y][x]={ type, hp:tileHP(type), maxHp:tileHP(type), timer:0 };
-  } }
-  const sx=Math.floor(MAPW/2), sy=Math.floor(MAPH/2);
-  for(let oy=-1;oy<=1;oy++)for(let ox=-1;ox<=1;ox++){ w[sy+oy][sx+ox]={type:T.ALTAR_FLOOR, hp:0, timer:0}; }
-  w[sy][sx]={type:T.CAVE_UP, hp:tileHP(T.CAVE_UP), timer:0};  // staircase back up
-  return { world:w, sx, sy };
+  for(let y=0;y<MAPH;y++){ w[y]=[]; for(let x=0;x<MAPW;x++){ w[y][x]={type:T.ROCK, hp:tileHP(T.ROCK), maxHp:tileHP(T.ROCK), timer:0}; } }
+  const startX=2, startY=2;
+  const floor=(x,y)=>{ w[y][x]={type:T.ALTAR_FLOOR, hp:0, timer:0}; };
+  const stack=[[startX,startY]]; floor(startX,startY);
+  while(stack.length){
+    const [cx,cy]=stack[stack.length-1];
+    const dirs=[[0,-2],[0,2],[-2,0],[2,0]];
+    for(let i=dirs.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [dirs[i],dirs[j]]=[dirs[j],dirs[i]]; }
+    let moved=false;
+    for(const [dx,dy] of dirs){ const nx=cx+dx, ny=cy+dy; if(nx>1 && nx<MAPW-2 && ny>1 && ny<MAPH-2 && w[ny][nx].type===T.ROCK){ floor(cx+dx/2, cy+dy/2); floor(nx,ny); stack.push([nx,ny]); moved=true; break; } }
+    if(!moved) stack.pop();
+  }
+  // ore veins embedded in the rock walls
+  for(let y=1;y<MAPH-1;y++) for(let x=1;x<MAPW-1;x++){ if(w[y][x].type===T.ROCK){ const n=Math.random(); if(n<0.045){ w[y][x]={type:T.IRONROCK, hp:tileHP(T.IRONROCK), maxHp:tileHP(T.IRONROCK), timer:0}; } else if(n<0.12){ w[y][x]={type:T.COAL, hp:tileHP(T.COAL), maxHp:tileHP(T.COAL), timer:0}; } } }
+  w[startY][startX]={type:T.CAVE_UP, hp:tileHP(T.CAVE_UP), timer:0};  // staircase back up
+  return { world:w, sx:startX, sy:startY };
 }
-function enterCave(){
+function enterCave(caveId){
   if (net.active){ showToast('המערות זמינות רק במשחק יחיד'); return; }
   if (inCave) return;
-  surfaceState = { world, px:player.x, py:player.y, enemies, animals, chests, cropTiles, pickups, dayNum, time };
-  const cave = genCaveMap();
-  world = cave.world; initEntities();
-  player.x = cave.sx*TILE+TILE/2; player.y = cave.sy*TILE+TILE/2; player.gridX=cave.sx; player.gridY=cave.sy;
+  if (!caveId) caveId = 'c0';
+  surfaceState = { world, px:player.x, py:player.y, enemies, animals, chests, cropTiles, pickups };
+  currentCaveId = caveId;
+  let spawnX, spawnY;
+  if (caveWorlds[caveId]){ world = caveWorlds[caveId].world; spawnX=caveWorlds[caveId].sx; spawnY=caveWorlds[caveId].sy; }  // return to the SAME saved cave
+  else { const cave = genCaveMap(); world = cave.world; caveWorlds[caveId] = { world:cave.world, sx:cave.sx, sy:cave.sy }; spawnX=cave.sx; spawnY=cave.sy; }
+  initEntities();
+  player.x = spawnX*TILE+TILE/2; player.y = spawnY*TILE+TILE/2; player.gridX=spawnX; player.gridY=spawnY;
   camX=player.x; camY=player.y; inCave=true;
-  showToast('🕳️ ירדת למערה — חושך מוחלט, השתמש בלפידים!');
+  showToast('🕳️ ירדת למערה — מבוך חשוך, השתמש בלפידים!');
 }
 function exitCave(){
   if (!inCave || !surfaceState) return;
+  if (currentCaveId && caveWorlds[currentCaveId]) caveWorlds[currentCaveId].world = world;  // persist your mining progress
   world = surfaceState.world; enemies=surfaceState.enemies; animals=surfaceState.animals; chests=surfaceState.chests; cropTiles=surfaceState.cropTiles; pickups=surfaceState.pickups||[];
   player.x=surfaceState.px; player.y=surfaceState.py; player.gridX=Math.floor(player.x/TILE); player.gridY=Math.floor(player.y/TILE);
-  camX=player.x; camY=player.y; inCave=false; surfaceState=null;
+  camX=player.x; camY=player.y; inCave=false; surfaceState=null; currentCaveId=null;
   showToast('☀️ חזרת לפני השטח');
 }
 
