@@ -114,7 +114,7 @@
   .saveRow .loadB { background:#3a5a2a; color:#fff; } .saveRow .delB { background:#5a3a3a; color:#fff; }
 
   /* ---- Net (P2P) connection panel ---- */
-  #netPanel { position:absolute; inset:0; background:rgba(0,0,0,0.82); display:none; flex-direction:column; align-items:center; justify-content:center; z-index:58; pointer-events:auto; padding:16px; }
+  #netPanel { position:absolute; inset:0; background:rgba(0,0,0,0.82); display:none; flex-direction:column; align-items:center; justify-content:center; z-index:70; pointer-events:auto; padding:16px; }
   #netPanel.open { display:flex; }
   #netPanel .bx { position:relative; background:rgba(18,20,26,0.98); border:2px solid #2f7aea; border-radius:14px; padding:18px 16px; width:min(94vw, 400px); max-height:88vh; overflow-y:auto; }
   #netPanel h2 { color:#4a9aff; font-size:18px; text-align:center; margin-bottom:2px; }
@@ -1421,9 +1421,13 @@ function netHostRetry(attempt){
   net.peerObj.on('error', err=>{ const t=String(err&&err.type||err||''); if (t.includes('unavailable-id')||t.includes('taken')){ try{net.peerObj.destroy();}catch(e){} netHostRetry(attempt+1); } else if (t.includes('network')||t.includes('server')){ document.getElementById('netStatus').textContent='אין חיבור לשרת — בדוק אינטרנט'; } });
 }
 function sharedJoin(){
-  // always open the panel so the code field is available; PeerJS loads in the background
+  // always open the panel (on TOP of the menu) so the code field is available; PeerJS loads in the background
   net.active=true; net.isHost=false; net.name='אורח'; net.peers=[];
   openNetPanel('join');
+  showToast('🔗 הכנס את הקוד של החבר');
+  // focus the input synchronously (inside the tap) so the keyboard pops up on mobile
+  const inp = document.getElementById('netJoinCode');
+  if (inp){ inp.value=''; try{ inp.focus(); }catch(e){} }
   ensurePeerJs().then(ok=>{ if(!ok) document.getElementById('netStatus').textContent='אין אינטרנט או שהחיבור חסום — התחבר לאינטרנט'; });
 }
 function netDoJoin(){
