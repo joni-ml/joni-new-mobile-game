@@ -1361,6 +1361,29 @@ function sharedSolo(){ startWorld(sharedMode); }
 /* ============ P2P co-op via PeerJS: short numeric room codes, auto-connect, works on a hotspot with internet ============ */
 const NET_PREFIX = 'joni-surv-';   // namespaced so our 4-digit codes don't clash with other apps on the public broker
 function peerReady(){ return typeof Peer !== 'undefined'; }
+// Load PeerJS on demand with fallback CDNs (the <head> preload may be slow or blocked).
+let _peerLoading = null;
+function ensurePeerJs(){
+  if (typeof Peer !== 'undefined') return Promise.resolve(true);
+  if (_peerLoading) return _peerLoading;
+  const urls = [
+    'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js',
+    'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js'
+  ];
+  _peerLoading = new Promise(resolve=>{
+    let i=0;
+    (function tryNext(){
+      if (typeof Peer !== 'undefined') return resolve(true);
+      if (i>=urls.length){ _peerLoading=null; return resolve(false); }
+      const s=document.createElement('script'); s.src=urls[i++];
+      s.onload=()=>{ if(typeof Peer!=='undefined') resolve(true); else tryNext(); };
+      s.onerror=tryNext;
+      document.head.appendChild(s);
+    })();
+  });
+  return _peerLoading;
+}
 function initShadow(){ netShadow = []; for(let y=0;y<MAPH;y++){ netShadow[y]=[]; for(let x=0;x<MAPW;x++) netShadow[y][x]=world[y][x].type; } }
 function makeShortCode(){ return String(1 + Math.floor(Math.random()*9998)); } // 1..9999 (not 10000)
 
@@ -1381,12 +1404,12 @@ function netWireConn(peer){
   c.on('error', ()=>{});
 }
 function sharedHost(){
-  if (!peerReady()){ showToast('צריך חיבור לאינטרנט כדי לשחק עם חבר'); return; }
   startWorld(sharedMode);
   net.active=true; net.isHost=true; net.name='מארח'; net.peers=[]; initShadow();
   openNetPanel('host');
   document.getElementById('netHostCode').textContent = '····';
-  netHostRetry(0);
+  document.getElementById('netStatus').textContent = 'טוען חיבור...';
+  ensurePeerJs().then(ok=>{ if(ok) netHostRetry(0); else document.getElementById('netStatus').textContent='אין אינטרנט או שהחיבור חסום — התחבר לאינטרנט ונסה שוב'; });
 }
 function netHostRetry(attempt){
   if (attempt > 8){ document.getElementById('netStatus').textContent='לא הצלחתי ליצור קוד — נסה שוב'; return; }
@@ -1398,22 +1421,26 @@ function netHostRetry(attempt){
   net.peerObj.on('error', err=>{ const t=String(err&&err.type||err||''); if (t.includes('unavailable-id')||t.includes('taken')){ try{net.peerObj.destroy();}catch(e){} netHostRetry(attempt+1); } else if (t.includes('network')||t.includes('server')){ document.getElementById('netStatus').textContent='אין חיבור לשרת — בדוק אינטרנט'; } });
 }
 function sharedJoin(){
-  if (!peerReady()){ showToast('צריך חיבור לאינטרנט כדי לשחק עם חבר'); return; }
+  // always open the panel so the code field is available; PeerJS loads in the background
   net.active=true; net.isHost=false; net.name='אורח'; net.peers=[];
   openNetPanel('join');
+  ensurePeerJs().then(ok=>{ if(!ok) document.getElementById('netStatus').textContent='אין אינטרנט או שהחיבור חסום — התחבר לאינטרנט'; });
 }
 function netDoJoin(){
   const code = (document.getElementById('netJoinCode').value||'').trim();
   if (!code){ showToast('הכנס קוד'); return; }
-  if (!peerReady()){ showToast('צריך אינטרנט'); return; }
-  document.getElementById('netStatus').textContent='מתחבר...';
-  try{ net.peerObj = new Peer({ debug:0 }); }catch(e){ document.getElementById('netStatus').textContent='שגיאת חיבור'; return; }
-  net.peerObj.on('open', ()=>{
-    const conn = net.peerObj.connect(NET_PREFIX+code, { reliable:true });
-    const peer = { conn, id:'host', open:false }; net.peers=[peer]; netWireConn(peer);
-    setTimeout(()=>{ if(!peer.open) document.getElementById('netStatus').textContent='לא נמצא מארח עם הקוד הזה — בדוק את הקוד ואת האינטרנט'; }, 7000);
+  document.getElementById('netStatus').textContent='טוען חיבור...';
+  ensurePeerJs().then(ok=>{
+    if (!ok){ document.getElementById('netStatus').textContent='אין אינטרנט או שהחיבור חסום — התחבר לאינטרנט ונסה שוב'; return; }
+    document.getElementById('netStatus').textContent='מתחבר...';
+    try{ net.peerObj = new Peer({ debug:0 }); }catch(e){ document.getElementById('netStatus').textContent='שגיאת חיבור'; return; }
+    net.peerObj.on('open', ()=>{
+      const conn = net.peerObj.connect(NET_PREFIX+code, { reliable:true });
+      const peer = { conn, id:'host', open:false }; net.peers=[peer]; netWireConn(peer);
+      setTimeout(()=>{ if(!peer.open) document.getElementById('netStatus').textContent='לא נמצא מארח עם הקוד הזה — בדוק את הקוד ואת האינטרנט'; }, 7000);
+    });
+    net.peerObj.on('error', err=>{ document.getElementById('netStatus').textContent='שגיאה — בדוק את הקוד והאינטרנט'; });
   });
-  net.peerObj.on('error', err=>{ document.getElementById('netStatus').textContent='שגיאה — בדוק את הקוד והאינטרנט'; });
 }
 function copyHostCode(){ const c=document.getElementById('netHostCode').textContent; try{ navigator.clipboard.writeText(c); }catch(e){} showToast('הקוד הועתק 📋: '+c); }
 
