@@ -173,7 +173,7 @@
       <div class="bar-row" id="health"><span class="bar-label">❤️</span><div class="bar-bg"><div class="bar-fill" style="width:100%"></div></div></div>
       <div class="bar-row" id="hunger"><span class="bar-label">🍖</span><div class="bar-bg"><div class="bar-fill" style="width:100%"></div></div></div>
     </div>
-    <div id="dayinfo">יום <span id="dayNum">1</span> | <span id="timeOfDay">☀️ יום</span></div>
+    <div id="dayinfo">יום <span id="dayNum">1</span> | <span id="timeOfDay">☀️ יום</span> <span id="safeIndicator" style="display:none; color:#8fe08f;">🏡</span></div>
   </div>
 
   <canvas id="minimap" width="90" height="90"></canvas>
@@ -553,7 +553,7 @@ function toggleBag(){
     } 
 }
 
-const T = { GRASS:0, TREE:1, ROCK:2, COAL:3, IRONROCK:4, WATER:5, BUSH:6, SAND:7, CACTUS:8, SNOW:9, PINE:10, WALL:11, CAMPFIRE:12, TRUNK:13, CRAFTING_TABLE:14, SAPLING:15, SKULL:16, UPGRADED_TABLE:17, FURNACE:18, WHEAT:19, CROP:20, ALTAR_FLOOR:21, TABLET:22, CRYSTAL_ORE:23, CRYSTAL_DEVICE:24, PLACED_TORCH:25, WALL_THORN:26, BONE_WALL:27, LUCKY:28, CAVE_IN:29, CAVE_UP:30, CAVE_CRYSTAL:31 };
+const T = { GRASS:0, TREE:1, ROCK:2, COAL:3, IRONROCK:4, WATER:5, BUSH:6, SAND:7, CACTUS:8, SNOW:9, PINE:10, WALL:11, CAMPFIRE:12, TRUNK:13, CRAFTING_TABLE:14, SAPLING:15, SKULL:16, UPGRADED_TABLE:17, FURNACE:18, WHEAT:19, CROP:20, ALTAR_FLOOR:21, TABLET:22, CRYSTAL_ORE:23, CRYSTAL_DEVICE:24, PLACED_TORCH:25, WALL_THORN:26, BONE_WALL:27, LUCKY:28, CAVE_IN:29, CAVE_UP:30, CAVE_CRYSTAL:31, BEEHIVE:32 };
 const BIOME = { FOREST:'forest', SNOW:'snow', DESERT:'desert', PLAINS:'plains' };
 function biomeAt(x,y){ const nx = x/MAPW, ny = y/MAPH; if (ny < 0.45 && nx < 0.5) return BIOME.FOREST; if (ny < 0.45 && nx >= 0.5) return BIOME.SNOW; if (ny >= 0.45 && nx < 0.5) return BIOME.DESERT; return BIOME.PLAINS; }
 
@@ -563,7 +563,7 @@ function tileHP(t){
   if (t===T.BUSH||t===T.SKULL||t===T.WHEAT) return 1; if (t===T.CACTUS) return 2; if (t===T.WALL) return 15; if (t===T.CAMPFIRE) return 5; 
   if (t===T.TRUNK) return 2; if (t===T.CRAFTING_TABLE) return 4; if (t===T.SAPLING) return 1; if(t===T.UPGRADED_TABLE) return 6; if(t===T.FURNACE) return 8; if(t===T.CROP) return 1;
   if (t===T.TABLET) return 999999; if (t===T.CRYSTAL_ORE) return 10; if (t===T.CRYSTAL_DEVICE) return 40; if (t===T.PLACED_TORCH) return 3; if (t===T.WALL_THORN) return 20; if (t===T.BONE_WALL) return 22; if (t===T.LUCKY) return 2;
-  if (t===T.CAVE_IN||t===T.CAVE_UP) return 999999; if (t===T.CAVE_CRYSTAL) return 8; return 0;
+  if (t===T.CAVE_IN||t===T.CAVE_UP) return 999999; if (t===T.CAVE_CRYSTAL) return 8; if (t===T.BEEHIVE) return 3; return 0;
 }
 // How many monster hits it takes to destroy each built item (separate from the small player-mining hp).
 function enemyHitsFor(type){
@@ -625,7 +625,7 @@ function genWorld(){
 
 function groundColor(b, tileType){ if (tileType===T.WATER) return '#2a5a8a'; if (tileType===T.ALTAR_FLOOR) return '#8a8a8a'; if (b===BIOME.DESERT) return '#d8c27a'; if (b===BIOME.SNOW) return '#e8eef2'; return '#3a7d34'; }
 function tileAt(px,py){ const tx=Math.floor(px/TILE), ty=Math.floor(py/TILE); if (ty<0||ty>=MAPH||tx<0||tx>=MAPW) return {type:T.WATER, hp:0}; return world[ty][tx]; }
-function isSolid(t){ return [T.TREE, T.ROCK, T.COAL, T.IRONROCK, T.CACTUS, T.PINE, T.WALL, T.WALL_THORN, T.BONE_WALL, T.LUCKY, T.TRUNK, T.CRAFTING_TABLE, T.SAPLING, T.SKULL, T.UPGRADED_TABLE, T.FURNACE, T.TABLET, T.CRYSTAL_ORE, T.CRYSTAL_DEVICE, T.CAVE_CRYSTAL].includes(t.type); }
+function isSolid(t){ return [T.TREE, T.ROCK, T.COAL, T.IRONROCK, T.CACTUS, T.PINE, T.WALL, T.WALL_THORN, T.BONE_WALL, T.LUCKY, T.TRUNK, T.CRAFTING_TABLE, T.SAPLING, T.SKULL, T.UPGRADED_TABLE, T.FURNACE, T.TABLET, T.CRYSTAL_ORE, T.CRYSTAL_DEVICE, T.CAVE_CRYSTAL, T.BEEHIVE].includes(t.type); }
 function isWater(t){ return t.type===T.WATER; }
 
 let enemies, animals, particles, projectiles, placedTorches, chests, cropTiles, pickups;
@@ -635,6 +635,7 @@ let fishing = null;            // fishing state machine: { phase:'wait'|'bite', 
 let inCave = false;            // are we in the cave dimension?
 let surfaceState = null;       // saved surface world/player while inside a cave
 let bossActive = false, boss = null, bossSpawnedForDay = -1;  // scheduled siege boss
+let safeHouseActive = false, safeHousePrev = false;          // safe-house buff state
 let player, camX, camY, time, dayNum, gameOver, countTimer=0;
 let gameMode = 'crystal';      // 'crystal' | 'eternal' | 'test'
 let gameStarted = false;       // stays false until a world is picked
@@ -673,10 +674,10 @@ function initPlayer(){
   const gx = Math.floor(MAPW/2), gy = Math.floor(MAPH*0.42);
   player = { 
     gridX:gx, gridY:gy, x:gx*TILE+TILE/2, y:gy*TILE+TILE/2, w:18,h:18, moving:false, moveFrom:{x:0,y:0}, moveTo:{x:0,y:0}, moveT:0, moveDuration:0.24, health:100, maxHealth:100, hunger:100, maxHunger:100, speed:2.5, facing:'down', 
-    inv:{ wood:0, stone:0, coal:0, iron:0, iron_ingot:0, berry:0, meat:0, torch:0, bones:0, wheat:0, seeds:0, bowl:0, dough:0, bread:0, cooked_meat:0, fruit_salad:0, crystal:0, reinforcement:0, raw_fish:0, cooked_fish:0, cave_crystal:0,
-          item_wall:0, item_wall_thorn:0, item_bone_wall:0, item_campfire:0, item_furnace:0, item_crafting_table:0, item_upgraded_table:0, item_chest:0, item_crystal_device:0, item_lucky:0 },
+    inv:{ wood:0, stone:0, coal:0, iron:0, iron_ingot:0, berry:0, meat:0, torch:0, bones:0, wheat:0, seeds:0, bowl:0, dough:0, bread:0, cooked_meat:0, fruit_salad:0, crystal:0, reinforcement:0, raw_fish:0, cooked_fish:0, cave_crystal:0, honey_jar:0,
+          item_wall:0, item_wall_thorn:0, item_bone_wall:0, item_campfire:0, item_furnace:0, item_crafting_table:0, item_upgraded_table:0, item_chest:0, item_crystal_device:0, item_lucky:0, item_beehive:0 },
     equipment:{}, activeWeapon:'sword', attackCd:0, stepSfxCd:0, nearFire:0, walkFrame:0, isWalking:false, hurtSfxCd:0,
-    placingItem: null, speedBoostTimer: 0, efficiencyBoostTimer: 0, slowTimer: 0,
+    placingItem: null, speedBoostTimer: 0, efficiencyBoostTimer: 0, slowTimer: 0, sweetTimer: 0,
     gatherBonus: 0, breakReach: 2, speedBonus: 0   // permanent bonuses from morning choices
   };
 }
@@ -729,6 +730,7 @@ const RECIPES = [
   { id:'bone_wall', name:'🦴 קיר עצמות', cost:{bones:4}, type:'building', station:'table' },
   { id:'shovel', name:'🥄 את חפירה', cost:{wood:2, stone:1}, type:'tool', station:'table' },
   { id:'fishing_rod', name:'🎣 חכת דיג', cost:{wood:3, bones:2}, type:'tool', station:'table' },
+  { id:'beehive', name:'🐝 כוורת דבורים', cost:{wood:6, bones:4}, type:'building', station:'table' },
   { id:'arrowBone', name:'➶ 5 חצי עצם', cost:{bones:1, wood:1}, type:'ammo', give:{arrowBone:5}, station:'table' },
   
   { id:'furnace', name:'♨️ תנור אבן', cost:{stone:8}, type:'building', station:'upgraded' },
@@ -754,7 +756,7 @@ const RECIPES = [
   { id:'cooked_fish', name:'🐠 דג צלוי', cost:{raw_fish:1, coal:1}, type:'ammo', give:{cooked_fish:1}, station:'campfire' }
 ];
 
-const names = {wood:'🪵 עץ',stone:'🪨 אבן',coal:'⚫ פחם',iron:'🔶 ברזל',iron_ingot:'⚪ ברזל מחומם',berry:'🍓 פרי',meat:'🍖 בשר',torch:'🔥 לפיד',bones:'🦴 עצם',wheat:'🌾 חיטה',seeds:'🌱 זרעים',bowl:'🥣 קערה',dough:'🥟 בצק',bread:'🍞 לחם',cooked_meat:'🍖 בשר מעושן',fruit_salad:'🥗 סלט פירות',raw_fish:'🐟 דג נא',cooked_fish:'🐠 דג צלוי',arrowBone:'➶ חצי עצם',cave_crystal:'🔮 קריסטל מערה',crafting_table:'🛠️ שולחן עבודה',upgraded_table:'⚙️ שולחן משודרג',furnace:'♨️ תנור אבן', chest:'📦 תיבת אחסון', campfire:'🏕️ מדורה', wall:'🧱 קיר', wall_thorn:'🌵 קיר קוצים', bone_wall:'🦴 קיר עצמות', crystal:'💎 קריסטל', reinforcement:'⛓️ חיזוק ברזל',
+const names = {wood:'🪵 עץ',stone:'🪨 אבן',coal:'⚫ פחם',iron:'🔶 ברזל',iron_ingot:'⚪ ברזל מחומם',berry:'🍓 פרי',meat:'🍖 בשר',torch:'🔥 לפיד',bones:'🦴 עצם',wheat:'🌾 חיטה',seeds:'🌱 זרעים',bowl:'🥣 קערה',dough:'🥟 בצק',bread:'🍞 לחם',cooked_meat:'🍖 בשר מעושן',fruit_salad:'🥗 סלט פירות',raw_fish:'🐟 דג נא',cooked_fish:'🐠 דג צלוי',arrowBone:'➶ חצי עצם',cave_crystal:'🔮 קריסטל מערה',honey_jar:'🍯 צנצנת דבש',beehive:'🐝 כוורת דבורים',item_beehive:'🐝 כוורת דבורים (בתיק)',crafting_table:'🛠️ שולחן עבודה',upgraded_table:'⚙️ שולחן משודרג',furnace:'♨️ תנור אבן', chest:'📦 תיבת אחסון', campfire:'🏕️ מדורה', wall:'🧱 קיר', wall_thorn:'🌵 קיר קוצים', bone_wall:'🦴 קיר עצמות', crystal:'💎 קריסטל', reinforcement:'⛓️ חיזוק ברזל',
   item_wall:'🧱 קיר (בתיק)', item_wall_thorn:'🌵 קיר קוצים (בתיק)', item_bone_wall:'🦴 קיר עצמות (בתיק)', item_campfire:'🏕️ מדורה (בתיק)', item_furnace:'♨️ תנור (בתיק)', item_crafting_table:'🛠️ שולחן (בתיק)', item_upgraded_table:'⚙️ שולחן משודרג (בתיק)', item_chest:'📦 תיבה (בתיק)', item_crystal_device:'💎 מכשיר קריסטל (בתיק)', item_lucky:'🟨 לאקי בלוק (בתיק)'};
 
 function canCraft(r){ for(const k in r.cost){ if((player.inv[k]||0) < r.cost[k]) return false; } return true; }
@@ -864,6 +866,7 @@ window.eatItem = function(k) {
   else if (k === 'bread') { player.hunger = Math.min(player.maxHunger, player.hunger + 80); player.health = Math.min(player.maxHealth, player.health + 35); showToast('אכלת לחם חם! 🍞'); }
   else if (k === 'cooked_meat') { player.hunger = Math.min(player.maxHunger, player.hunger + 90); player.health = Math.min(player.maxHealth, player.health + 50); showToast('אכלת בשר מעושן משובח! 🍖🔥'); }
   else if (k === 'cooked_fish') { player.hunger = Math.min(player.maxHunger, player.hunger + 50); player.health = Math.min(player.maxHealth, player.health + 20); showToast('אכלת דג צלוי! 🐠'); }
+  else if (k === 'honey_jar') { player.hunger = Math.min(player.maxHunger, player.hunger + 40); player.speedBoostTimer = 12; player.sweetTimer = 12; showToast('🍯 אנרגיה מתוקה! מהירות + חסינות לקור ל-12 שניות'); }
   else if (k === 'fruit_salad') { 
       player.hunger = Math.min(player.maxHunger, player.hunger + 40); 
       player.health = Math.min(player.maxHealth, player.health + 25); 
@@ -987,6 +990,7 @@ window.tryInteract = function() {
             if (r.id==='furnace') placedType = T.FURNACE;
             if (r.id==='campfire') placedType = T.CAMPFIRE;
             if (r.id==='crystal_device') placedType = T.CRYSTAL_DEVICE;
+            if (r.id==='beehive') placedType = T.BEEHIVE;
             if (r.id==='lucky') placedType = T.LUCKY;
 
             const placedHp = tileHP(placedType);
@@ -1145,7 +1149,7 @@ function update(dt){
   }
   const isNight = getNightFactor() > 0.45;
   
-  countTimer += dt; if (countTimer >= 1.0) { countTimer = 0; updateResourceCounts(); }
+  countTimer += dt; if (countTimer >= 1.0) { countTimer = 0; updateResourceCounts(); if (!netClient) updateBeehives(); }
 
   netPlayerCount = net.active ? (1 + net.peers.filter(p=>p.open).length) : 1;
   // resource regen speeds up with more players in the world (host runs the sim): 1 player = every 0.5s, 2 = 0.25s, ...
@@ -1197,7 +1201,13 @@ function update(dt){
   }
   player.x = Math.max(TILE * 2.2, Math.min((MAPW - 2.2) * TILE, player.x)); player.y = Math.max(TILE * 2.2, Math.min((MAPH - 2.2) * TILE, player.y));
   player.gridX = Math.floor(player.x/TILE); player.gridY = Math.floor(player.y/TILE);
-  camX = player.x; camY = player.y; player.hunger -= dt*0.32; if (player.hunger<=0){ player.hunger=0; if(!cheatGodMode) player.health -= dt*1.4; }
+  // Safe house buff: enclosed by walls + a heat/light source -> half hunger drain, passive heal
+  const sh = safeHouseState(); safeHouseActive = sh.inside && sh.buffed;
+  if (safeHouseActive !== safeHousePrev){ showToast(safeHouseActive ? '🏡 באזור מוגן — התאוששות פעילה' : '🚪 יצאת מהאזור המוגן'); safeHousePrev = safeHouseActive; }
+  const seIndicator = document.getElementById('safeIndicator'); if (seIndicator) seIndicator.style.display = safeHouseActive ? 'inline-block' : 'none';
+  if (player.sweetTimer > 0) player.sweetTimer -= dt;
+  camX = player.x; camY = player.y; player.hunger -= dt*(safeHouseActive?0.16:0.32); if (player.hunger<=0){ player.hunger=0; if(!cheatGodMode) player.health -= dt*1.4; }
+  if (safeHouseActive) player.health = Math.min(player.maxHealth, player.health + dt*2);
   if (world[player.gridY] && world[player.gridY][player.gridX]) { let pTile = world[player.gridY][player.gridX]; if(pTile.type === T.CAMPFIRE) { player.health = Math.min(player.maxHealth, player.health+dt*8); } }
   if (player.attackCd>0) player.attackCd -= dt; if ((keys[' '] || actionHeld) && !fishing) tryAction();
   const curBiome = biomeAt(Math.floor(player.x/TILE), Math.floor(player.y/TILE));
@@ -1270,7 +1280,7 @@ function tryAction(){
       toolPower += 2;
   }
 
-  const breakables = [T.TREE,T.PINE,T.ROCK,T.COAL,T.IRONROCK,T.BUSH,T.CACTUS,T.WALL,T.WALL_THORN,T.BONE_WALL,T.LUCKY,T.CAMPFIRE,T.TRUNK,T.CRAFTING_TABLE,T.UPGRADED_TABLE,T.FURNACE,T.SAPLING,T.SKULL,T.WHEAT,T.CROP,T.CRYSTAL_ORE,T.PLACED_TORCH,T.CAVE_CRYSTAL];
+  const breakables = [T.TREE,T.PINE,T.ROCK,T.COAL,T.IRONROCK,T.BUSH,T.CACTUS,T.WALL,T.WALL_THORN,T.BONE_WALL,T.LUCKY,T.CAMPFIRE,T.TRUNK,T.CRAFTING_TABLE,T.UPGRADED_TABLE,T.FURNACE,T.SAPLING,T.SKULL,T.WHEAT,T.CROP,T.CRYSTAL_ORE,T.PLACED_TORCH,T.CAVE_CRYSTAL,T.BEEHIVE];
   
   let hitBlock = false;
   // Mining reach (upgradable via morning bonuses)
@@ -1292,6 +1302,7 @@ function tryAction(){
           else if (t.type === T.PLACED_TORCH) { player.inv.torch = (player.inv.torch||0)+1; world[ty][tx] = {type:defaultFloor, hp:0, timer:0}; showToast('אספת את הלפיד בחזרה 🔥'); }
           else if (t.type === T.WALL_THORN) { player.inv.wood+=1; world[ty][tx] = {type:defaultFloor, hp:0, timer:0}; showToast('פירקת קיר קוצים'); }
           else if (t.type === T.BONE_WALL) { player.inv.bones+=2; world[ty][tx] = {type:defaultFloor, hp:0, timer:0}; showToast('פירקת קיר עצמות 🦴'); }
+          else if (t.type === T.BEEHIVE) { player.inv.item_beehive=(player.inv.item_beehive||0)+1; world[ty][tx] = {type:defaultFloor, hp:0, timer:0}; showToast('אספת את הכוורת 🐝'); }
           else if (t.type === T.LUCKY) { const savedChoices = t.luckyChoices; world[ty][tx] = {type:defaultFloor, hp:0, timer:0}; openLuckyBlock(savedChoices); }
           else if (t.type === T.CROP) {
               const stage = t.stage||0;
@@ -1440,7 +1451,7 @@ function updateEnemies(dt){
       if (Math.random()<dt*4) spawnParticle(e.x, e.y-6, '#ff6a00', 3);
     }
 
-    if (Math.hypot(tx - e.x, ty - e.y) < 14) { damagePlayer(e.targetId, dt * e.dmg); if(e.kind==='frost_wraith' && e.targetId==null){ player.slowTimer = 3; } }
+    if (Math.hypot(tx - e.x, ty - e.y) < 14) { damagePlayer(e.targetId, dt * e.dmg); if(e.kind==='frost_wraith' && e.targetId==null && !(player.sweetTimer>0)){ player.slowTimer = 3; } }
   }
   enemies = enemies.filter(e=>{
     if (e.hp<=0){ if(e===boss){ onBossDeath(); } stats.monstersKilled++; if(e.eatenLoot){ for(const k in e.eatenLoot) player.inv[k]=(player.inv[k]||0)+e.eatenLoot[k]; } player.inv.bones+=1; renderBag(); return false; }
@@ -1571,6 +1582,35 @@ function exitCave(){
 function enemyHitReaction(e){
   if (!e) return;
   if (e.kind==='mummy'){ for(let i=0;i<3;i++){ const a=Math.random()*Math.PI*2; enemyProjectiles.push({ x:e.x, y:e.y, vx:Math.cos(a)*5, vy:Math.sin(a)*5, dmg:5, life:1.8, bone:1 }); } spawnParticle(e.x,e.y,'#e8e0d0',4); }
+}
+
+/* ============ Safe house ============ */
+// enclosed by walls in all 4 directions within 5 tiles, with a heat/light source nearby
+function safeHouseState(){
+  const gx=player.gridX, gy=player.gridY;
+  const wallTypes=[T.WALL, T.BONE_WALL, T.WALL_THORN];
+  const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
+  for(const [dx,dy] of dirs){ let hit=false; for(let d=1; d<=5; d++){ const x=gx+dx*d, y=gy+dy*d; if(!world[y]||!world[y][x]) break; if(wallTypes.includes(world[y][x].type)){ hit=true; break; } } if(!hit) return { inside:false, buffed:false }; }
+  let source=false;
+  for(let oy=-5; oy<=5 && !source; oy++) for(let ox=-5; ox<=5; ox++){ const x=gx+ox, y=gy+oy; if(world[y]&&world[y][x]){ const t=world[y][x].type; if(t===T.CAMPFIRE||t===T.FURNACE||t===T.PLACED_TORCH){ source=true; break; } } }
+  return { inside:true, buffed:source };
+}
+
+/* ============ Beehive & honey ============ */
+function updateBeehives(){
+  // called ~once per second (host/solo). Beehives near a berry bush accumulate honey and drop a jar every 90s.
+  for(let y=0;y<MAPH;y++) for(let x=0;x<MAPW;x++){ const t=world[y][x]; if(!t||t.type!==T.BEEHIVE) continue;
+    let nearBush=false;
+    for(let oy=-3;oy<=3 && !nearBush;oy++)for(let ox=-3;ox<=3;ox++){ const nx=x+ox, ny=y+oy; if(world[ny]&&world[ny][nx]&&world[ny][nx].type===T.BUSH){ nearBush=true; break; } }
+    if(!nearBush){ t.full=false; continue; }
+    t.honeyT = (t.honeyT||0) + 1;
+    t.full = t.honeyT > 60;   // start buzzing near the end of the cycle
+    if(t.honeyT >= 90){ t.honeyT=0; t.full=false;
+      // drop a honey jar pickup on an adjacent free spot
+      const spots=[[1,0],[-1,0],[0,1],[0,-1]];
+      for(const [ox,oy] of spots){ const nx=x+ox, ny=y+oy; if(world[ny]&&world[ny][nx]&&!isSolid(world[ny][nx])&&!isWater(world[ny][nx])){ pickups.push({ id:(++pickupIdSeq), x:nx*TILE+TILE/2, y:ny*TILE+TILE/2, item:'honey_jar', count:1, st:performance.now()-2000 }); break; } }
+    }
+  }
 }
 
 /* ============ Siege boss ============ */
@@ -2270,6 +2310,13 @@ function drawResourceShape(t, sx, sy, tileObj){
     const g=ctx.createRadialGradient(cx-2,cy-3,1,cx,cy,9); g.addColorStop(0,'#a0f0ff'); g.addColorStop(0.6,'#40b0e0'); g.addColorStop(1,'#1a5a80'); ctx.fillStyle=g;
     ctx.beginPath(); ctx.moveTo(cx,cy-9); ctx.lineTo(cx+5,cy-1); ctx.lineTo(cx,cy+8); ctx.lineTo(cx-5,cy-1); ctx.closePath(); ctx.fill();
   }
+  else if (t===T.BEEHIVE){
+    ctx.fillStyle='#6a4a2a'; ctx.fillRect(cx-1, cy-14, 2, 5);            // hanging string
+    ctx.fillStyle='#d9a835'; ctx.fillRect(cx-8, cy-9, 16, 18);           // yellow box body
+    ctx.fillStyle='#b5822a'; for(let i=0;i<3;i++) ctx.fillRect(cx-8, cy-4+i*5, 16, 2);  // stripes
+    ctx.fillStyle='#3a2a12'; ctx.beginPath(); ctx.arc(cx, cy+2, 2.4, 0, 6.3); ctx.fill();  // entrance hole
+    if (tileObj && tileObj.full){ ctx.fillStyle='#ffe14a'; for(let i=0;i<3;i++){ const a=performance.now()*0.01+i*2; ctx.fillRect(cx+Math.cos(a)*11-1, cy-6+Math.sin(a)*8-1, 2, 2); } }  // buzzing bees
+  }
   // grey reinforcement ring drawn on top of ANY reinforced built item (wall, furnace, campfire, table...)
   drawReinforceRing(sx, sy, tileObj);
   ctx.restore();
@@ -2474,7 +2521,7 @@ function renderBag(){
     Object.keys(names).forEach(k=>{ 
         if(player.inv[k]!==undefined && player.inv[k]>0){
           const row = document.createElement('div'); row.className='resRow'; 
-          let eatBtn = ''; if((k==='berry' || k==='meat' || k==='bread' || k==='cooked_meat' || k==='fruit_salad' || k==='cooked_fish') && (player.inv[k]||0) > 0) eatBtn = `<button onclick="eatItem('${k}')" style="background:#4a6b3a; border:none; color:white; padding:3px 7px; border-radius:4px; font-size:10px; margin-left:6px; cursor:pointer;">אכל</button>`; 
+          let eatBtn = ''; if((k==='berry' || k==='meat' || k==='bread' || k==='cooked_meat' || k==='fruit_salad' || k==='cooked_fish' || k==='honey_jar') && (player.inv[k]||0) > 0) eatBtn = `<button onclick="eatItem('${k}')" style="background:#4a6b3a; border:none; color:white; padding:3px 7px; border-radius:4px; font-size:10px; margin-left:6px; cursor:pointer;">אכל</button>`; 
           let placeBtn = '';
           if (k.startsWith('item_')) { const baseId = k.replace('item_',''); placeBtn = `<button onclick="placeItemFromBag('${baseId}')" style="background:#2f7aea; border:none; color:white; padding:3px 7px; border-radius:4px; font-size:10px; margin-left:6px; cursor:pointer;">📍 הצב</button>`; }
           if (k === 'torch') { placeBtn = `<button onclick="placeTorchFromBag()" style="background:#2f7aea; border:none; color:white; padding:3px 7px; border-radius:4px; font-size:10px; margin-left:6px; cursor:pointer;">📍 הצב</button>`; }
