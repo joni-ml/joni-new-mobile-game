@@ -558,15 +558,39 @@ function toggleBag(){
 }
 
 const T = { GRASS:0, TREE:1, ROCK:2, COAL:3, IRONROCK:4, WATER:5, BUSH:6, SAND:7, CACTUS:8, SNOW:9, PINE:10, WALL:11, CAMPFIRE:12, TRUNK:13, CRAFTING_TABLE:14, SAPLING:15, SKULL:16, UPGRADED_TABLE:17, FURNACE:18, WHEAT:19, CROP:20, ALTAR_FLOOR:21, TABLET:22, CRYSTAL_ORE:23, CRYSTAL_DEVICE:24, PLACED_TORCH:25, WALL_THORN:26, BONE_WALL:27, LUCKY:28, CAVE_IN:29, CAVE_UP:30, CAVE_CRYSTAL:31, BEEHIVE:32, GARDEN_TABLE:33 };
-// Crossbreeding species: plant seeds -> wheat; mature plants next to each other can sprout higher tiers.
+// Crossbreeding species tree (Cookie-Clicker style). Plant seeds -> wheat.
+// When a plant FINISHES growing it checks its neighbours ONCE; a matching pair of
+// different mature plants may sprout a new species in a free tile (each with its own chance).
+// All plants are drawn on the canvas (no emojis) so a big field stays smooth.
 const PLANT_SPECIES = {
-  wheat:     { emoji:'🌾', color:'#e2b13c', tier:0, product:'wheat' },
-  clover:    { emoji:'🍀', color:'#3aa35a', tier:1, product:'clover' },
-  sunflower: { emoji:'🌻', color:'#f2c94c', tier:1, product:'sunflower' },
-  herb:      { emoji:'🌿', color:'#4a9a3a', tier:2, product:'herb' },
-  glowcap:   { emoji:'🍄', color:'#6ad0ff', tier:3, product:'glowcap' }
+  wheat:       { color:'#e2b13c', tier:0, product:'wheat' },
+  clover:      { color:'#3aa35a', tier:1, product:'clover' },
+  sunflower:   { color:'#f2c94c', tier:1, product:'sunflower' },
+  herb:        { color:'#4a9a3a', tier:2, product:'herb' },
+  poppy:       { color:'#e0473a', tier:2, product:'poppy' },
+  bluebell:    { color:'#5b7ce0', tier:2, product:'bluebell' },
+  goldenrod:   { color:'#f0b429', tier:3, product:'goldenrod' },
+  glowcap:     { color:'#e05a6a', tier:3, product:'glowcap' },
+  nightshade:  { color:'#7a4bd0', tier:3, product:'nightshade' },
+  crystalbloom:{ color:'#57d6e0', tier:4, product:'crystalbloom' },
+  emberlily:   { color:'#ff7a2a', tier:4, product:'emberlily' },
+  moonflower:  { color:'#eaf0ff', tier:5, product:'moonflower' }
 };
-const SPECIES_BY_TIER = { 0:['wheat'], 1:['clover','sunflower'], 2:['herb'], 3:['glowcap'] };
+// Mutation recipes: an unordered pair of adjacent mature species -> possible offspring (each with a chance).
+// No species ever breeds into MORE of itself, so nothing can carpet the map.
+function pairKey(a,b){ return a<b ? a+'|'+b : b+'|'+a; }
+const CROSS = {
+  'wheat|wheat':        [{sp:'clover', chance:0.12}, {sp:'sunflower', chance:0.12}],
+  'clover|clover':      [{sp:'herb', chance:0.11}],
+  'sunflower|sunflower':[{sp:'poppy', chance:0.11}],
+  'clover|sunflower':   [{sp:'bluebell', chance:0.10}],
+  'herb|poppy':         [{sp:'glowcap', chance:0.06}],
+  'poppy|sunflower':    [{sp:'goldenrod', chance:0.07}],
+  'bluebell|herb':      [{sp:'nightshade', chance:0.06}],
+  'bluebell|glowcap':   [{sp:'crystalbloom', chance:0.04}],
+  'goldenrod|poppy':    [{sp:'emberlily', chance:0.04}],
+  'crystalbloom|nightshade':[{sp:'moonflower', chance:0.03}]
+};
 const BIOME = { FOREST:'forest', SNOW:'snow', DESERT:'desert', PLAINS:'plains' };
 function biomeAt(x,y){ const nx = x/MAPW, ny = y/MAPH; if (ny < 0.45 && nx < 0.5) return BIOME.FOREST; if (ny < 0.45 && nx >= 0.5) return BIOME.SNOW; if (ny >= 0.45 && nx < 0.5) return BIOME.DESERT; return BIOME.PLAINS; }
 
@@ -690,10 +714,11 @@ function initPlayer(){
   player = { 
     gridX:gx, gridY:gy, x:gx*TILE+TILE/2, y:gy*TILE+TILE/2, w:18,h:18, moving:false, moveFrom:{x:0,y:0}, moveTo:{x:0,y:0}, moveT:0, moveDuration:0.24, health:100, maxHealth:100, hunger:100, maxHunger:100, speed:2.5, facing:'down', 
     inv:{ wood:0, stone:0, coal:0, iron:0, iron_ingot:0, berry:0, meat:0, torch:0, bones:0, wheat:0, seeds:0, bowl:0, dough:0, bread:0, cooked_meat:0, fruit_salad:0, crystal:0, reinforcement:0, raw_fish:0, cooked_fish:0, cave_crystal:0, honey_jar:0,
-          clover:0, sunflower:0, herb:0, glowcap:0, healing_potion:0, speed_potion:0, glow_lantern:0, harvest_charm:0, calm_incense:0,
+          clover:0, sunflower:0, herb:0, poppy:0, bluebell:0, goldenrod:0, glowcap:0, nightshade:0, crystalbloom:0, emberlily:0, moonflower:0,
+          healing_potion:0, speed_potion:0, glow_lantern:0, harvest_charm:0, calm_incense:0, strength_brew:0, moon_elixir:0,
           item_wall:0, item_wall_thorn:0, item_bone_wall:0, item_campfire:0, item_furnace:0, item_crafting_table:0, item_upgraded_table:0, item_chest:0, item_crystal_device:0, item_lucky:0, item_beehive:0, item_garden_table:0 },
     equipment:{}, activeWeapon:'sword', attackCd:0, stepSfxCd:0, nearFire:0, walkFrame:0, isWalking:false, hurtSfxCd:0,
-    placingItem: null, speedBoostTimer: 0, efficiencyBoostTimer: 0, slowTimer: 0, sweetTimer: 0, glowTimer: 0, calmTimer: 0, harvestTimer: 0,
+    placingItem: null, speedBoostTimer: 0, efficiencyBoostTimer: 0, slowTimer: 0, sweetTimer: 0, glowTimer: 0, calmTimer: 0, harvestTimer: 0, strengthTimer: 0,
     gatherBonus: 0, breakReach: 2, speedBonus: 0   // permanent bonuses from morning choices
   };
 }
@@ -776,14 +801,17 @@ const RECIPES = [
   // Herbalist Table (🌿 garden station): brew special items from the plants you crossbreed
   { id:'healing_potion', name:'❤️ שיקוי ריפוי', cost:{herb:2, clover:1}, type:'ammo', give:{healing_potion:1}, station:'garden' },
   { id:'speed_potion', name:'💨 שיקוי מהירות', cost:{clover:2, sunflower:1}, type:'ammo', give:{speed_potion:1}, station:'garden' },
-  { id:'glow_lantern', name:'🏮 פנס זוהר', cost:{glowcap:2, iron_ingot:1}, type:'ammo', give:{glow_lantern:1}, station:'garden' },
+  { id:'glow_lantern', name:'🏮 פנס זוהר', cost:{goldenrod:1, glowcap:1}, type:'ammo', give:{glow_lantern:1}, station:'garden' },
   { id:'harvest_charm', name:'🍀 קמע יבול', cost:{clover:3, herb:1}, type:'ammo', give:{harvest_charm:1}, station:'garden' },
-  { id:'calm_incense', name:'🕯️ קטורת שלווה', cost:{sunflower:2, herb:1, honey_jar:1}, type:'ammo', give:{calm_incense:1}, station:'garden' },
+  { id:'calm_incense', name:'🕯️ קטורת שלווה', cost:{poppy:2, bluebell:1, honey_jar:1}, type:'ammo', give:{calm_incense:1}, station:'garden' },
+  { id:'strength_brew', name:'⚔️ שיקוי כוח', cost:{nightshade:2, emberlily:1}, type:'ammo', give:{strength_brew:1}, station:'garden' },
+  { id:'moon_elixir', name:'🌕 שיקוי הירח', cost:{moonflower:1, crystalbloom:1}, type:'ammo', give:{moon_elixir:1}, station:'garden' },
   { id:'garden_seeds', name:'🌱 3 זרעים', cost:{wheat:1}, type:'ammo', give:{seeds:3}, station:'garden' }
 ];
 
 const names = {wood:'🪵 עץ',stone:'🪨 אבן',coal:'⚫ פחם',iron:'🔶 ברזל',iron_ingot:'⚪ ברזל מחומם',berry:'🍓 פרי',meat:'🍖 בשר',torch:'🔥 לפיד',bones:'🦴 עצם',wheat:'🌾 חיטה',seeds:'🌱 זרעים',bowl:'🥣 קערה',dough:'🥟 בצק',bread:'🍞 לחם',cooked_meat:'🍖 בשר מעושן',fruit_salad:'🥗 סלט פירות',raw_fish:'🐟 דג נא',cooked_fish:'🐠 דג צלוי',arrowBone:'➶ חצי עצם',cave_crystal:'🔮 קריסטל מערה',honey_jar:'🍯 צנצנת דבש',beehive:'🐝 כוורת דבורים',item_beehive:'🐝 כוורת דבורים (בתיק)',
-  clover:'🍀 תלתן',sunflower:'🌻 חמנית',herb:'🌿 עשב מרפא',glowcap:'🍄 פטריית זוהר',healing_potion:'❤️ שיקוי ריפוי',speed_potion:'💨 שיקוי מהירות',glow_lantern:'🏮 פנס זוהר',harvest_charm:'🍀 קמע יבול',calm_incense:'🕯️ קטורת שלווה',garden_table:'🌿 שולחן צמחים',item_garden_table:'🌿 שולחן צמחים (בתיק)',
+  clover:'🍀 תלתן',sunflower:'🌻 חמנית',herb:'🌿 עשב מרפא',poppy:'🌺 פרג',bluebell:'🔔 פעמונית',goldenrod:'🌟 זהבית',glowcap:'🍄 פטריית זוהר',nightshade:'🟣 בּלַדוֹנָה',crystalbloom:'💠 פרח בדולח',emberlily:'🔥 שושן אש',moonflower:'🌕 פרח ירח',
+  healing_potion:'❤️ שיקוי ריפוי',speed_potion:'💨 שיקוי מהירות',glow_lantern:'🏮 פנס זוהר',harvest_charm:'🍀 קמע יבול',calm_incense:'🕯️ קטורת שלווה',strength_brew:'⚔️ שיקוי כוח',moon_elixir:'🌕 שיקוי הירח',garden_table:'🌿 שולחן צמחים',item_garden_table:'🌿 שולחן צמחים (בתיק)',
   crafting_table:'🛠️ שולחן עבודה',upgraded_table:'⚙️ שולחן משודרג',furnace:'♨️ תנור אבן', chest:'📦 תיבת אחסון', campfire:'🏕️ מדורה', wall:'🧱 קיר', wall_thorn:'🌵 קיר קוצים', bone_wall:'🦴 קיר עצמות', crystal:'💎 קריסטל', reinforcement:'⛓️ חיזוק ברזל',
   item_wall:'🧱 קיר (בתיק)', item_wall_thorn:'🌵 קיר קוצים (בתיק)', item_bone_wall:'🦴 קיר עצמות (בתיק)', item_campfire:'🏕️ מדורה (בתיק)', item_furnace:'♨️ תנור (בתיק)', item_crafting_table:'🛠️ שולחן (בתיק)', item_upgraded_table:'⚙️ שולחן משודרג (בתיק)', item_chest:'📦 תיבה (בתיק)', item_crystal_device:'💎 מכשיר קריסטל (בתיק)', item_lucky:'🟨 לאקי בלוק (בתיק)'};
 
@@ -909,7 +937,7 @@ window.eatItem = function(k) {
 
 // Potions & charms brewed at the 🌿 Herbalist Table from crossbred plants
 const POTIONS = {
-  healing_potion: true, speed_potion: true, glow_lantern: true, harvest_charm: true, calm_incense: true
+  healing_potion: true, speed_potion: true, glow_lantern: true, harvest_charm: true, calm_incense: true, strength_brew: true, moon_elixir: true
 };
 window.usePotion = function(k){
   if ((player.inv[k]||0) <= 0) return;
@@ -919,6 +947,8 @@ window.usePotion = function(k){
   else if (k === 'glow_lantern') { player.glowTimer = Math.max(player.glowTimer||0, 60); showToast('🏮 פנס זוהר! ראיית לילה ל-60 שניות'); }
   else if (k === 'harvest_charm') { player.harvestTimer = Math.max(player.harvestTimer||0, 45); player.efficiencyBoostTimer = Math.max(player.efficiencyBoostTimer||0, 45); showToast('🍀 קמע יבול! חציבה כפולה ויבול מהיר ל-45 שניות'); }
   else if (k === 'calm_incense') { player.calmTimer = Math.max(player.calmTimer||0, 30); showToast('🕯️ קטורת שלווה! מפלצות מתעלמות ממך ל-30 שניות'); }
+  else if (k === 'strength_brew') { player.strengthTimer = Math.max(player.strengthTimer||0, 30); showToast('⚔️ שיקוי כוח! נזק כפול ל-30 שניות'); }
+  else if (k === 'moon_elixir') { player.health = player.maxHealth; player.speedBoostTimer = Math.max(player.speedBoostTimer||0, 40); player.glowTimer = Math.max(player.glowTimer||0, 40); player.strengthTimer = Math.max(player.strengthTimer||0, 40); showToast('🌕 שיקוי הירח! ריפוי מלא + מהירות + זוהר + כוח ל-40 שניות'); }
   sfxPotion(); renderBag(); updateHUD();
 }
 
@@ -982,7 +1012,7 @@ window.tryInteract = function() {
         // Bone meal: instantly grow a crop
         if (r.type === 'fertilize'){
           if ((player.inv.bones||0)<=0){ showToast('אין לך עצמות'); player.placingItem=null; return; }
-          if (t.type===T.CROP){ player.inv.bones-=1; t.mature=true; t.stage=3; t.growAt=performance.now(); t.hp=tileHP(T.CROP); if(!t.species) t.species='wheat'; for(let i=0;i<8;i++) spawnParticle(tx*TILE+8+Math.random()*16, ty*TILE+8+Math.random()*16, (PLANT_SPECIES[t.species]||{}).color||'#73c745', 4); sfxGather(); showToast('🌱 דישנת! היבול גדל מיד'); renderBag(); if((player.inv.bones||0)<=0) player.placingItem=null; }
+          if (t.type===T.CROP){ player.inv.bones-=1; if(!t.species) t.species='wheat'; t.cx=tx; t.cy=ty; t.growAt=performance.now(); if(!cropTiles.includes(t)) cropTiles.push(t); for(let i=0;i<8;i++) spawnParticle(tx*TILE+8+Math.random()*16, ty*TILE+8+Math.random()*16, (PLANT_SPECIES[t.species]||{}).color||'#73c745', 4); sfxGather(); showToast('🌱 דישנת! היבול גדל מיד'); renderBag(); if((player.inv.bones||0)<=0) player.placingItem=null; }
           else showToast('צריך לכוון אל יבול צומח 🌱');
           return;
         }
@@ -994,7 +1024,7 @@ window.tryInteract = function() {
         if (r.type === 'plant') {
             if (!canCraft(r)) { showToast('חסרים משאבים!'); player.placingItem = null; return; }
             for(const k in r.cost) player.inv[k] -= r.cost[k];
-            const newTile = { type:T.CROP, hp:tileHP(T.CROP), timer:0, species:'wheat', growAt: performance.now()+opCropGrowSeconds*1000, plantedAt: performance.now() };
+            const newTile = { type:T.CROP, hp:tileHP(T.CROP), timer:0, species:'wheat', cx:tx, cy:ty, bred:false, growAt: performance.now()+opCropGrowSeconds*1000, plantedAt: performance.now() };
             world[ty][tx] = newTile;
             cropTiles.push(newTile);
             showToast('שתלת זרעים! 🌱 יגדל וייתכן שיצטלב לצמח חדש');
@@ -1157,21 +1187,7 @@ function runRandomTickEngine() {
       }
     }
     if (Math.random() * 100 < opAnimalChance && currentCounts.animal < opMaxAnimal) { animals.push(makeAnimal(rx*TILE+TILE/2, ry*TILE+TILE/2)); currentCounts.animal++; }
-    // Crossbreeding: a bare grass tile hugged by 2+ mature plants can sprout a new species (Cookie-Clicker garden).
-    if (tile.type===T.GRASS){
-      const par = matureCropNeighbors(rx, ry);
-      if (par.length >= 2 && Math.random() < 0.30){
-        const a = par[Math.floor(Math.random()*par.length)].species;
-        const b = par[Math.floor(Math.random()*par.length)].species;
-        const child = crossbreedResult(a, b);
-        const nt = { type:T.CROP, hp:tileHP(T.CROP), timer:0, species:child, growAt: performance.now()+opCropGrowSeconds*1000, plantedAt: performance.now() };
-        world[ry][rx] = nt; cropTiles.push(nt);
-        if (typeof sfxCrossbreed==='function') sfxCrossbreed();
-        const col = (PLANT_SPECIES[child]||{}).color || '#73c745';
-        for(let i=0;i<8;i++) spawnParticle(rx*TILE+8+Math.random()*16, ry*TILE+8+Math.random()*16, col, 4);
-        return;
-      }
-    }
+    // (Plant crossbreeding is no longer done here — a plant only breeds once, the moment it finishes growing. See updateCrops.)
     // saplings sprout on their own from bare grass/snow (not desert sand), independent of nearby trees
     if ((tile.type===T.GRASS || tile.type===T.SNOW) && currentCounts.tree < opMaxTree && Math.random()*100 < 0.12) { world[ry][rx] = { type:T.SAPLING, hp:tileHP(T.SAPLING), timer:0 }; currentCounts.tree++; }
   } else if (tile.type === T.TREE || tile.type === T.PINE || tile.type === T.TRUNK) {
@@ -1185,40 +1201,55 @@ function runRandomTickEngine() {
   } else if (tile.type === T.SAPLING) { let b = biomeAt(rx, ry); world[ry][rx].type = (b === BIOME.SNOW) ? T.PINE : T.TREE; world[ry][rx].hp = tileHP(world[ry][rx].type); }
 }
 
-/* ============ Farming: planted crop growth ============ */
+/* ============ Farming: planted crop growth + one-shot crossbreeding ============ */
+const CROP_DIRS = [[0,-1],[0,1],[-1,0],[1,0],[-1,-1],[1,-1],[-1,1],[1,1]];
+// The instant a plant finishes growing it looks around ONCE: if a different mature plant sits next to it
+// and there's a free tile, it may sprout a new species (each recipe rolls its own chance). One try, ever.
+function breedOnMaturity(c){
+  const x=c.cx, y=c.cy; if(x==null||y==null) return null;
+  const empties=[], neigh=[];
+  for(const d of CROP_DIRS){ const nx=x+d[0], ny=y+d[1]; if(ny<0||ny>=MAPH||nx<0||nx>=MAPW) continue;
+    const t=world[ny][nx]; if(!t) continue;
+    if(t.type===T.GRASS||t.type===T.SAND||t.type===T.SNOW) empties.push([nx,ny]);
+    else if(t.type===T.CROP && t.mature && t.species) neigh.push(t.species);
+  }
+  if(!empties.length || !neigh.length) return null;
+  // pair THIS plant with each mature neighbour and gather every offspring the recipes allow
+  const cands=[];
+  for(const ns of neigh){ const rec=CROSS[pairKey(c.species, ns)]; if(rec) for(const o of rec) cands.push(o); }
+  if(!cands.length) return null;
+  // decide + roll a chance for each candidate; first hit sprouts in a random free tile
+  for(const cand of cands){ if(Math.random() < cand.chance){ const [ex,ey]=empties[Math.floor(Math.random()*empties.length)]; return {x:ex,y:ey,sp:cand.sp}; } }
+  return null;
+}
 function updateCrops(dt){
   if (!cropTiles.length) return;
   const now = performance.now();
   const boost = (player.harvestTimer>0) ? (dt||0)*1000*2 : 0;   // 🍀 harvest charm: crops ripen ~3x faster
+  const born=[];
   for (const c of cropTiles){
     if (c.type !== T.CROP || c.mature) continue;
     if (boost) c.growAt -= boost;
     const total = Math.max(1, opCropGrowSeconds*1000);
     const elapsed = total - (c.growAt - now);
     c.stage = elapsed < total*0.34 ? 0 : (elapsed < total*0.67 ? 1 : 2);
-    if (now >= c.growAt){ c.mature = true; c.stage = 3; c.hp = tileHP(T.CROP); }
+    if (now >= c.growAt){
+      c.mature = true; c.stage = 3; c.hp = tileHP(T.CROP);
+      if (!c.bred){ c.bred = true;                        // one breeding check, only for the host / single player
+        if (!(net.active && !net.isHost)){ const b = breedOnMaturity(c);
+          if (b){ const nt={ type:T.CROP, hp:tileHP(T.CROP), timer:0, species:b.sp, cx:b.x, cy:b.y, bred:false, growAt: now+opCropGrowSeconds*1000, plantedAt: now };
+            world[b.y][b.x]=nt; born.push(nt);
+            if (typeof sfxCrossbreed==='function') sfxCrossbreed();
+            const col=(PLANT_SPECIES[b.sp]||{}).color||'#73c745';
+            for(let i=0;i<8;i++) spawnParticle(b.x*TILE+8+Math.random()*16, b.y*TILE+8+Math.random()*16, col, 4);
+          }
+        }
+      }
+    }
   }
+  for(const n of born) cropTiles.push(n);
   // matured crops stay CROP tiles (harvested by hand); drop them from the growth list so it stays small
-  if (cropTiles.length > 300) cropTiles = cropTiles.filter(c=>c.type===T.CROP && !c.mature);
-}
-// Crossbreeding: which species two mature parents can produce (Cookie-Clicker garden style)
-function crossbreedResult(a, b){
-  const A = PLANT_SPECIES[a], B = PLANT_SPECIES[b];
-  if (!A || !B) return 'wheat';
-  const hi = Math.max(A.tier, B.tier), lo = Math.min(A.tier, B.tier);
-  let targetTier;
-  if (hi === 0) targetTier = 1;             // 🌾+🌾  -> 🍀/🌻
-  else if (hi === 1 && lo <= 1) targetTier = 2;  // tier-1 pair -> 🌿
-  else targetTier = 3;                      // 🌿 + anything -> 🍄
-  const pool = SPECIES_BY_TIER[targetTier] || SPECIES_BY_TIER[1];
-  return pool[Math.floor(Math.random()*pool.length)];
-}
-function matureCropNeighbors(rx, ry){
-  const out = [];
-  const dirs = [[0,-1],[0,1],[-1,0],[1,0],[-1,-1],[1,-1],[-1,1],[1,1]];
-  for (const d of dirs){ const nx=rx+d[0], ny=ry+d[1]; if(ny<0||ny>=MAPH||nx<0||nx>=MAPW) continue;
-    const t = world[ny][nx]; if (t && t.type===T.CROP && t.mature && t.species) out.push(t); }
-  return out;
+  if (cropTiles.length > 400) cropTiles = cropTiles.filter(c=>c.type===T.CROP && !c.mature);
 }
 
 function update(dt){
@@ -1291,6 +1322,7 @@ function update(dt){
   if (player.glowTimer > 0) player.glowTimer -= dt;
   if (player.calmTimer > 0) player.calmTimer -= dt;
   if (player.harvestTimer > 0) player.harvestTimer -= dt;
+  if (player.strengthTimer > 0) player.strengthTimer -= dt;
   camX = player.x; camY = player.y; player.hunger -= dt*(safeHouseActive?0.16:0.32); if (player.hunger<=0){ player.hunger=0; if(!cheatGodMode) player.health -= dt*1.4; }
   if (safeHouseActive) player.health = Math.min(player.maxHealth, player.health + dt*2);
   if (world[player.gridY] && world[player.gridY][player.gridX]) { let pTile = world[player.gridY][player.gridX]; if(pTile.type === T.CAMPFIRE) { player.health = Math.min(player.maxHealth, player.health+dt*8); } }
@@ -1397,7 +1429,7 @@ function tryAction(){
                   player.inv[prod] = (player.inv[prod]||0)+1;
                   let seedsGained = Math.random() < 0.20 ? 2 : 1;
                   player.inv.seeds = (player.inv.seeds||0)+seedsGained;
-                  showToast(`קטפת ${sp.emoji} ${names[prod]?names[prod].split(' ').slice(1).join(' '):''}! (+1, +${seedsGained} זרעים)`);
+                  showToast(`קטפת ${names[prod]||prod}! (+1, +${seedsGained} זרעים)`);
               } else { player.inv.seeds = (player.inv.seeds||0)+1; showToast('עקרת שתיל צעיר, קיבלת זרע בחזרה 🌱'); }
           }
           else if (t.type === T.WHEAT) {
@@ -1420,6 +1452,7 @@ function tryAction(){
   if (hitBlock) return; 
 
   let meleeDmg = 4 + (player.equipment.iron_sword ? 4 : 0) + (crystalActivated ? crystalBonusDays+2 : 0);
+  if (player.strengthTimer > 0) meleeDmg *= 2;   // ⚔️ strength brew: double melee damage
   const guest = net.active && !net.isHost;
   for (const e of enemies){ if (Math.hypot(e.x-player.x, e.y-player.y) < TILE*1.5){ sfxHit(); spawnParticle(e.x,e.y,'#e04a30',5);
     if (guest){ netSend({ t:'hit', id:e.id, dmg:meleeDmg }); return; }   // host is authoritative over enemy hp
@@ -1884,7 +1917,7 @@ function applyNetInit(msg){
   eternalNightActive=!!msg.en; crystalPlaced=!!msg.crystalPlaced; crystalActivated=!!msg.crystalActivated; crystalDevicePos=msg.crystalDevicePos||null;
   if (msg.cyc) CYCLE_LEN=msg.cyc; if (msg.dusk) DUSK_LEN=msg.dusk; if (msg.dawn) DAWN_LEN=msg.dawn;   // match host's day length
   chests = (msg.chests||[]).map(c=>({x:c.x,y:c.y,items:c.items||{}}));
-  cropTiles = []; for(let y=0;y<MAPH;y++)for(let x=0;x<MAPW;x++){ const c=world[y][x]; if(c.type===T.CROP){ if(!c.species) c.species='wheat'; if(c.mature){ c.stage=3; } else { c.growAt = performance.now()+opCropGrowSeconds*1000; cropTiles.push(c); } } }
+  cropTiles = []; for(let y=0;y<MAPH;y++)for(let x=0;x<MAPW;x++){ const c=world[y][x]; if(c.type===T.CROP){ if(!c.species) c.species='wheat'; c.cx=x; c.cy=y; if(c.mature){ c.stage=3; c.bred=true; } else { c.growAt = performance.now()+opCropGrowSeconds*1000; cropTiles.push(c); } } }
   guestCheatsAllowed = !!msg.perm;
   resetStats(); gameOver=false; tickAcc=0; countTimer=0; bonusShownForDay=dayNum; luckyQueue=[];
   camX=player.x; camY=player.y;
@@ -1895,7 +1928,7 @@ function applyNetInit(msg){
 function applyNetTiles(cells){
   for(const c of cells){ const [x,y,type,hp,maxHp,stage,species,mature]=c; if(world[y]&&world[y][x]){ const tile={type,hp,timer:0}; if(maxHp)tile.maxHp=maxHp; if(stage)tile.stage=stage;
     if(PLAYER_BUILT_TILES.includes(type)){ tile.def=enemyHitsFor(type); tile.defMax=tile.def; }
-    if(type===T.CROP){ tile.species = species || 'wheat'; tile.stage=stage||0; if(mature){ tile.mature=true; tile.stage=3; } else { tile.growAt = performance.now()+opCropGrowSeconds*1000; cropTiles.push(tile); } }  // both host & guest grow the crop locally
+    if(type===T.CROP){ tile.species = species || 'wheat'; tile.cx=x; tile.cy=y; tile.stage=stage||0; if(mature){ tile.mature=true; tile.stage=3; tile.bred=true; } else { tile.growAt = performance.now()+opCropGrowSeconds*1000; cropTiles.push(tile); } }  // both host & guest grow the crop locally
     world[y][x]=tile; if(netShadow) netShadow[y][x]=type; } }
 }
 function netOnMessage(peer, msg){
@@ -2084,7 +2117,7 @@ function loadWorld(id){
   eternalNightActive=!!data.eternalNightActive; crystalPlaced=!!data.crystalPlaced; crystalActivated=!!data.crystalActivated; crystalBonusDays=data.crystalBonusDays||0; crystalDevicePos=data.crystalDevicePos||null;
   stats = Object.assign({ animalsKilled:0,monstersKilled:0,blocksDestroyed:0,maxBreakDist:2,luckyOpened:0,dailyChoices:[] }, data.stats||{});
   chests = (data.chests||[]).map(c=>({x:c.x,y:c.y,items:c.items||{}}));
-  cropTiles = []; for(let y=0;y<MAPH;y++)for(let x=0;x<MAPW;x++){ const c=world[y][x]; if(c.type===T.CROP){ if(!c.species) c.species='wheat'; if(c.mature){ c.stage=3; } else { c.growAt = performance.now()+opCropGrowSeconds*1000; cropTiles.push(c); } } }
+  cropTiles = []; for(let y=0;y<MAPH;y++)for(let x=0;x<MAPW;x++){ const c=world[y][x]; if(c.type===T.CROP){ if(!c.species) c.species='wheat'; c.cx=x; c.cy=y; if(c.mature){ c.stage=3; c.bred=true; } else { c.growAt = performance.now()+opCropGrowSeconds*1000; cropTiles.push(c); } } }
   bonusShownForDay=dayNum; luckyQueue=[]; gameOver=false; tickAcc=0; countTimer=0;
   camX=player.x; camY=player.y;
   document.getElementById('worldSelect').style.display='none';
@@ -2236,6 +2269,79 @@ function drawGrain(x, y, w, h, color){
   for (let gy=0; gy<h; gy+=step){ for (let gx=0; gx<w; gx+=step){ if (hash2(Math.floor(x+gx), Math.floor(y+gy)) < 0.32){ ctx.fillRect(x+gx, y+gy, 2, 2); } } }
   ctx.globalAlpha = 1; ctx.restore();
 }
+// Fully-grown plants, all hand-drawn on the canvas (no emojis — a big garden stays smooth).
+// cx = tile centre X, sy = tile top Y. Base of the plant sits near sy+26.
+function drawMaturePlant(species, cx, sy){
+  const baseY = sy+26;
+  const stem = (col, w, fromY)=>{ ctx.fillStyle=col||'#3f7a2a'; ctx.fillRect(cx-(w||1), fromY, (w||1)*2, baseY-fromY); };
+  switch(species){
+    case 'wheat':
+      ctx.fillStyle='#d9a441'; ctx.fillRect(cx-4, sy+13, 1.6, 13); ctx.fillRect(cx-0.8, sy+9, 1.6, 17); ctx.fillRect(cx+3, sy+14, 1.6, 12);
+      ctx.fillStyle='#f4d06f';
+      for(const g of [[-3.2,13],[0.1,9],[3.8,14]]){ for(let i=0;i<3;i++){ ctx.beginPath(); ctx.ellipse(cx+g[0], sy+g[1]+i*3.2, 2.1, 1.3, 0,0,6.3); ctx.fill(); } }
+      break;
+    case 'clover':
+      stem('#2f7a3f', 1, sy+15);
+      ctx.fillStyle='#3aa35a'; for(const d of [[-4,-2],[4,-2],[0,-6],[0,2]]){ ctx.beginPath(); ctx.arc(cx+d[0], sy+11+d[1], 3.4, 0, 6.3); ctx.fill(); }
+      ctx.fillStyle='#8fe0a0'; ctx.beginPath(); ctx.arc(cx-1, sy+9, 1, 0, 6.3); ctx.fill();
+      break;
+    case 'sunflower':
+      stem('#2f7a3f', 1.2, sy+13);
+      ctx.fillStyle='#3aa35a'; ctx.beginPath(); ctx.ellipse(cx-4, sy+18, 3, 1.6, -0.6,0,6.3); ctx.fill();
+      ctx.fillStyle='#f2c94c'; for(let i=0;i<10;i++){ const a=i/10*6.283; ctx.beginPath(); ctx.ellipse(cx+Math.cos(a)*5, sy+9+Math.sin(a)*5, 2.4, 1.3, a,0,6.3); ctx.fill(); }
+      ctx.fillStyle='#6b4a1e'; ctx.beginPath(); ctx.arc(cx, sy+9, 3.1, 0, 6.3); ctx.fill();
+      break;
+    case 'herb':
+      stem('#2f7a3f', 1, sy+8);
+      ctx.fillStyle='#4a9a3a'; for(const dy of [4,9,14]){ ctx.beginPath(); ctx.ellipse(cx-3.5, sy+dy, 3.2, 1.5, -0.5,0,6.3); ctx.fill(); ctx.beginPath(); ctx.ellipse(cx+3.5, sy+dy+1.5, 3.2, 1.5, 0.5,0,6.3); ctx.fill(); }
+      break;
+    case 'poppy':
+      stem('#2f7a3f', 1, sy+11);
+      ctx.fillStyle='#e0473a'; for(let i=0;i<5;i++){ const a=i/5*6.283-1.57; ctx.beginPath(); ctx.ellipse(cx+Math.cos(a)*3.8, sy+9+Math.sin(a)*3.8, 3, 2.4, a,0,6.3); ctx.fill(); }
+      ctx.fillStyle='#2a1520'; ctx.beginPath(); ctx.arc(cx, sy+9, 2.1, 0, 6.3); ctx.fill();
+      break;
+    case 'bluebell':
+      ctx.strokeStyle='#2f7a3f'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(cx, baseY); ctx.quadraticCurveTo(cx-5, sy+12, cx-3, sy+7); ctx.stroke();
+      ctx.fillStyle='#5b7ce0'; for(const b of [[-3,7],[1,10],[4,14]]){ ctx.beginPath(); ctx.moveTo(cx+b[0], sy+b[1]); ctx.lineTo(cx+b[0]-2.4, sy+b[1]+4.5); ctx.lineTo(cx+b[0]+2.4, sy+b[1]+4.5); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.arc(cx+b[0], sy+b[1]+4.5, 2.4, 0, 3.14); ctx.fill(); }
+      break;
+    case 'goldenrod':
+      stem('#2f7a3f', 1.2, sy+8);
+      ctx.fillStyle='#f0b429'; for(let r=0;r<7;r++){ const w=1+r*0.5; for(let k=0;k<=r;k++){ ctx.beginPath(); ctx.arc(cx-w+(r?(k/r)*w*2:0), sy+6+r*2.2, 1.4, 0, 6.3); ctx.fill(); } }
+      break;
+    case 'glowcap':
+      ctx.fillStyle='#e8e2cf'; ctx.fillRect(cx-2, sy+13, 4, 12);
+      ctx.fillStyle='#e05a6a'; ctx.beginPath(); ctx.arc(cx, sy+13, 8, Math.PI, 2*Math.PI); ctx.fill(); ctx.fillRect(cx-8, sy+12, 16, 2);
+      ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(cx-3, sy+9, 1.5, 0, 6.3); ctx.arc(cx+3, sy+10, 1.2, 0, 6.3); ctx.arc(cx, sy+7, 1, 0, 6.3); ctx.fill();
+      break;
+    case 'nightshade':
+      stem('#356b2f', 1, sy+9);
+      ctx.fillStyle='#7a4bd0'; for(const b of [[-3,8],[3,10],[0,14],[-2,15]]){ ctx.beginPath(); ctx.arc(cx+b[0], sy+b[1], 2.3, 0, 6.3); ctx.fill(); }
+      ctx.fillStyle='#c9a6ff'; ctx.beginPath(); ctx.arc(cx+1, sy+6, 1.6, 0, 6.3); ctx.fill();
+      break;
+    case 'crystalbloom':
+      stem('#2f7a3f', 1, sy+13);
+      if(gfxLevel>=4){ ctx.save(); ctx.globalAlpha=0.35; ctx.fillStyle='#9beef5'; ctx.beginPath(); ctx.arc(cx, sy+9, 8, 0, 6.3); ctx.fill(); ctx.restore(); }
+      ctx.fillStyle='#57d6e0'; for(let i=0;i<4;i++){ const a=i/4*6.283, px=cx+Math.cos(a)*4.5, py=sy+9+Math.sin(a)*4.5; ctx.beginPath(); ctx.moveTo(cx,sy+9); ctx.lineTo(px-1.6*Math.sin(a), py+1.6*Math.cos(a)); ctx.lineTo(px+Math.cos(a)*2.5, py+Math.sin(a)*2.5); ctx.lineTo(px+1.6*Math.sin(a), py-1.6*Math.cos(a)); ctx.closePath(); ctx.fill(); }
+      ctx.fillStyle='#eafcff'; ctx.beginPath(); ctx.arc(cx, sy+9, 1.8, 0, 6.3); ctx.fill();
+      break;
+    case 'emberlily':
+      stem('#3a6b2f', 1, sy+13);
+      if(gfxLevel>=4){ ctx.save(); ctx.globalAlpha=0.3; ctx.fillStyle='#ff9a3a'; ctx.beginPath(); ctx.arc(cx, sy+9, 7, 0, 6.3); ctx.fill(); ctx.restore(); }
+      for(let i=0;i<5;i++){ const a=i/5*6.283-1.57; ctx.fillStyle=i%2?'#ff7a2a':'#ffb02a'; ctx.beginPath(); ctx.moveTo(cx, sy+9); ctx.lineTo(cx+Math.cos(a-0.25)*6, sy+9+Math.sin(a-0.25)*6); ctx.lineTo(cx+Math.cos(a)*7, sy+9+Math.sin(a)*7); ctx.lineTo(cx+Math.cos(a+0.25)*6, sy+9+Math.sin(a+0.25)*6); ctx.closePath(); ctx.fill(); }
+      ctx.fillStyle='#fff2c0'; ctx.beginPath(); ctx.arc(cx, sy+9, 1.6, 0, 6.3); ctx.fill();
+      break;
+    case 'moonflower':
+      stem('#3a6b4a', 1, sy+13);
+      if(gfxLevel>=4){ ctx.save(); ctx.globalAlpha=0.4; ctx.fillStyle='#dfe6ff'; ctx.beginPath(); ctx.arc(cx, sy+9, 8, 0, 6.3); ctx.fill(); ctx.restore(); }
+      ctx.fillStyle='#eaf0ff'; for(let i=0;i<6;i++){ const a=i/6*6.283; ctx.beginPath(); ctx.ellipse(cx+Math.cos(a)*4, sy+9+Math.sin(a)*4, 2.6, 1.7, a,0,6.3); ctx.fill(); }
+      ctx.fillStyle='#bcd0ff'; ctx.beginPath(); ctx.arc(cx, sy+9, 2, 0, 6.3); ctx.fill();
+      break;
+    default: {
+      const col=(PLANT_SPECIES[species]||{}).color||'#73c745';
+      stem('#3f7a2a', 1, sy+11); ctx.fillStyle=col; ctx.beginPath(); ctx.arc(cx, sy+9, 3.5, 0, 6.3); ctx.fill();
+    }
+  }
+}
 // durability fraction for a built item: prefer the monster hit-count (def), else the player-mining hp
 function builtFrac(o, type){ if(!o) return 1; if(o.defMax) return Math.max(0,o.def||0)/o.defMax; return Math.max(0,o.hp)/((o.maxHp)||tileHP(type)); }
 // grey square ring shown around a reinforced item; brighter when the shield still has charge
@@ -2259,7 +2365,7 @@ function drawCracks(cx, cy, frac){
 }
 function drawResourceShape(t, sx, sy, tileObj){
   const cx = sx+TILE/2, cy = sy+TILE/2; ctx.save();
-  if (gfxLevel === 5) { ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 5; ctx.shadowOffsetY = 4; }
+  if (gfxLevel >= 5) { ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 5; ctx.shadowOffsetY = 4; }
   let sway = (gfxLevel >= 4) ? Math.sin(performance.now() * 0.005 + sx * 0.02) * 2.5 : 0;
 
   if (t===T.TREE){
@@ -2277,12 +2383,7 @@ function drawResourceShape(t, sx, sy, tileObj){
     const mature = tileObj && tileObj.mature;
     const sp = (tileObj && PLANT_SPECIES[tileObj.species]) || PLANT_SPECIES.wheat;
     ctx.fillStyle='rgba(0,0,0,0.12)'; ctx.beginPath(); ctx.ellipse(cx+1, cy+10, 6, 2.5, 0,0,6.3); ctx.fill();
-    if (mature || stage>=3){
-      // full-grown plant: green stalk + the species crop head drawn as its emoji
-      ctx.fillStyle='#3f7a2a'; ctx.fillRect(cx-1, sy+12, 2, 12);
-      ctx.font = '15px serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText(sp.emoji, cx, sy+11);
-    }
+    if (mature || stage>=3){ drawMaturePlant((tileObj&&tileObj.species)||'wheat', cx, sy); }
     else if (stage===0){ ctx.fillStyle='#73c745'; ctx.beginPath(); ctx.arc(cx, cy+4, 3, 0, 6.3); ctx.fill(); }
     else if (stage===1){ ctx.fillStyle='#4a8a2a'; ctx.fillRect(cx-1, cy, 2, 8); ctx.fillStyle='#73c745'; ctx.beginPath(); ctx.arc(cx, cy-1, 3.5, 0, 6.3); ctx.fill(); }
     else { ctx.fillStyle='#4a8a2a'; ctx.fillRect(cx-1, sy+10, 2, 14); ctx.fillStyle=sp.color; ctx.beginPath(); ctx.arc(cx, sy+9, 3.6, 0, 6.3); ctx.fill(); }
@@ -2327,7 +2428,7 @@ function drawResourceShape(t, sx, sy, tileObj){
       ctx.beginPath(); ctx.moveTo(cx, s.y - s.h); ctx.lineTo(cx - s.w*0.42, s.y - s.h*0.5); ctx.lineTo(cx + s.w*0.42, s.y - s.h*0.5); ctx.closePath(); ctx.fill();
     }
   } else if (t===T.ROCK || t===T.COAL || t===T.IRONROCK){
-    if (gfxLevel === 5) {
+    if (gfxLevel >= 5) {
       if (t === T.COAL) {
         ctx.fillStyle = '#151515'; ctx.beginPath(); ctx.moveTo(cx-11, cy+8); ctx.lineTo(cx-6, cy-9); ctx.lineTo(cx+6, cy-11); ctx.lineTo(cx+12, cy+4); ctx.lineTo(cx+4, cy+9); ctx.closePath(); ctx.fill();
         ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.fillStyle = '#fff'; ctx.fillRect(cx-4, cy-5, 2.5, 2.5);
@@ -2348,7 +2449,7 @@ function drawResourceShape(t, sx, sy, tileObj){
     ctx.translate(sway, 0); ctx.fillStyle='#295c2e'; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, 6.3); ctx.fill();
     if(gfxLevel >= 2) { ctx.fillStyle='#c94a3d'; ctx.beginPath(); ctx.arc(cx-3, cy-2, 2, 0, 6.3); ctx.arc(cx+3, cy+2, 2, 0, 6.3); ctx.fill(); }
   } else if (t===T.CACTUS){
-    if (gfxLevel === 5) { ctx.fillStyle='#1e5c2b'; ctx.fillRect(cx-3, cy-13, 6, 22); ctx.fillRect(cx-9, cy-3, 6, 3); ctx.fillRect(cx-9, cy-8, 3, 6); ctx.fillRect(cx+3, cy-7, 6, 3); ctx.fillRect(cx+6, cy-12, 3, 6); ctx.fillStyle='#fff'; ctx.fillRect(cx-1, cy-9, 1, 1); ctx.fillRect(cx+1, cy+1, 1, 1); } else { ctx.fillStyle='#2f7a3f'; ctx.fillRect(cx-3, cy-13, 6, 22); }
+    if (gfxLevel >= 5) { ctx.fillStyle='#1e5c2b'; ctx.fillRect(cx-3, cy-13, 6, 22); ctx.fillRect(cx-9, cy-3, 6, 3); ctx.fillRect(cx-9, cy-8, 3, 6); ctx.fillRect(cx+3, cy-7, 6, 3); ctx.fillRect(cx+6, cy-12, 3, 6); ctx.fillStyle='#fff'; ctx.fillRect(cx-1, cy-9, 1, 1); ctx.fillRect(cx+1, cy+1, 1, 1); } else { ctx.fillStyle='#2f7a3f'; ctx.fillRect(cx-3, cy-13, 6, 22); }
   } else if (t===T.WALL){
     const frac = builtFrac(tileObj, T.WALL);
     // last 10% of durability -> the wall glows red as a warning it's about to give
@@ -2466,7 +2567,7 @@ function draw(){
     const t = world[y][x]; const sx=x*TILE, sy=y*TILE; const b = biomeAt(x, y);
     ctx.fillStyle = groundColor(b, t.type); ctx.fillRect(sx,sy,TILE,TILE);
     if (floorNoiseOn(b, t.type)){ const gc = t.type===T.ALTAR_FLOOR ? '#565656' : t.type===T.SAND ? '#b89a55' : t.type===T.SNOW ? '#c4cdd6' : '#2a5a24'; drawGrain(sx, sy, TILE, TILE, gc); }
-    if (gfxLevel === 5) { if (t.type === T.GRASS) { ctx.fillStyle = '#2e692a'; ctx.fillRect(sx + 5, sy + 6, 2, 4); } else if (t.type === T.SAND) { ctx.fillStyle = '#c7b06b'; ctx.fillRect(sx + 2, sy + 14, 14, 1.5); } }
+    if (gfxLevel >= 5) { if (t.type === T.GRASS) { ctx.fillStyle = '#2e692a'; ctx.fillRect(sx + 5, sy + 6, 2, 4); } else if (t.type === T.SAND) { ctx.fillStyle = '#c7b06b'; ctx.fillRect(sx + 2, sy + 14, 14, 1.5); } }
     if (t.type === T.WATER && gfxLevel >= 4) { ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(sx + 4 + Math.sin(performance.now() * 0.003 + sx)*2, sy + 10, 8, 1.5); }
     if (t.type!==T.GRASS && t.type!==T.WATER && t.type!==T.SAND && t.type!==T.SNOW && t.type!==T.ALTAR_FLOOR){ drawResourceShape(t.type, sx, sy, t); }
   }
@@ -2477,7 +2578,7 @@ function draw(){
   for (const p of particles){ ctx.globalAlpha=Math.max(0,p.life/0.6); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.3); ctx.fill(); ctx.globalAlpha=1; }
   for (const p of projectiles){ ctx.fillStyle='#fff'; ctx.fillRect(p.x-2, p.y-2, 4, 4); }
   for (const p of enemyProjectiles){ if(p.bone){ ctx.fillStyle='#e8e0d0'; ctx.fillRect(p.x-2, p.y-3, 4, 6); } else { ctx.fillStyle='#8a2f1a'; ctx.fillRect(p.x-2, p.y-2, 4, 4); } }
-  for (const a of animals){ ctx.save(); ctx.translate(a.x, a.y); let hop = Math.abs(Math.sin(performance.now() * 0.008)) * 3.5; ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.beginPath(); ctx.ellipse(0, 6, 6, 2.5, 0, 0, 6.3); ctx.fill(); ctx.fillStyle = '#f5f5f5'; ctx.beginPath(); ctx.arc(0, -2 - hop, 6, 0, 6.3); ctx.fill(); ctx.beginPath(); ctx.arc(4, -6 - hop, 4.5, 0, 6.3); ctx.fill(); ctx.fillRect(1, -14 - hop, 1.8, 6); ctx.fillRect(4, -14 - hop, 1.8, 6); if (gfxLevel === 5) { ctx.fillStyle = '#ffb3b3'; ctx.fillRect(1.5, -12 - hop, 0.8, 4); ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(-6, -2 - hop, 2.2, 0, 6.3); ctx.fill(); } ctx.fillStyle = '#ff9999'; ctx.fillRect(6, -6 - hop, 1.5, 1.5); if (a.isSpider && getNightFactor() > 0.4){ ctx.fillStyle='#ff2b2b'; ctx.shadowColor='#ff2b2b'; ctx.shadowBlur=6; ctx.fillRect(2.5, -7 - hop, 1.8, 1.8); ctx.fillRect(5.5, -7 - hop, 1.8, 1.8); ctx.shadowBlur=0; } ctx.restore(); }
+  for (const a of animals){ ctx.save(); ctx.translate(a.x, a.y); let hop = Math.abs(Math.sin(performance.now() * 0.008)) * 3.5; ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.beginPath(); ctx.ellipse(0, 6, 6, 2.5, 0, 0, 6.3); ctx.fill(); ctx.fillStyle = '#f5f5f5'; ctx.beginPath(); ctx.arc(0, -2 - hop, 6, 0, 6.3); ctx.fill(); ctx.beginPath(); ctx.arc(4, -6 - hop, 4.5, 0, 6.3); ctx.fill(); ctx.fillRect(1, -14 - hop, 1.8, 6); ctx.fillRect(4, -14 - hop, 1.8, 6); if (gfxLevel >= 5) { ctx.fillStyle = '#ffb3b3'; ctx.fillRect(1.5, -12 - hop, 0.8, 4); ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(-6, -2 - hop, 2.2, 0, 6.3); ctx.fill(); } ctx.fillStyle = '#ff9999'; ctx.fillRect(6, -6 - hop, 1.5, 1.5); if (a.isSpider && getNightFactor() > 0.4){ ctx.fillStyle='#ff2b2b'; ctx.shadowColor='#ff2b2b'; ctx.shadowBlur=6; ctx.fillRect(2.5, -7 - hop, 1.8, 1.8); ctx.fillRect(5.5, -7 - hop, 1.8, 1.8); ctx.shadowBlur=0; } ctx.restore(); }
   const enemyColor = {zombie:'#3c7a4b', scorpion:'#b5743b', wolf:'#3a3a3a', siberian_wolf:'#d5e2eb'};
   for (const e of enemies){
     ctx.save(); ctx.translate(e.x, e.y); let bob = Math.sin(performance.now() * 0.008 + e.x) * 2.5; let isRight = (e.facing === 'right');
@@ -2598,7 +2699,7 @@ function draw(){
   }
   ctx.restore();
 
-  if (gfxLevel === 5 && Math.random() < 0.08) { for(let y=startY; y<endY; y++) for(let x=startX; x<endX; x++) { if((world[y][x].type === T.CAMPFIRE || world[y][x].type === T.FURNACE) && Math.random() < 0.2) spawnParticle(x*TILE + 16 + (Math.random()*16-8), y*TILE + 16, '#ffaa00', Math.random()*2+1); } }
+  if (gfxLevel >= 5 && Math.random() < 0.08) { for(let y=startY; y<endY; y++) for(let x=startX; x<endX; x++) { if((world[y][x].type === T.CAMPFIRE || world[y][x].type === T.FURNACE) && Math.random() < 0.2) spawnParticle(x*TILE + 16 + (Math.random()*16-8), y*TILE + 16, '#ffaa00', Math.random()*2+1); } }
   ctx.restore();
 
   /* Night darkness overlay */
@@ -2623,7 +2724,7 @@ function draw(){
     if (net.active){ for (const id in remotePlayers){ const rp=remotePlayers[id]; if(!rp.torch) continue; const rr=torchLightRadius*gameZoom; const rx=(rp.x-player.x)*gameZoom+W/2, ry=(rp.y-player.y)*gameZoom+H/2; const g2=lightCtx.createRadialGradient(rx,ry,5*gameZoom,rx,ry,rr); g2.addColorStop(0,'rgba(0,0,0,1)'); g2.addColorStop(1,'rgba(0,0,0,0)'); lightCtx.fillStyle=g2; lightCtx.beginPath(); lightCtx.arc(rx,ry,rr,0,6.3); lightCtx.fill(); } }
     lightCtx.globalCompositeOperation = 'source-over'; ctx.drawImage(lightCanvas, 0, 0);
   }
-  if (gfxLevel === 5) { let vignGrad = ctx.createRadialGradient(W/2, H/2, Math.min(W, H) * 0.4, W/2, H/2, Math.max(W, H) * 0.75); vignGrad.addColorStop(0, 'rgba(0,0,0,0)'); vignGrad.addColorStop(1, 'rgba(0,0,0,0.5)'); ctx.fillStyle = vignGrad; ctx.fillRect(0, 0, W, H); }
+  if (gfxLevel >= 5) { let vignGrad = ctx.createRadialGradient(W/2, H/2, Math.min(W, H) * 0.4, W/2, H/2, Math.max(W, H) * 0.75); vignGrad.addColorStop(0, 'rgba(0,0,0,0)'); vignGrad.addColorStop(1, 'rgba(0,0,0,0.5)'); ctx.fillStyle = vignGrad; ctx.fillRect(0, 0, W, H); }
   drawMinimap();
 }
 
