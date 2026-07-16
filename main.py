@@ -198,15 +198,15 @@
   <div id="settingsPanel">
     <h3>⚙️ הגדרות משחק</h3>
     <div class="settingRow"><label>☀️ תאורת מסך (למשחק בשמש):</label><input type="range" min="0.8" max="1.8" step="0.1" value="1.0" oninput="changeAppBrightness(this.value)"></div>
-    <div class="settingRow"><label>🕹️ סוג רשת תנועה (Grid Mode):</label><select id="gridMode" onchange="changeGridMode(this.value)"><option value="smooth">🏃 תנועה חופשית (Smooth)</option><option value="quarter">📐 רבע בלוק (1/4 Tile)</option><option value="half">📏 חצי בלוק (1/2 Tile)</option><option value="full">🧱 בלוק מלא (Full Tile)</option></select></div>
+    <div class="settingRow"><label>🕹️ סוג רשת תנועה:</label><select id="gridMode" onchange="changeGridMode(this.value)"><option value="smooth">🏃 תנועה חופשית</option><option value="quarter">📐 רבע בלוק</option><option value="half">📏 חצי בלוק</option><option value="full">🧱 בלוק מלא</option></select></div>
     <div class="settingRow"><label>🎨 רמת יופי וגרפיקה (1-6):</label><input type="range" min="1" max="6" step="1" value="1" oninput="changeGraphics(this.value)"></div>
     <div class="settingRow" id="noiseSection" style="display:none; border-top:1px dashed #4a4230; padding-top:8px;">
       <label>🎛️ טקסטורה 6 — רעש (סאונד) לבלוקים:</label>
       <div class="noiseToggleRow"><span>הכל</span><input type="checkbox" id="noiseAll" checked onchange="setAllNoise(this.checked)"></div>
       <div id="noiseList"></div>
     </div>
-    <div class="settingRow"><label>📱 גודל כללי לממשק (UI Scale):</label><input type="range" min="1.0" max="2.0" step="0.1" value="1.2" oninput="changeUIScale(this.value)"></div>
-    <div class="settingRow"><label>🔎 מרחק מצלמה (Zoom):</label><input type="range" min="0.6" max="2.6" step="0.1" value="1.5" oninput="changeZoom(this.value)"></div>
+    <div class="settingRow"><label>📱 גודל כללי לממשק:</label><input type="range" min="1.0" max="2.0" step="0.1" value="1.2" oninput="changeUIScale(this.value)"></div>
+    <div class="settingRow"><label>🔎 מרחק מצלמה:</label><input type="range" min="0.6" max="2.6" step="0.1" value="1.5" oninput="changeZoom(this.value)"></div>
     <div class="settingRow"><label>🕹️ גודל ג'ויסטיק תנועה:</label><input type="range" min="80" max="260" step="5" value="120" oninput="changeJoySize(this.value)"></div>
     <div class="settingRow"><label>🔴 גודל לחצן תקיפה (⚔️):</label><input type="range" min="65" max="180" step="5" value="80" oninput="changeActionSize(this.value)"></div>
     <div class="settingRow" style="flex-direction:row; justify-content:space-between; align-items:center;"><label>🏷️ הצג שמות של שחקנים אחרים</label><input type="checkbox" checked onchange="showPlayerNames=this.checked"></div>
@@ -223,7 +223,7 @@
   </div>
 
   <div id="cheatPanel">
-    <h3>🔑 תפריט מפתח (OP Controls)</h3>
+    <h3>🔑 תפריט מפתח</h3>
     <div class="toggleRow"><span>👾 מפלצות פעילות</span><input type="checkbox" id="cheatEnemiesToggle" checked onchange="cheatToggleEnemies(this.checked)"></div>
     <div class="toggleRow"><span>🛡️ מצב אלוהים (חסין)</span><input type="checkbox" id="cheatGodToggle" onchange="cheatToggleGod(this.checked)"></div>
     <div class="toggleRow"><span>🌙 כל לילה: לאקי בלוק + כל הכוחות</span><input type="checkbox" id="cheatNightlyToggle" onchange="cheatToggleNightly(this.checked)"></div>
@@ -309,6 +309,10 @@
   <div id="worldSelect">
     <h1>🌍 שרידות</h1>
     <div class="sub">בחר עולם כדי להתחיל</div>
+    <div style="margin:0 0 10px; display:flex; align-items:center; justify-content:center; gap:8px;">
+      <span style="font-size:12px; color:#9a927a;">🙂 השם שלך:</span>
+      <input id="playerNameInput" maxlength="14" placeholder="הקלד שם" oninput="setPlayerName(this.value)" style="width:150px; padding:7px 9px; border-radius:7px; border:1px solid #4a4230; background:#0d1018; color:#fff; font-family:inherit; font-size:14px; text-align:center;">
+    </div>
     <div id="skinRow">
       <span style="font-size:11px; color:#9a927a; margin-left:6px;">👕 צבע:</span>
       <div class="skinSwatch sel" style="background:#2f5f8a" onclick="setSkin('#2f5f8a', this)"></div>
@@ -395,15 +399,21 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 let W, H;
 function resizeCanvas(){
-  const rect = document.getElementById('wrap').getBoundingClientRect();
+  // Use the canvas's OWN rendered box so the backing store always matches what's on screen.
+  // (On mobile the viewport height changes when the toolbar shows/hides without firing 'resize';
+  //  if the backing store goes stale the CSS stretches it and circles render as ellipses.)
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width < 2 || rect.height < 2) return;
   const dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.round(rect.width * dpr);
-  canvas.height = Math.round(rect.height * dpr);
+  const bw = Math.round(rect.width * dpr), bh = Math.round(rect.height * dpr);
+  if (canvas.width !== bw || canvas.height !== bh){ canvas.width = bw; canvas.height = bh; }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  W = rect.width;
-  H = rect.height;
+  W = rect.width; H = rect.height;
 }
+// keep the backing store in sync with the real display size every frame (cheap: just a measure + compare)
+function syncCanvasSize(){ const rect = canvas.getBoundingClientRect(); if (rect.width>1 && (Math.abs(rect.width-W)>0.5 || Math.abs(rect.height-H)>0.5)) resizeCanvas(); }
 window.addEventListener('resize', resizeCanvas);
+if (window.visualViewport){ window.visualViewport.addEventListener('resize', resizeCanvas); window.visualViewport.addEventListener('scroll', resizeCanvas); }
 resizeCanvas();
 
 const TILE = 32;
@@ -699,6 +709,12 @@ let net = { active:false, isHost:false, peers:[], selfId: Math.random().toString
 let remotePlayers = {};        // id -> {x,y,facing,hp,name,last,color,torch}
 let playerSkin = '#2f5f8a';    // chosen shirt color (shown to yourself and to teammates)
 function setSkin(color, el){ playerSkin = color; document.querySelectorAll('.skinSwatch').forEach(s=>s.classList.remove('sel')); if(el) el.classList.add('sel'); }
+// The name you pick once and everyone in a shared world sees above your character.
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+let playerName = (lsGet('joni_playerName') || '').slice(0,14);
+function setPlayerName(v){ playerName = (v||'').slice(0,14); lsSet('joni_playerName', playerName); if (net.active) net.name = playerName || (net.isHost?'מארח':'אורח'); }
+function myName(){ return playerName || (net.isHost ? 'מארח' : 'אורח'); }
 let netGuestDmg = {};          // host-side accumulator of damage owed to each guest, flushed over the network
 let netPlayerCount = 1;        // 1 + connected guests (host view)
 let enemyIdSeq = 0;            // host-assigned enemy ids for network sync
@@ -721,7 +737,7 @@ function initPlayer(){
   const gx = Math.floor(MAPW/2), gy = Math.floor(MAPH*0.42);
   player = { 
     gridX:gx, gridY:gy, x:gx*TILE+TILE/2, y:gy*TILE+TILE/2, w:18,h:18, moving:false, moveFrom:{x:0,y:0}, moveTo:{x:0,y:0}, moveT:0, moveDuration:0.24, health:100, maxHealth:100, hunger:100, maxHunger:100, speed:2.5, facing:'down', 
-    inv:{ wood:0, stone:0, coal:0, iron:0, iron_ingot:0, berry:0, meat:0, torch:0, bones:0, wheat:0, seeds:0, bowl:0, dough:0, bread:0, cooked_meat:0, fruit_salad:0, crystal:0, reinforcement:0, raw_fish:0, cooked_fish:0, cave_crystal:0, honey_jar:0,
+    inv:{ wood:0, stone:0, coal:0, iron:0, iron_ingot:0, berry:0, meat:0, torch:0, bones:0, wheat:0, seeds:0, bowl:0, dough:0, bread:0, cooked_meat:0, fruit_salad:0, crystal:0, reinforcement:0, raw_fish:0, cooked_fish:0, big_fish:0, pufferfish:0, eel:0, golden_fish:0, cave_crystal:0, honey_jar:0,
           clover:0, sunflower:0, herb:0, poppy:0, bluebell:0, goldenrod:0, glowcap:0, nightshade:0, crystalbloom:0, emberlily:0, moonflower:0,
           healing_potion:0, speed_potion:0, glow_lantern:0, harvest_charm:0, calm_incense:0, strength_brew:0, moon_elixir:0,
           item_wall:0, item_wall_thorn:0, item_bone_wall:0, item_campfire:0, item_furnace:0, item_crafting_table:0, item_upgraded_table:0, item_chest:0, item_crystal_device:0, item_lucky:0, item_beehive:0, item_garden_table:0 },
@@ -817,7 +833,7 @@ const RECIPES = [
   { id:'garden_seeds', name:'🌱 3 זרעים', cost:{wheat:1}, type:'ammo', give:{seeds:3}, station:'garden' }
 ];
 
-const names = {wood:'🪵 עץ',stone:'🪨 אבן',coal:'⚫ פחם',iron:'🔶 ברזל',iron_ingot:'⚪ ברזל מחומם',berry:'🍓 פרי',meat:'🍖 בשר',torch:'🔥 לפיד',bones:'🦴 עצם',wheat:'🌾 חיטה',seeds:'🌱 זרעים',bowl:'🥣 קערה',dough:'🥟 בצק',bread:'🍞 לחם',cooked_meat:'🍖 בשר מעושן',fruit_salad:'🥗 סלט פירות',raw_fish:'🐟 דג נא',cooked_fish:'🐠 דג צלוי',arrowBone:'➶ חצי עצם',cave_crystal:'🔮 קריסטל מערה',honey_jar:'🍯 צנצנת דבש',beehive:'🐝 כוורת דבורים',item_beehive:'🐝 כוורת דבורים (בתיק)',
+const names = {wood:'🪵 עץ',stone:'🪨 אבן',coal:'⚫ פחם',iron:'🔶 ברזל',iron_ingot:'⚪ ברזל מחומם',berry:'🍓 פרי',meat:'🍖 בשר',torch:'🔥 לפיד',bones:'🦴 עצם',wheat:'🌾 חיטה',seeds:'🌱 זרעים',bowl:'🥣 קערה',dough:'🥟 בצק',bread:'🍞 לחם',cooked_meat:'🍖 בשר מעושן',fruit_salad:'🥗 סלט פירות',raw_fish:'🐟 דג נא',cooked_fish:'🐠 דג צלוי',big_fish:'🐠 דג גדול',pufferfish:'🐡 דג נפוח',eel:'🐍 צלופח',golden_fish:'🥇 דג זהב',arrowBone:'➶ חצי עצם',cave_crystal:'🔮 קריסטל מערה',honey_jar:'🍯 צנצנת דבש',beehive:'🐝 כוורת דבורים',item_beehive:'🐝 כוורת דבורים (בתיק)',
   clover:'🍀 תלתן',sunflower:'🌻 חמנית',herb:'🌿 עשב מרפא',poppy:'🌺 פרג',bluebell:'🔔 פעמונית',goldenrod:'🌟 זהבית',glowcap:'🍄 פטריית זוהר',nightshade:'🟣 בּלַדוֹנָה',crystalbloom:'💠 פרח בדולח',emberlily:'🔥 שושן אש',moonflower:'🌕 פרח ירח',
   healing_potion:'❤️ שיקוי ריפוי',speed_potion:'💨 שיקוי מהירות',glow_lantern:'🏮 פנס זוהר',harvest_charm:'🍀 קמע יבול',calm_incense:'🕯️ קטורת שלווה',strength_brew:'⚔️ שיקוי כוח',moon_elixir:'🌕 שיקוי הירח',garden_table:'🌿 שולחן צמחים',item_garden_table:'🌿 שולחן צמחים (בתיק)',
   crafting_table:'🛠️ שולחן עבודה',upgraded_table:'⚙️ שולחן משודרג',furnace:'♨️ תנור אבן', chest:'📦 תיבת אחסון', campfire:'🏕️ מדורה', wall:'🧱 קיר', wall_thorn:'🌵 קיר קוצים', bone_wall:'🦴 קיר עצמות', crystal:'💎 קריסטל', reinforcement:'⛓️ חיזוק ברזל',
@@ -931,6 +947,10 @@ window.eatItem = function(k) {
   else if (k === 'bread') { player.hunger = Math.min(player.maxHunger, player.hunger + 80); player.health = Math.min(player.maxHealth, player.health + 35); showToast('אכלת לחם חם! 🍞'); }
   else if (k === 'cooked_meat') { player.hunger = Math.min(player.maxHunger, player.hunger + 90); player.health = Math.min(player.maxHealth, player.health + 50); showToast('אכלת בשר מעושן משובח! 🍖🔥'); }
   else if (k === 'cooked_fish') { player.hunger = Math.min(player.maxHunger, player.hunger + 50); player.health = Math.min(player.maxHealth, player.health + 20); showToast('אכלת דג צלוי! 🐠'); }
+  else if (k === 'big_fish') { player.hunger = Math.min(player.maxHunger, player.hunger + 60); player.health = Math.min(player.maxHealth, player.health + 25); showToast('אכלת דג גדול! 🐠'); }
+  else if (k === 'pufferfish') { player.hunger = Math.min(player.maxHunger, player.hunger + 30); showToast('אכלת דג נפוח... קצת מוזר 🐡'); }
+  else if (k === 'eel') { player.hunger = Math.min(player.maxHunger, player.hunger + 45); player.health = Math.min(player.maxHealth, player.health + 15); showToast('אכלת צלופח! 🐍'); }
+  else if (k === 'golden_fish') { player.hunger = player.maxHunger; player.health = Math.min(player.maxHealth, player.health + 60); showToast('אכלת דג זהב! ריפוי ענק 🥇'); }
   else if (k === 'honey_jar') { player.hunger = Math.min(player.maxHunger, player.hunger + 40); player.speedBoostTimer = 12; player.sweetTimer = 12; showToast('🍯 אנרגיה מתוקה! מהירות + חסינות לקור ל-12 שניות'); }
   else if (k === 'fruit_salad') { 
       player.hunger = Math.min(player.maxHunger, player.hunger + 40); 
@@ -1688,34 +1708,54 @@ function updatePickups(){
 
 /* ============ Fishing ============ */
 function sfxFishBite(){ beep(880,0.09,'square',0.08); setTimeout(()=>beep(660,0.09,'square',0.08),110); }
+// Fish pool with rarity weights. Rarer catches take longer to bite and give better rewards.
+const FISH_TABLE = [
+  { id:'raw_fish',    name:'🐟 דג נא',    w:46, bite:1.2 },
+  { id:'big_fish',    name:'🐠 דג גדול',  w:22, bite:1.1 },
+  { id:'pufferfish',  name:'🐡 דג נפוח',  w:12, bite:1.0 },
+  { id:'eel',         name:'🐍 צלופח',    w:9,  bite:0.85 },
+  { id:'golden_fish', name:'🥇 דג זהב',   w:4,  bite:0.8 },
+  { id:'old_boot',    name:'🥾 מגף ישן',  w:5,  bite:1.4, junk:true },
+  { id:'treasure',    name:'💰 אוצר',     w:2,  bite:0.7, treasure:true }
+];
+function rollFish(){ let tot=0; for(const f of FISH_TABLE) tot+=f.w; let r=Math.random()*tot; for(const f of FISH_TABLE){ if((r-=f.w)<0) return f; } return FISH_TABLE[0]; }
 function startFishing(tx, ty){
   if (fishing) return;
-  fishing = { phase:'wait', timer: 2 + Math.random()*3 };  // 2-5s wait
-  showToast('🎣 מחכה לדג...');
+  const fish = rollFish();
+  // rarer fish (low weight) keep you waiting longer; base 2-6s
+  const wait = 2 + Math.random()*4 + (fish.w<=4 ? 3 : fish.w<=9 ? 1.5 : 0);
+  fishing = { phase:'wait', timer: wait, fish };
+  showToast('🎣 מחכה לדג... (~'+Math.round(wait)+' שניות)');
 }
 function updateFishing(dt){
   if (!fishing) return;
   fishing.timer -= dt;
-  if (fishing.phase==='wait' && fishing.timer<=0){ fishing.phase='bite'; fishing.timer=1.2; sfxFishBite(); }
+  if (fishing.phase==='wait' && fishing.timer<=0){ fishing.phase='bite'; fishing.timer=fishing.fish.bite||1.1; sfxFishBite(); showToast('❗ נשיכה! לחץ עכשיו!'); }
   else if (fishing.phase==='bite' && fishing.timer<=0){ fishing=null; showToast('הדג ברח... 🌊'); }
 }
 function tryFishHook(){
   if (!fishing) return false;
-  if (fishing.phase==='bite'){ player.inv.raw_fish=(player.inv.raw_fish||0)+1; showToast('תפסת דג נא! 🐟'); sfxGather(); fishing=null; renderBag(); return true; }
+  if (fishing.phase==='bite'){ const f=fishing.fish; fishing=null;
+    if (f.junk){ player.inv.wood=(player.inv.wood||0)+1; showToast('דגת '+f.name+' (+1 עץ) 😅'); }
+    else if (f.treasure){ player.inv.iron=(player.inv.iron||0)+2; player.inv.coal=(player.inv.coal||0)+2; player.inv.bones=(player.inv.bones||0)+1; showToast('🎉 דגת אוצר! +2 ברזל, +2 פחם, +1 עצם'); }
+    else { player.inv[f.id]=(player.inv[f.id]||0)+1; showToast('תפסת '+f.name+'!'); }
+    sfxGather(); renderBag(); return true;
+  }
   return false;   // hooking too early does nothing (keep waiting)
 }
 
 /* ============ Caves dimension ============ */
-// A maze: solid rock carved into 1-tile corridors (dark stone floor). No biomes, no crystals.
-// Spacious cavern generator (cellular automata). Bulk walls are CAVE_WALL (grey, give nothing when mined);
+// Spacious, organized cavern generator (cellular automata) — no biomes, no crystals. Bulk walls are CAVE_WALL (grey, give nothing when mined);
 // only ore veins on the exposed wall faces give materials, and they're tougher to mine than on the surface.
 function genCaveMap(){
   const wall=[];
   // 1) random fill with a solid border
-  for(let y=0;y<MAPH;y++){ wall[y]=[]; for(let x=0;x<MAPW;x++){ wall[y][x] = (x<2||y<2||x>=MAPW-2||y>=MAPH-2) ? true : (Math.random()<0.55); } }
-  // 2) smooth it into open caverns instead of a tight 1-wide maze
+  for(let y=0;y<MAPH;y++){ wall[y]=[]; for(let x=0;x<MAPW;x++){ wall[y][x] = (x<2||y<2||x>=MAPW-2||y>=MAPH-2) ? true : (Math.random()<0.53); } }
+  // 2) smooth it into big open caverns instead of a tight 1-wide maze
   const wc=(g,x,y)=>{ let c=0; for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){ if(dx===0&&dy===0) continue; const nx=x+dx,ny=y+dy; if(nx<0||ny<0||nx>=MAPW||ny>=MAPH||g[ny][nx]) c++; } return c; };
   for(let it=0; it<5; it++){ const ng=[]; for(let y=0;y<MAPH;y++){ ng[y]=[]; for(let x=0;x<MAPW;x++){ if(x<2||y<2||x>=MAPW-2||y>=MAPH-2){ ng[y][x]=true; continue; } ng[y][x] = wc(wall,x,y) >= 5; } } for(let y=0;y<MAPH;y++)for(let x=0;x<MAPW;x++) wall[y][x]=ng[y][x]; }
+  // 2b) tidy pass: dissolve lone wall spikes and fill lone floor pockets -> cleaner, more organized cave shapes
+  { const ng=[]; for(let y=0;y<MAPH;y++){ ng[y]=[]; for(let x=0;x<MAPW;x++){ if(x<2||y<2||x>=MAPW-2||y>=MAPH-2){ ng[y][x]=true; continue; } const c=wc(wall,x,y); ng[y][x] = wall[y][x] ? (c>=2) : (c>=6); } } for(let y=0;y<MAPH;y++)for(let x=0;x<MAPW;x++) wall[y][x]=ng[y][x]; }
   // 3) keep only the largest connected open area so the whole cave is reachable
   const region=[]; for(let y=0;y<MAPH;y++) region[y]=new Array(MAPW).fill(0);
   let bestId=0, bestSize=0, id=0;
@@ -1894,7 +1934,7 @@ function netWireConn(peer){
 }
 function sharedHost(){
   startWorld(sharedMode);
-  net.active=true; net.isHost=true; net.name='מארח'; net.peers=[]; initShadow();
+  net.active=true; net.isHost=true; net.name=playerName||'מארח'; net.peers=[]; initShadow();
   openNetPanel('host');
   document.getElementById('netHostCode').textContent = '····';
   document.getElementById('netStatus').textContent = 'טוען חיבור...';
@@ -1913,7 +1953,7 @@ function netHostRetry(attempt){
 }
 function sharedJoin(){
   // always open the panel (on TOP of the menu) so the code field is available; PeerJS loads in the background
-  net.active=true; net.isHost=false; net.name='אורח'; net.peers=[];
+  net.active=true; net.isHost=false; net.name=playerName||'אורח'; net.peers=[];
   openNetPanel('join');
   showToast('🔗 הכנס את הקוד של החבר');
   // focus the input synchronously (inside the tap) so the keyboard pops up on mobile
@@ -2292,6 +2332,14 @@ function renderStats(){
     ['🟨 לאקי בלוקים שפתחת', stats.luckyOpened],
     ['📅 יום נוכחי', dayNum],
   ];
+  if (net.active){
+    const code = net.isHost ? (net.myCode||'—') : (net.hostCode||'—');
+    rows.push(['🌐 קוד השרת הנוכחי', code]);
+    rows.push(['👥 שחקנים בעולם', netPlayerCount]);
+    rows.push(['🕹️ התפקיד שלך', net.isHost ? 'מארח' : 'אורח']);
+    const others = Object.values(remotePlayers).map(p=>p.name).filter(Boolean);
+    if (others.length) rows.push(['🙂 חברים מחוברים', others.join(', ')]);
+  }
   document.getElementById('statsBody').innerHTML = rows.map(r=>`<div class="statRow"><span>${r[0]}</span><b>${r[1]}</b></div>`).join('');
   const ch = stats.dailyChoices;
   document.getElementById('statsChoices').innerHTML = ch.length ? ch.map(c=>`<div class="statRow"><span>יום ${c.day}</span><b>${c.label}</b></div>`).join('') : '<div class="statRow"><span>עדיין לא בחרת שדרוגים</span></div>';
@@ -2608,6 +2656,7 @@ function drawResourceShape(t, sx, sy, tileObj){
 }
 
 function draw(){
+  syncCanvasSize();
   ctx.clearRect(0,0,W,H); ctx.save(); ctx.translate(W/2, H/2); ctx.scale(gameZoom, gameZoom); ctx.translate(-player.x, -player.y);
   const visibleW = W / gameZoom; const visibleH = H / gameZoom;
   const startX=Math.max(0,Math.floor((player.x - visibleW/2)/TILE)), startY=Math.max(0,Math.floor((player.y - visibleH/2)/TILE));
@@ -2808,7 +2857,7 @@ function renderBag(){
     Object.keys(names).forEach(k=>{ 
         if(player.inv[k]!==undefined && player.inv[k]>0){
           const row = document.createElement('div'); row.className='resRow'; 
-          let eatBtn = ''; if((k==='berry' || k==='meat' || k==='bread' || k==='cooked_meat' || k==='fruit_salad' || k==='cooked_fish' || k==='honey_jar') && (player.inv[k]||0) > 0) eatBtn = `<button onclick="eatItem('${k}')" style="background:#4a6b3a; border:none; color:white; padding:3px 7px; border-radius:4px; font-size:10px; margin-left:6px; cursor:pointer;">אכל</button>`;
+          let eatBtn = ''; if((k==='berry' || k==='meat' || k==='bread' || k==='cooked_meat' || k==='fruit_salad' || k==='cooked_fish' || k==='big_fish' || k==='pufferfish' || k==='eel' || k==='golden_fish' || k==='honey_jar') && (player.inv[k]||0) > 0) eatBtn = `<button onclick="eatItem('${k}')" style="background:#4a6b3a; border:none; color:white; padding:3px 7px; border-radius:4px; font-size:10px; margin-left:6px; cursor:pointer;">אכל</button>`;
           if(POTIONS[k] && (player.inv[k]||0) > 0) eatBtn = `<button onclick="usePotion('${k}')" style="background:#7a3a8a; border:none; color:white; padding:3px 7px; border-radius:4px; font-size:10px; margin-left:6px; cursor:pointer;">שתה</button>`;
           let placeBtn = '';
           if (k.startsWith('item_')) { const baseId = k.replace('item_',''); placeBtn = `<button onclick="placeItemFromBag('${baseId}')" style="background:#2f7aea; border:none; color:white; padding:3px 7px; border-radius:4px; font-size:10px; margin-left:6px; cursor:pointer;">📍 הצב</button>`; }
@@ -2859,6 +2908,8 @@ function loop(now){
 // Build a valid world behind the start screen (gameStarted stays false so it's paused) and wait for the player's choice.
 // pick a random shirt color by default (and highlight its swatch)
 (function(){ const sw=document.querySelectorAll('.skinSwatch'); if(sw.length){ const i=Math.floor(Math.random()*sw.length); setSkin(sw[i].style.backgroundColor, sw[i]); } })();
+// restore the saved name into the start-screen field
+(function(){ const inp=document.getElementById('playerNameInput'); if(inp && playerName) inp.value = playerName; })();
 gameMode = 'crystal'; initGame(); gameStarted = false; refreshSavesUI(); requestAnimationFrame(loop);
 </script>
 </body>
