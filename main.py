@@ -351,6 +351,18 @@
       <div id="savesSection" style="display:none;">
         <div class="sub" style="margin-top:18px;">📂 עולמות שמורים</div>
         <div id="savesList" style="width:min(88vw,340px);"></div>
+        <div style="width:min(88vw,340px); margin-top:14px; border-top:1px solid #4a4230; padding-top:12px;">
+          <div class="sub" style="margin:0 0 8px;">🔑 קוד שמירה (עובד גם דרך Shortcut)</div>
+          <div style="display:flex; gap:6px; margin-bottom:10px;">
+            <button onclick="makeSaveCode()" style="flex:1; padding:9px; background:#3a5a2a; color:#fff; border:none; border-radius:6px; font-family:inherit; font-size:12px; cursor:pointer;">📤 צור קוד שמירה</button>
+          </div>
+          <div id="saveCodeBox" style="display:none; margin-bottom:12px;">
+            <textarea id="saveCodeArea" readonly rows="3" style="width:100%; box-sizing:border-box; font-size:10px; background:#0d1018; color:#8fe0a0; border:1px solid #4a4230; border-radius:6px; padding:6px; direction:ltr;"></textarea>
+            <button onclick="copySaveCode()" style="width:100%; margin-top:5px; padding:8px; background:#2f5a8a; color:#fff; border:none; border-radius:6px; font-family:inherit; font-size:12px; cursor:pointer;">📋 העתק</button>
+          </div>
+          <textarea id="loadCodeArea" rows="3" placeholder="הדבק כאן קוד שמירה כדי לטעון עולם" style="width:100%; box-sizing:border-box; font-size:10px; background:#0d1018; color:#fff; border:1px solid #4a4230; border-radius:6px; padding:6px; direction:ltr;"></textarea>
+          <button onclick="loadFromCode()" style="width:100%; margin-top:5px; padding:9px; background:#5a4a2a; color:#fff; border:none; border-radius:6px; font-family:inherit; font-size:12px; cursor:pointer;">📥 טען מקוד שמירה</button>
+        </div>
       </div>
     </div>
 
@@ -2176,20 +2188,13 @@ function deserializeWorld(w){
 }
 function getSaveIndex(){ try{ return JSON.parse(localStorage.getItem(SAVE_INDEX_KEY)||'[]'); }catch(e){ return []; } }
 function setSaveIndex(idx){ try{ localStorage.setItem(SAVE_INDEX_KEY, JSON.stringify(idx)); }catch(e){} }
-function saveWorld(){
-  if (!gameStarted){ showToast('אין עולם פעיל לשמור'); return; }
-  const def = 'עולם יום '+dayNum;
-  const name = (prompt('שם לעולם:', def) || def).slice(0,40);
-  const id = 'sv_'+Date.now();
+// Build the full save object (shared by localStorage save and the portable save-code).
+function buildSaveData(name){
   const playerCopy = JSON.parse(JSON.stringify(Object.assign({}, player, {placingItem:null})));
-  const data = { v:1, name, ts:Date.now(), gameMode, dayNum, time, eternalNightDay, eternalNightActive, crystalPlaced, crystalActivated, crystalBonusDays, crystalDevicePos, player:playerCopy, stats:JSON.parse(JSON.stringify(stats)), chests:JSON.parse(JSON.stringify(chests)), world:serializeWorld() };
-  try{ localStorage.setItem(id, JSON.stringify(data)); }catch(e){ showToast('שמירה נכשלה — פתח את הקובץ בדפדפן רגיל (לא בתוך אפליקציה)'); return; }
-  const idx = getSaveIndex(); idx.unshift({ id, name, ts:data.ts, dayNum, gameMode }); setSaveIndex(idx.slice(0,30));
-  showToast('💾 העולם נשמר: '+name); refreshSavesUI();
+  return { v:1, name, ts:Date.now(), gameMode, dayNum, time, eternalNightDay, eternalNightActive, crystalPlaced, crystalActivated, crystalBonusDays, crystalDevicePos, player:playerCopy, stats:JSON.parse(JSON.stringify(stats)), chests:JSON.parse(JSON.stringify(chests)), world:serializeWorld() };
 }
-function loadWorld(id){
-  let data; try{ data = JSON.parse(localStorage.getItem(id)); }catch(e){}
-  if (!data){ showToast('טעינה נכשלה'); return; }
+// Restore a save object into the live game (shared by localStorage load and save-code import).
+function applySaveData(data){
   netReset();
   gameMode = data.gameMode||'crystal';
   initEntities();
@@ -2206,7 +2211,50 @@ function loadWorld(id){
   document.getElementById('msg').style.display='none';
   gameStarted=true; ensureAudio();
   updateHUD(); renderBag(); changeUIScale(1.2); updateResourceCounts();
+}
+function saveWorld(){
+  if (!gameStarted){ showToast('אין עולם פעיל לשמור'); return; }
+  const def = 'עולם יום '+dayNum;
+  const name = (prompt('שם לעולם:', def) || def).slice(0,40);
+  const id = 'sv_'+Date.now();
+  const data = buildSaveData(name);
+  let stored=false;
+  try{ localStorage.setItem(id, JSON.stringify(data)); stored=true; }catch(e){}
+  if (stored){ const idx = getSaveIndex(); idx.unshift({ id, name, ts:data.ts, dayNum, gameMode }); setSaveIndex(idx.slice(0,30)); showToast('💾 העולם נשמר: '+name); refreshSavesUI(); }
+  else {
+    // localStorage blocked (e.g. opened via a data: link) -> fall back to a copyable save-code
+    showToast('השמירה הרגילה חסומה כאן — יצרתי לך קוד שמירה להעתקה 📋');
+    showSaveCode(data);
+  }
+}
+function loadWorld(id){
+  let data; try{ data = JSON.parse(localStorage.getItem(id)); }catch(e){}
+  if (!data){ showToast('טעינה נכשלה'); return; }
+  applySaveData(data);
   showToast('📂 נטען: '+(data.name||''));
+}
+/* ---- Portable save code: works even when localStorage is blocked (Shortcut / data: link) ---- */
+function encodeSave(data){ return btoa(unescape(encodeURIComponent(JSON.stringify(data)))); }
+function decodeSave(str){ return JSON.parse(decodeURIComponent(escape(atob(str.trim())))); }
+function showSaveCode(data){
+  const box = document.getElementById('saveCodeBox'); const ta = document.getElementById('saveCodeArea');
+  if (!box || !ta) return;
+  ta.value = encodeSave(data || buildSaveData('עולם יום '+dayNum));
+  box.style.display='block'; ta.focus(); ta.select();
+}
+function makeSaveCode(){
+  if (!gameStarted){ showToast('אין עולם פעיל'); return; }
+  showSaveCode(buildSaveData('עולם יום '+dayNum));
+  showToast('📋 סמן הכל והעתק — הדבק ל-Google Keep או לכל מקום');
+}
+function copySaveCode(){ const ta=document.getElementById('saveCodeArea'); if(!ta) return; ta.focus(); ta.select(); let ok=false; try{ ok=document.execCommand('copy'); }catch(e){} if(navigator.clipboard){ try{ navigator.clipboard.writeText(ta.value); ok=true; }catch(e){} } showToast(ok?'הקוד הועתק 📋':'סמן הכל והעתק ידנית'); }
+function loadFromCode(){
+  const ta=document.getElementById('loadCodeArea'); if(!ta) return;
+  const str=(ta.value||'').trim(); if(!str){ showToast('הדבק קוד שמירה קודם'); return; }
+  let data; try{ data=decodeSave(str); }catch(e){ showToast('הקוד לא תקין ❌'); return; }
+  if(!data || !data.world){ showToast('הקוד לא תקין ❌'); return; }
+  applySaveData(data);
+  showToast('📂 נטען מקוד שמירה!');
 }
 function deleteSave(id){ localStorage.removeItem(id); setSaveIndex(getSaveIndex().filter(s=>s.id!==id)); refreshSavesUI(); }
 function refreshSavesUI(){
