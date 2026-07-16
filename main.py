@@ -557,7 +557,7 @@ function toggleBag(){
     } 
 }
 
-const T = { GRASS:0, TREE:1, ROCK:2, COAL:3, IRONROCK:4, WATER:5, BUSH:6, SAND:7, CACTUS:8, SNOW:9, PINE:10, WALL:11, CAMPFIRE:12, TRUNK:13, CRAFTING_TABLE:14, SAPLING:15, SKULL:16, UPGRADED_TABLE:17, FURNACE:18, WHEAT:19, CROP:20, ALTAR_FLOOR:21, TABLET:22, CRYSTAL_ORE:23, CRYSTAL_DEVICE:24, PLACED_TORCH:25, WALL_THORN:26, BONE_WALL:27, LUCKY:28, CAVE_IN:29, CAVE_UP:30, CAVE_CRYSTAL:31, BEEHIVE:32, GARDEN_TABLE:33 };
+const T = { GRASS:0, TREE:1, ROCK:2, COAL:3, IRONROCK:4, WATER:5, BUSH:6, SAND:7, CACTUS:8, SNOW:9, PINE:10, WALL:11, CAMPFIRE:12, TRUNK:13, CRAFTING_TABLE:14, SAPLING:15, SKULL:16, UPGRADED_TABLE:17, FURNACE:18, WHEAT:19, CROP:20, ALTAR_FLOOR:21, TABLET:22, CRYSTAL_ORE:23, CRYSTAL_DEVICE:24, PLACED_TORCH:25, WALL_THORN:26, BONE_WALL:27, LUCKY:28, CAVE_IN:29, CAVE_UP:30, CAVE_CRYSTAL:31, BEEHIVE:32, GARDEN_TABLE:33, CAVE_WALL:34, CAVE_FLOOR:35 };
 // Crossbreeding species tree (Cookie-Clicker style). Plant seeds -> wheat.
 // When a plant FINISHES growing it checks its neighbours ONCE; a matching pair of
 // different mature plants may sprout a new species in a free tile (each with its own chance).
@@ -600,7 +600,8 @@ function tileHP(t){
   if (t===T.BUSH||t===T.SKULL||t===T.WHEAT) return 1; if (t===T.CACTUS) return 2; if (t===T.WALL) return 15; if (t===T.CAMPFIRE) return 5; 
   if (t===T.TRUNK) return 2; if (t===T.CRAFTING_TABLE) return 4; if (t===T.SAPLING) return 1; if(t===T.UPGRADED_TABLE) return 6; if(t===T.FURNACE) return 8; if(t===T.CROP) return 1;
   if (t===T.TABLET) return 999999; if (t===T.CRYSTAL_ORE) return 10; if (t===T.CRYSTAL_DEVICE) return 40; if (t===T.PLACED_TORCH) return 3; if (t===T.WALL_THORN) return 20; if (t===T.BONE_WALL) return 22; if (t===T.LUCKY) return 2;
-  if (t===T.CAVE_IN||t===T.CAVE_UP) return 999999; if (t===T.CAVE_CRYSTAL) return 8; if (t===T.BEEHIVE) return 3; if (t===T.GARDEN_TABLE) return 5; return 0;
+  if (t===T.CAVE_IN||t===T.CAVE_UP) return 999999; if (t===T.CAVE_CRYSTAL) return 8; if (t===T.BEEHIVE) return 3; if (t===T.GARDEN_TABLE) return 5;
+  if (t===T.CAVE_WALL) return 8; if (t===T.CAVE_FLOOR) return 0; return 0;
 }
 // How many monster hits it takes to destroy each built item (separate from the small player-mining hp).
 function enemyHitsFor(type){
@@ -660,9 +661,16 @@ function genWorld(){
   }
 }
 
-function groundColor(b, tileType){ if (tileType===T.WATER) return '#2a5a8a'; if (tileType===T.ALTAR_FLOOR) return '#8a8a8a'; if (b===BIOME.DESERT) return '#d8c27a'; if (b===BIOME.SNOW) return '#e8eef2'; return '#3a7d34'; }
+function groundColor(b, tileType){
+  if (tileType===T.WATER) return '#2a5a8a';
+  // Inside a cave everything sits on the same dark rock — no surface biomes bleeding through (no yellow/white patches).
+  if (inCave) return (tileType===T.CAVE_FLOOR || tileType===T.ALTAR_FLOOR) ? '#33333c' : '#242430';
+  if (tileType===T.CAVE_FLOOR) return '#33333c';
+  if (tileType===T.ALTAR_FLOOR) return '#8a8a8a';
+  if (b===BIOME.DESERT) return '#d8c27a'; if (b===BIOME.SNOW) return '#e8eef2'; return '#3a7d34';
+}
 function tileAt(px,py){ const tx=Math.floor(px/TILE), ty=Math.floor(py/TILE); if (ty<0||ty>=MAPH||tx<0||tx>=MAPW) return {type:T.WATER, hp:0}; return world[ty][tx]; }
-function isSolid(t){ return [T.TREE, T.ROCK, T.COAL, T.IRONROCK, T.CACTUS, T.PINE, T.WALL, T.WALL_THORN, T.BONE_WALL, T.LUCKY, T.TRUNK, T.CRAFTING_TABLE, T.SAPLING, T.SKULL, T.UPGRADED_TABLE, T.FURNACE, T.TABLET, T.CRYSTAL_ORE, T.CRYSTAL_DEVICE, T.CAVE_CRYSTAL, T.BEEHIVE, T.GARDEN_TABLE].includes(t.type); }
+function isSolid(t){ return [T.TREE, T.ROCK, T.COAL, T.IRONROCK, T.CACTUS, T.PINE, T.WALL, T.WALL_THORN, T.BONE_WALL, T.LUCKY, T.TRUNK, T.CRAFTING_TABLE, T.SAPLING, T.SKULL, T.UPGRADED_TABLE, T.FURNACE, T.TABLET, T.CRYSTAL_ORE, T.CRYSTAL_DEVICE, T.CAVE_CRYSTAL, T.BEEHIVE, T.GARDEN_TABLE, T.CAVE_WALL].includes(t.type); }
 function isWater(t){ return t.type===T.WATER; }
 
 let enemies, animals, particles, projectiles, placedTorches, chests, cropTiles, pickups;
@@ -1334,7 +1342,11 @@ function update(dt){
     const pc = netPlayerCount;   // more players -> more monsters, spawned around a random player
     // scheduled siege boss every 5th night, at night, no crystal-devices etc.
     if (isNight && !inCave && dayNum%5===0 && dayNum>0 && bossSpawnedForDay!==dayNum && !cheatNoEnemies){ bossSpawnedForDay=dayNum; spawnBoss(); }
-    if (bossActive){ /* while the boss is out, no normal spawns */ }
+    if (inCave){
+      // dark caves swarm with monsters that pop up close, in the unlit corners, and harass you
+      if (!cheatNoEnemies){ const cap = 9 + Math.floor(dayNum/3); if (Math.random() < dt*0.55 && enemies.length < cap) spawnCaveEnemy(); }
+    }
+    else if (bossActive){ /* while the boss is out, no normal spawns */ }
     else if (!cheatNoEnemies && (isNight || inEternalNight)){ const cap = ((inEternalNight ? 10 : 5) + Math.floor(dayNum/2)) * pc; if (Math.random() < dt*(inEternalNight?0.28:0.16)*pc && enemies.length < cap) { const a=allPlayers()[Math.floor(Math.random()*pc)]; spawnEnemy(curBiome, a.x, a.y); } } else if (!isNight) { enemies = enemies.filter(e=>e===boss); if (Math.random() < dt*0.08*pc && animals.length < 6*pc && curBiome!==BIOME.SNOW) spawnAnimal(); }
     if (cheatNoEnemies && enemies.length) enemies = enemies.filter(e=>e===boss);
     updateEnemies(dt); updateAnimals(dt);
@@ -1397,7 +1409,7 @@ function tryAction(){
       toolPower += 2;
   }
 
-  const breakables = [T.TREE,T.PINE,T.ROCK,T.COAL,T.IRONROCK,T.BUSH,T.CACTUS,T.WALL,T.WALL_THORN,T.BONE_WALL,T.LUCKY,T.CAMPFIRE,T.TRUNK,T.CRAFTING_TABLE,T.UPGRADED_TABLE,T.FURNACE,T.SAPLING,T.SKULL,T.WHEAT,T.CROP,T.CRYSTAL_ORE,T.PLACED_TORCH,T.CAVE_CRYSTAL,T.BEEHIVE,T.GARDEN_TABLE];
+  const breakables = [T.TREE,T.PINE,T.ROCK,T.COAL,T.IRONROCK,T.BUSH,T.CACTUS,T.WALL,T.WALL_THORN,T.BONE_WALL,T.LUCKY,T.CAMPFIRE,T.TRUNK,T.CRAFTING_TABLE,T.UPGRADED_TABLE,T.FURNACE,T.SAPLING,T.SKULL,T.WHEAT,T.CROP,T.CRYSTAL_ORE,T.PLACED_TORCH,T.CAVE_CRYSTAL,T.BEEHIVE,T.GARDEN_TABLE,T.CAVE_WALL];
   
   let hitBlock = false;
   // Mining reach (upgradable via morning bonuses)
@@ -1408,7 +1420,7 @@ function tryAction(){
         if (d > stats.maxBreakDist) stats.maxBreakDist = d;
         if (t.hp<=0){
           stats.blocksDestroyed++;
-          const tx=Math.floor(fx/TILE),ty=Math.floor(fy/TILE); let b = biomeAt(tx, ty); let defaultFloor = inCave ? T.ALTAR_FLOOR : ((b===BIOME.DESERT)?T.SAND:(b===BIOME.SNOW)?T.SNOW:T.GRASS);
+          const tx=Math.floor(fx/TILE),ty=Math.floor(fy/TILE); let b = biomeAt(tx, ty); let defaultFloor = inCave ? T.CAVE_FLOOR : ((b===BIOME.DESERT)?T.SAND:(b===BIOME.SNOW)?T.SNOW:T.GRASS);
           if (t.type===T.TREE||t.type===T.PINE) { player.inv.wood+=1; world[ty][tx] = {type: T.TRUNK, hp: tileHP(T.TRUNK), timer: 0}; showToast('קיבלת עץ, הגזע נשאר! 🪵'); }
           else if (t.type === T.TRUNK) { player.inv.wood+=2; world[ty][tx] = {type:defaultFloor, hp:0, timer:0}; showToast('השמדת את הגזע! קבל 2 עץ 🪓'); }
           else if (t.type === T.SAPLING) { player.inv.wood+=1; world[ty][tx] = {type:defaultFloor, hp:0, timer:0}; showToast('חצבת שתיל תינוק! קיבלת עץ 1 🌱'); }
@@ -1441,9 +1453,10 @@ function tryAction(){
           }
           else {
               if (t.type===T.CAVE_CRYSTAL){ player.inv.cave_crystal=(player.inv.cave_crystal||0)+1; if(Math.random()<0.3) player.inv.crystal=(player.inv.crystal||0)+1; }
-              if (t.type===T.ROCK){ player.inv.stone+=2; if(Math.random()<0.15) player.inv.iron+=1; }
-              if (t.type===T.COAL) player.inv.coal+=2; if (t.type===T.IRONROCK) player.inv.iron+=2;
+              if (t.type===T.ROCK){ if(inCave){ player.inv.stone+=3; } else { player.inv.stone+=2; if(Math.random()<0.15) player.inv.iron+=1; } }
+              if (t.type===T.COAL) player.inv.coal += inCave?3:2; if (t.type===T.IRONROCK) player.inv.iron += inCave?3:2;
               if (t.type===T.BUSH) player.inv.berry+=1; if (t.type===T.CACTUS) player.inv.wood+=1;
+              // CAVE_WALL falls through here: it yields nothing, it's just cleared to floor (no more leaving with 1000 stone)
               world[ty][tx] = {type:defaultFloor, hp:0, timer:0};
           } renderBag();
         } hitBlock = true; break; 
@@ -1468,6 +1481,20 @@ function isNearLight(px, py){
   for (let oy=-R; oy<=R; oy++){ for (let ox=-R; ox<=R; ox++){ const cx=tx+ox, cy=ty+oy; if (world[cy] && world[cy][cx]){ const tt = world[cy][cx].type; if (tt===T.PLACED_TORCH || tt===T.CAMPFIRE || tt===T.FURNACE) return true; } } }
   return false;
 }
+const ENEMY_BASE = { wolf:{hp:6,spd:1.2,dmg:9}, siberian_wolf:{hp:8,spd:1.3,dmg:12}, scorpion:{hp:5,spd:0.8,dmg:8}, zombie:{hp:6,spd:0.9,dmg:8}, wraith:{hp:5,spd:1.6,dmg:10}, brute:{hp:16,spd:0.6,dmg:16}, archer:{hp:6,spd:0.7,dmg:6}, mummy:{hp:11,spd:0.55,dmg:8}, frost_wraith:{hp:7,spd:1.15,dmg:9} };
+// Caves are dark and dangerous: monsters lurk close, spawn often, and hit a bit harder. Spawn spot must be walkable floor.
+function spawnCaveEnemy(){
+  const pool = dayNum>=15 ? ['zombie','wraith','brute','mummy','frost_wraith'] : dayNum>=8 ? ['zombie','wraith','brute','mummy'] : ['zombie','wraith','mummy'];
+  const kind = pool[Math.floor(Math.random()*pool.length)];
+  const base = ENEMY_BASE[kind]; const scale = 1 + dayNum*0.15;
+  let ex, ey, ok=false;
+  for (let a=0; a<16 && !ok; a++){ const ang=Math.random()*6.283, dist=140+Math.random()*140; ex=player.x+Math.cos(ang)*dist; ey=player.y+Math.sin(ang)*dist;
+    const gx=Math.floor(ex/TILE), gy=Math.floor(ey/TILE); if(gx<1||gy<1||gx>=MAPW-1||gy>=MAPH-1) continue;
+    const tt=world[gy][gx]; if(tt && !isSolid(tt) && tt.type!==T.WATER && !isNearLight(ex,ey)) ok=true; }
+  if(!ok) return;
+  const dmgScale = (1 + Math.max(0, dayNum-5)*0.05) * 1.25;   // cave monsters are tougher
+  enemies.push({ id:(++enemyIdSeq), x:ex, y:ey, kind, hp:Math.round(base.hp*scale*1.15), maxHp:Math.round(base.hp*scale*1.15), speed:base.spd*(1+dayNum*0.02), dmg:base.dmg*(1+dayNum*0.04)*dmgScale, facing:'left', stuck:0, eatenLoot:{}, targetsCrystal:false, shootCd:0 });
+}
 function spawnEnemy(biome, anchorX, anchorY){ const ancX = (anchorX==null)?player.x:anchorX, ancY = (anchorY==null)?player.y:anchorY; let angle=Math.random()*Math.PI*2; const dist=340+Math.random()*100; let kind='zombie'; if (biome===BIOME.FOREST) kind='wolf'; else if (biome===BIOME.SNOW) kind='siberian_wolf'; else if (biome===BIOME.DESERT) kind='scorpion';
   const inEternalNight = eternalNightActive && !crystalActivated;
   // Variety grows with days survived: day10+ brings the big brute, day15+ adds wraiths, day20+ adds archers.
@@ -1479,8 +1506,7 @@ function spawnEnemy(biome, anchorX, anchorY){ const ancX = (anchorX==null)?playe
   // biome specials
   if (biome===BIOME.DESERT && Math.random()<0.4) kind='mummy';
   else if (biome===BIOME.SNOW && Math.random()<0.4) kind='frost_wraith';
-  const scale = 1 + dayNum*0.15; const baseTable = { wolf:{hp:6,spd:1.2,dmg:9}, siberian_wolf:{hp:8,spd:1.3,dmg:12}, scorpion:{hp:5,spd:0.8,dmg:8}, zombie:{hp:6,spd:0.9,dmg:8}, wraith:{hp:5,spd:1.6,dmg:10}, brute:{hp:16,spd:0.6,dmg:16}, archer:{hp:6,spd:0.7,dmg:6}, mummy:{hp:11,spd:0.55,dmg:8}, frost_wraith:{hp:7,spd:1.15,dmg:9} };
-  const base = baseTable[kind];
+  const scale = 1 + dayNum*0.15; const base = ENEMY_BASE[kind];
   let ex, ey, ok=false;
   for (let attempt=0; attempt<10 && !ok; attempt++){
     ex = ancX+Math.cos(angle)*dist; ey = ancY+Math.sin(angle)*dist;
@@ -1681,25 +1707,41 @@ function tryFishHook(){
 
 /* ============ Caves dimension ============ */
 // A maze: solid rock carved into 1-tile corridors (dark stone floor). No biomes, no crystals.
-// Ore veins (iron/coal) are sprinkled into the rock walls, Minecraft-style. Staircase-up at the start.
+// Spacious cavern generator (cellular automata). Bulk walls are CAVE_WALL (grey, give nothing when mined);
+// only ore veins on the exposed wall faces give materials, and they're tougher to mine than on the surface.
 function genCaveMap(){
-  const w=[];
-  for(let y=0;y<MAPH;y++){ w[y]=[]; for(let x=0;x<MAPW;x++){ w[y][x]={type:T.ROCK, hp:tileHP(T.ROCK), maxHp:tileHP(T.ROCK), timer:0}; } }
-  const startX=2, startY=2;
-  const floor=(x,y)=>{ w[y][x]={type:T.ALTAR_FLOOR, hp:0, timer:0}; };
-  const stack=[[startX,startY]]; floor(startX,startY);
-  while(stack.length){
-    const [cx,cy]=stack[stack.length-1];
-    const dirs=[[0,-2],[0,2],[-2,0],[2,0]];
-    for(let i=dirs.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [dirs[i],dirs[j]]=[dirs[j],dirs[i]]; }
-    let moved=false;
-    for(const [dx,dy] of dirs){ const nx=cx+dx, ny=cy+dy; if(nx>1 && nx<MAPW-2 && ny>1 && ny<MAPH-2 && w[ny][nx].type===T.ROCK){ floor(cx+dx/2, cy+dy/2); floor(nx,ny); stack.push([nx,ny]); moved=true; break; } }
-    if(!moved) stack.pop();
-  }
-  // ore veins embedded in the rock walls
-  for(let y=1;y<MAPH-1;y++) for(let x=1;x<MAPW-1;x++){ if(w[y][x].type===T.ROCK){ const n=Math.random(); if(n<0.045){ w[y][x]={type:T.IRONROCK, hp:tileHP(T.IRONROCK), maxHp:tileHP(T.IRONROCK), timer:0}; } else if(n<0.12){ w[y][x]={type:T.COAL, hp:tileHP(T.COAL), maxHp:tileHP(T.COAL), timer:0}; } } }
-  w[startY][startX]={type:T.CAVE_UP, hp:tileHP(T.CAVE_UP), timer:0};  // staircase back up
-  return { world:w, sx:startX, sy:startY };
+  const wall=[];
+  // 1) random fill with a solid border
+  for(let y=0;y<MAPH;y++){ wall[y]=[]; for(let x=0;x<MAPW;x++){ wall[y][x] = (x<2||y<2||x>=MAPW-2||y>=MAPH-2) ? true : (Math.random()<0.55); } }
+  // 2) smooth it into open caverns instead of a tight 1-wide maze
+  const wc=(g,x,y)=>{ let c=0; for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){ if(dx===0&&dy===0) continue; const nx=x+dx,ny=y+dy; if(nx<0||ny<0||nx>=MAPW||ny>=MAPH||g[ny][nx]) c++; } return c; };
+  for(let it=0; it<5; it++){ const ng=[]; for(let y=0;y<MAPH;y++){ ng[y]=[]; for(let x=0;x<MAPW;x++){ if(x<2||y<2||x>=MAPW-2||y>=MAPH-2){ ng[y][x]=true; continue; } ng[y][x] = wc(wall,x,y) >= 5; } } for(let y=0;y<MAPH;y++)for(let x=0;x<MAPW;x++) wall[y][x]=ng[y][x]; }
+  // 3) keep only the largest connected open area so the whole cave is reachable
+  const region=[]; for(let y=0;y<MAPH;y++) region[y]=new Array(MAPW).fill(0);
+  let bestId=0, bestSize=0, id=0;
+  for(let y=0;y<MAPH;y++)for(let x=0;x<MAPW;x++){ if(!wall[y][x] && region[y][x]===0){ id++; let size=0; const st=[[x,y]]; region[y][x]=id;
+    while(st.length){ const [px,py]=st.pop(); size++; for(const [dx,dy] of [[0,-1],[0,1],[-1,0],[1,0]]){ const nx=px+dx,ny=py+dy; if(nx>=0&&ny>=0&&nx<MAPW&&ny<MAPH&&!wall[ny][nx]&&region[ny][nx]===0){ region[ny][nx]=id; st.push([nx,ny]); } } }
+    if(size>bestSize){ bestSize=size; bestId=id; } } }
+  for(let y=0;y<MAPH;y++)for(let x=0;x<MAPW;x++){ if(!wall[y][x] && region[y][x]!==bestId) wall[y][x]=true; }  // seal tiny disconnected pockets
+  // 4) build tiles: floor = CAVE_FLOOR, bulk = CAVE_WALL
+  const w=[], floors=[];
+  for(let y=0;y<MAPH;y++){ w[y]=[]; for(let x=0;x<MAPW;x++){
+    if(wall[y][x]) w[y][x]={type:T.CAVE_WALL, hp:tileHP(T.CAVE_WALL), maxHp:tileHP(T.CAVE_WALL), timer:0};
+    else { w[y][x]={type:T.CAVE_FLOOR, hp:0, timer:0}; floors.push([x,y]); }
+  } }
+  // 5) ore veins ONLY on wall faces exposed to the open cave (so you can see & reach them), tougher hp
+  const facesFloor=(x,y)=>{ for(const [dx,dy] of [[0,-1],[0,1],[-1,0],[1,0]]){ const nx=x+dx,ny=y+dy; if(nx>=0&&ny>=0&&nx<MAPW&&ny<MAPH && w[ny][nx].type===T.CAVE_FLOOR) return true; } return false; };
+  for(let y=1;y<MAPH-1;y++)for(let x=1;x<MAPW-1;x++){ if(w[y][x].type===T.CAVE_WALL && facesFloor(x,y)){ const n=Math.random();
+    if(n<0.05) w[y][x]={type:T.IRONROCK, hp:12, maxHp:12, timer:0};        // iron vein — hard
+    else if(n<0.13) w[y][x]={type:T.COAL, hp:8, maxHp:8, timer:0};         // coal vein
+    else if(n<0.21) w[y][x]={type:T.ROCK, hp:8, maxHp:8, timer:0};         // stone deposit (only a fraction of the faces, not every wall)
+  } }
+  // 6) staircase up at the most central open tile
+  let sx=2, sy=2, bestD=1e18; const mcx=MAPW/2, mcy=MAPH/2;
+  for(const [x,y] of floors){ const d=(x-mcx)*(x-mcx)+(y-mcy)*(y-mcy); if(d<bestD){ bestD=d; sx=x; sy=y; } }
+  if(!floors.length){ sx=2; sy=2; w[2][2]={type:T.CAVE_FLOOR,hp:0,timer:0}; }
+  w[sy][sx]={type:T.CAVE_UP, hp:tileHP(T.CAVE_UP), timer:0};  // staircase back up
+  return { world:w, sx, sy };
 }
 function enterCave(caveId){
   if (net.active){ showToast('המערות זמינות רק במשחק יחיד'); return; }
@@ -2258,7 +2300,7 @@ function renderStats(){
 /* ============ Texture-6 visual grain ("סאונד") + damage cracks ============ */
 // Per-surface toggle for the grainy noise texture unlocked at graphics level 6.
 let blockNoise = { wall:true, temple:true, floor_grass:true, floor_sand:true, floor_snow:true, floor_plains:true, bone_wall:true };
-function noiseKeyForTile(type){ if(type===T.WALL) return 'wall'; if(type===T.BONE_WALL) return 'bone_wall'; if(type===T.ALTAR_FLOOR) return 'temple'; return null; }
+function noiseKeyForTile(type){ if(type===T.WALL||type===T.CAVE_WALL) return 'wall'; if(type===T.BONE_WALL) return 'bone_wall'; if(type===T.ALTAR_FLOOR) return 'temple'; return null; }
 function blockNoiseOn(type){ if (gfxLevel < 6) return false; const k = noiseKeyForTile(type); return k ? blockNoise[k] : false; }
 function floorNoiseOn(b, type){ if (gfxLevel < 6) return false; if (type===T.ALTAR_FLOOR) return blockNoise.temple; if (type===T.GRASS) return blockNoise.floor_grass; if (type===T.SAND) return blockNoise.floor_sand; if (type===T.SNOW) return blockNoise.floor_snow; return false; }
 // deterministic hash so grain is stable per pixel-cell (doesn't shimmer each frame)
@@ -2427,6 +2469,14 @@ function drawResourceShape(t, sx, sy, tileObj){
       ctx.fillStyle = '#eef4f8';
       ctx.beginPath(); ctx.moveTo(cx, s.y - s.h); ctx.lineTo(cx - s.w*0.42, s.y - s.h*0.5); ctx.lineTo(cx + s.w*0.42, s.y - s.h*0.5); ctx.closePath(); ctx.fill();
     }
+  } else if (t===T.CAVE_WALL){
+    // solid grey cave rock filling the whole tile — the bulk of the maze; gives nothing when mined
+    ctx.fillStyle='#41414c'; ctx.fillRect(sx,sy,TILE,TILE);
+    ctx.fillStyle='#4d4d59'; ctx.fillRect(sx,sy,TILE,4); ctx.fillRect(sx,sy,4,TILE);
+    ctx.fillStyle='#33333d'; ctx.fillRect(sx,sy+TILE-5,TILE,5); ctx.fillRect(sx+TILE-5,sy,5,TILE);
+    ctx.fillStyle='rgba(0,0,0,0.22)'; ctx.fillRect(sx+7,sy+9,5,3); ctx.fillRect(sx+18,sy+16,6,3); ctx.fillRect(sx+12,sy+22,4,2);
+    ctx.fillStyle='rgba(255,255,255,0.05)'; ctx.fillRect(sx+20,sy+6,4,2); ctx.fillRect(sx+6,sy+18,3,2);
+    if (gfxLevel>=6 && blockNoiseOn(T.CAVE_WALL)) drawGrain(sx, sy, TILE, TILE, '#2c2c34');
   } else if (t===T.ROCK || t===T.COAL || t===T.IRONROCK){
     if (gfxLevel >= 5) {
       if (t === T.COAL) {
@@ -2569,7 +2619,7 @@ function draw(){
     if (floorNoiseOn(b, t.type)){ const gc = t.type===T.ALTAR_FLOOR ? '#565656' : t.type===T.SAND ? '#b89a55' : t.type===T.SNOW ? '#c4cdd6' : '#2a5a24'; drawGrain(sx, sy, TILE, TILE, gc); }
     if (gfxLevel >= 5) { if (t.type === T.GRASS) { ctx.fillStyle = '#2e692a'; ctx.fillRect(sx + 5, sy + 6, 2, 4); } else if (t.type === T.SAND) { ctx.fillStyle = '#c7b06b'; ctx.fillRect(sx + 2, sy + 14, 14, 1.5); } }
     if (t.type === T.WATER && gfxLevel >= 4) { ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(sx + 4 + Math.sin(performance.now() * 0.003 + sx)*2, sy + 10, 8, 1.5); }
-    if (t.type!==T.GRASS && t.type!==T.WATER && t.type!==T.SAND && t.type!==T.SNOW && t.type!==T.ALTAR_FLOOR){ drawResourceShape(t.type, sx, sy, t); }
+    if (t.type!==T.GRASS && t.type!==T.WATER && t.type!==T.SAND && t.type!==T.SNOW && t.type!==T.ALTAR_FLOOR && t.type!==T.CAVE_FLOOR){ drawResourceShape(t.type, sx, sy, t); }
   }
 
   for (const c of chests){ ctx.fillStyle='#7a5a2a'; ctx.fillRect(c.x-11, c.y-8, 22, 16); ctx.fillStyle='#9a7a3a'; ctx.fillRect(c.x-11, c.y-2, 22, 3); }
