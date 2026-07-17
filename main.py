@@ -2,8 +2,16 @@
 <html lang="he" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>שרידות</title>
+<!-- Installable as a home-screen app (full-screen, no browser bars) once served from a real URL -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="שרידות">
+<meta name="theme-color" content="#0a0d10">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Crect width='180' height='180' fill='%233a7d34'/%3E%3Ctext x='90' y='128' font-size='120' text-anchor='middle'%3E%F0%9F%8C%8D%3C/text%3E%3C/svg%3E">
+<link rel="manifest" href="data:application/json,%7B%22name%22%3A%22%D7%A9%D7%A8%D7%99%D7%93%D7%95%D7%AA%22%2C%22short_name%22%3A%22%D7%A9%D7%A8%D7%99%D7%93%D7%95%D7%AA%22%2C%22display%22%3A%22fullscreen%22%2C%22orientation%22%3A%22portrait%22%2C%22background_color%22%3A%22%230a0d10%22%2C%22theme_color%22%3A%22%230a0d10%22%2C%22start_url%22%3A%22.%22%7D">
 <!-- PeerJS: enables short-code co-op over the internet/hotspot. Loaded async; game works fine without it (single-player). -->
 <script async src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
