@@ -1996,7 +1996,20 @@ function netDoJoin(){
     net.peerObj.on('error', err=>{ document.getElementById('netStatus').textContent='שגיאה — בדוק את הקוד והאינטרנט'; });
   });
 }
-function copyHostCode(){ const c=document.getElementById('netHostCode').textContent; try{ navigator.clipboard.writeText(c); }catch(e){} showToast('הקוד הועתק 📋: '+c); }
+// Robust copy that also works in insecure contexts (data: link / Shortcut) where the clipboard API is blocked:
+// we always visibly SELECT the text so the user can copy with the phone's own menu if the API fails.
+function copyTextFrom(el){
+  let text='';
+  try{
+    if (el.tagName==='TEXTAREA' || el.tagName==='INPUT'){ const wasRO=el.readOnly; el.readOnly=false; el.focus(); el.select(); try{ el.setSelectionRange(0, (el.value||'').length); }catch(e){} el.readOnly=wasRO; text=el.value; }
+    else { const r=document.createRange(); r.selectNodeContents(el); const s=window.getSelection(); s.removeAllRanges(); s.addRange(r); text=el.textContent; }
+  }catch(e){}
+  let ok=false;
+  try{ ok=document.execCommand && document.execCommand('copy'); }catch(e){}
+  if(!ok && navigator.clipboard && navigator.clipboard.writeText){ try{ navigator.clipboard.writeText(text); ok=true; }catch(e){} }
+  return ok;
+}
+function copyHostCode(){ const el=document.getElementById('netHostCode'); const ok=copyTextFrom(el); showToast(ok ? ('הקוד הועתק 📋: '+el.textContent) : ('הקוד מסומן — לחץ "העתק" מהתפריט של הטלפון 📋')); }
 
 function sendToPeer(peer, obj){ if(peer && peer.conn && peer.open){ try{ peer.conn.send(obj); }catch(e){} } }
 function netSend(obj){ for(const p of net.peers) sendToPeer(p, obj); }
@@ -2247,7 +2260,7 @@ function makeSaveCode(){
   showSaveCode(buildSaveData('עולם יום '+dayNum));
   showToast('📋 סמן הכל והעתק — הדבק ל-Google Keep או לכל מקום');
 }
-function copySaveCode(){ const ta=document.getElementById('saveCodeArea'); if(!ta) return; ta.focus(); ta.select(); let ok=false; try{ ok=document.execCommand('copy'); }catch(e){} if(navigator.clipboard){ try{ navigator.clipboard.writeText(ta.value); ok=true; }catch(e){} } showToast(ok?'הקוד הועתק 📋':'סמן הכל והעתק ידנית'); }
+function copySaveCode(){ const ta=document.getElementById('saveCodeArea'); if(!ta) return; const ok=copyTextFrom(ta); showToast(ok ? 'הקוד הועתק 📋' : 'הקוד מסומן — לחץ "העתק" מהתפריט של הטלפון 📋'); }
 function loadFromCode(){
   const ta=document.getElementById('loadCodeArea'); if(!ta) return;
   const str=(ta.value||'').trim(); if(!str){ showToast('הדבק קוד שמירה קודם'); return; }
@@ -2401,11 +2414,20 @@ function blockNoiseOn(type){ if (gfxLevel < 6) return false; const k = noiseKeyF
 function floorNoiseOn(b, type){ if (gfxLevel < 6) return false; if (type===T.ALTAR_FLOOR) return blockNoise.temple; if (type===T.GRASS) return blockNoise.floor_grass; if (type===T.SAND) return blockNoise.floor_sand; if (type===T.SNOW) return blockNoise.floor_snow; return false; }
 // deterministic hash so grain is stable per pixel-cell (doesn't shimmer each frame)
 function hash2(x,y){ let h = (x*73856093) ^ (y*19349663); h = (h ^ (h>>13)) * 1274126177; return ((h>>>0) % 1000)/1000; }
+// Grain used to be recomputed pixel-by-pixel for every tile every frame (~64 ops/tile) — brutal in caves.
+// Now it's baked once into a repeating 128px pattern per color and stamped with a single fillRect per tile.
+const _grainPat = {};
+function getGrainPattern(color){
+  if (_grainPat[color]!==undefined) return _grainPat[color];
+  const S=128; const c=document.createElement('canvas'); c.width=S; c.height=S; const g=c.getContext('2d');
+  g.fillStyle=color; g.globalAlpha=0.28;
+  for (let y=0;y<S;y+=4) for (let x=0;x<S;x+=4){ if (hash2(x,y) < 0.32) g.fillRect(x,y,2,2); }
+  let pat=null; try{ pat = ctx.createPattern(c,'repeat'); }catch(e){}
+  _grainPat[color]=pat; return pat;
+}
 function drawGrain(x, y, w, h, color){
-  ctx.save(); ctx.fillStyle = color; ctx.globalAlpha = 0.28;
-  const step = 4;
-  for (let gy=0; gy<h; gy+=step){ for (let gx=0; gx<w; gx+=step){ if (hash2(Math.floor(x+gx), Math.floor(y+gy)) < 0.32){ ctx.fillRect(x+gx, y+gy, 2, 2); } } }
-  ctx.globalAlpha = 1; ctx.restore();
+  const pat=getGrainPattern(color); if(!pat) return;   // pattern is anchored in world space, so grain stays put as you move
+  ctx.fillStyle=pat; ctx.fillRect(x, y, w, h);
 }
 // Fully-grown plants, all hand-drawn on the canvas (no emojis — a big garden stays smooth).
 // cx = tile centre X, sy = tile top Y. Base of the plant sits near sy+26.
@@ -2501,9 +2523,12 @@ function drawCracks(cx, cy, frac){
   for (let i=0; i<cracks && i<crackLines.length; i++){ const l = crackLines[i]; ctx.beginPath(); ctx.moveTo(cx+l[0][0], cy+l[0][1]); ctx.lineTo(cx+l[1][0], cy+l[1][1]); ctx.stroke(); }
   ctx.restore();
 }
+// Only tall "prop" tiles get the (expensive) drop shadow. Bulk full-tile blocks — cave walls, walls,
+// ores, floors — skip it, which is the main lag fix in caves/bases where almost every tile is a block.
+const SHADOW_TYPES = new Set([T.TREE, T.PINE, T.TRUNK, T.SAPLING, T.BUSH, T.CACTUS, T.CROP, T.SKULL, T.CAMPFIRE, T.CRAFTING_TABLE, T.UPGRADED_TABLE, T.PLACED_TORCH, T.BEEHIVE, T.GARDEN_TABLE, T.CRYSTAL_DEVICE, T.LUCKY]);
 function drawResourceShape(t, sx, sy, tileObj){
   const cx = sx+TILE/2, cy = sy+TILE/2; ctx.save();
-  if (gfxLevel >= 5) { ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 5; ctx.shadowOffsetY = 4; }
+  if (gfxLevel >= 5 && SHADOW_TYPES.has(t)) { ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 5; ctx.shadowOffsetY = 4; }
   let sway = (gfxLevel >= 4) ? Math.sin(performance.now() * 0.005 + sx * 0.02) * 2.5 : 0;
 
   if (t===T.TREE){
