@@ -106,6 +106,8 @@
   #skinRow { display:flex; align-items:center; gap:7px; margin-bottom:16px; flex-wrap:wrap; justify-content:center; }
   .skinSwatch { width:26px; height:26px; border-radius:50%; border:2px solid rgba(255,255,255,0.25); cursor:pointer; transition:transform 0.1s; }
   .skinSwatch.sel { border-color:#fff; transform:scale(1.2); }
+  .dayPick { padding:8px 10px; background:#5a2a2a; color:#fff; border:1px solid #c94a3d; border-radius:6px; font-family:inherit; font-size:12px; cursor:pointer; }
+  .dayPick:active { transform:scale(0.92); background:#7a3030; }
   .worldCard { width:min(88vw, 340px); background:rgba(20,22,28,0.92); border:2px solid #4a4230; border-radius:12px; padding:14px 16px; margin-bottom:12px; cursor:pointer; transition:transform 0.1s, border-color 0.2s; }
   .worldCard:active { transform:scale(0.97); }
   .worldCard:hover { border-color:#d9c98a; }
@@ -132,7 +134,7 @@
   #netPanel .bsub { color:#9a927a; font-size:11px; text-align:center; margin-bottom:12px; }
   #netPanel .netLbl { display:block; font-size:11px; color:#b0a888; margin:10px 0 4px; }
   #netPanel textarea { width:100%; background:#111; color:#8fe08f; border:1px solid #4a4230; border-radius:6px; padding:8px; font-family:monospace; font-size:10px; resize:vertical; word-break:break-all; }
-  #netHostCode { font-size:44px; font-weight:bold; text-align:center; color:#4a9aff; letter-spacing:8px; padding:14px; background:#0d1018; border-radius:10px; user-select:text; -webkit-user-select:text; }
+  #netHostCode { font-size:44px; font-weight:bold; text-align:center; color:#4a9aff; letter-spacing:8px; padding:14px; background:#0d1018; border-radius:10px; user-select:text; -webkit-user-select:text; width:100%; box-sizing:border-box; border:none; font-family:inherit; }
   #netJoinCode { width:100%; font-size:30px; text-align:center; letter-spacing:6px; background:#111; color:#8fe08f; border:1px solid #4a4230; border-radius:8px; padding:12px; user-select:text; -webkit-user-select:text; }
   #netPanel .netBtn { width:100%; padding:9px; margin-top:6px; background:#2f5a8a; color:#fff; border:none; border-radius:6px; font-family:inherit; font-size:12px; cursor:pointer; }
   #netX { position:absolute; top:8px; left:12px; color:#c94a3d; font-size:22px; cursor:pointer; line-height:1; }
@@ -340,9 +342,16 @@
         <div class="wt">🌙 הישרדות רגילה</div>
         <div class="wd">בלי קריסטל ובלי לילה נצחי — רק לילות רגילים. פשוט לשרוד ולבנות כמה שרוצים.</div>
       </div>
-      <div class="worldCard" onclick="startWorld('challenge')">
+      <div class="worldCard" style="cursor:default;">
         <div class="wt">⚔️ אתגר — לילה נצחי</div>
-        <div class="wd">בלי קריסטל. הלילה הנצחי מתחיל כבר ביום השני. קשה מאוד — שרוד כמה שתוכל!</div>
+        <div class="wd">בלי קריסטל. בחר באיזה יום יתחיל הלילה הנצחי — ואז המשחק מתחיל:</div>
+        <div style="display:flex; gap:6px; margin-top:10px; justify-content:center; flex-wrap:wrap;">
+          <button onclick="startChallenge(1)" class="dayPick">יום 1</button>
+          <button onclick="startChallenge(2)" class="dayPick">יום 2</button>
+          <button onclick="startChallenge(3)" class="dayPick">יום 3</button>
+          <button onclick="startChallenge(4)" class="dayPick">יום 4</button>
+          <button onclick="startChallenge(5)" class="dayPick">יום 5</button>
+        </div>
       </div>
       <div class="worldCard" onclick="openSharedMenu()">
         <div class="wt">🌐 עולם משותף (עם חברים)</div>
@@ -365,7 +374,7 @@
             <button onclick="makeSaveCode()" style="flex:1; padding:9px; background:#3a5a2a; color:#fff; border:none; border-radius:6px; font-family:inherit; font-size:12px; cursor:pointer;">📤 צור קוד שמירה</button>
           </div>
           <div id="saveCodeBox" style="display:none; margin-bottom:12px;">
-            <textarea id="saveCodeArea" readonly rows="3" style="width:100%; box-sizing:border-box; font-size:10px; background:#0d1018; color:#8fe0a0; border:1px solid #4a4230; border-radius:6px; padding:6px; direction:ltr;"></textarea>
+            <textarea id="saveCodeArea" rows="3" onclick="this.select()" style="width:100%; box-sizing:border-box; font-size:10px; background:#0d1018; color:#8fe0a0; border:1px solid #4a4230; border-radius:6px; padding:6px; direction:ltr;"></textarea>
             <button onclick="copySaveCode()" style="width:100%; margin-top:5px; padding:8px; background:#2f5a8a; color:#fff; border:none; border-radius:6px; font-family:inherit; font-size:12px; cursor:pointer;">📋 העתק</button>
           </div>
           <textarea id="loadCodeArea" rows="3" placeholder="הדבק כאן קוד שמירה כדי לטעון עולם" style="width:100%; box-sizing:border-box; font-size:10px; background:#0d1018; color:#fff; border:1px solid #4a4230; border-radius:6px; padding:6px; direction:ltr;"></textarea>
@@ -401,7 +410,7 @@
       <div class="bsub" id="netStatus">ממתין...</div>
       <div id="netHostView" style="display:none;">
         <div class="netLbl">הקוד שלך — מסור אותו לחבר שיצטרף:</div>
-        <div id="netHostCode">----</div>
+        <input id="netHostCode" readonly value="----" onclick="this.select()">
         <button class="netBtn" onclick="copyHostCode()">📋 העתק קוד</button>
         <div class="bsub" style="margin-top:10px;">החבר בוחר "עולם משותף → 🔗 הצטרף" ומקליד את הקוד. צריך שלשניכם יהיה אינטרנט (נקודה חמה סלולרית עובדת).</div>
       </div>
@@ -719,6 +728,8 @@ let gameStarted = false;       // stays false until a world is picked
 let bonusModalOpen = false;    // pauses the world while the morning-bonus modal is up
 let eternalNightDay = 5;       // effective day the eternal night begins for the current world
 let userEternalDay = 5;        // the crystal-world day chosen via secret code 2020 (persists across mode switches)
+let challengeStartDay = 2;      // in the eternal-night (challenge) world, the day the eternal night begins (player picks 1-5)
+function startChallenge(d){ challengeStartDay = Math.max(1, Math.min(5, d||2)); startWorld('challenge'); }
 let stats = { animalsKilled:0, monstersKilled:0, blocksDestroyed:0, maxBreakDist:2, luckyOpened:0, dailyChoices:[] };
 let bonusShownForDay = 0;      // guards against re-triggering the morning bonus in the same day
 let luckyQueue = [];           // pending saved choice-sets, attached to lucky blocks in order they're placed
@@ -772,7 +783,7 @@ function initGame(){
   //           'crystal' = build the crystal before the eternal night (default day 5, editable);
   //           'test' = sandbox.
   if (gameMode==='survival') eternalNightDay = 999999;
-  else if (gameMode==='challenge') eternalNightDay = 2;
+  else if (gameMode==='challenge') eternalNightDay = challengeStartDay;   // player-chosen day the eternal night begins
   else eternalNightDay = userEternalDay;   // crystal & test use the 2020-editable day
   genWorld(); initEntities(); initPlayer(); resetStats();
   time = 0; dayNum = 1; gameOver=false; tickAcc=0; countTimer=0;
@@ -1956,7 +1967,7 @@ function sharedHost(){
   startWorld(sharedMode);
   net.active=true; net.isHost=true; net.name=playerName||'מארח'; net.peers=[]; initShadow();
   openNetPanel('host');
-  document.getElementById('netHostCode').textContent = '····';
+  document.getElementById('netHostCode').value = '····';
   document.getElementById('netStatus').textContent = 'טוען חיבור...';
   ensurePeerJs().then(ok=>{ if(ok) netHostRetry(0); else document.getElementById('netStatus').textContent='אין אינטרנט או שהחיבור חסום — התחבר לאינטרנט ונסה שוב'; });
 }
@@ -1965,7 +1976,7 @@ function netHostRetry(attempt){
   const code = makeShortCode();
   try{ net.peerObj = new Peer(NET_PREFIX+code, { debug:0 }); }catch(e){ document.getElementById('netStatus').textContent='שגיאה ביצירת חיבור'; return; }
   net.myCode = code;
-  net.peerObj.on('open', ()=>{ document.getElementById('netHostCode').textContent = code; document.getElementById('netStatus').textContent='מסור לחבר את הקוד והמתן שיצטרף'; });
+  net.peerObj.on('open', ()=>{ document.getElementById('netHostCode').value = code; document.getElementById('netStatus').textContent='מסור לחבר את הקוד והמתן שיצטרף'; });
   net.peerObj.on('connection', conn=>{ const peer={ conn, id:conn.peer, open:false }; net.peers.push(peer); netWireConn(peer); });
   // if the broker link drops (internet blip), get back on it so guests keep the SAME code and can reconnect
   net.peerObj.on('disconnected', ()=>{ if(net.active && net.isHost){ try{ net.peerObj.reconnect(); }catch(e){} } });
@@ -2017,7 +2028,7 @@ function copyTextFrom(el){
   if(!ok && navigator.clipboard && navigator.clipboard.writeText){ try{ navigator.clipboard.writeText(text); ok=true; }catch(e){} }
   return ok;
 }
-function copyHostCode(){ const el=document.getElementById('netHostCode'); const ok=copyTextFrom(el); showToast(ok ? ('הקוד הועתק 📋: '+el.textContent) : ('הקוד מסומן — לחץ "העתק" מהתפריט של הטלפון 📋')); }
+function copyHostCode(){ const el=document.getElementById('netHostCode'); const ok=copyTextFrom(el); const code=el.value||el.textContent; showToast(ok ? ('הקוד הועתק 📋: '+code) : ('הקוד מסומן — לחץ "העתק" מהתפריט של הטלפון 📋')); }
 
 function sendToPeer(peer, obj){ if(peer && peer.conn && peer.open){ try{ peer.conn.send(obj); }catch(e){} } }
 function netSend(obj){ for(const p of net.peers) sendToPeer(p, obj); }
@@ -2255,24 +2266,46 @@ function loadWorld(id){
   showToast('📂 נטען: '+(data.name||''));
 }
 /* ---- Portable save code: works even when localStorage is blocked (Shortcut / data: link) ---- */
-function encodeSave(data){ return btoa(unescape(encodeURIComponent(JSON.stringify(data)))); }
-function decodeSave(str){ return JSON.parse(decodeURIComponent(escape(atob(str.trim())))); }
-function showSaveCode(data){
+// Compress the save with the browser's built-in gzip so the code is MUCH shorter (usually 4-6x smaller).
+// Prefix marks the format: G1 = gzip+base64, R1 = raw base64 fallback (old phones without CompressionStream).
+async function gzipB64(str){
+  if (typeof CompressionStream === 'undefined') return 'R1:'+btoa(unescape(encodeURIComponent(str)));
+  try{
+    const bytes = new TextEncoder().encode(str);
+    const ab = await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
+    const u8 = new Uint8Array(ab); let bin=''; for(let i=0;i<u8.length;i++) bin += String.fromCharCode(u8[i]);
+    return 'G1:'+btoa(bin);
+  }catch(e){ return 'R1:'+btoa(unescape(encodeURIComponent(str))); }
+}
+async function gunzipB64(payload){
+  const bin = atob(payload); const u8 = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
+  const ab = await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+  return new TextDecoder().decode(ab);
+}
+async function encodeSave(data){ return await gzipB64(JSON.stringify(data)); }
+async function decodeSave(str){
+  str = (str||'').trim();
+  if (str.startsWith('G1:')) return JSON.parse(await gunzipB64(str.slice(3)));
+  if (str.startsWith('R1:')) return JSON.parse(decodeURIComponent(escape(atob(str.slice(3)))));
+  return JSON.parse(decodeURIComponent(escape(atob(str))));   // legacy (uncompressed) codes still load
+}
+async function showSaveCode(data){
   const box = document.getElementById('saveCodeBox'); const ta = document.getElementById('saveCodeArea');
   if (!box || !ta) return;
-  ta.value = encodeSave(data || buildSaveData('עולם יום '+dayNum));
-  box.style.display='block'; ta.focus(); ta.select();
+  ta.value = '⏳ מכין קוד...'; box.style.display='block';
+  ta.value = await encodeSave(data || buildSaveData('עולם יום '+dayNum));
+  ta.focus(); ta.select();
 }
-function makeSaveCode(){
+async function makeSaveCode(){
   if (!gameStarted){ showToast('אין עולם פעיל'); return; }
-  showSaveCode(buildSaveData('עולם יום '+dayNum));
+  await showSaveCode(buildSaveData('עולם יום '+dayNum));
   showToast('📋 סמן הכל והעתק — הדבק ל-Google Keep או לכל מקום');
 }
 function copySaveCode(){ const ta=document.getElementById('saveCodeArea'); if(!ta) return; const ok=copyTextFrom(ta); showToast(ok ? 'הקוד הועתק 📋' : 'הקוד מסומן — לחץ "העתק" מהתפריט של הטלפון 📋'); }
-function loadFromCode(){
+async function loadFromCode(){
   const ta=document.getElementById('loadCodeArea'); if(!ta) return;
   const str=(ta.value||'').trim(); if(!str){ showToast('הדבק קוד שמירה קודם'); return; }
-  let data; try{ data=decodeSave(str); }catch(e){ showToast('הקוד לא תקין ❌'); return; }
+  let data; try{ data=await decodeSave(str); }catch(e){ showToast('הקוד לא תקין ❌'); return; }
   if(!data || !data.world){ showToast('הקוד לא תקין ❌'); return; }
   applySaveData(data);
   showToast('📂 נטען מקוד שמירה!');
