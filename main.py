@@ -2190,12 +2190,15 @@ function serializeWorld(){
   const types = new Array(MAPW*MAPH); const extras = {};
   for (let y=0;y<MAPH;y++) for (let x=0;x<MAPW;x++){
     const t=world[y][x]; const i=y*MAPW+x; types[i]=t.type; const e={};
+    // Only store what CAN'T be derived from the tile type on load — a fresh wall now stores nothing.
     if (t.hp!=null && t.hp!==tileHP(t.type)) e.hp=t.hp;
-    if (t.maxHp!=null) e.m=t.maxHp;
-    if (t.def!=null) e.d=t.def; if (t.defMax!=null) e.dm=t.defMax;
+    if (t.maxHp!=null && t.maxHp!==tileHP(t.type)) e.m=t.maxHp;
+    const dMax = enemyHitsFor(t.type);
+    if (t.defMax!=null && t.defMax!==dMax) e.dm=t.defMax;
+    if (t.def!=null){ const cur = (t.defMax!=null?t.defMax:dMax); if (t.def!==cur) e.d=t.def; }   // only when damaged
     if (t.shield) e.sh=t.shield; if (t.shieldMax) e.shm=t.shieldMax;
-    if (t.reinforced) e.r=t.reinforced; if (t.stage!=null) e.s=t.stage;
-    if (t.species) e.sp=t.species; if (t.mature) e.mt=1;
+    if (t.reinforced) e.r=t.reinforced; if (t.stage) e.s=t.stage;                                 // stage 0 omitted
+    if (t.species && t.species!=='wheat') e.sp=t.species; if (t.mature) e.mt=1;                    // default 'wheat' omitted
     if (Object.keys(e).length) extras[i]=e;
   }
   const rle=[]; let prev=types[0], cnt=1;
@@ -2214,7 +2217,10 @@ function deserializeWorld(w){
   const extras=w.extras||{};
   for(let i=0;i<MAPW*MAPH;i++){ const x=i%MAPW, y=Math.floor(i/MAPW); const type=types[i]==null?T.GRASS:types[i]; const tile={type,timer:0}; const e=extras[i];
     tile.hp = (e && e.hp!=null) ? e.hp : tileHP(type);
-    if (e){ if(e.m!=null)tile.maxHp=e.m; if(e.d!=null)tile.def=e.d; if(e.dm!=null)tile.defMax=e.dm; if(e.sh)tile.shield=e.sh; if(e.shm)tile.shieldMax=e.shm; if(e.r)tile.reinforced=e.r; if(e.s!=null)tile.stage=e.s; if(e.sp)tile.species=e.sp; if(e.mt)tile.mature=true; }
+    tile.maxHp = (e && e.m!=null) ? e.m : tileHP(type);
+    if (PLAYER_BUILT_TILES.includes(type)){ tile.defMax = (e && e.dm!=null) ? e.dm : enemyHitsFor(type); tile.def = (e && e.d!=null) ? e.d : tile.defMax; }
+    else if (e){ if(e.d!=null)tile.def=e.d; if(e.dm!=null)tile.defMax=e.dm; }
+    if (e){ if(e.sh)tile.shield=e.sh; if(e.shm)tile.shieldMax=e.shm; if(e.r)tile.reinforced=e.r; if(e.s!=null)tile.stage=e.s; if(e.sp)tile.species=e.sp; if(e.mt)tile.mature=true; }
     world[y][x]=tile;
   }
 }
@@ -2223,6 +2229,8 @@ function setSaveIndex(idx){ try{ localStorage.setItem(SAVE_INDEX_KEY, JSON.strin
 // Build the full save object (shared by localStorage save and the portable save-code).
 function buildSaveData(name){
   const playerCopy = JSON.parse(JSON.stringify(Object.assign({}, player, {placingItem:null})));
+  if (playerCopy.inv){ for(const k in playerCopy.inv){ if(!playerCopy.inv[k]) delete playerCopy.inv[k]; } }   // drop the many zero entries
+  ['speedBoostTimer','efficiencyBoostTimer','slowTimer','sweetTimer','glowTimer','calmTimer','harvestTimer','strengthTimer','moving','moveT'].forEach(k=>{ if(!playerCopy[k]) delete playerCopy[k]; });
   return { v:1, name, ts:Date.now(), gameMode, dayNum, time, eternalNightDay, eternalNightActive, crystalPlaced, crystalActivated, crystalBonusDays, crystalDevicePos, player:playerCopy, stats:JSON.parse(JSON.stringify(stats)), chests:JSON.parse(JSON.stringify(chests)), world:serializeWorld() };
 }
 // Restore a save object into the live game (shared by localStorage load and save-code import).
@@ -2231,7 +2239,7 @@ function applySaveData(data){
   gameMode = data.gameMode||'crystal';
   initEntities();
   deserializeWorld(data.world);
-  initPlayer(); Object.assign(player, data.player); player.placingItem=null;
+  initPlayer(); const baseInv = player.inv; Object.assign(player, data.player); player.inv = Object.assign(baseInv, data.player.inv||{}); player.placingItem=null;   // merge saved inv over the full zeroed inventory so no key is missing
   dayNum=data.dayNum||1; time=data.time||0; eternalNightDay=data.eternalNightDay||5;
   eternalNightActive=!!data.eternalNightActive; crystalPlaced=!!data.crystalPlaced; crystalActivated=!!data.crystalActivated; crystalBonusDays=data.crystalBonusDays||0; crystalDevicePos=data.crystalDevicePos||null;
   stats = Object.assign({ animalsKilled:0,monstersKilled:0,blocksDestroyed:0,maxBreakDist:2,luckyOpened:0,dailyChoices:[] }, data.stats||{});
