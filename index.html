@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0d0f14">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.png">
+<title>ארגז חול</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent;
+      user-select:none; -webkit-user-select:none; }
+  html, body { width:100%; height:100%; overflow:hidden; }
+  body {
+    background:#0d0f14; font-family:-apple-system, 'Heebo', 'Segoe UI', sans-serif;
+    color:#e8e0c8; touch-action:none; display:flex; flex-direction:column;
+    height:100vh; height:100dvh;
+  }
+
+  /* אזור המשחק */
+  #stage { position:relative; flex:1; min-height:0; overflow:hidden; }
+  #game  { display:block; width:100%; height:100%; image-rendering:pixelated;
+           background:#05070c; touch-action:none; }
+
+  /* שורת מידע עליונה */
+  #topbar {
+    position:absolute; top:0; left:0; right:0; z-index:10;
+    display:flex; align-items:center; gap:8px; padding:8px 12px;
+    padding-top:calc(8px + env(safe-area-inset-top));
+    background:linear-gradient(#0d0f14ee, #0d0f1400); pointer-events:none;
+  }
+  #topbar .title { font-weight:700; font-size:15px; letter-spacing:.5px; }
+  #topbar .stat  { font-size:12px; opacity:.75; margin-inline-start:auto; direction:ltr; }
+
+  /* לוח כלים תחתון */
+  #toolbar {
+    background:#14171f; border-top:1px solid #2a2f3a;
+    padding:6px 6px calc(6px + env(safe-area-inset-bottom));
+    display:flex; flex-direction:column; gap:6px;
+  }
+  #materials {
+    display:flex; gap:6px; overflow-x:auto; padding:2px;
+    scrollbar-width:none;
+  }
+  #materials::-webkit-scrollbar { display:none; }
+  .mat {
+    flex:0 0 auto; width:60px; height:56px; border-radius:12px;
+    border:2px solid #2a2f3a; background:#1b1f28; color:#e8e0c8;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:3px; font-size:11px; font-weight:600; cursor:pointer; transition:.12s;
+  }
+  .mat .dot { width:20px; height:20px; border-radius:6px; border:1px solid #0006; }
+  .mat.active { border-color:#e8e0c8; background:#262b36; transform:translateY(-2px); }
+
+  #controls { display:flex; align-items:center; gap:8px; padding:0 2px; }
+  #controls button {
+    flex:0 0 auto; height:38px; padding:0 12px; border-radius:10px;
+    border:1px solid #2a2f3a; background:#1b1f28; color:#e8e0c8;
+    font-size:13px; font-weight:600; cursor:pointer;
+  }
+  #controls button:active { background:#2a2f3a; }
+  #controls .brush { display:flex; align-items:center; gap:6px; margin-inline-start:auto; font-size:12px; }
+  #controls input[type=range] { width:100px; accent-color:#d69a3e; }
+
+  #toast {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    background:#000c; padding:10px 18px; border-radius:12px; font-size:14px;
+    opacity:0; transition:opacity .3s; pointer-events:none; z-index:30;
+  }
+  #toast.show { opacity:1; }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="game"></canvas>
+    <div id="topbar">
+      <span class="title">🏖️ ארגז חול</span>
+      <span class="stat" id="fps"></span>
+    </div>
+    <div id="toast"></div>
+  </div>
+
+  <div id="toolbar">
+    <div id="materials"><!-- כפתורי חומרים נוצרים ב-JS --></div>
+    <div id="controls">
+      <button id="btnClear">🗑️ נקה</button>
+      <button id="btnPause">⏸️ עצור</button>
+      <button id="btnSave">💾 שמור</button>
+      <button id="btnLoad">📂 טען</button>
+      <label class="brush">מברשת
+        <input id="brush" type="range" min="1" max="14" value="4">
+      </label>
+    </div>
+  </div>
+
+<script>
+/* =========================================================================
+   ארגז חול — מנוע פיזיקה של חול נופל (Falling-Sand / Cellular Automata)
+   כל תא ברשת הוא חומר. בכל פריים אנחנו עוברים על הרשת ומזיזים חומרים
+   לפי חוקים פשוטים (כובד, נזילות, צפיפות). מכאן נולדת "פיזיקה".
+   ========================================================================= */
+
+/* ---------- הגדרת החומרים ----------
+   כל חומר: שם בעברית, צבע, וסוג התנהגות.
+   type: 'static' לא זז | 'powder' אבקה (חול) | 'liquid' נוזל | 'gas' גז
+   density: מי כבד יותר שוקע. flammable: נדלק. dissolvable: חומצה ממיסה. */
+const MAT = [
+  { id:0,  key:'air',   name:'אוויר',  color:[5,7,12],     type:'empty'  },
+  { id:1,  key:'wall',  name:'קיר',    color:[90,96,110],  type:'static' },
+  { id:2,  key:'sand',  name:'חול',    color:[224,196,120],type:'powder', density:5, dissolvable:true },
+  { id:3,  key:'water', name:'מים',    color:[64,132,214],  type:'liquid', density:2, dissolvable:false },
+  { id:4,  key:'stone', name:'אבן',    color:[120,120,128],type:'static', dissolvable:true },
+  { id:5,  key:'wood',  name:'עץ',     color:[122,80,44],  type:'static', flammable:true, dissolvable:true },
+  { id:6,  key:'fire',  name:'אש',     color:[240,120,30], type:'gas',    life:60 },
+  { id:7,  key:'acid',  name:'חומצה',  color:[150,230,60],  type:'liquid', density:2, dissolvable:false, acid:true },
+  { id:8,  key:'oil',   name:'שמן',    color:[60,42,58],   type:'liquid', density:1, flammable:true, dissolvable:true },
+  { id:9,  key:'steam', name:'אדים',   color:[190,200,210],type:'gas',    life:120, dissolvable:false },
+  { id:10, key:'salt',  name:'מלח',    color:[235,235,240],type:'powder', density:4, dissolvable:true },
+];
+const byKey = {}; MAT.forEach(m => byKey[m.key] = m);
+const AIR=0, FIRE=6, ACID=7, STEAM=9, WATER=3;
+
+/* ---------- Canvas ותשתית רשת ---------- */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d', { alpha:false });
+const buf = document.createElement('canvas');       // קנבס פנימי בגודל הרשת
+const bctx = buf.getContext('2d', { alpha:false });
+
+const SCALE = 5;            // כמה פיקסלים במסך לכל תא (רזולוציה)
+let W, H;                   // רוחב/גובה הרשת בתאים
+let grid, life, img;        // מצב + טיימרים + תמונת פיקסלים
+
+function setup() {
+  const stage = document.getElementById('stage');
+  const cssW = stage.clientWidth, cssH = stage.clientHeight;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+  W = Math.max(40, Math.floor(cssW / SCALE));
+  H = Math.max(40, Math.floor(cssH / SCALE));
+
+  buf.width = W; buf.height = H;
+  img = bctx.createImageData(W, H);
+
+  canvas.width  = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  ctx.imageSmoothingEnabled = false;
+
+  grid = new Uint8Array(W * H);   // מצב כל התאים (מזהה חומר)
+  life = new Uint8Array(W * H);   // טיימרים (לאש/אדים)
+}
+
+const idx = (x,y) => y * W + x;
+const inBounds = (x,y) => x>=0 && x<W && y>=0 && y<H;
+
+/* ---------- כלים ומצב משחק ---------- */
+let current = byKey.sand.id;   // החומר הנבחר
+let brush = 4;
+let paused = false;
+let painting = false, px=0, py=0;
+
+/* ---------- ציור החומרים ל-canvas ---------- */
+function render() {
+  const d = img.data;
+  for (let i=0; i<grid.length; i++) {
+    const m = MAT[grid[i]];
+    let c = m.color;
+    // ריצוד קטן לאש כדי שתיראה חיה
+    if (m.id === FIRE) {
+      const f = 0.6 + Math.random()*0.4;
+      d[i*4]=Math.min(255,c[0]*f+40); d[i*4+1]=c[1]*f; d[i*4+2]=c[2]*f*0.5;
+    } else {
+      d[i*4]=c[0]; d[i*4+1]=c[1]; d[i*4+2]=c[2];
+    }
+    d[i*4+3]=255;
+  }
+  bctx.putImageData(img, 0, 0);
+  ctx.drawImage(buf, 0, 0, canvas.width, canvas.height);
+}
+
+/* ---------- עזרי תנועה ---------- */
+function swap(a, b) { const t=grid[a]; grid[a]=grid[b]; grid[b]=t;
+                      const l=life[a]; life[a]=life[b]; life[b]=l; }
+function density(id){ return MAT[id].density || 0; }
+
+/* ---------- לב המנוע: עדכון פיזיקה ---------- */
+let flip = false;
+function step() {
+  // מלמטה למעלה, כי כובד. מחליפים כיוון סריקה אופקי כל פריים למניעת הטיה.
+  flip = !flip;
+  for (let y = H-1; y >= 0; y--) {
+    for (let k = 0; k < W; k++) {
+      const x = flip ? k : (W-1-k);
+      const i = idx(x,y);
+      const id = grid[i];
+      if (id === AIR) continue;
+      const m = MAT[id];
+
+      switch (m.type) {
+        case 'powder': updatePowder(x,y,i,id); break;
+        case 'liquid': updateLiquid(x,y,i,id,m); break;
+        case 'gas':    updateGas(x,y,i,id,m);   break;
+        // static לא זז (אבל אולי נדלק — מטופל ע"י אש/חומצה)
+      }
+    }
+  }
+}
+
+// אבקה: נופלת למטה, ואם חסום — באלכסון. שוקעת דרך נוזל קל יותר.
+function updatePowder(x,y,i,id){
+  const below = y+1<H ? idx(x,y+1) : -1;
+  if (below>=0 && canSink(id, grid[below])) { swap(i,below); return; }
+  const dir = Math.random()<0.5 ? 1 : -1;
+  for (const dx of [dir,-dir]) {
+    const nx=x+dx;
+    if (nx>=0 && nx<W && y+1<H) {
+      const d = idx(nx,y+1);
+      if (canSink(id, grid[d])) { swap(i,d); return; }
+    }
+  }
+}
+
+// נוזל: למטה, אלכסון, ואז זרימה הצידה.
+function updateLiquid(x,y,i,id,m){
+  if (m.acid && tryAcid(x,y,i)) return;   // חומצה ממיסה שכנים
+  const below = y+1<H ? idx(x,y+1) : -1;
+  if (below>=0 && canSink(id, grid[below])) { swap(i,below); return; }
+  const dir = Math.random()<0.5 ? 1 : -1;
+  for (const dx of [dir,-dir]) {
+    const nx=x+dx;
+    if (nx>=0 && nx<W && y+1<H) {
+      const d=idx(nx,y+1);
+      if (canSink(id, grid[d])) { swap(i,d); return; }
+    }
+  }
+  // זרימה אופקית
+  for (const dx of [dir,-dir]) {
+    const nx=x+dx;
+    if (nx>=0 && nx<W) {
+      const s=idx(nx,y);
+      if (grid[s]===AIR) { swap(i,s); return; }
+    }
+  }
+}
+
+// גז: עולה, מתפזר, ובסוף מתפוגג.
+function updateGas(x,y,i,id,m){
+  if (id===FIRE) { updateFire(x,y,i); return; }
+  // אדים / גז כללי
+  if (life[i]===0) life[i]=m.life;
+  if (--life[i]<=1){ grid[i]=AIR; life[i]=0; return; }
+  const above = y-1>=0 ? idx(x,y-1) : -1;
+  if (above>=0 && grid[above]===AIR){ swap(i,above); return; }
+  const dir = Math.random()<0.5?1:-1;
+  const nx=x+dir;
+  if (nx>=0&&nx<W){ const s=idx(nx,y); if (grid[s]===AIR){ swap(i,s); return; } }
+}
+
+// אש: חיה זמן מוגבל, מדליקה עץ/שמן שכנים, הופכת מים לאדים, ועולה.
+function updateFire(x,y,i){
+  if (life[i]===0) life[i]=MAT[FIRE].life;
+  // השפעה על שכנים
+  for (const [dx,dy] of NEI4){
+    const nx=x+dx, ny=y+dy;
+    if (!inBounds(nx,ny)) continue;
+    const j=idx(nx,ny), nid=grid[j];
+    if (MAT[nid].flammable && Math.random()<0.25){ grid[j]=FIRE; life[j]=MAT[FIRE].life; }
+    else if (nid===WATER && Math.random()<0.5){ grid[j]=STEAM; life[j]=MAT[STEAM].life; grid[i]=AIR; life[i]=0; return; }
+  }
+  if (--life[i]<=1){ grid[i] = Math.random()<0.3 ? STEAM : AIR; life[i]= grid[i]===STEAM?MAT[STEAM].life:0; return; }
+  // עולה קצת
+  const above = y-1>=0?idx(x,y-1):-1;
+  if (above>=0 && grid[above]===AIR && Math.random()<0.6){ swap(i,above); }
+}
+const NEI4 = [[1,0],[-1,0],[0,1],[0,-1]];
+
+// חומצה: מנסה להמיס שכן שניתן להמסה. גם היא מתכלה עם הזמן.
+function tryAcid(x,y,i){
+  for (const [dx,dy] of NEI4){
+    const nx=x+dx, ny=y+dy;
+    if (!inBounds(nx,ny)) continue;
+    const j=idx(nx,ny);
+    if (MAT[grid[j]].dissolvable && Math.random()<0.14){
+      grid[j]=AIR;
+      if (Math.random()<0.4){ grid[i]=AIR; return true; } // לפעמים החומצה נגמרת
+    }
+  }
+  return false;
+}
+
+// האם 'moving' יכול לשקוע לתוך 'target' (אוויר, או נוזל קל יותר)?
+function canSink(moving, target){
+  if (target===AIR) return true;
+  const tm=MAT[target];
+  if ((tm.type==='liquid'||tm.type==='gas') && density(moving) > density(target)) return true;
+  return false;
+}
+
+/* ---------- קלט מגע/עכבר ---------- */
+function paintAt(clientX, clientY){
+  const r = canvas.getBoundingClientRect();
+  const gx = Math.floor((clientX - r.left) / r.width  * W);
+  const gy = Math.floor((clientY - r.top ) / r.height * H);
+  const rad = brush;
+  for (let dy=-rad; dy<=rad; dy++)
+    for (let dx=-rad; dx<=rad; dx++){
+      if (dx*dx+dy*dy > rad*rad) continue;
+      const x=gx+dx, y=gy+dy;
+      if (!inBounds(x,y)) continue;
+      const i=idx(x,y);
+      // ציור: לא דורסים קירות בטעות עם אוויר? מותר למחוק הכל.
+      if (current===AIR){ grid[i]=AIR; life[i]=0; }
+      else if (grid[i]===AIR || current===AIR || Math.random()<0.9){ grid[i]=current; life[i]=0; }
+    }
+}
+function pos(e){ const t = e.touches ? e.touches[0] : e; return [t.clientX, t.clientY]; }
+function down(e){ e.preventDefault(); painting=true; [px,py]=pos(e); paintAt(px,py); }
+function move(e){ if(!painting) return; e.preventDefault(); const [x,y]=pos(e);
+  // מילוי הקו בין נקודות כדי שלא יהיו חורים בגרירה מהירה
+  const steps=Math.max(1, Math.hypot(x-px,y-py)/3);
+  for (let s=0;s<=steps;s++) paintAt(px+(x-px)*s/steps, py+(y-py)*s/steps);
+  px=x; py=y;
+}
+function up(){ painting=false; }
+canvas.addEventListener('touchstart', down, {passive:false});
+canvas.addEventListener('touchmove',  move, {passive:false});
+canvas.addEventListener('touchend',   up);
+canvas.addEventListener('mousedown',  down);
+canvas.addEventListener('mousemove',  move);
+window.addEventListener('mouseup',    up);
+
+/* ---------- ממשק: כפתורי חומרים ---------- */
+const matsEl = document.getElementById('materials');
+MAT.filter(m=>m.id!==AIR).forEach(m=>{
+  const b=document.createElement('button');
+  b.className='mat'; b.dataset.id=m.id;
+  b.innerHTML=`<span class="dot" style="background:rgb(${m.color.join(',')})"></span>${m.name}`;
+  b.onclick=()=>{ current=m.id; refreshMats(); };
+  matsEl.appendChild(b);
+});
+// כפתור מחיקה (אוויר)
+const eraser=document.createElement('button');
+eraser.className='mat'; eraser.dataset.id=AIR;
+eraser.innerHTML=`<span class="dot" style="background:#222;border-style:dashed"></span>מחק`;
+eraser.onclick=()=>{ current=AIR; refreshMats(); };
+matsEl.appendChild(eraser);
+function refreshMats(){
+  [...matsEl.children].forEach(b=> b.classList.toggle('active', +b.dataset.id===current));
+}
+
+/* ---------- כפתורי שליטה ---------- */
+document.getElementById('btnClear').onclick = ()=>{ grid.fill(0); life.fill(0); toast('נוקה'); };
+const pauseBtn=document.getElementById('btnPause');
+pauseBtn.onclick = ()=>{ paused=!paused; pauseBtn.textContent = paused?'▶️ המשך':'⏸️ עצור'; };
+document.getElementById('brush').oninput = e => brush=+e.target.value;
+document.getElementById('btnSave').onclick = save;
+document.getElementById('btnLoad').onclick = ()=> load(true);
+
+/* ---------- שמירה וטעינה (הבעיה שהייתה לך ב-Shortcuts — כאן זה קל!) ----------
+   שומרים את מצב הרשת ל-localStorage. עובד גם אחרי סגירת הדפדפן. */
+const SAVE_KEY='sandbox_save_v1';
+function save(){
+  try{
+    const data = { W, H, grid: Array.from(grid) };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    toast('💾 נשמר');
+  }catch(err){ toast('שגיאה בשמירה'); }
+}
+function load(showMsg){
+  try{
+    const raw = localStorage.getItem(SAVE_KEY);
+    if(!raw){ if(showMsg) toast('אין שמירה'); return; }
+    const data = JSON.parse(raw);
+    if(data.W===W && data.H===H){
+      grid.set(data.grid);
+    } else {
+      // גודל מסך שונה — מעתיקים מה שאפשר
+      for(let y=0;y<Math.min(H,data.H);y++)
+        for(let x=0;x<Math.min(W,data.W);x++)
+          grid[idx(x,y)] = data.grid[y*data.W+x];
+    }
+    life.fill(0);
+    if(showMsg) toast('📂 נטען');
+  }catch(err){ if(showMsg) toast('שגיאה בטעינה'); }
+}
+// שמירה אוטומטית כל 10 שניות
+setInterval(()=>{ if(!isEmpty()) save(); }, 10000);
+function isEmpty(){ for(let i=0;i<grid.length;i++) if(grid[i]) return false; return true; }
+
+/* ---------- הודעות קטנות ---------- */
+let toastT;
+function toast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('show'), 1200);
+}
+
+/* ---------- לולאת המשחק ---------- */
+let last=performance.now(), frames=0, fpsT=0;
+function loop(now){
+  const dt=now-last; last=now;
+  if(!paused){ step(); }
+  render();
+  // מונה FPS
+  frames++; fpsT+=dt;
+  if(fpsT>=500){ document.getElementById('fps').textContent = Math.round(frames*1000/fpsT)+' fps'; frames=0; fpsT=0; }
+  requestAnimationFrame(loop);
+}
+
+/* ---------- התחלה ---------- */
+function boot(){
+  setup();
+  load(false);          // טוען שמירה קודמת אם יש
+  refreshMats();
+  requestAnimationFrame(loop);
+}
+window.addEventListener('resize', ()=>{ // שמירה על התוכן בשינוי גודל
+  save(); setup(); load(false);
+});
+boot();
+</script>
+</body>
+</html>
