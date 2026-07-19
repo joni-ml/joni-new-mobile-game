@@ -170,12 +170,13 @@ const MAT = [
   { key:'ash',    name:'אפר',    color:[92,90,96],    type:'powder', density:3, pedia:'נשאר אחרי שריפה' },
   { key:'glass',  name:'זכוכית', color:[172,212,226], type:'static', pedia:'🏖️ חול חם מאוד (1400°+)' },
   { key:'lava',   name:'לבה',    color:[236,96,28],   type:'liquid', density:3, pedia:'🪨 אבן חמה (1100°+) נמסה' },
+  { key:'basalt', name:'בזלת',   color:[34,32,42],    type:'solid',  density:8, pedia:'🌋 לבה טהורה שהתקררה (שחורה)' },
 ];
 const ID = {}; MAT.forEach((m,i)=>{ m.id=i; ID[m.key]=i; });
 const AIR=ID.air, STONE=ID.stone, WATER=ID.water, EARTH=ID.earth, MUD=ID.mud,
       SAND=ID.sand, WOOD=ID.wood, SPROUT=ID.sprout, LEAF=ID.leaf, FLOWER=ID.flower,
       SEEDT=ID.seedT, SEEDF=ID.seedF, FIRE=ID.fire, STEAM=ID.steam, ICE=ID.ice,
-      ASH=ID.ash, GLASS=ID.glass, LAVA=ID.lava;
+      ASH=ID.ash, GLASS=ID.glass, LAVA=ID.lava, BASALT=ID.basalt;
 const TOTAL = MAT.length - 1;
 
 /* ---------- תכונות תרמיות ----------
@@ -299,8 +300,12 @@ function checkPhase(i){
                  else if (t<=0){ grid[i]=ICE; discover(ICE); } break;
     case STEAM:  if (t<=96) { grid[i]=WATER; life[i]=0; } break;
     case ICE:    if (t>=1)  { grid[i]=WATER; } break;
-    case STONE:  if (t>=1100){ grid[i]=LAVA; discover(LAVA); } break;
-    case LAVA:   if (t<=600) { grid[i]=STONE; } break;         // מתקררת לבזלת (אבן)
+    case STONE:  if (t>=1100){ grid[i]=LAVA; aux[i]=1; discover(LAVA); } break;  // aux=1: לבה שהיתה אבן
+    case BASALT: if (t>=1100){ grid[i]=LAVA; aux[i]=0; discover(LAVA); } break;  // בזלת נמסה ללבה טהורה
+    case LAVA:   if (t<=600) {                                  // מתקררת: אבן→אבן, לבה טהורה→בזלת שחורה
+                   grid[i] = aux[i]===1 ? STONE : BASALT; aux[i]=0;
+                   if (grid[i]===BASALT) discover(BASALT);
+                 } break;
     case SAND:   if (t>=1400){ grid[i]=GLASS; discover(GLASS); } break;
     case MUD:    if (t>=140) { grid[i]=EARTH; } break;         // מתייבש
     case WOOD: case LEAF: case SPROUT: case FLOWER: case SEEDT: case SEEDF:
