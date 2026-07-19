@@ -377,10 +377,11 @@ function reactLava(x,y,i){
     const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
     const j=idx(nx,ny), n=grid[j];
     if (n===WATER){ grid[j]=STEAM; life[j]=MAT[STEAM].life; discover(STEAM);
-                    grid[i]=STONE; life[i]=0; return true; }
+                    grid[i]=STONE; life[i]=0; return true; }   // לבה+מים → בזלת (אבן) + אדים
+    else if (n===STONE && Math.random()<0.014){ grid[j]=LAVA; } // לבה לוהטת ממיסה אבן צמודה
     else if (MAT[n].flam && Math.random()<0.3){ grid[j]=FIRE; life[j]=MAT[FIRE].life; discover(FIRE); }
   }
-  if (Math.random()<0.0025){ grid[i]=STONE; return true; }
+  if (Math.random()<0.0025){ grid[i]=STONE; return true; }      // מתקררת לאט לאבן
   return false; // אחרת זורמת כנוזל
 }
 
