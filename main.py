@@ -650,55 +650,44 @@ function enemyHitsFor(type){
   return 50; // furnace, crafting table, upgraded table, campfire
 }
 const REINFORCE_SHIELD = 100; // each iron reinforcement adds a 100-hit grey ring around the item
-function genWorld(){
-  world = []; const riverX = Math.floor(MAPW*0.5);
+// Seeded PRNG (mulberry32) so a whole surface world can be rebuilt from one small number.
+// That's what makes the "tiny save code" possible: we store the seed + only the tiles you changed.
+let worldSeed = 0; let _rng = 0;
+function seedRng(s){ _rng = (s>>>0) || 1; }
+function rng(){ _rng |= 0; _rng = (_rng + 0x6D2B79F5) | 0; let t = Math.imul(_rng ^ (_rng>>>15), 1 | _rng); t = (t + Math.imul(t ^ (t>>>7), 61 | t)) ^ t; return ((t ^ (t>>>14)) >>> 0) / 4294967296; }
+// Pure world builder: identical output for the same (seed, hasCrystal) — no globals, no Math.random.
+function buildBaseWorld(seed, hasCrystal){
+  seedRng(seed);
+  const w = []; const riverX = Math.floor(MAPW*0.5);
   for(let y=0;y<MAPH;y++){
-    world[y] = [];
+    w[y] = [];
     for(let x=0;x<MAPW;x++){
       const edge = x<2||y<2||x>MAPW-3||y>MAPH-3; const nearRiver = Math.abs(x - (riverX + Math.sin(y*0.15)*4)) < 1.6;
       const lakeDX = x-(MAPW*0.72), lakeDY = y-(MAPH*0.78); const inLake = Math.sqrt(lakeDX*lakeDX+lakeDY*lakeDY) < 6;
-      if (edge || nearRiver || inLake){ world[y][x] = {type:T.WATER, hp:0}; continue; }
-      const b = biomeAt(x,y); const n = Math.random(); let tile = T.GRASS;
+      if (edge || nearRiver || inLake){ w[y][x] = {type:T.WATER, hp:0, timer:0}; continue; }
+      const b = biomeAt(x,y); const n = rng(); let tile = T.GRASS;
       if (b===BIOME.FOREST){ if (n<0.14) tile=T.TREE; else if (n<0.18) tile=T.COAL; else if (n<0.21) tile=T.ROCK; else if (n<0.23) tile=T.IRONROCK; else if (n<0.26) tile=T.BUSH; else if (n<0.29) tile=T.WHEAT; }
       else if (b===BIOME.SNOW){ tile = T.SNOW; if (n<0.12) tile=T.PINE; else if (n<0.155) tile=T.IRONROCK; else if (n<0.18) tile=T.ROCK; }
       else if (b===BIOME.DESERT){ tile = T.SAND; if (n<0.005) tile=T.SKULL; else if (n<0.09) tile=T.CACTUS; else if (n<0.13) tile=T.ROCK; else if (n<0.15) tile=T.IRONROCK; }
       else { if (n<0.06) tile=T.TREE; else if (n<0.09) tile=T.ROCK; else if (n<0.12) tile=T.BUSH; else if (n<0.15) tile=T.WHEAT; }
-      world[y][x] = { type: tile, hp: tileHP(tile), timer: 0 };
+      w[y][x] = { type: tile, hp: tileHP(tile), timer: 0 };
     }
   }
-
-  // Crystal-only content: the central altar + tablet and the single crystal ore. Skipped in survival/challenge.
-  if (worldHasCrystal()){
+  if (hasCrystal){
     const acx = Math.floor(MAPW/2), acy = Math.floor(MAPH/2);
-    for (let y=acy-4; y<=acy+4; y++){
-      for (let x=acx-4; x<=acx+4; x++){
-        if (y<0||y>=MAPH||x<0||x>=MAPW) continue;
-        if (Math.hypot(x-acx, y-acy) <= 4.2){ world[y][x] = { type:T.ALTAR_FLOOR, hp:0, timer:0 }; }
-      }
-    }
-    world[acy][acx] = { type:T.TABLET, hp:tileHP(T.TABLET), timer:0 };
-
-    let placedCrystalOre = false, tries=0;
-    while(!placedCrystalOre && tries<400){
-      tries++;
-      const rx = 4+Math.floor(Math.random()*(MAPW-8)), ry = 4+Math.floor(Math.random()*(MAPH-8));
-      if (Math.hypot(rx-acx, ry-acy) < 10) continue;
-      const t = world[ry][rx];
-      if (t.type===T.GRASS||t.type===T.SAND||t.type===T.SNOW){
-        world[ry][rx] = { type:T.CRYSTAL_ORE, hp:tileHP(T.CRYSTAL_ORE), maxHp:tileHP(T.CRYSTAL_ORE), timer:0 };
-        placedCrystalOre = true;
-      }
-    }
+    for (let y=acy-4; y<=acy+4; y++){ for (let x=acx-4; x<=acx+4; x++){ if (y<0||y>=MAPH||x<0||x>=MAPW) continue; if (Math.hypot(x-acx, y-acy) <= 4.2){ w[y][x] = { type:T.ALTAR_FLOOR, hp:0, timer:0 }; } } }
+    w[acy][acx] = { type:T.TABLET, hp:tileHP(T.TABLET), timer:0 };
+    let placed=false, tries=0;
+    while(!placed && tries<400){ tries++; const rx = 4+Math.floor(rng()*(MAPW-8)), ry = 4+Math.floor(rng()*(MAPH-8));
+      if (Math.hypot(rx-acx, ry-acy) < 10) continue; const t = w[ry][rx];
+      if (t.type===T.GRASS||t.type===T.SAND||t.type===T.SNOW){ w[ry][rx] = { type:T.CRYSTAL_ORE, hp:tileHP(T.CRYSTAL_ORE), maxHp:tileHP(T.CRYSTAL_ORE), timer:0 }; placed=true; } }
   }
-
-  // 2-3 cave entrances scattered on walkable ground
-  let caves=0, ctries=0; const wantCaves=2+Math.floor(Math.random()*2);
-  while (caves<wantCaves && ctries<400){ ctries++;
-    const rx=4+Math.floor(Math.random()*(MAPW-8)), ry=4+Math.floor(Math.random()*(MAPH-8));
-    const t=world[ry][rx];
-    if (t.type===T.GRASS||t.type===T.SAND||t.type===T.SNOW){ world[ry][rx]={type:T.CAVE_IN, hp:tileHP(T.CAVE_IN), timer:0, caveId:'cave'+caves}; caves++; }
-  }
+  let caves=0, ctries=0; const wantCaves=2+Math.floor(rng()*2);
+  while (caves<wantCaves && ctries<400){ ctries++; const rx=4+Math.floor(rng()*(MAPW-8)), ry=4+Math.floor(rng()*(MAPH-8)); const t=w[ry][rx];
+    if (t.type===T.GRASS||t.type===T.SAND||t.type===T.SNOW){ w[ry][rx]={type:T.CAVE_IN, hp:tileHP(T.CAVE_IN), timer:0, caveId:'cave'+caves}; caves++; } }
+  return w;
 }
+function genWorld(){ worldSeed = (Math.random()*0x7fffffff)>>>0; world = buildBaseWorld(worldSeed, worldHasCrystal()); }
 
 function groundColor(b, tileType){
   if (tileType===T.WATER) return '#2a5a8a';
@@ -2224,6 +2213,38 @@ function deserializeWorld(w){
     world[y][x]=tile;
   }
 }
+// Minimal per-tile signature: type + only the fields that can't be derived. Used to diff against the seeded base.
+function tileSig(t){
+  const o={t:t.type}; const hp=tileHP(t.type);
+  if (t.hp!=null && t.hp!==hp) o.hp=t.hp;
+  if (t.maxHp!=null && t.maxHp!==hp) o.m=t.maxHp;
+  const dMax=enemyHitsFor(t.type);
+  if (t.defMax!=null && t.defMax!==dMax) o.dm=t.defMax;
+  if (t.def!=null){ const cur=(t.defMax!=null?t.defMax:dMax); if(t.def!==cur) o.d=t.def; }
+  if (t.shield) o.sh=t.shield; if (t.shieldMax) o.shm=t.shieldMax;
+  if (t.reinforced) o.r=t.reinforced; if (t.stage) o.s=t.stage;
+  if (t.species && t.species!=='wheat') o.sp=t.species; if (t.mature) o.mt=1;
+  return o;
+}
+function tileFromSig(o){
+  const type=o.t; const tile={type,timer:0};
+  tile.hp=(o.hp!=null)?o.hp:tileHP(type);
+  tile.maxHp=(o.m!=null)?o.m:tileHP(type);
+  if (PLAYER_BUILT_TILES.includes(type)){ tile.defMax=(o.dm!=null)?o.dm:enemyHitsFor(type); tile.def=(o.d!=null)?o.d:tile.defMax; }
+  else { if(o.d!=null)tile.def=o.d; if(o.dm!=null)tile.defMax=o.dm; }
+  if(o.sh)tile.shield=o.sh; if(o.shm)tile.shieldMax=o.shm; if(o.r)tile.reinforced=o.r; if(o.s!=null)tile.stage=o.s; if(o.sp)tile.species=o.sp; if(o.mt)tile.mature=true;
+  return tile;
+}
+// Diff the live world against the seeded base -> only the tiles you actually changed. This is the tiny-save core.
+function diffWorld(){
+  const base = buildBaseWorld(worldSeed, worldHasCrystal()); const wd={};
+  for(let y=0;y<MAPH;y++)for(let x=0;x<MAPW;x++){ const i=y*MAPW+x; const cs=tileSig(world[y][x]); if (JSON.stringify(cs)!==JSON.stringify(tileSig(base[y][x]))) wd[i]=cs; }
+  return wd;
+}
+function applyWorldDiff(seed, wd){
+  world = buildBaseWorld(seed>>>0, worldHasCrystal());
+  wd = wd||{}; for(const k in wd){ const i=+k, x=i%MAPW, y=Math.floor(i/MAPW); if(world[y]&&world[y][x]) world[y][x]=tileFromSig(wd[k]); }
+}
 function getSaveIndex(){ try{ return JSON.parse(localStorage.getItem(SAVE_INDEX_KEY)||'[]'); }catch(e){ return []; } }
 function setSaveIndex(idx){ try{ localStorage.setItem(SAVE_INDEX_KEY, JSON.stringify(idx)); }catch(e){} }
 // Build the full save object (shared by localStorage save and the portable save-code).
@@ -2231,14 +2252,20 @@ function buildSaveData(name){
   const playerCopy = JSON.parse(JSON.stringify(Object.assign({}, player, {placingItem:null})));
   if (playerCopy.inv){ for(const k in playerCopy.inv){ if(!playerCopy.inv[k]) delete playerCopy.inv[k]; } }   // drop the many zero entries
   ['speedBoostTimer','efficiencyBoostTimer','slowTimer','sweetTimer','glowTimer','calmTimer','harvestTimer','strengthTimer','moving','moveT'].forEach(k=>{ if(!playerCopy[k]) delete playerCopy[k]; });
-  return { v:1, name, ts:Date.now(), gameMode, dayNum, time, eternalNightDay, eternalNightActive, crystalPlaced, crystalActivated, crystalBonusDays, crystalDevicePos, player:playerCopy, stats:JSON.parse(JSON.stringify(stats)), chests:JSON.parse(JSON.stringify(chests)), world:serializeWorld() };
+  const base = { v:2, name, ts:Date.now(), gameMode, dayNum, time, eternalNightDay, eternalNightActive, crystalPlaced, crystalActivated, crystalBonusDays, crystalDevicePos, challengeStartDay, player:playerCopy, stats:JSON.parse(JSON.stringify(stats)), chests:JSON.parse(JSON.stringify(chests)) };
+  // Tiny format: store the world SEED + only the tiles you changed. Falls back to the full world if anything looks off.
+  try{ base.seed = worldSeed>>>0; base.wd = diffWorld(); }
+  catch(e){ base.world = serializeWorld(); }
+  return base;
 }
 // Restore a save object into the live game (shared by localStorage load and save-code import).
 function applySaveData(data){
   netReset();
   gameMode = data.gameMode||'crystal';
+  if (data.challengeStartDay) challengeStartDay = data.challengeStartDay;
   initEntities();
-  deserializeWorld(data.world);
+  if (data.world) deserializeWorld(data.world);                 // old full-world format
+  else { worldSeed = (data.seed>>>0)||0; applyWorldDiff(worldSeed, data.wd); }   // tiny seed + changed-tiles format
   initPlayer(); const baseInv = player.inv; Object.assign(player, data.player); player.inv = Object.assign(baseInv, data.player.inv||{}); player.placingItem=null;   // merge saved inv over the full zeroed inventory so no key is missing
   dayNum=data.dayNum||1; time=data.time||0; eternalNightDay=data.eternalNightDay||5;
   eternalNightActive=!!data.eternalNightActive; crystalPlaced=!!data.crystalPlaced; crystalActivated=!!data.crystalActivated; crystalBonusDays=data.crystalBonusDays||0; crystalDevicePos=data.crystalDevicePos||null;
