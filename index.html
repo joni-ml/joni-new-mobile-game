@@ -183,7 +183,7 @@ const TOTAL = MAT.length - 1;
    AMB = טמפ' הסביבה. cond = מוליכות חום. radi = קצב איבוד חום לסביבה.
    temp0 = טמפ' התחלתית של חומר כשמניחים אותו. */
 const AMB = 24;
-const cond  = MAT.map(m => ({air:0.03,water:0.14,ice:0.10,stone:0.09,glass:0.11,sand:0.07,lava:0.17,fire:0.22}[m.key] ?? 0.05));
+const cond  = MAT.map(m => ({air:0.03,water:0.10,ice:0.08,stone:0.045,glass:0.06,sand:0.05,lava:0.17,fire:0.22}[m.key] ?? 0.04));
 const radi  = MAT.map(m => ({lava:0.0016,fire:0.02,steam:0.02}[m.key] ?? 0.004));
 const temp0 = MAT.map(m => ({lava:1200,fire:900,ice:-14}[m.key] ?? null));
 
@@ -480,8 +480,8 @@ function paintAt(cx,cy){
     if (dx*dx+dy*dy>rad*rad) continue;
     const x=gx+dx, y=gy+dy; if(!inB(x,y)) continue;
     const i=idx(x,y);
-    if (current==='heat'){ temp[i]=Math.min(1700, temp[i]+70); continue; }
-    if (current==='cool'){ temp[i]=Math.max(-60,  temp[i]-70); continue; }
+    if (current==='heat'){ temp[i]=Math.min(1700, temp[i]+30); continue; }
+    if (current==='cool'){ temp[i]=Math.max(-60,  temp[i]-30); continue; }
     if (current===AIR){ grid[i]=AIR; life[i]=0; aux[i]=0; temp[i]=AMB; continue; }
     if (grid[i]!==AIR && Math.random()>0.9) continue;
     grid[i]=current; life[i]=0; aux[i]=0;
@@ -595,6 +595,7 @@ let last=performance.now(), fr=0, ft=0, acc=0;
 function loop(now){
   const dt=now-last; last=now;
   if(!paused){ acc+=speed; let n=0; while(acc>=1 && n<3){ step(); acc--; n++; } }
+  if(painting) paintAt(ptx,pty);   // החזקה רציפה: ממשיך למרוח/לחמם/לקרר כמו ברז
   render();
   fr++; ft+=dt;
   if(ft>=500){ document.getElementById('fps').textContent=Math.round(fr*1000/ft)+' fps'; fr=0; ft=0; }
