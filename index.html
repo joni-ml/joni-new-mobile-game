@@ -27,12 +27,23 @@
   /* שורת מידע עליונה */
   #topbar {
     position:absolute; top:0; left:0; right:0; z-index:10;
-    display:flex; align-items:center; gap:8px; padding:8px 12px;
+    display:flex; align-items:center; gap:10px; padding:8px 12px;
     padding-top:calc(8px + env(safe-area-inset-top));
     background:linear-gradient(#0d0f14ee, #0d0f1400); pointer-events:none;
   }
-  #topbar .title { font-weight:700; font-size:15px; letter-spacing:.5px; }
-  #topbar .stat  { font-size:12px; opacity:.75; margin-inline-start:auto; direction:ltr; }
+  #topbar .title { font-weight:700; font-size:15px; letter-spacing:.3px; }
+  #topbar .score { font-size:12px; opacity:.85; direction:rtl; }
+  #topbar .fps   { font-size:11px; opacity:.5; margin-inline-start:auto; direction:ltr; }
+
+  /* באנר משימה (המדריך) */
+  #mission {
+    position:absolute; top:calc(42px + env(safe-area-inset-top)); left:10px; right:10px;
+    z-index:10; background:rgba(20,26,38,0.92); border:1px solid #33608a;
+    border-radius:12px; padding:8px 12px; font-size:13px; line-height:1.4;
+    box-shadow:0 6px 14px rgba(0,0,0,.4); transition:.25s;
+  }
+  #mission b { color:#6cc0ff; }
+  #mission.done { border-color:#5ec27a; background:rgba(22,40,28,.94); }
 
   /* לוח כלים תחתון */
   #toolbar {
@@ -40,19 +51,18 @@
     padding:6px 6px calc(6px + env(safe-area-inset-bottom));
     display:flex; flex-direction:column; gap:6px;
   }
-  #materials {
-    display:flex; gap:6px; overflow-x:auto; padding:2px;
-    scrollbar-width:none;
-  }
+  #materials { display:flex; gap:6px; overflow-x:auto; padding:2px; scrollbar-width:none; }
   #materials::-webkit-scrollbar { display:none; }
   .mat {
-    flex:0 0 auto; width:60px; height:56px; border-radius:12px;
+    flex:0 0 auto; width:58px; height:56px; border-radius:12px;
     border:2px solid #2a2f3a; background:#1b1f28; color:#e8e0c8;
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     gap:3px; font-size:11px; font-weight:600; cursor:pointer; transition:.12s;
   }
   .mat .dot { width:20px; height:20px; border-radius:6px; border:1px solid #0006; }
   .mat.active { border-color:#e8e0c8; background:#262b36; transform:translateY(-2px); }
+  .mat.pop { animation:pop .4s; }
+  @keyframes pop { 0%{transform:scale(.5)} 60%{transform:scale(1.15)} 100%{transform:scale(1)} }
 
   #controls { display:flex; align-items:center; gap:8px; padding:0 2px; }
   #controls button {
@@ -62,12 +72,34 @@
   }
   #controls button:active { background:#2a2f3a; }
   #controls .brush { display:flex; align-items:center; gap:6px; margin-inline-start:auto; font-size:12px; }
-  #controls input[type=range] { width:100px; accent-color:#d69a3e; }
+  #controls input[type=range] { width:92px; accent-color:#d69a3e; }
+
+  /* פדיה */
+  #pedia {
+    position:absolute; inset:0; z-index:40; background:rgba(8,10,16,.96);
+    display:none; flex-direction:column; padding:16px;
+    padding-top:calc(16px + env(safe-area-inset-top));
+  }
+  #pedia.open { display:flex; }
+  #pedia h2 { font-size:18px; margin-bottom:4px; }
+  #pedia .sub { font-size:12px; opacity:.6; margin-bottom:12px; }
+  #pediaGrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+               gap:8px; overflow-y:auto; }
+  .pcard { display:flex; gap:8px; align-items:center; background:#161b25;
+           border:1px solid #2a2f3a; border-radius:10px; padding:8px 10px; }
+  .pcard .dot { width:26px; height:26px; border-radius:7px; flex:0 0 auto; border:1px solid #0006; }
+  .pcard .nm { font-size:13px; font-weight:700; }
+  .pcard .rc { font-size:11px; opacity:.7; }
+  .pcard.locked { opacity:.5; }
+  .pcard.locked .dot { background:#222!important; display:flex; align-items:center; justify-content:center; font-size:15px; }
+  #pediaClose { margin-top:12px; align-self:center; height:42px; padding:0 24px;
+     border-radius:12px; border:1px solid #33608a; background:#1b2634; color:#e8e0c8;
+     font-size:15px; font-weight:700; cursor:pointer; }
 
   #toast {
-    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-    background:#000c; padding:10px 18px; border-radius:12px; font-size:14px;
-    opacity:0; transition:opacity .3s; pointer-events:none; z-index:30;
+    position:absolute; top:52%; left:50%; transform:translate(-50%,-50%);
+    background:#000d; padding:10px 18px; border-radius:12px; font-size:15px; font-weight:700;
+    opacity:0; transition:opacity .3s; pointer-events:none; z-index:30; text-align:center;
   }
   #toast.show { opacity:1; }
 </style>
@@ -77,347 +109,499 @@
     <canvas id="game"></canvas>
     <div id="topbar">
       <span class="title">🏖️ ארגז חול</span>
-      <span class="stat" id="fps"></span>
+      <span class="score" id="score">🔬 3/16 &nbsp; ⭐ 0</span>
+      <span class="fps" id="fps"></span>
     </div>
+    <div id="mission">🧑‍🔬 <b>המדריך:</b> <span id="missionText">…</span></div>
     <div id="toast"></div>
+
+    <!-- פדיה: כל החומרים והמתכונים -->
+    <div id="pedia">
+      <h2>📖 פדיית החומרים</h2>
+      <div class="sub">מה שגילית — ואיך מכינים את מה שעוד לא. הכל דרך ניסוי, בלי כסף.</div>
+      <div id="pediaGrid"></div>
+      <button id="pediaClose">סגור</button>
+    </div>
   </div>
 
   <div id="toolbar">
-    <div id="materials"><!-- כפתורי חומרים נוצרים ב-JS --></div>
+    <div id="materials"></div>
     <div id="controls">
-      <button id="btnClear">🗑️ נקה</button>
-      <button id="btnPause">⏸️ עצור</button>
-      <button id="btnSave">💾 שמור</button>
-      <button id="btnLoad">📂 טען</button>
-      <label class="brush">מברשת
-        <input id="brush" type="range" min="1" max="14" value="4">
-      </label>
+      <button id="btnPedia">📖 פדיה</button>
+      <button id="btnPause">⏸️</button>
+      <button id="btnSave">💾</button>
+      <button id="btnClear">🗑️</button>
+      <label class="brush">מברשת <input id="brush" type="range" min="1" max="12" value="3"></label>
     </div>
   </div>
 
 <script>
 /* =========================================================================
-   ארגז חול — מנוע פיזיקה של חול נופל (Falling-Sand / Cellular Automata)
-   כל תא ברשת הוא חומר. בכל פריים אנחנו עוברים על הרשת ומזיזים חומרים
-   לפי חוקים פשוטים (כובד, נזילות, צפיפות). מכאן נולדת "פיזיקה".
+   ארגז חול — מנוע פיזיקה + גילויים
+   מתחילים ב-3 חומרי יסוד (מים/אדמה/אבן). שאר החומרים מתגלים דרך תגובות
+   בין חומרים (חיבורים) וצמיחה. כל גילוי חדש נפתח בלוח ובפדיה. בלי כסף.
    ========================================================================= */
 
-/* ---------- הגדרת החומרים ----------
-   כל חומר: שם בעברית, צבע, וסוג התנהגות.
-   type: 'static' לא זז | 'powder' אבקה (חול) | 'liquid' נוזל | 'gas' גז
-   density: מי כבד יותר שוקע. flammable: נדלק. dissolvable: חומצה ממיסה. */
+/* ---------- טבלת החומרים ----------
+   type: empty|static|powder|liquid|gas   density: כבד יותר שוקע
+   grow: משתתף בצמיחה   flam: דליק   base: זמין מההתחלה
+   pedia: איך מכינים (לתצוגה בפדיה) */
 const MAT = [
-  { id:0,  key:'air',   name:'אוויר',  color:[5,7,12],     type:'empty'  },
-  { id:1,  key:'wall',  name:'קיר',    color:[90,96,110],  type:'static' },
-  { id:2,  key:'sand',  name:'חול',    color:[224,196,120],type:'powder', density:5, dissolvable:true },
-  { id:3,  key:'water', name:'מים',    color:[64,132,214],  type:'liquid', density:2, dissolvable:false },
-  { id:4,  key:'stone', name:'אבן',    color:[120,120,128],type:'static', dissolvable:true },
-  { id:5,  key:'wood',  name:'עץ',     color:[122,80,44],  type:'static', flammable:true, dissolvable:true },
-  { id:6,  key:'fire',  name:'אש',     color:[240,120,30], type:'gas',    life:60 },
-  { id:7,  key:'acid',  name:'חומצה',  color:[150,230,60],  type:'liquid', density:2, dissolvable:false, acid:true },
-  { id:8,  key:'oil',   name:'שמן',    color:[60,42,58],   type:'liquid', density:1, flammable:true, dissolvable:true },
-  { id:9,  key:'steam', name:'אדים',   color:[190,200,210],type:'gas',    life:120, dissolvable:false },
-  { id:10, key:'salt',  name:'מלח',    color:[235,235,240],type:'powder', density:4, dissolvable:true },
+  { key:'air',    name:'אוויר',  color:[5,7,12],      type:'empty'  },
+  { key:'stone',  name:'אבן',    color:[120,120,128], type:'static', base:true, pedia:'חומר יסוד' },
+  { key:'water',  name:'מים',    color:[64,132,214],  type:'liquid', density:2, base:true, pedia:'חומר יסוד' },
+  { key:'earth',  name:'אדמה',   color:[112,78,46],   type:'powder', density:5, base:true, pedia:'חומר יסוד' },
+  { key:'mud',    name:'בוץ',    color:[80,56,36],    type:'powder', density:4, pedia:'💧 מים + 🟫 אדמה' },
+  { key:'sand',   name:'חול',    color:[224,196,120], type:'powder', density:5, pedia:'מים שוחקים 🪨 אבן' },
+  { key:'wood',   name:'עץ',     color:[120,78,44],   type:'static', flam:true, pedia:'צומח מ🟤 בוץ' },
+  { key:'sprout', name:'נבט',    color:[95,185,75],   type:'static', flam:true, grow:true, pedia:'מופיע על בוץ לח' },
+  { key:'leaf',   name:'עלה',    color:[74,158,58],   type:'static', flam:true, pedia:'גדל על העץ' },
+  { key:'flower', name:'פרח',    color:[232,92,140],  type:'static', flam:true, pedia:'עץ בוגר מוציא פרח' },
+  { key:'seedT',  name:'זרע-עץ', color:[150,108,58],  type:'powder', density:3, flam:true, pedia:'נופל מפרח 🌸' },
+  { key:'seedF',  name:'זרע-פרח',color:[205,150,70],  type:'powder', density:3, flam:true, pedia:'נופל מפרח 🌸' },
+  { key:'fire',   name:'אש',     color:[240,120,30],  type:'gas',    life:55, pedia:'המקום לוהט — 🌳 עץ נדלק' },
+  { key:'steam',  name:'אדים',   color:[190,200,210], type:'gas',    life:120, pedia:'🔥 אש + 💧 מים' },
+  { key:'ash',    name:'אפר',    color:[92,90,96],    type:'powder', density:3, pedia:'נשאר אחרי שריפה' },
+  { key:'glass',  name:'זכוכית', color:[172,212,226], type:'static', pedia:'🏖️ חול + 🔥 אש' },
+  { key:'lava',   name:'לבה',    color:[232,92,30],   type:'liquid', density:3, hot:true, pedia:'🪨 אבן + 🔥 אש (נמסה)' },
 ];
-const byKey = {}; MAT.forEach(m => byKey[m.key] = m);
-const AIR=0, FIRE=6, ACID=7, STEAM=9, WATER=3;
+// אינדקסים נוחים
+const ID = {}; MAT.forEach((m,i)=>{ m.id=i; ID[m.key]=i; });
+const AIR=ID.air, STONE=ID.stone, WATER=ID.water, EARTH=ID.earth, MUD=ID.mud,
+      SAND=ID.sand, WOOD=ID.wood, SPROUT=ID.sprout, LEAF=ID.leaf, FLOWER=ID.flower,
+      SEEDT=ID.seedT, SEEDF=ID.seedF, FIRE=ID.fire, STEAM=ID.steam, ASH=ID.ash,
+      GLASS=ID.glass, LAVA=ID.lava;
+const TOTAL = MAT.length - 1; // בלי אוויר
 
-/* ---------- Canvas ותשתית רשת ---------- */
+/* ---------- Canvas ורשת ---------- */
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d', { alpha:false });
-const buf = document.createElement('canvas');       // קנבס פנימי בגודל הרשת
+const buf = document.createElement('canvas');
 const bctx = buf.getContext('2d', { alpha:false });
-
-const SCALE = 5;            // כמה פיקסלים במסך לכל תא (רזולוציה)
-let W, H;                   // רוחב/גובה הרשת בתאים
-let grid, life, img;        // מצב + טיימרים + תמונת פיקסלים
+const SCALE = 5;
+let W, H, grid, life, aux, img;   // grid=חומר, life=טיימר/גובה, aux=קירור צמיחה
 
 function setup() {
   const stage = document.getElementById('stage');
   const cssW = stage.clientWidth, cssH = stage.clientHeight;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-
   W = Math.max(40, Math.floor(cssW / SCALE));
   H = Math.max(40, Math.floor(cssH / SCALE));
-
   buf.width = W; buf.height = H;
   img = bctx.createImageData(W, H);
-
   canvas.width  = Math.floor(cssW * dpr);
   canvas.height = Math.floor(cssH * dpr);
   ctx.imageSmoothingEnabled = false;
-
-  grid = new Uint8Array(W * H);   // מצב כל התאים (מזהה חומר)
-  life = new Uint8Array(W * H);   // טיימרים (לאש/אדים)
+  grid = new Uint8Array(W*H);
+  life = new Uint8Array(W*H);
+  aux  = new Uint8Array(W*H);
 }
+const idx = (x,y) => y*W + x;
+const inB = (x,y) => x>=0 && x<W && y>=0 && y<H;
 
-const idx = (x,y) => y * W + x;
-const inBounds = (x,y) => x>=0 && x<W && y>=0 && y<H;
+/* ---------- מצב משחק ---------- */
+let current = WATER, brush = 3, paused = false;
+let painting = false, ptx=0, pty=0;
+let score = 0;
+const found = new Uint8Array(MAT.length);      // מה שגילינו
+MAT.forEach(m => { if (m.base) found[m.id] = 1; });
+let foundCount = 3;
 
-/* ---------- כלים ומצב משחק ---------- */
-let current = byKey.sand.id;   // החומר הנבחר
-let brush = 4;
-let paused = false;
-let painting = false, px=0, py=0;
-
-/* ---------- ציור החומרים ל-canvas ---------- */
+/* ---------- ציור ---------- */
 function render() {
   const d = img.data;
   for (let i=0; i<grid.length; i++) {
-    const m = MAT[grid[i]];
-    let c = m.color;
-    // ריצוד קטן לאש כדי שתיראה חיה
-    if (m.id === FIRE) {
-      const f = 0.6 + Math.random()*0.4;
-      d[i*4]=Math.min(255,c[0]*f+40); d[i*4+1]=c[1]*f; d[i*4+2]=c[2]*f*0.5;
-    } else {
-      d[i*4]=c[0]; d[i*4+1]=c[1]; d[i*4+2]=c[2];
-    }
+    const id = grid[i]; const c = MAT[id].color;
+    if (id===FIRE || id===LAVA) {           // ריצוד חם
+      const f = 0.65 + Math.random()*0.35;
+      d[i*4]=Math.min(255,c[0]*f+30); d[i*4+1]=c[1]*f; d[i*4+2]=c[2]*f*0.6;
+    } else { d[i*4]=c[0]; d[i*4+1]=c[1]; d[i*4+2]=c[2]; }
     d[i*4+3]=255;
   }
-  bctx.putImageData(img, 0, 0);
-  ctx.drawImage(buf, 0, 0, canvas.width, canvas.height);
+  bctx.putImageData(img,0,0);
+  ctx.drawImage(buf,0,0,canvas.width,canvas.height);
 }
 
-/* ---------- עזרי תנועה ---------- */
-function swap(a, b) { const t=grid[a]; grid[a]=grid[b]; grid[b]=t;
-                      const l=life[a]; life[a]=life[b]; life[b]=l; }
-function density(id){ return MAT[id].density || 0; }
+/* ---------- עזרים ---------- */
+function swap(a,b){ const t=grid[a];grid[a]=grid[b];grid[b]=t;
+                    const l=life[a];life[a]=life[b];life[b]=l;
+                    const x=aux[a];aux[a]=aux[b];aux[b]=x; }
+function density(id){ return MAT[id].density||0; }
+function setCell(i,id){ grid[i]=id; life[i]=0; aux[i]=0; discover(id); }
 
-/* ---------- לב המנוע: עדכון פיזיקה ---------- */
-let flip = false;
-function step() {
-  // מלמטה למעלה, כי כובד. מחליפים כיוון סריקה אופקי כל פריים למניעת הטיה.
-  flip = !flip;
-  for (let y = H-1; y >= 0; y--) {
-    for (let k = 0; k < W; k++) {
+/* ---------- לב המנוע ---------- */
+let flip=false;
+function step(){
+  flip=!flip;
+  for (let y=H-1; y>=0; y--){
+    for (let k=0; k<W; k++){
       const x = flip ? k : (W-1-k);
       const i = idx(x,y);
-      const id = grid[i];
-      if (id === AIR) continue;
-      const m = MAT[id];
-
-      switch (m.type) {
-        case 'powder': updatePowder(x,y,i,id); break;
-        case 'liquid': updateLiquid(x,y,i,id,m); break;
-        case 'gas':    updateGas(x,y,i,id,m);   break;
-        // static לא זז (אבל אולי נדלק — מטופל ע"י אש/חומצה)
+      let id = grid[i];
+      if (id===AIR) continue;
+      if (react(x,y,i,id)) continue;   // תגובות/צמיחה (יכול לשנות את התא)
+      id = grid[i];
+      switch (MAT[id].type){
+        case 'powder': movePowder(x,y,i,id); break;
+        case 'liquid': moveLiquid(x,y,i,id); break;
+        case 'gas':    moveGas(x,y,i,id);    break;
       }
     }
   }
 }
 
-// אבקה: נופלת למטה, ואם חסום — באלכסון. שוקעת דרך נוזל קל יותר.
-function updatePowder(x,y,i,id){
-  const below = y+1<H ? idx(x,y+1) : -1;
-  if (below>=0 && canSink(id, grid[below])) { swap(i,below); return; }
-  const dir = Math.random()<0.5 ? 1 : -1;
-  for (const dx of [dir,-dir]) {
-    const nx=x+dx;
-    if (nx>=0 && nx<W && y+1<H) {
-      const d = idx(nx,y+1);
-      if (canSink(id, grid[d])) { swap(i,d); return; }
-    }
+/* ===== תגובות וכימיה — כאן קורה הקסם של החיבורים ===== */
+const NEI4 = [[1,0],[-1,0],[0,1],[0,-1]];
+function react(x,y,i,id){
+  switch(id){
+    case WATER:  return reactWater(x,y,i);
+    case MUD:    return reactMud(x,y,i);
+    case SPROUT: return growSprout(x,y,i);
+    case SEEDT:  return reactSeed(x,y,i,true);
+    case SEEDF:  return reactSeed(x,y,i,false);
+    case FLOWER: return reactFlower(x,y,i);
+    case WOOD:   return reactWood(x,y,i);
+    case FIRE:   return updateFire(x,y,i);
+    case LAVA:   return reactLava(x,y,i);
+    case SAND:   return reactSand(x,y,i);
+    case ASH:    return reactAsh(x,y,i);
   }
+  return false;
 }
 
-// נוזל: למטה, אלכסון, ואז זרימה הצידה.
-function updateLiquid(x,y,i,id,m){
-  if (m.acid && tryAcid(x,y,i)) return;   // חומצה ממיסה שכנים
-  const below = y+1<H ? idx(x,y+1) : -1;
-  if (below>=0 && canSink(id, grid[below])) { swap(i,below); return; }
-  const dir = Math.random()<0.5 ? 1 : -1;
-  for (const dx of [dir,-dir]) {
-    const nx=x+dx;
-    if (nx>=0 && nx<W && y+1<H) {
-      const d=idx(nx,y+1);
-      if (canSink(id, grid[d])) { swap(i,d); return; }
-    }
+// מים: הופכים אדמה לבוץ, שוחקים אבן לחול. (הופכים לאדים ליד אש/לבה — שם מטופל)
+function reactWater(x,y,i){
+  for (const [dx,dy] of NEI4){
+    const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
+    const j=idx(nx,ny), n=grid[j];
+    if (n===EARTH && Math.random()<0.22){ setCell(j,MUD); }
+    else if (n===STONE && Math.random()<0.0018){ setCell(j,SAND); }
   }
-  // זרימה אופקית
-  for (const dx of [dir,-dir]) {
-    const nx=x+dx;
-    if (nx>=0 && nx<W) {
-      const s=idx(nx,y);
-      if (grid[s]===AIR) { swap(i,s); return; }
-    }
-  }
+  return false; // המים ממשיכים לזרום
 }
 
-// גז: עולה, מתפזר, ובסוף מתפוגג.
-function updateGas(x,y,i,id,m){
-  if (id===FIRE) { updateFire(x,y,i); return; }
-  // אדים / גז כללי
-  if (life[i]===0) life[i]=m.life;
-  if (--life[i]<=1){ grid[i]=AIR; life[i]=0; return; }
-  const above = y-1>=0 ? idx(x,y-1) : -1;
-  if (above>=0 && grid[above]===AIR){ swap(i,above); return; }
-  const dir = Math.random()<0.5?1:-1;
-  const nx=x+dir;
-  if (nx>=0&&nx<W){ const s=idx(nx,y); if (grid[s]===AIR){ swap(i,s); return; } }
+// בוץ: כשהוא נח על הקרקע וחשוף לשמיים — מצמיח נבט 🌱
+function reactMud(x,y,i){
+  const below = y+1<H ? grid[idx(x,y+1)] : STONE;
+  const aboveIsAir = y-1>=0 && grid[idx(x,y-1)]===AIR;
+  if (below!==AIR && aboveIsAir && Math.random()<0.0022){
+    const a=idx(x,y-1);
+    grid[a]=SPROUT; life[a]=10+Math.floor(Math.random()*12); aux[a]=6;
+    discover(SPROUT);
+    return false;
+  }
+  return false; // בוץ עדיין נופל כאבקה
 }
 
-// אש: חיה זמן מוגבל, מדליקה עץ/שמן שכנים, הופכת מים לאדים, ועולה.
+// נבט: גדל כלפי מעלה, משאיר עץ 🌳, לפעמים עלה, ובסוף פרח 🌸
+const GROW_DELAY = 7;
+function growSprout(x,y,i){
+  if (aux[i] > 0){ aux[i]--; return true; }          // קירור בין צעדי גדילה
+  const a = y-1>=0 ? idx(x,y-1) : -1;
+  if (life[i] > 1 && a>=0 && grid[a]===AIR){
+    grid[a]=SPROUT; life[a]=life[i]-1; aux[a]=GROW_DELAY;   // הנבט מטפס
+    grid[i]=WOOD; life[i]=0; discover(WOOD);
+    if (Math.random()<0.35){                                // עלה לצד
+      const sx = x + (Math.random()<0.5?1:-1);
+      if (sx>=0 && sx<W && grid[idx(x-0,y)]!==undefined){
+        const s=idx(sx,y); if (grid[s]===AIR){ grid[s]=LEAF; discover(LEAF); }
+      }
+    }
+  } else {
+    grid[i]=FLOWER; life[i]=0; discover(FLOWER);            // הגיע לראש → פרח
+  }
+  return true;
+}
+
+// זרע: נופל, ועל בוץ לח — נובט (עץ או פרח)
+function reactSeed(x,y,i,isTree){
+  const below = y+1<H ? grid[idx(x,y+1)] : AIR;
+  if (below===MUD){
+    grid[i]=SPROUT; aux[i]=GROW_DELAY;
+    life[i] = isTree ? 12+Math.floor(Math.random()*10) : 3+Math.floor(Math.random()*2);
+    discover(SPROUT);
+    return true;
+  }
+  return false; // ממשיך ליפול
+}
+
+// פרח: מדי פעם משחרר זרע 🌰 (עץ או פרח)
+function reactFlower(x,y,i){
+  if (Math.random()<0.0045){
+    for (const [dx,dy] of [[0,-1],[1,0],[-1,0]]){
+      const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
+      const j=idx(nx,ny);
+      if (grid[j]===AIR){
+        const t = Math.random()<0.5;
+        grid[j]= t?SEEDT:SEEDF; discover(t?SEEDT:SEEDF);
+        break;
+      }
+    }
+  }
+  return true; // הפרח נשאר במקום
+}
+
+// עץ: המקום לוהט — לפני שגילינו אש, עץ עלול להתלקח מעצמו 🔥
+function reactWood(x,y,i){
+  if (!found[FIRE] && Math.random()<0.0016){
+    grid[i]=FIRE; life[i]=MAT[FIRE].life; discover(FIRE);
+  }
+  return true; // עץ לא זז
+}
+
+// אש: מדליקה דליקים, הופכת מים לאדים, ממיסה אבן ללבה, ובסוף אפר
 function updateFire(x,y,i){
   if (life[i]===0) life[i]=MAT[FIRE].life;
-  // השפעה על שכנים
   for (const [dx,dy] of NEI4){
-    const nx=x+dx, ny=y+dy;
-    if (!inBounds(nx,ny)) continue;
-    const j=idx(nx,ny), nid=grid[j];
-    if (MAT[nid].flammable && Math.random()<0.25){ grid[j]=FIRE; life[j]=MAT[FIRE].life; }
-    else if (nid===WATER && Math.random()<0.5){ grid[j]=STEAM; life[j]=MAT[STEAM].life; grid[i]=AIR; life[i]=0; return; }
+    const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
+    const j=idx(nx,ny), n=grid[j];
+    if (MAT[n].flam && Math.random()<0.22){ grid[j]=FIRE; life[j]=MAT[FIRE].life; }
+    else if (n===WATER && Math.random()<0.5){ grid[j]=STEAM; life[j]=MAT[STEAM].life; discover(STEAM);
+                                              grid[i]=AIR; life[i]=0; return true; }
+    else if (n===SAND  && Math.random()<0.25){ grid[j]=GLASS; discover(GLASS); }
+    else if (n===STONE && Math.random()<0.004){ grid[j]=LAVA; discover(LAVA); }
   }
-  if (--life[i]<=1){ grid[i] = Math.random()<0.3 ? STEAM : AIR; life[i]= grid[i]===STEAM?MAT[STEAM].life:0; return; }
-  // עולה קצת
-  const above = y-1>=0?idx(x,y-1):-1;
-  if (above>=0 && grid[above]===AIR && Math.random()<0.6){ swap(i,above); }
+  if (--life[i] <= 1){
+    if (Math.random()<0.35){ grid[i]=ASH; life[i]=0; discover(ASH); }
+    else { grid[i] = Math.random()<0.3?STEAM:AIR; life[i]= grid[i]===STEAM?MAT[STEAM].life:0; }
+    return true;
+  }
+  const a = y-1>=0?idx(x,y-1):-1;                 // עולה
+  if (a>=0 && grid[a]===AIR && Math.random()<0.6) swap(i,a);
+  return true;
 }
-const NEI4 = [[1,0],[-1,0],[0,1],[0,-1]];
 
-// חומצה: מנסה להמיס שכן שניתן להמסה. גם היא מתכלה עם הזמן.
-function tryAcid(x,y,i){
+// לבה: מתקררת לאבן ליד מים (+אדים), מדליקה דליקים, ומתקררת עם הזמן
+function reactLava(x,y,i){
   for (const [dx,dy] of NEI4){
-    const nx=x+dx, ny=y+dy;
-    if (!inBounds(nx,ny)) continue;
-    const j=idx(nx,ny);
-    if (MAT[grid[j]].dissolvable && Math.random()<0.14){
-      grid[j]=AIR;
-      if (Math.random()<0.4){ grid[i]=AIR; return true; } // לפעמים החומצה נגמרת
-    }
+    const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
+    const j=idx(nx,ny), n=grid[j];
+    if (n===WATER){ grid[j]=STEAM; life[j]=MAT[STEAM].life; discover(STEAM);
+                    grid[i]=STONE; life[i]=0; return true; }
+    else if (MAT[n].flam && Math.random()<0.3){ grid[j]=FIRE; life[j]=MAT[FIRE].life; discover(FIRE); }
+  }
+  if (Math.random()<0.0025){ grid[i]=STONE; return true; }
+  return false; // אחרת זורמת כנוזל
+}
+
+// חול: ליד אש/לבה → זכוכית 🔮
+function reactSand(x,y,i){
+  for (const [dx,dy] of NEI4){
+    const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
+    const n=grid[idx(nx,ny)];
+    if ((n===FIRE||n===LAVA) && Math.random()<0.06){ grid[i]=GLASS; discover(GLASS); return true; }
   }
   return false;
 }
 
-// האם 'moving' יכול לשקוע לתוך 'target' (אוויר, או נוזל קל יותר)?
-function canSink(moving, target){
-  if (target===AIR) return true;
-  const tm=MAT[target];
-  if ((tm.type==='liquid'||tm.type==='gas') && density(moving) > density(target)) return true;
+// אפר: ליד מים → אדמה פורייה (מחזור החיים)
+function reactAsh(x,y,i){
+  for (const [dx,dy] of NEI4){
+    const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
+    if (grid[idx(nx,ny)]===WATER && Math.random()<0.05){ grid[i]=EARTH; return true; }
+  }
   return false;
 }
 
-/* ---------- קלט מגע/עכבר ---------- */
-function paintAt(clientX, clientY){
-  const r = canvas.getBoundingClientRect();
-  const gx = Math.floor((clientX - r.left) / r.width  * W);
-  const gy = Math.floor((clientY - r.top ) / r.height * H);
-  const rad = brush;
-  for (let dy=-rad; dy<=rad; dy++)
-    for (let dx=-rad; dx<=rad; dx++){
-      if (dx*dx+dy*dy > rad*rad) continue;
-      const x=gx+dx, y=gy+dy;
-      if (!inBounds(x,y)) continue;
-      const i=idx(x,y);
-      // ציור: לא דורסים קירות בטעות עם אוויר? מותר למחוק הכל.
-      if (current===AIR){ grid[i]=AIR; life[i]=0; }
-      else if (grid[i]===AIR || current===AIR || Math.random()<0.9){ grid[i]=current; life[i]=0; }
-    }
+/* ===== תנועה (פיזיקה) ===== */
+function canSink(mv,tg){
+  if (tg===AIR) return true;
+  const t=MAT[tg];
+  return (t.type==='liquid'||t.type==='gas') && density(mv)>density(tg);
 }
-function pos(e){ const t = e.touches ? e.touches[0] : e; return [t.clientX, t.clientY]; }
-function down(e){ e.preventDefault(); painting=true; [px,py]=pos(e); paintAt(px,py); }
+function movePowder(x,y,i,id){
+  if (y+1<H){ const b=idx(x,y+1); if (canSink(id,grid[b])){ swap(i,b); return; } }
+  const dir=Math.random()<0.5?1:-1;
+  for (const dx of [dir,-dir]){ const nx=x+dx;
+    if (nx>=0&&nx<W&&y+1<H){ const d=idx(nx,y+1); if(canSink(id,grid[d])){ swap(i,d); return; } } }
+}
+function moveLiquid(x,y,i,id){
+  if (y+1<H){ const b=idx(x,y+1); if (canSink(id,grid[b])){ swap(i,b); return; } }
+  const dir=Math.random()<0.5?1:-1;
+  for (const dx of [dir,-dir]){ const nx=x+dx;
+    if (nx>=0&&nx<W&&y+1<H){ const d=idx(nx,y+1); if(canSink(id,grid[d])){ swap(i,d); return; } } }
+  for (const dx of [dir,-dir]){ const nx=x+dx;
+    if (nx>=0&&nx<W){ const s=idx(nx,y); if(grid[s]===AIR){ swap(i,s); return; } } }
+}
+function moveGas(x,y,i,id){
+  if (life[i]===0) life[i]=MAT[id].life;
+  if (--life[i]<=1){ grid[i]=AIR; life[i]=0; return; }
+  if (y-1>=0){ const a=idx(x,y-1); if(grid[a]===AIR){ swap(i,a); return; } }
+  const dir=Math.random()<0.5?1:-1, nx=x+dir;
+  if (nx>=0&&nx<W){ const s=idx(nx,y); if(grid[s]===AIR){ swap(i,s); return; } }
+}
+
+/* ===== גילוי חומר חדש ===== */
+function discover(id){
+  if (found[id]) return;
+  found[id]=1; foundCount++; score+=100;
+  updateScore();
+  buildPalette(id);        // מוסיף כפתור חדש (עם אנימציה)
+  buildPedia();
+  toast('🔬 גילית: '+MAT[id].name+'!');
+  checkMissions(id);
+}
+function updateScore(){
+  document.getElementById('score').innerHTML =
+    `🔬 ${foundCount}/${TOTAL} &nbsp; ⭐ ${score}`;
+}
+
+/* ===== משימות המדריך ===== */
+const MISSIONS = [
+  { t:'שים 🟫 אדמה ליד 💧 מים — וצור בוץ.',            ok:id=>id===MUD },
+  { t:'תן לבוץ לנוח על הקרקע — 🌱 נבט יופיע. חכה רגע.', ok:id=>id===SPROUT },
+  { t:'תן לנבט לגדול — עד שיהיה 🌳 עץ שלם.',           ok:id=>id===WOOD },
+  { t:'עץ בוגר מוציא 🌸 פרח בראש. מצא אותו.',          ok:id=>id===FLOWER },
+  { t:'פרח משחרר 🌰 זרעים. תפוס אחד.',                 ok:id=>id===SEEDT||id===SEEDF },
+  { t:'⚠️ המקום כאן לוהט… שים לב מה קורה לעץ. 🔥',      ok:id=>id===FIRE },
+  { t:'כבה אש עם 💧 מים — וקבל 💨 אדים.',              ok:id=>id===STEAM },
+  { t:'מים זורמים על 🪨 אבן שוחקים אותה ל🏖️ חול.',     ok:id=>id===SAND },
+  { t:'חמם 🏖️ חול עם 🔥 אש — תקבל 🔮 זכוכית.',         ok:id=>id===GLASS },
+  { t:'חמם 🪨 אבן עד שתימס — ל🌋 לבה.',                ok:id=>id===LAVA },
+];
+let mi = 0;
+function showMission(){
+  const el=document.getElementById('mission'), tx=document.getElementById('missionText');
+  el.classList.remove('done');
+  tx.textContent = mi<MISSIONS.length ? MISSIONS[mi].t : '🎉 גילית הכל! עכשיו פשוט תיצור ותשחק.';
+}
+function checkMissions(id){
+  if (mi<MISSIONS.length && MISSIONS[mi].ok(id)){
+    const el=document.getElementById('mission');
+    el.classList.add('done');
+    document.getElementById('missionText').textContent='✓ כל הכבוד! משימה הושלמה.';
+    mi++;
+    setTimeout(showMission, 1600);
+  }
+}
+
+/* ===== קלט ===== */
+function paintAt(cx,cy){
+  const r=canvas.getBoundingClientRect();
+  const gx=Math.floor((cx-r.left)/r.width*W), gy=Math.floor((cy-r.top)/r.height*H);
+  const rad=brush;
+  for (let dy=-rad; dy<=rad; dy++) for (let dx=-rad; dx<=rad; dx++){
+    if (dx*dx+dy*dy>rad*rad) continue;
+    const x=gx+dx, y=gy+dy; if(!inB(x,y)) continue;
+    const i=idx(x,y);
+    if (current===AIR){ grid[i]=AIR; life[i]=0; aux[i]=0; continue; }
+    if (grid[i]!==AIR && Math.random()>0.9) continue;
+    grid[i]=current; life[i]=0; aux[i]=0;
+    if (current===FIRE) life[i]=MAT[FIRE].life;
+    else if (current===SPROUT){ life[i]=12+Math.floor(Math.random()*10); aux[i]=0; }
+  }
+}
+function pos(e){ const t=e.touches?e.touches[0]:e; return [t.clientX,t.clientY]; }
+function down(e){ e.preventDefault(); painting=true; [ptx,pty]=pos(e); paintAt(ptx,pty); }
 function move(e){ if(!painting) return; e.preventDefault(); const [x,y]=pos(e);
-  // מילוי הקו בין נקודות כדי שלא יהיו חורים בגרירה מהירה
-  const steps=Math.max(1, Math.hypot(x-px,y-py)/3);
-  for (let s=0;s<=steps;s++) paintAt(px+(x-px)*s/steps, py+(y-py)*s/steps);
-  px=x; py=y;
-}
+  const steps=Math.max(1,Math.hypot(x-ptx,y-pty)/3);
+  for (let s=0;s<=steps;s++) paintAt(ptx+(x-ptx)*s/steps, pty+(y-pty)*s/steps);
+  ptx=x; pty=y; }
 function up(){ painting=false; }
-canvas.addEventListener('touchstart', down, {passive:false});
-canvas.addEventListener('touchmove',  move, {passive:false});
-canvas.addEventListener('touchend',   up);
-canvas.addEventListener('mousedown',  down);
-canvas.addEventListener('mousemove',  move);
-window.addEventListener('mouseup',    up);
+canvas.addEventListener('touchstart',down,{passive:false});
+canvas.addEventListener('touchmove', move,{passive:false});
+canvas.addEventListener('touchend',  up);
+canvas.addEventListener('mousedown', down);
+canvas.addEventListener('mousemove', move);
+window.addEventListener('mouseup',   up);
 
-/* ---------- ממשק: כפתורי חומרים ---------- */
+/* ===== לוח החומרים (רק מה שגילינו) ===== */
 const matsEl = document.getElementById('materials');
-MAT.filter(m=>m.id!==AIR).forEach(m=>{
-  const b=document.createElement('button');
-  b.className='mat'; b.dataset.id=m.id;
-  b.innerHTML=`<span class="dot" style="background:rgb(${m.color.join(',')})"></span>${m.name}`;
-  b.onclick=()=>{ current=m.id; refreshMats(); };
-  matsEl.appendChild(b);
-});
-// כפתור מחיקה (אוויר)
-const eraser=document.createElement('button');
-eraser.className='mat'; eraser.dataset.id=AIR;
-eraser.innerHTML=`<span class="dot" style="background:#222;border-style:dashed"></span>מחק`;
-eraser.onclick=()=>{ current=AIR; refreshMats(); };
-matsEl.appendChild(eraser);
-function refreshMats(){
-  [...matsEl.children].forEach(b=> b.classList.toggle('active', +b.dataset.id===current));
+function buildPalette(justFound){
+  matsEl.innerHTML='';
+  MAT.forEach(m=>{
+    if (m.id===AIR || !found[m.id]) return;
+    const b=document.createElement('button');
+    b.className='mat'+(m.id===current?' active':'')+(m.id===justFound?' pop':'');
+    b.dataset.id=m.id;
+    b.innerHTML=`<span class="dot" style="background:rgb(${m.color.join(',')})"></span>${m.name}`;
+    b.onclick=()=>{ current=m.id; [...matsEl.children].forEach(c=>c.classList.toggle('active',+c.dataset.id===current)); };
+    matsEl.appendChild(b);
+  });
+  const e=document.createElement('button');
+  e.className='mat'+(current===AIR?' active':''); e.dataset.id=AIR;
+  e.innerHTML=`<span class="dot" style="background:#222;border-style:dashed"></span>מחק`;
+  e.onclick=()=>{ current=AIR; [...matsEl.children].forEach(c=>c.classList.toggle('active',+c.dataset.id===current)); };
+  matsEl.appendChild(e);
 }
 
-/* ---------- כפתורי שליטה ---------- */
-document.getElementById('btnClear').onclick = ()=>{ grid.fill(0); life.fill(0); toast('נוקה'); };
-const pauseBtn=document.getElementById('btnPause');
-pauseBtn.onclick = ()=>{ paused=!paused; pauseBtn.textContent = paused?'▶️ המשך':'⏸️ עצור'; };
-document.getElementById('brush').oninput = e => brush=+e.target.value;
-document.getElementById('btnSave').onclick = save;
-document.getElementById('btnLoad').onclick = ()=> load(true);
-
-/* ---------- שמירה וטעינה (הבעיה שהייתה לך ב-Shortcuts — כאן זה קל!) ----------
-   שומרים את מצב הרשת ל-localStorage. עובד גם אחרי סגירת הדפדפן. */
-const SAVE_KEY='sandbox_save_v1';
-function save(){
-  try{
-    const data = { W, H, grid: Array.from(grid) };
-    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-    toast('💾 נשמר');
-  }catch(err){ toast('שגיאה בשמירה'); }
-}
-function load(showMsg){
-  try{
-    const raw = localStorage.getItem(SAVE_KEY);
-    if(!raw){ if(showMsg) toast('אין שמירה'); return; }
-    const data = JSON.parse(raw);
-    if(data.W===W && data.H===H){
-      grid.set(data.grid);
+/* ===== פדיה ===== */
+function buildPedia(){
+  const g=document.getElementById('pediaGrid'); g.innerHTML='';
+  MAT.forEach(m=>{
+    if (m.id===AIR) return;
+    const card=document.createElement('div');
+    if (found[m.id]){
+      card.className='pcard';
+      card.innerHTML=`<span class="dot" style="background:rgb(${m.color.join(',')})"></span>
+        <div><div class="nm">${m.name}</div><div class="rc">${m.pedia||''}</div></div>`;
     } else {
-      // גודל מסך שונה — מעתיקים מה שאפשר
-      for(let y=0;y<Math.min(H,data.H);y++)
-        for(let x=0;x<Math.min(W,data.W);x++)
-          grid[idx(x,y)] = data.grid[y*data.W+x];
+      card.className='pcard locked';
+      card.innerHTML=`<span class="dot">❓</span>
+        <div><div class="nm">???</div><div class="rc">${m.pedia||'נסה לשלב חומרים'}</div></div>`;
     }
-    life.fill(0);
-    if(showMsg) toast('📂 נטען');
-  }catch(err){ if(showMsg) toast('שגיאה בטעינה'); }
+    g.appendChild(card);
+  });
 }
-// שמירה אוטומטית כל 10 שניות
-setInterval(()=>{ if(!isEmpty()) save(); }, 10000);
-function isEmpty(){ for(let i=0;i<grid.length;i++) if(grid[i]) return false; return true; }
+document.getElementById('btnPedia').onclick=()=>document.getElementById('pedia').classList.add('open');
+document.getElementById('pediaClose').onclick=()=>document.getElementById('pedia').classList.remove('open');
 
-/* ---------- הודעות קטנות ---------- */
+/* ===== כפתורי שליטה ===== */
+document.getElementById('btnClear').onclick=()=>{ grid.fill(0); life.fill(0); aux.fill(0); toast('נוקה'); };
+const pauseBtn=document.getElementById('btnPause');
+pauseBtn.onclick=()=>{ paused=!paused; pauseBtn.textContent=paused?'▶️':'⏸️'; };
+document.getElementById('brush').oninput=e=>brush=+e.target.value;
+document.getElementById('btnSave').onclick=()=>save(true);
+
+/* ===== שמירה/טעינה (קלה ואמינה) ===== */
+const KEY='sandbox_v2';
+function save(msg){
+  try{
+    localStorage.setItem(KEY, JSON.stringify({
+      W,H, grid:Array.from(grid), found:Array.from(found), score, mi
+    }));
+    if(msg) toast('💾 נשמר');
+  }catch(e){ if(msg) toast('שגיאה בשמירה'); }
+}
+function load(){
+  try{
+    const raw=localStorage.getItem(KEY); if(!raw) return;
+    const d=JSON.parse(raw);
+    if(d.W===W && d.H===H && d.grid) grid.set(d.grid);
+    if(d.found) d.found.forEach((v,ix)=>{ if(v) found[ix]=1; });
+    foundCount=found.reduce((a,b)=>a+b,0);
+    score=d.score||0; mi=d.mi||0;
+    life.fill(0); aux.fill(0);
+  }catch(e){}
+}
+setInterval(()=>{ save(false); }, 10000);
+
+/* ===== הודעות ===== */
 let toastT;
 function toast(msg){
   const el=document.getElementById('toast');
   el.textContent=msg; el.classList.add('show');
-  clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('show'), 1200);
+  clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('show'),1300);
 }
 
-/* ---------- לולאת המשחק ---------- */
-let last=performance.now(), frames=0, fpsT=0;
+/* ===== לולאה ===== */
+let last=performance.now(), fr=0, ft=0;
 function loop(now){
   const dt=now-last; last=now;
-  if(!paused){ step(); }
+  if(!paused) step();
   render();
-  // מונה FPS
-  frames++; fpsT+=dt;
-  if(fpsT>=500){ document.getElementById('fps').textContent = Math.round(frames*1000/fpsT)+' fps'; frames=0; fpsT=0; }
+  fr++; ft+=dt;
+  if(ft>=500){ document.getElementById('fps').textContent=Math.round(fr*1000/ft)+' fps'; fr=0; ft=0; }
   requestAnimationFrame(loop);
 }
 
-/* ---------- התחלה ---------- */
+/* ===== התחלה ===== */
 function boot(){
-  setup();
-  load(false);          // טוען שמירה קודמת אם יש
-  refreshMats();
+  setup(); load();
+  buildPalette(); buildPedia(); updateScore(); showMission();
   requestAnimationFrame(loop);
 }
-window.addEventListener('resize', ()=>{ // שמירה על התוכן בשינוי גודל
-  save(); setup(); load(false);
-});
+window.addEventListener('resize', ()=>{ save(false); setup(); load(); buildPalette(); });
 boot();
 </script>
 </body>
