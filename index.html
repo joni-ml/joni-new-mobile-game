@@ -384,6 +384,14 @@ function reactFlower(x,y,i){
 function updateFire(x,y,i){
   if (temp[i]<650) temp[i]=700+Math.random()*160;   // אש חמה — מחממת ומדליקה סביבה
   if (life[i]===0) life[i]=MAT[FIRE].life;
+  for (const [dx,dy] of NEI4){                       // מתפשטת לחומר דליק צמוד
+    const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
+    const j=idx(nx,ny);
+    if (MAT[grid[j]].flam){
+      if (Math.random()<0.25){ grid[j]=FIRE; temp[j]=760; life[j]=MAT[FIRE].life; discover(FIRE); }
+      else temp[j]+=25;
+    }
+  }
   if (--life[i] <= 1){
     if (Math.random()<0.4){ grid[i]=ASH; discover(ASH); } else grid[i]=AIR;
     life[i]=0; return true;
