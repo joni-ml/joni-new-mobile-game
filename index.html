@@ -102,6 +102,23 @@
     opacity:0; transition:opacity .3s; pointer-events:none; z-index:30; text-align:center;
   }
   #toast.show { opacity:1; }
+
+  /* זכוכית מגדלת */
+  #mag { position:absolute; width:132px; height:132px; border-radius:50%;
+    border:3px solid #e8e0c8; box-shadow:0 6px 18px #000b, inset 0 0 0 2px #0007;
+    image-rendering:pixelated; pointer-events:none; z-index:50; display:none; }
+  /* חלון מידע של פיקסל */
+  #inspect { position:absolute; left:8px; right:8px; bottom:8px; z-index:46; display:none;
+    background:rgba(12,16,24,.96); border:1px solid #3a4556; border-radius:12px;
+    padding:10px 12px; font-size:12.5px; line-height:1.5; box-shadow:0 8px 20px #000a; }
+  #inspect .ihead { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+  #inspect .idot { width:22px; height:22px; border-radius:6px; border:1px solid #0006; flex:0 0 auto; }
+  #inspect .iname { font-weight:800; font-size:15px; }
+  #inspect .iform { font-family:ui-monospace,monospace; opacity:.8; direction:ltr; }
+  #inspect .igrid { display:grid; grid-template-columns:1fr 1fr; gap:2px 14px; }
+  #inspect .igrid span { opacity:.65; }
+  #inspect .igrid b { font-weight:700; }
+  #inspect .ix { position:absolute; top:6px; left:10px; opacity:.6; font-size:16px; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -114,6 +131,8 @@
     </div>
     <div id="mission">🧑‍🔬 <b>המדריך:</b> <span id="missionText">…</span></div>
     <div id="toast"></div>
+    <canvas id="mag" width="132" height="132"></canvas>
+    <div id="inspect"></div>
 
     <div id="pedia">
       <h2>📖 פדיית החומרים</h2>
@@ -128,6 +147,7 @@
     <div id="controls">
       <button id="btnHeat">🔥 חום</button>
       <button id="btnCool">❄️ קור</button>
+      <button id="btnInspect">🔍 בדיקה</button>
       <button id="btnPedia">📖</button>
       <button id="btnPause">⏸️</button>
       <button id="btnSave">💾</button>
@@ -135,7 +155,7 @@
     </div>
     <div id="sliders">
       <label>גודל <input id="brush" type="range" min="1" max="12" value="3"></label>
-      <label>מהירות <input id="speed" type="range" min="1" max="15" value="7"></label>
+      <label>מהירות <input id="speed" type="range" min="1" max="15" value="10"></label>
     </div>
   </div>
 
@@ -187,13 +207,36 @@ const cond  = MAT.map(m => ({air:0.03,water:0.10,ice:0.08,stone:0.045,glass:0.06
 const radi  = MAT.map(m => ({lava:0.0016,fire:0.02,steam:0.02}[m.key] ?? 0.004));
 const temp0 = MAT.map(m => ({lava:1200,fire:900,ice:-14}[m.key] ?? null));
 
+/* ---------- תכונות פיזיקליות (למשקל/תנע/כלי הבדיקה) ----------
+   mass = צפיפות יחסית (g/cm³) → קובע כמה כבד וכמה כוח בפגיעה.
+   formula/molecule = מבנה מולקולרי (לתצוגה, ובסיס לחשמל בעתיד). conduct = מוליך חשמל. */
+const mass    = MAT.map(m=>({air:0.001,water:1.0,ice:0.92,steam:0.0006,stone:2.7,basalt:3.0,sand:1.6,earth:1.5,mud:1.8,wood:0.7,leaf:0.4,flower:0.3,sprout:0.5,seedT:0.6,seedF:0.6,ash:0.5,glass:2.5,lava:2.8,fire:0.0003}[m.key] ?? 1));
+const formula = MAT.map(m=>({air:'N₂+O₂',water:'H₂O',ice:'H₂O',steam:'H₂O',stone:'SiO₂',basalt:'SiO₂·Mg·Fe',sand:'SiO₂',earth:'SiO₂+C',mud:'SiO₂·H₂O',wood:'C₆H₁₀O₅',leaf:'C₆H₁₀O₅',flower:'C₆H₁₀O₅',sprout:'C₆H₁₀O₅',seedT:'C₆H₁₀O₅',seedF:'C₆H₁₀O₅',ash:'CaCO₃',glass:'SiO₂',lava:'SiO₂',fire:'CO₂+חום'}[m.key] ?? '—'));
+const conduct = MAT.map(m=>({water:true,lava:true,fire:true}[m.key] ?? false));
+const molec   = MAT.map(m=>({air:'תערובת גזים',water:'מולקולה קוטבית',ice:'סריג גבישי',steam:'אדי מים',stone:'סריג סיליקט',basalt:'סלע וולקני צפוף',sand:'גרגרי קוורץ',earth:'תערובת אורגנית',mud:'אדמה רוויה',wood:'סיבי תאית',leaf:'תאית + כלורופיל',flower:'רקמה צמחית',sprout:'רקמה צמחית',seedT:'עובר זרע',seedF:'עובר זרע',ash:'שאריות מינרליות',glass:'מוצק אמורפי',lava:'סלע מותך',fire:'פלזמת בעירה'}[m.key] ?? '—'));
+const STATE   = {empty:'—',powder:'אבקה',liquid:'נוזל',solid:'מוצק',gas:'גז',static:'מוצק'};
+// נקודות מעבר פאזה (מוצק/נוזל/גז) לתצוגה — תואם ל-checkPhase
+const phasePts = MAT.map(m=>({
+  water:'קיפאון 0° · רתיחה 100°', ice:'נמס ב-0°', steam:'מתעבה מתחת ל-96°',
+  stone:'נמס ללבה ב-1100°', basalt:'נמס ב-1100°', lava:'מתמצק מתחת ל-600°',
+  sand:'נמס לזכוכית ב-1400°', mud:'מתייבש ב-140°',
+  wood:'נדלק ב-300°', leaf:'נדלק ב-300°', flower:'נדלק ב-300°',
+  sprout:'נדלק ב-300°', seedT:'נדלק ב-300°', seedF:'נדלק ב-300°'
+}[m.key] ?? 'יציב'));
+
+/* ---------- קבועי פיזיקה (כובד ותנע) ---------- */
+const G_ACC = 0.5;      // תאוצת כובד (תאים/צעד²)
+const MAXV  = 6;        // מהירות מרבית
+const IMPACT_TH = 15;   // אנרגיה מינימלית ליצירת מכתש בפגיעה
+const RMAX  = 5;        // רדיוס פיזור מרבי
+
 /* ---------- Canvas ורשת ---------- */
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d', { alpha:false });
 const buf = document.createElement('canvas');
 const bctx = buf.getContext('2d', { alpha:false });
 const SCALE = 5;
-let W, H, grid, life, aux, temp, temp2, img;
+let W, H, grid, life, aux, temp, temp2, velX, velY, img;
 
 function setup() {
   const stage = document.getElementById('stage');
@@ -211,12 +254,14 @@ function setup() {
   aux  = new Uint8Array(W*H);
   temp = new Float32Array(W*H).fill(AMB);
   temp2= new Float32Array(W*H);
+  velX = new Float32Array(W*H);   // מהירות אופקית (תנע/פגיעות)
+  velY = new Float32Array(W*H);   // מהירות אנכית (כובד)
 }
 const idx = (x,y) => y*W + x;
 const inB = (x,y) => x>=0 && x<W && y>=0 && y<H;
 
 /* ---------- מצב משחק ---------- */
-let current = WATER, brush = 3, paused = false, speed = 0.7;
+let current = WATER, brush = 3, paused = false, speed = 1;
 let painting = false, ptx=0, pty=0;
 let score = 0;
 const found = new Uint8Array(MAT.length);
@@ -250,7 +295,9 @@ function render() {
 function swap(a,b){ const t=grid[a];grid[a]=grid[b];grid[b]=t;
                     const l=life[a];life[a]=life[b];life[b]=l;
                     const x=aux[a];aux[a]=aux[b];aux[b]=x;
-                    const p=temp[a];temp[a]=temp[b];temp[b]=p; }   // החום נוסע עם החומר
+                    const p=temp[a];temp[a]=temp[b];temp[b]=p;      // החום נוסע עם החומר
+                    const vx=velX[a];velX[a]=velX[b];velX[b]=vx;    // גם התנע נוסע
+                    const vy=velY[a];velY[a]=velY[b];velY[b]=vy; }
 function density(id){ return MAT[id].density||0; }
 function setCell(i,id){ grid[i]=id; life[i]=0; aux[i]=0; discover(id); }
 
@@ -414,23 +461,78 @@ function canSink(mv,tg){
   const t=MAT[tg];
   return (t.type==='liquid'||t.type==='gas') && density(mv)>density(tg);
 }
-function movePowder(x,y,i,id){
-  if (y+1<H){ const b=idx(x,y+1); if (canSink(id,grid[b])){ swap(i,b); return; } }
-  const dir=Math.random()<0.5?1:-1;
+/* תנועה דינמית: כובד מאיץ, החומר נופל לפי מהירותו (מספר תאים בצעד),
+   ובפגיעה חזקה (חפץ כבד+מהיר) הוא מפזר את הקרקע ויוצר מכתש. */
+function moveDynamic(x,y,i,id,kind){
+  velX[i]*=0.86;                                   // התנגדות אוויר אופקית
+  velY[i]+=G_ACC;
+  if (velY[i]> MAXV) velY[i]= MAXV;
+  if (velY[i]<-MAXV) velY[i]=-MAXV;
+  let cur=i, cx=x, cy=y;
+
+  // תנועה אופקית (חלקיקים שנזרקו מפגיעה)
+  if (Math.abs(velX[cur])>=0.7){
+    const s=velX[cur]>0?1:-1, nx=cx+s;
+    if (nx>=0&&nx<W){ const j=idx(nx,cy);
+      if (grid[j]===AIR||canSink(id,grid[j])){ swap(cur,j); cur=j; cx=nx; velX[cur]*=0.7; }
+      else velX[cur]=0;
+    } else velX[cur]=0;
+  }
+
+  // תנועה אנכית — מספר תאים לפי המהירות
+  const dir = velY[cur]>=0 ? 1 : -1;
+  const steps = Math.max(1, Math.round(Math.abs(velY[cur])));
+  let moved=0;
+  for (let s=0;s<steps;s++){
+    const ny=cy+dir; if (ny<0||ny>=H) break;
+    const j=cur+dir*W;
+    const ok = dir>0 ? canSink(id,grid[j]) : (grid[j]===AIR);
+    if (ok){ swap(cur,j); cur=j; cy=ny; moved++; } else break;
+  }
+
+  if (dir>0 && moved<steps){                       // נחת/נחסם
+    const v=velY[cur], E=0.5*mass[id]*v*v;
+    if (kind==='solid' && E>IMPACT_TH) scatter(cx, cy, id, E);   // מכתש
+    velY[cur]=0;
+    settleLateral(cur, cy, id, kind);
+  } else if (dir<0 && moved<steps){                // חלקיק שנזרק למעלה נחסם
+    velY[cur]=0;
+  }
+}
+function movePowder(x,y,i,id){ moveDynamic(x,y,i,id,'powder'); }
+function moveSolid (x,y,i,id){ moveDynamic(x,y,i,id,'solid');  }
+
+// ערמה/זרימה אחרי נחיתה (אבקה נערמת באלכסון, נוזל זורם הצידה)
+function settleLateral(i,y,id,kind){
+  if (kind==='solid') return;
+  const x=i%W, dir=Math.random()<0.5?1:-1;
   for (const dx of [dir,-dir]){ const nx=x+dx;
     if (nx>=0&&nx<W&&y+1<H){ const d=idx(nx,y+1); if(canSink(id,grid[d])){ swap(i,d); return; } } }
+  if (kind==='liquid'){
+    for (const dx of [dir,-dir]){ const nx=x+dx;
+      if (nx>=0&&nx<W){ const s=idx(nx,y); if(grid[s]===AIR){ swap(i,s); return; } } }
+  }
 }
-function moveSolid(x,y,i,id){   // כובד בלבד — נופל ישר, לא מתפזר לצדדים (אבן/קרח)
-  if (y+1<H){ const b=idx(x,y+1); if (canSink(id,grid[b])){ swap(i,b); } }
+
+// פיזור בפגיעה — הקרקע עפה לצדדים ולמעלה, נוצר מכתש
+// פיזור בפגיעה — פרופורציונלי לאנרגיה האמיתית (½·מסה·מהירות²). לא מנופח.
+function scatter(cx,cy,id,E){
+  const r = Math.min(RMAX, 1+Math.floor(Math.sqrt(E)*0.4));
+  const power = Math.min(MAXV, Math.sqrt(E)*0.5);
+  for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){
+    const dist=Math.hypot(dx,dy); if (dist<1||dist>r) continue;
+    const nx=cx+dx, ny=cy+dy; if(!inB(nx,ny)) continue;
+    const j=idx(nx,ny), tp=MAT[grid[j]].type;
+    if ((tp==='powder'||tp==='liquid') && Math.random()<0.7){
+      const inv=1/(dist||1);
+      velX[j] += dx*inv*power*(0.6+Math.random()*0.6);
+      velY[j] -= power*(0.4+Math.random()*0.6)*(dy<=0?1:0.3);
+      if (velX[j]> MAXV) velX[j]= MAXV; if (velX[j]<-MAXV) velX[j]=-MAXV;
+      if (velY[j]<-MAXV) velY[j]=-MAXV;
+    }
+  }
 }
-function moveLiquid(x,y,i,id){
-  if (y+1<H){ const b=idx(x,y+1); if (canSink(id,grid[b])){ swap(i,b); return; } }
-  const dir=Math.random()<0.5?1:-1;
-  for (const dx of [dir,-dir]){ const nx=x+dx;
-    if (nx>=0&&nx<W&&y+1<H){ const d=idx(nx,y+1); if(canSink(id,grid[d])){ swap(i,d); return; } } }
-  for (const dx of [dir,-dir]){ const nx=x+dx;
-    if (nx>=0&&nx<W){ const s=idx(nx,y); if(grid[s]===AIR){ swap(i,s); return; } } }
-}
+function moveLiquid(x,y,i,id){ moveDynamic(x,y,i,id,'liquid'); }
 function moveGas(x,y,i,id){
   if (life[i]===0) life[i]=MAT[id].life;
   if (--life[i]<=1){ grid[i]=AIR; life[i]=0; return; }
@@ -483,6 +585,7 @@ function checkMissions(id){
 function paintAt(cx,cy){
   const r=canvas.getBoundingClientRect();
   const gx=Math.floor((cx-r.left)/r.width*W), gy=Math.floor((cy-r.top)/r.height*H);
+  if (current==='inspect'){ inspectAt(gx,gy,cx,cy); return; }   // זכוכית מגדלת
   const rad=brush;
   for (let dy=-rad; dy<=rad; dy++) for (let dx=-rad; dx<=rad; dx++){
     if (dx*dx+dy*dy>rad*rad) continue;
@@ -490,9 +593,9 @@ function paintAt(cx,cy){
     const i=idx(x,y);
     if (current==='heat'){ temp[i]=Math.min(1700, temp[i]+30); continue; }
     if (current==='cool'){ temp[i]=Math.max(-60,  temp[i]-30); continue; }
-    if (current===AIR){ grid[i]=AIR; life[i]=0; aux[i]=0; temp[i]=AMB; continue; }
+    if (current===AIR){ grid[i]=AIR; life[i]=0; aux[i]=0; temp[i]=AMB; velX[i]=0; velY[i]=0; continue; }
     if (grid[i]!==AIR && Math.random()>0.9) continue;
-    grid[i]=current; life[i]=0; aux[i]=0;
+    grid[i]=current; life[i]=0; aux[i]=0; velX[i]=0; velY[i]=0;
     temp[i] = temp0[current]!=null ? temp0[current] : AMB;
     if (current===FIRE) life[i]=MAT[FIRE].life;
     else if (current===SPROUT){ life[i]=12+Math.floor(Math.random()*10); aux[i]=0; }
@@ -504,7 +607,7 @@ function move(e){ if(!painting) return; e.preventDefault(); const [x,y]=pos(e);
   const steps=Math.max(1,Math.hypot(x-ptx,y-pty)/3);
   for (let s=0;s<=steps;s++) paintAt(ptx+(x-ptx)*s/steps, pty+(y-pty)*s/steps);
   ptx=x; pty=y; }
-function up(){ painting=false; }
+function up(){ painting=false; if(current==='inspect') document.getElementById('mag').style.display='none'; }
 canvas.addEventListener('touchstart',down,{passive:false});
 canvas.addEventListener('touchmove', move,{passive:false});
 canvas.addEventListener('touchend',  up);
@@ -519,6 +622,59 @@ function refreshActive(){
   [...matsEl.children].forEach(c=> c.classList.toggle('active', c.dataset.id!==''&&+c.dataset.id===current));
   document.getElementById('btnHeat').classList.toggle('selbtn', current==='heat');
   document.getElementById('btnCool').classList.toggle('selbtn', current==='cool');
+  document.getElementById('btnInspect').classList.toggle('selbtn', current==='inspect');
+  if (current!=='inspect'){ document.getElementById('mag').style.display='none'; document.getElementById('inspect').style.display='none'; }
+}
+
+/* ===== זכוכית מגדלת + חלון מידע ===== */
+const magEl = document.getElementById('mag');
+const magCtx = magEl.getContext('2d');
+magCtx.imageSmoothingEnabled = false;
+const inspEl = document.getElementById('inspect');
+function inspectAt(gx,gy,cx,cy){
+  if (!inB(gx,gy)) return;
+  // --- זכוכית מגדלת: מציגים אזור 11x11 מוגדל ---
+  const SRC=11, half=(SRC-1)/2;
+  magCtx.clearRect(0,0,132,132);
+  magCtx.drawImage(buf, gx-half, gy-half, SRC, SRC, 0,0,132,132);
+  magCtx.strokeStyle='rgba(255,255,255,.7)'; magCtx.lineWidth=2;   // צלב כוונת על התא המרכזי
+  const c=132/SRC; magCtx.strokeRect(half*c, half*c, c, c);
+  const rect=canvas.getBoundingClientRect();
+  let mx=cx-66, my=cy-150;                                        // מעל האצבע
+  mx=Math.max(rect.left+4, Math.min(mx, rect.right-136));
+  my=Math.max(rect.top+4, my);
+  magEl.style.left=(mx-rect.left)+'px'; magEl.style.top=(my-rect.top)+'px'; magEl.style.display='block';
+  // --- חלון מידע ---
+  const i=idx(gx,gy), id=grid[i];
+  const spd=Math.hypot(velX[i],velY[i]);
+  const vmps=(spd*1.5).toFixed(1);                               // המרה משוערת ל-m/s
+  const ang=spd>0.15 ? Math.round((Math.atan2(velY[i],velX[i])*180/Math.PI+360)%360) : null;
+  const arrow=spd>0.15 ? '↗↘↙↖→↓←↑'[0] : '';
+  const kg=(mass[id]*0.1).toFixed(3);
+  const joule=(0.5*mass[id]*0.1*vmps*vmps).toFixed(2);
+  const st=STATE[MAT[id].type]||'—';
+  const cc=cond[id], condTxt=(cc>=0.12?'מהירה':cc>=0.06?'בינונית':'איטית');
+  inspEl.innerHTML=`
+    <span class="ix" id="inspX">✕</span>
+    <div class="ihead">
+      <span class="idot" style="background:rgb(${MAT[id].color.join(',')})"></span>
+      <span class="iname">${MAT[id].name}</span>
+      <span class="iform">${formula[id]}</span>
+    </div>
+    <div class="igrid">
+      <div><span>מצב:</span> <b>${st}</b></div>
+      <div><span>🌡️ חום:</span> <b>${Math.round(temp[i])}°C</b></div>
+      <div><span>⚖️ משקל:</span> <b>${kg} ק"ג</b></div>
+      <div><span>🚀 מהירות:</span> <b>${vmps} מ'/ש'</b></div>
+      <div><span>🧭 זווית:</span> <b>${ang!==null?ang+'°':'—'}</b></div>
+      <div><span>💥 אנרגיה:</span> <b>${joule} J</b></div>
+      <div><span>🔥 הולכת חום:</span> <b>${condTxt}</b></div>
+      <div><span>⚡ מוליך חשמל:</span> <b>${conduct[id]?'כן':'לא'}</b></div>
+      <div><span>🧬 מבנה:</span> <b>${molec[id]}</b></div>
+    </div>
+    <div style="margin-top:5px"><span style="opacity:.65">🔀 מעברי פאזה (מוצק/נוזל/גז):</span> <b>${phasePts[id]}</b></div>`;
+  inspEl.style.display='block';
+  document.getElementById('inspX').onclick=()=>inspEl.style.display='none';
 }
 function buildPalette(justFound){
   matsEl.innerHTML='';
@@ -562,6 +718,7 @@ document.getElementById('pediaClose').onclick=()=>document.getElementById('pedia
 /* ===== כפתורים ===== */
 document.getElementById('btnHeat').onclick=()=>setCurrent('heat');
 document.getElementById('btnCool').onclick=()=>setCurrent('cool');
+document.getElementById('btnInspect').onclick=()=>setCurrent('inspect');
 document.getElementById('btnClear').onclick=()=>{ grid.fill(0); life.fill(0); aux.fill(0); temp.fill(AMB); toast('נוקה'); };
 const pauseBtn=document.getElementById('btnPause');
 pauseBtn.onclick=()=>{ paused=!paused; pauseBtn.textContent=paused?'▶️':'⏸️'; };
