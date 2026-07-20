@@ -144,6 +144,10 @@
     border:1px solid #2a3444; max-width:92vw; }
   #atomInfo { font-size:13.5px; line-height:1.7; margin-top:12px; text-align:center; max-width:420px; }
   #atomInfo b { color:#6cc0ff; }
+  #atomTabs { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-bottom:12px; }
+  #atomTabs .atab { padding:7px 15px; border-radius:20px; border:1px solid #2a3444; background:#141a24;
+    color:#cfe0f5; font-size:15px; font-weight:700; cursor:pointer; }
+  #atomTabs .atab.on { background:#2b6cff; border-color:#2b6cff; color:#fff; }
   #molcv { cursor:pointer; }
 
   #toast {
@@ -168,7 +172,8 @@
   #inspect .igrid { display:grid; grid-template-columns:1fr 1fr; gap:2px 14px; }
   #inspect .igrid span { opacity:.65; }
   #inspect .igrid b { font-weight:700; }
-  #inspect .ix { position:absolute; top:6px; left:10px; opacity:.6; font-size:16px; cursor:pointer; }
+  #inspect .ix { position:absolute; top:4px; left:6px; opacity:.85; font-size:26px; line-height:1;
+    cursor:pointer; padding:8px 14px; border-radius:10px; background:rgba(255,255,255,.08); }
 </style>
 </head>
 <body>
@@ -196,6 +201,7 @@
     <!-- אטום (מודל בוהר) -->
     <div id="atomView">
       <h2>⚛️ מבנה האטום</h2>
+      <div id="atomTabs"></div>
       <canvas id="atomCv" width="300" height="300"></canvas>
       <div id="atomInfo"></div>
       <button id="atomClose">סגור</button>
@@ -288,10 +294,10 @@ const TOTAL = MAT.filter(m => !m.shop && !m.sys && m.id!==AIR).length;   // ספ
    AMB = טמפ' הסביבה. cond = מוליכות חום. radi = קצב איבוד חום לסביבה.
    temp0 = טמפ' התחלתית של חומר כשמניחים אותו. */
 const AMB = 24;
-const cond  = MAT.map(m => ({air:0.02,water:0.10,ice:0.08,stone:0.045,glass:0.06,sand:0.05,steam:0.008,wall:0.006,lava:0.16,fire:0.22,lithium:0.3,beryllium:0.3}[m.key] ?? 0.04));
-// radi = קצב איבוד חום לסביבה. נמוך = החום נשמר הרבה יותר (מציאותי). לבה כמעט לא מקרינה — נשארת חמה, מתקררת מהשוליים.
-const radi  = MAT.map(m => ({lava:0.0004,fire:0.02,steam:0.004,wall:0}[m.key] ?? 0.0012));
-const temp0 = MAT.map(m => ({lava:1200,fire:900,ice:-14}[m.key] ?? null));
+const cond  = MAT.map(m => ({air:0.02,water:0.10,ice:0.08,stone:0.045,glass:0.06,sand:0.05,steam:0.008,wall:0,lava:0.16,fire:0.22,lithium:0.3,beryllium:0.3}[m.key] ?? 0.04));
+// radi = קצב איבוד חום לסביבה. נמוך = החום נשמר הרבה יותר. קיר=0 (מבודד מושלם), לבה כמעט לא מקרינה.
+const radi  = MAT.map(m => ({lava:0.0002,fire:0.02,steam:0.004,wall:0}[m.key] ?? 0.0006));
+const temp0 = MAT.map(m => ({lava:1200,fire:900,ice:-14,wall:0}[m.key] ?? null));
 
 /* ---------- תכונות פיזיקליות (למשקל/תנע/כלי הבדיקה) ----------
    mass = צפיפות יחסית (g/cm³) → קובע כמה כבד וכמה כוח בפגיעה.
@@ -454,6 +460,7 @@ function step(){
 function thermal(){
   for (let y=0;y<H;y++) for (let x=0;x<W;x++){
     const i=idx(x,y), id=grid[i], ci=cond[id], t=temp[i];
+    if (id===WALL){ temp2[i]=0; continue; }   // קיר: תמיד 0°, חום לא נכנס/עובר
     let acc=0;
     if (x>0)   { const j=i-1; acc += Math.min(ci,cond[grid[j]])*(temp[j]-t); }
     if (x<W-1) { const j=i+1; acc += Math.min(ci,cond[grid[j]])*(temp[j]-t); }
@@ -718,8 +725,7 @@ function scatter(cx,cy,id,E){
 }
 function moveLiquid(x,y,i,id){ moveDynamic(x,y,i,id,'liquid'); }
 function moveGas(x,y,i,id){
-  if (life[i]===0) life[i]=MAT[id].life;
-  if (--life[i]<=1){ grid[i]=AIR; life[i]=0; return; }
+  // גז לא נעלם לאוויר לעולם — אדים מתעבים למים (checkPhase), הליום/מימן נשארים.
   // ציפה הדרגתית: גז חם עולה מהר יותר, קר — לאט. לא קופץ מיד למעלה.
   const pUp = Math.min(0.5, LIFT[id] + Math.max(0,(temp[i]-AMB))*0.004);
   if (Math.random() < pUp && y-1>=0){
@@ -784,8 +790,8 @@ function paintAt(cx,cy){
     if (dx*dx+dy*dy>rad*rad) continue;
     const x=gx+dx, y=gy+dy; if(!inB(x,y)) continue;
     const i=idx(x,y);
-    if (current==='heat'){ temp[i]=Math.min(1700, temp[i]+30); continue; }
-    if (current==='cool'){ temp[i]=Math.max(-60,  temp[i]-30); continue; }
+    if (current==='heat'){ if(grid[i]!==WALL) temp[i]=Math.min(1700, temp[i]+30); continue; }
+    if (current==='cool'){ if(grid[i]!==WALL) temp[i]=Math.max(-60,  temp[i]-30); continue; }
     if (current===AIR){ grid[i]=AIR; life[i]=0; aux[i]=0; temp[i]=AMB; velX[i]=0; velY[i]=0; continue; }
     if (buildOnAir && grid[i]!==AIR) continue;   // ברירת מחדל: בונים רק על אוויר (לא מוחקים)
     grid[i]=current; life[i]=0; aux[i]=0; velX[i]=0; velY[i]=0;
@@ -870,8 +876,8 @@ function inspectAt(gx,gy,cx,cy){
   inspEl.style.display='block';
   const mc=document.getElementById('molcv'); drawMol(mc, id);
   mc.title='לחץ לצפייה באטום';
-  mc.onclick=()=>{ const syms=molGeom[id].atoms.map(a=>a[0]).filter(s=>ELEMENT_HE[s]);
-    if(syms.length){ syms.sort((a,b)=>ELEMENT_HE[b][1]-ELEMENT_HE[a][1]); showAtom(syms[0]); } };
+  mc.onclick=()=>{ const syms=[...new Set(molGeom[id].atoms.map(a=>a[0]))].filter(s=>ELEMENT_HE[s]);
+    if(syms.length){ syms.sort((a,b)=>ELEMENT_HE[b][1]-ELEMENT_HE[a][1]); showAtom(syms[0], syms); } };
   document.getElementById('inspX').onclick=()=>inspEl.style.display='none';
 }
 function buildPalette(justFound){
@@ -988,8 +994,9 @@ document.getElementById('shopClose').onclick=()=>document.getElementById('shop')
 /* ===== הגדרות ===== */
 let plantGrav = true;
 function applyBorder(){ if(!borderWalls) return;
-  for(let x=0;x<W;x++){ grid[idx(x,0)]=WALL; grid[idx(x,H-1)]=WALL; }
-  for(let y=0;y<H;y++){ grid[idx(0,y)]=WALL; grid[idx(W-1,y)]=WALL; }
+  const w=(i)=>{ grid[i]=WALL; temp[i]=0; };
+  for(let x=0;x<W;x++){ w(idx(x,0)); w(idx(x,H-1)); }
+  for(let y=0;y<H;y++){ w(idx(0,y)); w(idx(W-1,y)); }
 }
 function clearBorder(){
   for(let x=0;x<W;x++){ if(grid[idx(x,0)]===WALL)grid[idx(x,0)]=AIR; if(grid[idx(x,H-1)]===WALL)grid[idx(x,H-1)]=AIR; }
@@ -1006,9 +1013,17 @@ document.getElementById('setBorder').onchange=e=>{ borderWalls=e.target.checked;
 function shells(Z){ const cap=[2,8,18,32,32,18,8]; const sh=[]; let e=Z;
   for(let k=0;k<cap.length&&e>0;k++){ const n=Math.min(cap[k],e); sh.push(n); e-=n; } return sh; }
 const ELEMENT_HE={H:['מימן',1],He:['הליום',2],Li:['ליתיום',3],Be:['בריליום',4],B:['בורון',5],C:['פחמן',6],N:['חנקן',7],O:['חמצן',8],Na:['נתרן',11],Mg:['מגנזיום',12],Si:['צורן',14],Cl:['כלור',17],Ca:['סידן',20],Fe:['ברזל',26]};
-function showAtom(sym){
+function showAtom(sym, list){
   const info=ELEMENT_HE[sym]; if(!info) return;
   const [he,Z]=info, sh=shells(Z);
+  // לשוניות למעבר בין האטומים השונים במולקולה
+  const tabs=document.getElementById('atomTabs'); tabs.innerHTML='';
+  if(list && list.length>1){
+    list.forEach(s=>{ if(!ELEMENT_HE[s]) return;
+      const b=document.createElement('button'); b.className='atab'+(s===sym?' on':'');
+      b.textContent=`${s} · ${ELEMENT_HE[s][0]}`;
+      b.onclick=()=>showAtom(s, list); tabs.appendChild(b); });
+  }
   const cv=document.getElementById('atomCv'), x=cv.getContext('2d'), S=cv.width, cx=S/2, cy=S/2;
   x.clearRect(0,0,S,S);
   // קליפות
