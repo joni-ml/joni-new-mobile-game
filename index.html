@@ -128,6 +128,24 @@
   #shopClose { margin-top:14px; align-self:center; height:44px; padding:0 26px; border-radius:12px;
     border:1px solid #33608a; background:#1b2634; color:#e8e0c8; font-size:15px; font-weight:700; cursor:pointer; }
 
+  /* הגדרות + אטום */
+  #settings, #atomView { position:absolute; inset:0; z-index:42; background:rgba(8,10,16,.97);
+    display:none; flex-direction:column; padding:18px; padding-top:calc(18px + env(safe-area-inset-top));
+    align-items:center; }
+  #settings.open, #atomView.open { display:flex; }
+  #settings h2, #atomView h2 { font-size:19px; margin-bottom:14px; align-self:flex-start; }
+  .stog { display:flex; align-items:center; gap:10px; font-size:14.5px; background:#161b25;
+    border:1px solid #2a2f3a; border-radius:12px; padding:12px 14px; width:100%; max-width:420px;
+    margin-bottom:10px; cursor:pointer; }
+  .stog input { width:22px; height:22px; accent-color:#5ec27a; flex:0 0 auto; }
+  #setClose, #atomClose { margin-top:14px; height:44px; padding:0 26px; border-radius:12px;
+    border:1px solid #33608a; background:#1b2634; color:#e8e0c8; font-size:15px; font-weight:700; cursor:pointer; }
+  #atomCv { background:radial-gradient(circle at 50% 50%, #0d1520, #05070c); border-radius:14px;
+    border:1px solid #2a3444; max-width:92vw; }
+  #atomInfo { font-size:13.5px; line-height:1.7; margin-top:12px; text-align:center; max-width:420px; }
+  #atomInfo b { color:#6cc0ff; }
+  #molcv { cursor:pointer; }
+
   #toast {
     position:absolute; top:52%; left:50%; transform:translate(-50%,-50%);
     background:#000d; padding:10px 18px; border-radius:12px; font-size:15px; font-weight:700;
@@ -166,6 +184,23 @@
     <canvas id="mag" width="132" height="132"></canvas>
     <div id="inspect"></div>
 
+    <!-- הגדרות -->
+    <div id="settings">
+      <h2>⚙️ הגדרות</h2>
+      <label class="stog"><input type="checkbox" id="setBuild" checked> 🧱 בנייה רק על אוויר (לא מוחק חומרים)</label>
+      <label class="stog"><input type="checkbox" id="setBorder"> 🔲 קירות מסביב למסך (חומרים וחום לא בורחים)</label>
+      <label class="stog"><input type="checkbox" id="setGrav" checked> 🍃 צמחים נופלים כשאין תמיכה</label>
+      <button id="setClose">סגור</button>
+    </div>
+
+    <!-- אטום (מודל בוהר) -->
+    <div id="atomView">
+      <h2>⚛️ מבנה האטום</h2>
+      <canvas id="atomCv" width="300" height="300"></canvas>
+      <div id="atomInfo"></div>
+      <button id="atomClose">סגור</button>
+    </div>
+
     <!-- חנות היסודות (הטבלה המחזורית) -->
     <div id="shop">
       <h2>🛒 חנות היסודות</h2>
@@ -191,6 +226,7 @@
       <button id="btnCool">❄️ קור</button>
       <button id="btnInspect">🔍 בדיקה</button>
       <button id="btnShop">🛒 חנות</button>
+      <button id="btnSettings">⚙️</button>
       <button id="btnPedia">📖</button>
       <button id="btnPause">⏸️</button>
       <button id="btnSave">💾</button>
@@ -232,38 +268,42 @@ const MAT = [
   { key:'ice',    name:'קרח',    color:[176,216,240], type:'solid',  density:1, pedia:'❄️ מים קפואים (0°-)' },
   { key:'ash',    name:'אפר',    color:[92,90,96],    type:'powder', density:3, pedia:'נשאר אחרי שריפה' },
   { key:'glass',  name:'זכוכית', color:[172,212,226], type:'static', pedia:'🏖️ חול חם מאוד (1400°+)' },
-  { key:'lava',   name:'לבה',    color:[236,96,28],   type:'liquid', density:3, pedia:'🪨 אבן חמה (1100°+) נמסה' },
+  { key:'lava',   name:'לבה',    color:[236,96,28],   type:'liquid', density:8, pedia:'🪨 אבן חמה (1100°+) נמסה' },
   { key:'basalt', name:'בזלת',   color:[34,32,42],    type:'solid',  density:8, pedia:'🌋 לבה טהורה שהתקררה (שחורה)' },
   { key:'hydrogen',name:'מימן',  color:[200,225,255], type:'gas', life:600, flam:true, shop:true, pedia:'H · יסוד 1 — גז נפיץ, נשרף למים' },
   { key:'helium',  name:'הליום', color:[255,238,190], type:'gas', life:600,            shop:true, pedia:'He · יסוד 2 — גז אצילי, קל מהאוויר' },
+  { key:'lithium', name:'ליתיום',color:[205,180,195], type:'solid', density:1, flam:true, shop:true, pedia:'Li · יסוד 3 — מתכת שמתפוצצת במים!' },
+  { key:'beryllium',name:'בריליום',color:[150,195,165],type:'solid', density:3,          shop:true, pedia:'Be · יסוד 4 — מתכת קלה, קשה ורעילה' },
+  { key:'wall',    name:'קיר',   color:[68,72,82],    type:'static', base:true, sys:true, pedia:'קיר בנייה — לא נמס, מבודד חום' },
 ];
 const ID = {}; MAT.forEach((m,i)=>{ m.id=i; ID[m.key]=i; });
 const AIR=ID.air, STONE=ID.stone, WATER=ID.water, EARTH=ID.earth, MUD=ID.mud,
       SAND=ID.sand, WOOD=ID.wood, SPROUT=ID.sprout, LEAF=ID.leaf, FLOWER=ID.flower,
       SEEDT=ID.seedT, SEEDF=ID.seedF, FIRE=ID.fire, STEAM=ID.steam, ICE=ID.ice,
       ASH=ID.ash, GLASS=ID.glass, LAVA=ID.lava, BASALT=ID.basalt,
-      HYDRO=ID.hydrogen, HELIUM=ID.helium;
-const TOTAL = MAT.filter(m => !m.shop && m.id!==AIR).length;   // ספירת גילויים — בלי יסודות החנות
+      HYDRO=ID.hydrogen, HELIUM=ID.helium, LITH=ID.lithium, BERYL=ID.beryllium, WALL=ID.wall;
+const TOTAL = MAT.filter(m => !m.shop && !m.sys && m.id!==AIR).length;   // ספירת גילויים (בלי חנות/מערכת)
 
 /* ---------- תכונות תרמיות ----------
    AMB = טמפ' הסביבה. cond = מוליכות חום. radi = קצב איבוד חום לסביבה.
    temp0 = טמפ' התחלתית של חומר כשמניחים אותו. */
 const AMB = 24;
-const cond  = MAT.map(m => ({air:0.03,water:0.10,ice:0.08,stone:0.045,glass:0.06,sand:0.05,steam:0.008,lava:0.17,fire:0.22}[m.key] ?? 0.04));
-const radi  = MAT.map(m => ({lava:0.0016,fire:0.02,steam:0.006}[m.key] ?? 0.004));
+const cond  = MAT.map(m => ({air:0.02,water:0.10,ice:0.08,stone:0.045,glass:0.06,sand:0.05,steam:0.008,wall:0.006,lava:0.16,fire:0.22,lithium:0.3,beryllium:0.3}[m.key] ?? 0.04));
+// radi = קצב איבוד חום לסביבה. נמוך = החום נשמר הרבה יותר (מציאותי). לבה כמעט לא מקרינה — נשארת חמה, מתקררת מהשוליים.
+const radi  = MAT.map(m => ({lava:0.0004,fire:0.02,steam:0.004,wall:0}[m.key] ?? 0.0012));
 const temp0 = MAT.map(m => ({lava:1200,fire:900,ice:-14}[m.key] ?? null));
 
 /* ---------- תכונות פיזיקליות (למשקל/תנע/כלי הבדיקה) ----------
    mass = צפיפות יחסית (g/cm³) → קובע כמה כבד וכמה כוח בפגיעה.
    formula/molecule = מבנה מולקולרי (לתצוגה, ובסיס לחשמל בעתיד). conduct = מוליך חשמל. */
-const mass    = MAT.map(m=>({air:0.001,water:1.0,ice:0.92,steam:0.0006,stone:2.7,basalt:3.0,sand:1.6,earth:1.5,mud:1.8,wood:0.7,leaf:0.4,flower:0.3,sprout:0.5,seedT:0.6,seedF:0.6,ash:0.5,glass:2.5,lava:2.8,fire:0.0003,hydrogen:0.00009,helium:0.00018}[m.key] ?? 1));
-const formula = MAT.map(m=>({air:'N₂+O₂',water:'H₂O',ice:'H₂O',steam:'H₂O',stone:'SiO₂',basalt:'SiO₂·Mg·Fe',sand:'SiO₂',earth:'SiO₂+C',mud:'SiO₂·H₂O',wood:'C₆H₁₀O₅',leaf:'C₆H₁₀O₅',flower:'C₆H₁₀O₅',sprout:'C₆H₁₀O₅',seedT:'C₆H₁₀O₅',seedF:'C₆H₁₀O₅',ash:'CaCO₃',glass:'SiO₂',lava:'SiO₂',fire:'CO₂+חום',hydrogen:'H₂',helium:'He'}[m.key] ?? '—'));
-const conduct = MAT.map(m=>({water:true,lava:true,fire:true}[m.key] ?? false));
-const molec   = MAT.map(m=>({air:'תערובת גזים',water:'מולקולה קוטבית',ice:'סריג גבישי',steam:'אדי מים',stone:'סריג סיליקט',basalt:'סלע וולקני צפוף',sand:'גרגרי קוורץ',earth:'תערובת אורגנית',mud:'אדמה רוויה',wood:'סיבי תאית',leaf:'תאית + כלורופיל',flower:'רקמה צמחית',sprout:'רקמה צמחית',seedT:'עובר זרע',seedF:'עובר זרע',ash:'שאריות מינרליות',glass:'מוצק אמורפי',lava:'סלע מותך',fire:'פלזמת בעירה',hydrogen:'מולקולה דו-אטומית H₂',helium:'אטום אצילי בודד'}[m.key] ?? '—'));
+const mass    = MAT.map(m=>({air:0.001,water:1.0,ice:0.92,steam:0.0006,stone:2.7,basalt:3.0,sand:1.6,earth:1.5,mud:1.8,wood:0.7,leaf:0.4,flower:0.3,sprout:0.5,seedT:0.6,seedF:0.6,ash:0.5,glass:2.5,lava:2.8,fire:0.0003,hydrogen:0.00009,helium:0.00018,lithium:0.53,beryllium:1.85,wall:2}[m.key] ?? 1));
+const formula = MAT.map(m=>({air:'N₂+O₂',water:'H₂O',ice:'H₂O',steam:'H₂O',stone:'SiO₂',basalt:'SiO₂·Mg·Fe',sand:'SiO₂',earth:'SiO₂+C',mud:'SiO₂·H₂O',wood:'C₆H₁₀O₅',leaf:'C₆H₁₀O₅',flower:'C₆H₁₀O₅',sprout:'C₆H₁₀O₅',seedT:'C₆H₁₀O₅',seedF:'C₆H₁₀O₅',ash:'CaCO₃',glass:'SiO₂',lava:'SiO₂',fire:'CO₂+חום',hydrogen:'H₂',helium:'He',lithium:'Li',beryllium:'Be'}[m.key] ?? '—'));
+const conduct = MAT.map(m=>({water:true,lava:true,fire:true,lithium:true,beryllium:true}[m.key] ?? false));
+const molec   = MAT.map(m=>({air:'תערובת גזים',water:'מולקולה קוטבית',ice:'סריג גבישי',steam:'אדי מים',stone:'סריג סיליקט',basalt:'סלע וולקני צפוף',sand:'גרגרי קוורץ',earth:'תערובת אורגנית',mud:'אדמה רוויה',wood:'סיבי תאית',leaf:'תאית + כלורופיל',flower:'רקמה צמחית',sprout:'רקמה צמחית',seedT:'עובר זרע',seedF:'עובר זרע',ash:'שאריות מינרליות',glass:'מוצק אמורפי',lava:'סלע מותך',fire:'פלזמת בעירה',hydrogen:'מולקולה דו-אטומית H₂',helium:'אטום אצילי בודד',lithium:'מתכת אלקלית רכה',beryllium:'מתכת קלה וקשה'}[m.key] ?? '—'));
 const STATE   = {empty:'—',powder:'אבקה',liquid:'נוזל',solid:'מוצק',gas:'גז',static:'מוצק'};
 // נקודות מעבר מצב אמיתיות (°C): נמס=הופך לנוזל, רותח=הופך לגז
-const meltC = MAT.map(m=>({water:0,ice:0,steam:0,stone:1200,basalt:1200,lava:1200,sand:1700,glass:1700,hydrogen:-259,helium:-272}[m.key] ?? null));
-const boilC = MAT.map(m=>({water:100,ice:100,steam:100,stone:2900,basalt:2900,lava:2900,sand:2950,glass:2950,hydrogen:-253,helium:-269}[m.key] ?? null));
+const meltC = MAT.map(m=>({water:0,ice:0,steam:0,stone:1200,basalt:1200,lava:1200,sand:1700,glass:1700,hydrogen:-259,helium:-272,lithium:180,beryllium:1287}[m.key] ?? null));
+const boilC = MAT.map(m=>({water:100,ice:100,steam:100,stone:2900,basalt:2900,lava:2900,sand:2950,glass:2950,hydrogen:-253,helium:-269,lithium:1342,beryllium:2470}[m.key] ?? null));
 function phaseStr(id){
   if (MAT[id].flam) return 'נשרף ב-~300° (לא נמס)';
   const mel=meltC[id], boi=boilC[id];
@@ -272,7 +312,7 @@ function phaseStr(id){
   return p.join(' · ');
 }
 // ---------- מבנה מולקולרי דו-ממדי (אטומים + קשרים) ----------
-const ATOMCOL={H:'#f0f0f0',He:'#7fe0d8',O:'#e05555',Si:'#d9a441',C:'#4a4a52',N:'#5566e0',Ca:'#3ba55d',Na:'#b060d0',Cl:'#45b545',Fe:'#c07040',Mg:'#66c090','?':'#888'};
+const ATOMCOL={H:'#f0f0f0',He:'#7fe0d8',Li:'#c78ac0',Be:'#8fd08f',O:'#e05555',Si:'#d9a441',C:'#4a4a52',N:'#5566e0',Ca:'#3ba55d',Na:'#b060d0',Cl:'#45b545',Fe:'#c07040',Mg:'#66c090','?':'#888'};
 const G_WATER={atoms:[['O',0.5,0.62],['H',0.26,0.36],['H',0.74,0.36]],bonds:[[0,1],[0,2]]};
 const G_SIO2 ={atoms:[['Si',0.5,0.5],['O',0.18,0.5],['O',0.82,0.5]],bonds:[[0,1],[0,2]]};
 const G_CO2  ={atoms:[['C',0.5,0.5],['O',0.16,0.5],['O',0.84,0.5]],bonds:[[0,1],[0,2]]};
@@ -281,10 +321,12 @@ const G_CACO3={atoms:[['Ca',0.2,0.5],['C',0.55,0.5],['O',0.82,0.3],['O',0.86,0.6
 const G_ORG=(()=>{const a=[];for(let k=0;k<6;k++){const g=Math.PI/3*k-Math.PI/2;a.push(['C',0.5+0.28*Math.cos(g),0.5+0.28*Math.sin(g)]);}a.push(['O',0.5,0.5]);return {atoms:a,bonds:[[0,1],[1,2],[2,3],[3,4],[4,5],[5,0],[2,6]]};})();
 const G_H2={atoms:[['H',0.34,0.5],['H',0.66,0.5]],bonds:[[0,1]]};
 const G_HE={atoms:[['He',0.5,0.5]],bonds:[]};
+const G_LI={atoms:[['Li',0.5,0.5]],bonds:[]};
+const G_BE={atoms:[['Be',0.5,0.5]],bonds:[]};
 const molGeom = MAT.map(m=>({
   water:G_WATER, ice:G_WATER, steam:G_WATER, mud:G_WATER,
   stone:G_SIO2, basalt:G_SIO2, sand:G_SIO2, glass:G_SIO2, lava:G_SIO2, earth:G_SIO2,
-  air:G_AIR, fire:G_CO2, ash:G_CACO3, hydrogen:G_H2, helium:G_HE,
+  air:G_AIR, fire:G_CO2, ash:G_CACO3, hydrogen:G_H2, helium:G_HE, lithium:G_LI, beryllium:G_BE,
   wood:G_ORG, leaf:G_ORG, flower:G_ORG, sprout:G_ORG, seedT:G_ORG, seedF:G_ORG
 }[m.key] || {atoms:[['?',0.5,0.5]],bonds:[]}));
 function drawMol(mc,id){
@@ -343,6 +385,7 @@ const inB = (x,y) => x>=0 && x<W && y>=0 && y<H;
 
 /* ---------- מצב משחק ---------- */
 let current = WATER, brush = 3, paused = false, speed = 1;
+let buildOnAir = true, borderWalls = false;   // הגדרות
 let painting = false, ptx=0, pty=0;
 let score = 0;
 const found = new Uint8Array(MAT.length);
@@ -452,12 +495,37 @@ function react(x,y,i,id){
     case SPROUT: return growSprout(x,y,i);
     case SEEDT:  return reactSeed(x,y,i,true);
     case SEEDF:  return reactSeed(x,y,i,false);
-    case FLOWER: return reactFlower(x,y,i);
+    case FLOWER: return reactPlantPart(x,y,i,FLOWER);
     case FIRE:   return updateFire(x,y,i);
     case ASH:    return reactAsh(x,y,i);
     case HYDRO:  return reactHydrogen(x,y,i);
+    case LITH:   return reactLithium(x,y,i);
+    case LEAF:   return reactPlantPart(x,y,i,LEAF);
+    case WOOD:   return reactWood(x,y,i);
   }
   return false;
+}
+// ליתיום: מתפוצץ במגע עם מים (Li + H₂O → פיצוץ + מימן). אחרת מתכת שנופלת/צפה.
+function reactLithium(x,y,i){
+  for(const [dx,dy] of NEI4){ const nx=x+dx,ny=y+dy; if(!inB(nx,ny))continue;
+    if(grid[idx(nx,ny)]===WATER){ explode(x,y,i); return true; } }
+  return false;
+}
+// עץ: נופל כשאין תמיכה מתחתיו (אם ההגדרה דלוקה)
+function reactWood(x,y,i){
+  if(plantGrav && y+1<H && grid[idx(x,y+1)]===AIR){ swap(i,idx(x,y+1)); return true; }
+  return true;
+}
+// עלה/פרח: אם התנתקו מהעץ (אין שכן צמחי) ואין תמיכה — נופלים
+function reactPlantPart(x,y,i,id){
+  if(plantGrav){
+    let att=false;
+    for(const [dx,dy] of NEI4){ const nx=x+dx,ny=y+dy; if(!inB(nx,ny))continue;
+      const n=grid[idx(nx,ny)]; if(n===WOOD||n===LEAF||n===FLOWER||n===SPROUT){ att=true; break; } }
+    if(!att && y+1<H && canSink(id,grid[idx(x,y+1)])){ swap(i,idx(x,y+1)); return true; }
+  }
+  if(id===FLOWER) return reactFlowerSeed(x,y,i);
+  return true;
 }
 // מימן: ליד אש/לבה או מעל טמפ' התלקחות (~560°) → מתפוצץ. הליום (אצילי) לא — לכן אין לו react.
 function reactHydrogen(x,y,i){
@@ -493,7 +561,7 @@ function reactWater(x,y,i){
   for (const [dx,dy] of NEI4){
     const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
     const j=idx(nx,ny), n=grid[j];
-    if (n===EARTH && Math.random()<0.22){ setCell(j,MUD); }
+    if (n===EARTH && Math.random()<0.22){ setCell(j,MUD); grid[i]=AIR; life[i]=0; velX[i]=0; velY[i]=0; return true; } // המים נספגים — נצרכים
     else if (n===STONE && Math.random()<0.0016){ setCell(j,SAND); }
   }
   return false;
@@ -501,7 +569,9 @@ function reactWater(x,y,i){
 function reactMud(x,y,i){
   const below = y+1<H ? grid[idx(x,y+1)] : STONE;
   const aboveIsAir = y-1>=0 && grid[idx(x,y-1)]===AIR;
-  if (below!==AIR && aboveIsAir && Math.random()<0.0022){
+  let wet=false;   // בוץ רווי מדי (ליד מים) לא מצמיח
+  for(const [dx,dy] of NEI4){ const nx=x+dx,ny=y+dy; if(inB(nx,ny)&&grid[idx(nx,ny)]===WATER){ wet=true; break; } }
+  if (!wet && below!==AIR && aboveIsAir && Math.random()<0.0022){
     const a=idx(x,y-1);
     grid[a]=SPROUT; life[a]=10+Math.floor(Math.random()*12); aux[a]=6;
     discover(SPROUT);
@@ -532,7 +602,7 @@ function reactSeed(x,y,i,isTree){
   }
   return false;
 }
-function reactFlower(x,y,i){
+function reactFlowerSeed(x,y,i){
   if (Math.random()<0.0045){
     for (const [dx,dy] of [[0,-1],[1,0],[-1,0]]){
       const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
@@ -717,7 +787,7 @@ function paintAt(cx,cy){
     if (current==='heat'){ temp[i]=Math.min(1700, temp[i]+30); continue; }
     if (current==='cool'){ temp[i]=Math.max(-60,  temp[i]-30); continue; }
     if (current===AIR){ grid[i]=AIR; life[i]=0; aux[i]=0; temp[i]=AMB; velX[i]=0; velY[i]=0; continue; }
-    if (grid[i]!==AIR && Math.random()>0.9) continue;
+    if (buildOnAir && grid[i]!==AIR) continue;   // ברירת מחדל: בונים רק על אוויר (לא מוחקים)
     grid[i]=current; life[i]=0; aux[i]=0; velX[i]=0; velY[i]=0;
     temp[i] = temp0[current]!=null ? temp0[current] : AMB;
     if (current===FIRE) life[i]=MAT[FIRE].life;
@@ -798,7 +868,10 @@ function inspectAt(gx,gy,cx,cy){
     </div>
     <div style="margin-top:5px"><span style="opacity:.65">🌡️ מעברי מצב:</span> <b>${phaseStr(id)}</b></div>`;
   inspEl.style.display='block';
-  drawMol(document.getElementById('molcv'), id);
+  const mc=document.getElementById('molcv'); drawMol(mc, id);
+  mc.title='לחץ לצפייה באטום';
+  mc.onclick=()=>{ const syms=molGeom[id].atoms.map(a=>a[0]).filter(s=>ELEMENT_HE[s]);
+    if(syms.length){ syms.sort((a,b)=>ELEMENT_HE[b][1]-ELEMENT_HE[a][1]); showAtom(syms[0]); } };
   document.getElementById('inspX').onclick=()=>inspEl.style.display='none';
 }
 function buildPalette(justFound){
@@ -857,11 +930,14 @@ const PT=[
 ['Fr','פרנציום','am',223,'s',7,1],['Ra','ראדיום','ae',226,'s',7,2],['Ac','אקטיניום','act',227,'s',9,3],['Th','תוריום','act',232,'s',9,4],['Pa','פרוטקטיניום','act',231,'s',9,5],['U','אורניום','act',238,'s',9,6],['Np','נפטוניום','act',237,'s',9,7],['Pu','פלוטוניום','act',244,'s',9,8],['Am','אמריציום','act',243,'s',9,9],['Cm','קוריום','act',247,'s',9,10],['Bk','ברקליום','act',247,'s',9,11],['Cf','קליפורניום','act',251,'s',9,12],['Es','איינשטייניום','act',252,'s',9,13],['Fm','פרמיום','act',257,'s',9,14],['Md','מנדלביום','act',258,'s',9,15],['No','נובליום','act',259,'s',9,16],['Lr','לורנציום','act',266,'s',9,17],['Rf','רתרפורדיום','tm',267,'s',7,4],['Db','דובניום','tm',268,'s',7,5],['Sg','סיבורגיום','tm',269,'s',7,6],['Bh','בוריום','tm',270,'s',7,7],['Hs','הסיום','tm',269,'s',7,8],['Mt','מייטנריום','unk',278,'s',7,9],['Ds','דרמשטטיום','unk',281,'s',7,10],['Rg','רנטגניום','unk',282,'s',7,11],['Cn','קופרניציום','tm',285,'s',7,12],['Nh','ניהוניום','ptm',286,'s',7,13],['Fl','פלרוביום','ptm',289,'s',7,14],['Mc','מוסקוביום','ptm',290,'s',7,15],['Lv','ליברמוריום','ptm',293,'s',7,16],['Ts','טנסין','hl',294,'s',7,17],['Og','אוגנסון','ng',294,'g',7,18]
 ];
 const PHASE={s:'מוצק',l:'נוזל',g:'גז'};
-const PLAY={1:HYDRO, 2:HELIUM};   // יסודות שכבר אפשר לשחק בהם
+const PLAY={1:HYDRO, 2:HELIUM, 3:LITH, 4:BERYL};   // יסודות שכבר אפשר לשחק בהם
 const FACTS={
   1:['🔥 <b>נפיץ מאוד!</b> נשרף בחמצן/אש ויוצר מים 💧','🎈 הגז הקל ביותר ביקום — עולה מהר','⚡ לא מוליך חשמל (כגז)','🥶 רותח ב-253°- (מהקרים ביקום)'],
-  2:['🛡️ <b>גז אצילי — לא נשרף ולא מתפוצץ בכלל</b>','🎈 קל מהאוויר — ממלא בלונים שעפים','⚡ לא מוליך חשמל','🥶 היסוד הכי קר להנזלה: 269°-']
+  2:['🛡️ <b>גז אצילי — לא נשרף ולא מתפוצץ בכלל</b>','🎈 קל מהאוויר — ממלא בלונים שעפים','⚡ לא מוליך חשמל','🥶 היסוד הכי קר להנזלה: 269°-'],
+  3:['💥 <b>מתפוצץ במגע עם מים!</b> (מתכת אלקלית)','🪶 קל מהמים — צף עליהם','🔋 מוליך חשמל וחום','🔥 דליק · נמס כבר ב-180°'],
+  4:['🛠️ מתכת קלה, קשה מאוד וחזקה','🔋 מוליכה חשמל וחום','🔥 נמס גבוה מאוד (1287°)','☠️ רעיל מאוד במציאות!']
 };
+const REACTS={ 1:'מגיב עם 🔥 אש/חמצן → 💧 מים + פיצוץ', 3:'מגיב עם 💧 מים → 💥 פיצוץ + מימן', 8:'חמצן מזין בעירה', 2:'לא מגיב עם כלום (אצילי)' };
 const ptable=document.getElementById('ptable');
 function buildShop(){
   ptable.innerHTML='';
@@ -885,10 +961,12 @@ function showElement(z){
   let props='';
   if(FACTS[z]) props=FACTS[z].map(f=>'<div>'+f+'</div>').join('');
   else props='<div>מצב בטמפ\' החדר: <b>'+PHASE[ph]+'</b></div><div>קטגוריה: <b>'+CAT[cat][0]+'</b></div>';
+  if(REACTS[z]) props+='<div style="margin-top:4px">🔗 <b>תגובה:</b> '+REACTS[z]+'</div>';
   const btn = playable
     ? (owned?'<button class="buy" disabled>✓ כבר ברשותך</button>'
             :'<button class="buy" id="buyBtn">קנה · 0 נק\' ידע</button>')
     : '<button class="buy soon" disabled>עוד לא זמין לשחק — נוסיף בעתיד 🔜</button>';
+  const atomBtn = ELEMENT_HE[sym] ? '<button class="buy" id="atomBtn" style="background:#3a5580;color:#fff;margin-top:6px">⚛️ צפה במבנה האטום</button>' : '';
   const d=document.getElementById('eleDetail');
   d.innerHTML=`
     <div class="eh">
@@ -896,15 +974,68 @@ function showElement(z){
       <div><div class="en">${he}</div><div class="ec">${CAT[cat][0]} · מסה ${mass} · ${PHASE[ph]}</div></div>
     </div>
     <div class="props">${props}</div>
-    ${btn}`;
+    ${btn}${atomBtn}`;
   d.classList.add('show');
   if(playable && !owned) document.getElementById('buyBtn').onclick=()=>{
     found[PLAY[z]]=1; buildPalette(PLAY[z]); buildShop(); showElement(z);
     toast('🛒 קנית: '+he+'!');
   };
+  if(atomBtn) document.getElementById('atomBtn').onclick=()=>showAtom(sym);
 }
 document.getElementById('btnShop').onclick=()=>{ buildShop(); document.getElementById('eleDetail').classList.remove('show'); document.getElementById('shop').classList.add('open'); };
 document.getElementById('shopClose').onclick=()=>document.getElementById('shop').classList.remove('open');
+
+/* ===== הגדרות ===== */
+let plantGrav = true;
+function applyBorder(){ if(!borderWalls) return;
+  for(let x=0;x<W;x++){ grid[idx(x,0)]=WALL; grid[idx(x,H-1)]=WALL; }
+  for(let y=0;y<H;y++){ grid[idx(0,y)]=WALL; grid[idx(W-1,y)]=WALL; }
+}
+function clearBorder(){
+  for(let x=0;x<W;x++){ if(grid[idx(x,0)]===WALL)grid[idx(x,0)]=AIR; if(grid[idx(x,H-1)]===WALL)grid[idx(x,H-1)]=AIR; }
+  for(let y=0;y<H;y++){ if(grid[idx(0,y)]===WALL)grid[idx(0,y)]=AIR; if(grid[idx(W-1,y)]===WALL)grid[idx(W-1,y)]=AIR; }
+}
+document.getElementById('btnSettings').onclick=()=>document.getElementById('settings').classList.add('open');
+document.getElementById('setClose').onclick=()=>document.getElementById('settings').classList.remove('open');
+document.getElementById('setBuild').onchange=e=>buildOnAir=e.target.checked;
+document.getElementById('setGrav').onchange=e=>plantGrav=e.target.checked;
+document.getElementById('setBorder').onchange=e=>{ borderWalls=e.target.checked; if(borderWalls)applyBorder(); else clearBorder(); };
+
+/* ===== מודל בוהר של האטום (חינוכי) ===== */
+// מספר אלקטרונים בכל קליפה (2,8,18,32...) לפי מספר אטומי
+function shells(Z){ const cap=[2,8,18,32,32,18,8]; const sh=[]; let e=Z;
+  for(let k=0;k<cap.length&&e>0;k++){ const n=Math.min(cap[k],e); sh.push(n); e-=n; } return sh; }
+const ELEMENT_HE={H:['מימן',1],He:['הליום',2],Li:['ליתיום',3],Be:['בריליום',4],B:['בורון',5],C:['פחמן',6],N:['חנקן',7],O:['חמצן',8],Na:['נתרן',11],Mg:['מגנזיום',12],Si:['צורן',14],Cl:['כלור',17],Ca:['סידן',20],Fe:['ברזל',26]};
+function showAtom(sym){
+  const info=ELEMENT_HE[sym]; if(!info) return;
+  const [he,Z]=info, sh=shells(Z);
+  const cv=document.getElementById('atomCv'), x=cv.getContext('2d'), S=cv.width, cx=S/2, cy=S/2;
+  x.clearRect(0,0,S,S);
+  // קליפות
+  for(let k=0;k<sh.length;k++){
+    const r=34+k*30;
+    x.strokeStyle='rgba(120,150,200,.4)'; x.lineWidth=1.5;
+    x.beginPath(); x.arc(cx,cy,r,0,7); x.stroke();
+    // אלקטרונים על הקליפה
+    for(let e=0;e<sh[k];e++){
+      const a=(e/sh[k])*Math.PI*2 - Math.PI/2 + k*0.3;
+      const ex=cx+r*Math.cos(a), ey=cy+r*Math.sin(a);
+      x.fillStyle='#6cc0ff'; x.beginPath(); x.arc(ex,ey,5,0,7); x.fill();
+      x.fillStyle='#fff'; x.font='7px sans-serif'; x.textAlign='center'; x.textBaseline='middle'; x.fillText('-',ex,ey);
+    }
+  }
+  // גרעין
+  x.fillStyle='#e05555'; x.beginPath(); x.arc(cx,cy,20,0,7); x.fill();
+  x.fillStyle='#fff'; x.font='bold 15px sans-serif'; x.textAlign='center'; x.textBaseline='middle'; x.fillText(sym,cx,cy);
+  const valence=sh[sh.length-1];
+  document.getElementById('atomInfo').innerHTML=
+    `<b>${he}</b> (${sym}) · מספר אטומי <b>${Z}</b><br>`+
+    `🔴 בגרעין: ${Z} פרוטונים · 🔵 ${Z} אלקטרונים<br>`+
+    `קליפות אלקטרונים: <b>${sh.join(' · ')}</b><br>`+
+    `אלקטרונים בקליפה החיצונית (ערכיות): <b>${valence}</b>`;
+  document.getElementById('atomView').classList.add('open');
+}
+document.getElementById('atomClose').onclick=()=>document.getElementById('atomView').classList.remove('open');
 
 /* ===== כפתורים ===== */
 document.getElementById('btnHeat').onclick=()=>setCurrent('heat');
