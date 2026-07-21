@@ -140,6 +140,9 @@
     border:1px solid #2a2f3a; border-radius:12px; padding:12px 14px; width:100%; max-width:420px;
     margin-bottom:10px; cursor:pointer; }
   .stog input[type=checkbox] { width:22px; height:22px; accent-color:#5ec27a; flex:0 0 auto; }
+  .resbtn { flex:1; height:38px; border-radius:10px; border:1px solid #2a3444; background:#141a24;
+    color:#cfe0f5; font-size:14px; font-weight:700; cursor:pointer; }
+  .resbtn.on { background:#2b6cff; border-color:#2b6cff; color:#fff; }
   #setClose, #atomClose { margin-top:14px; height:44px; padding:0 26px; border-radius:12px;
     border:1px solid #33608a; background:#1b2634; color:#e8e0c8; font-size:15px; font-weight:700; cursor:pointer; }
   #atomCv { background:radial-gradient(circle at 50% 50%, #0d1520, #05070c); border-radius:14px;
@@ -198,6 +201,16 @@
       <label class="stog"><input type="checkbox" id="setBorder"> 🔲 קירות מסביב למסך (חומרים וחום לא בורחים)</label>
       <label class="stog"><input type="checkbox" id="setGrav" checked> 🍃 צמחים נופלים כשאין תמיכה</label>
       <label class="stog"><input type="checkbox" id="setNoLoss"> 🌡️ חומרים לא מאבדים חום לסביבה (רק מוליכים אותו)</label>
+      <div class="stog" style="flex-direction:column; align-items:stretch; gap:8px">
+        <div>🔬 גודל הפיקסלים (רזולוציה)</div>
+        <div id="resBtns" style="display:flex; gap:8px">
+          <button class="resbtn" data-s="5">רגיל</button>
+          <button class="resbtn" data-s="3">עדין</button>
+          <button class="resbtn" data-s="2">עדין מאוד</button>
+        </div>
+        <div style="font-size:11px; opacity:.6">פיקסלים קטנים = יותר מציאותי (כל פיקסל ≈ מולקולה) אבל כבד יותר. שינוי מנקה את המסך.</div>
+      </div>
+      <button class="stog" id="setClearAll" style="justify-content:center; color:#ff9a8a; font-weight:700">🗑️ מחק הכל (נקה את המסך)</button>
       <button id="setClose">סגור</button>
     </div>
 
@@ -360,7 +373,7 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d', { alpha:false });
 const buf = document.createElement('canvas');
 const bctx = buf.getContext('2d', { alpha:false });
-const SCALE = 5;
+let SCALE = 5;   // גודל פיקסל (קטן יותר = רזולוציה גבוהה יותר, כל פיקסל קרוב יותר למולקולה)
 let W, H, grid, life, aux, temp, temp2, velX, velY, moved, img;
 
 function setup() {
@@ -495,6 +508,8 @@ function checkPhase(i){
 
 /* ===== תגובות/צמיחה (כימיה שאינה תרמית) ===== */
 const NEI4 = [[1,0],[-1,0],[0,1],[0,-1]];
+// 8 שכנים עם משקל: ישר=1, אלכסון=0.55 — כדי שחזית האש תתפשט בעיגול ולא בריבוע
+const NEI8W = [[1,0,1],[-1,0,1],[0,1,1],[0,-1,1],[1,1,0.55],[1,-1,0.55],[-1,1,0.55],[-1,-1,0.55]];
 function react(x,y,i,id){
   switch(id){
     case WATER:  return reactWater(x,y,i);
@@ -531,9 +546,12 @@ function reactPlantPart(x,y,i,id){
 // הבעירה מתפשטת תא-אחר-תא כחזית להבה (לא הכל בבת אחת) ונשרפת ל-💧 מים.
 function reactHydrogen(x,y,i){
   let spark=false;
-  // חזית הלהבה מתקדמת שכבה-בכל-פריים: מציתה רק אש/לבה "ותיקה" (לא אש שנוצרה בפריים הזה)
-  for(const [dx,dy] of NEI4){ const nx=x+dx,ny=y+dy; if(!inB(nx,ny))continue;
-    const j=idx(nx,ny), n=grid[j]; if(n===LAVA || (n===FIRE && !moved[j])){ spark=true; break; } }
+  // חזית הלהבה מתקדמת שכבה-בכל-פריים ובצורה עגולה: אלכסון בהסתברות נמוכה יותר + רנדומליות בשוליים
+  for(const [dx,dy,w] of NEI8W){ const nx=x+dx,ny=y+dy; if(!inB(nx,ny))continue;
+    const j=idx(nx,ny), n=grid[j];
+    if(n===LAVA){ spark=true; break; }
+    if(n===FIRE && !moved[j] && Math.random() < w*0.82){ spark=true; break; }
+  }
   // התלקחות עצמית — נדירה, ותלולה מאוד בטמפרטורה, כך שבד"כ מתחילה בנקודה החמה ביותר
   if(!spark && temp[i]>=560){ const f=(temp[i]-560)/240; if(Math.random() < f*f*0.4) spark=true; }
   if(spark){ igniteH(x,y,i); return true; }
@@ -1015,6 +1033,18 @@ document.getElementById('setBuild').onchange=e=>buildOnAir=e.target.checked;
 document.getElementById('setGrav').onchange=e=>plantGrav=e.target.checked;
 document.getElementById('setBorder').onchange=e=>{ borderWalls=e.target.checked; if(borderWalls)applyBorder(); else clearBorder(); };
 document.getElementById('setNoLoss').onchange=e=>{ noHeatLoss=e.target.checked; };
+// מחיקת הכל
+function clearAll(){ grid.fill(0); life.fill(0); aux.fill(0); temp.fill(AMB); velX.fill(0); velY.fill(0);
+  if(borderWalls) applyBorder(); }
+document.getElementById('setClearAll').onclick=()=>{ clearAll(); toast('🗑️ נוקה'); };
+// שינוי רזולוציה (גודל פיקסל) — בונה מחדש את הרשת (מנקה), ומסמן את הכפתור הפעיל
+function setResolution(s){
+  SCALE=s; setup(); if(borderWalls) applyBorder();
+  [...document.querySelectorAll('.resbtn')].forEach(b=> b.classList.toggle('on', +b.dataset.s===SCALE));
+  buildPalette(); toast('🔬 רזולוציה: '+(s===5?'רגיל':s===3?'עדין':'עדין מאוד'));
+}
+[...document.querySelectorAll('.resbtn')].forEach(b=> b.onclick=()=>setResolution(+b.dataset.s));
+[...document.querySelectorAll('.resbtn')].forEach(b=> b.classList.toggle('on', +b.dataset.s===SCALE));
 
 /* ===== מודל בוהר של האטום (חינוכי) ===== */
 // מספר אלקטרונים בכל קליפה (2,8,18,32...) לפי מספר אטומי
