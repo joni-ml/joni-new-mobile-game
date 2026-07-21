@@ -527,34 +527,36 @@ function reactPlantPart(x,y,i,id){
   if(id===FLOWER) return reactFlowerSeed(x,y,i);
   return true;
 }
-// מימן: ליד אש/לבה או מעל טמפ' התלקחות (~560°) → מתפוצץ ונשרף למים.
+// מימן: מתלקח ממגע עם אש/לבה, או התלקחות עצמית נדירה מעל ~560° (מדליקה נקודה אחת).
+// הבעירה מתפשטת תא-אחר-תא כחזית להבה (לא הכל בבת אחת) ונשרפת ל-💧 מים.
 function reactHydrogen(x,y,i){
-  let ignite = temp[i]>=560;
-  if(!ignite) for(const [dx,dy] of NEI4){ const nx=x+dx,ny=y+dy; if(!inB(nx,ny))continue;
-    const n=grid[idx(nx,ny)]; if(n===FIRE||n===LAVA){ ignite=true; break; } }
-  if(ignite){ explode(x,y,i); return true; }
+  let spark=false;
+  // חזית הלהבה מתקדמת שכבה-בכל-פריים: מציתה רק אש/לבה "ותיקה" (לא אש שנוצרה בפריים הזה)
+  for(const [dx,dy] of NEI4){ const nx=x+dx,ny=y+dy; if(!inB(nx,ny))continue;
+    const j=idx(nx,ny), n=grid[j]; if(n===LAVA || (n===FIRE && !moved[j])){ spark=true; break; } }
+  // התלקחות עצמית — נדירה, ותלולה מאוד בטמפרטורה, כך שבד"כ מתחילה בנקודה החמה ביותר
+  if(!spark && temp[i]>=560){ const f=(temp[i]-560)/240; if(Math.random() < f*f*0.4) spark=true; }
+  if(spark){ igniteH(x,y,i); return true; }
   return false;   // אחרת מתנהג כגז קל (עולה) — moveGas
 }
-// פיצוץ מימן: 2H₂+O₂→2H₂O. גל חום + הדף, והמימן נשרף לאדים חמים (מים).
-function explode(x,y,i){
-  const R=5;
-  for(let dy=-R;dy<=R;dy++) for(let dx=-R;dx<=R;dx++){
-    const d=Math.hypot(dx,dy); if(d>R) continue;
+// התלקחות תא מימן: להבה קצרה וחמה. מחמם רק חומרים לא-מימניים סביב (מכתש/הדף) —
+// את המימן השכן מציתה חזית האש בפריים הבא (כדי שהפיצוץ יתפשט בהדרגה, לא בבת אחת).
+function igniteH(x,y,i){
+  for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++){
+    const d2=dx*dx+dy*dy; if(d2>4 || (!dx&&!dy)) continue;
     const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
-    const j=idx(nx,ny), n=grid[j]; if(n===WALL) continue;
-    const f=(R-d)/R;
-    temp[j] += f*1500;                              // גל חום (~להבת מימן 2000°)
-    if(n===HYDRO){ grid[j]=STEAM; life[j]=MAT[STEAM].life; temp[j]=1900; moved[j]=1; }   // נשרף למים
-    else if(n!==AIR){                               // הדף
-      const inv=1/(d||1);
-      velX[j] += dx*inv*f*MAXV*(0.9+Math.random()*0.6);
-      velY[j] += (dy*inv-0.6)*f*MAXV*(0.8+Math.random()*0.6);
-      if(velX[j]> MAXV) velX[j]= MAXV; if(velX[j]<-MAXV) velX[j]=-MAXV;
-      if(velY[j]> MAXV) velY[j]= MAXV; if(velY[j]<-MAXV) velY[j]=-MAXV;
-      if(MAT[n].flam && Math.random()<0.5){ grid[j]=FIRE; temp[j]=1000; life[j]=MAT[FIRE].life; moved[j]=1; }
+    const j=idx(nx,ny), n=grid[j]; if(n===WALL || n===HYDRO) continue;   // לא מחמם מימן (מונע הצתה בבת אחת)
+    const d=Math.sqrt(d2);
+    temp[j] += (1 - d/2.3) * 700;                    // גל חום לחומרים אחרים
+    if(n!==AIR){                                     // הדף מקומי (רסיסים)
+      const inv=1/d;
+      velX[j] += dx*inv*1.8*(0.6+Math.random()*0.5);
+      velY[j] += (dy*inv-0.5)*1.8*(0.6+Math.random()*0.5);
+      if(velX[j]> MAXV)velX[j]= MAXV; if(velX[j]<-MAXV)velX[j]=-MAXV;
+      if(velY[j]> MAXV)velY[j]= MAXV; if(velY[j]<-MAXV)velY[j]=-MAXV;
     }
   }
-  grid[i]=STEAM; life[i]=MAT[STEAM].life; temp[i]=1900; velX[i]=0; velY[i]=0; moved[i]=1;   // מרכז → אדים חמים (מים)
+  grid[i]=FIRE; temp[i]=1700; life[i]=8; aux[i]=1; moved[i]=1;   // aux=1: להבת מימן → תתעבה לאדים (מים)
 }
 function reactWater(x,y,i){
   for (const [dx,dy] of NEI4){
@@ -614,15 +616,16 @@ function reactFlowerSeed(x,y,i){
 function updateFire(x,y,i){
   if (temp[i]<650) temp[i]=700+Math.random()*160;   // אש חמה — מחממת ומדליקה סביבה
   if (life[i]===0) life[i]=MAT[FIRE].life;
-  for (const [dx,dy] of NEI4){                       // מתפשטת לחומר דליק צמוד
+  for (const [dx,dy] of NEI4){                       // מתפשטת לחומר דליק צמוד (מימן מטופל ב-reactHydrogen)
     const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
     const j=idx(nx,ny);
-    if (MAT[grid[j]].flam){
+    if (MAT[grid[j]].flam && grid[j]!==HYDRO){
       if (Math.random()<0.25){ grid[j]=FIRE; temp[j]=760; life[j]=MAT[FIRE].life; moved[j]=1; discover(FIRE); }
       else temp[j]+=25;
     }
   }
   if (--life[i] <= 1){
+    if (aux[i]===1){ grid[i]=STEAM; life[i]=MAT[STEAM].life; aux[i]=0; return true; }   // להבת מימן → אדים (מים)
     if (Math.random()<0.4){ grid[i]=ASH; discover(ASH); } else grid[i]=AIR;
     life[i]=0; return true;
   }
