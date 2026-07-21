@@ -202,13 +202,19 @@
       <label class="stog"><input type="checkbox" id="setGrav" checked> 🍃 צמחים נופלים כשאין תמיכה</label>
       <label class="stog"><input type="checkbox" id="setNoLoss"> 🌡️ חומרים לא מאבדים חום לסביבה (רק מוליכים אותו)</label>
       <div class="stog" style="flex-direction:column; align-items:stretch; gap:8px">
-        <div>🔬 גודל הפיקסלים (רזולוציה)</div>
-        <div id="resBtns" style="display:flex; gap:8px">
-          <button class="resbtn" data-s="5">רגיל</button>
-          <button class="resbtn" data-s="3">עדין</button>
-          <button class="resbtn" data-s="2">עדין מאוד</button>
+        <div>🌍 גודל העולם</div>
+        <div id="resBtns" style="display:flex; gap:6px; flex-wrap:wrap">
+          <button class="resbtn" data-s="9">ממש קטן</button>
+          <button class="resbtn" data-s="5">קטן</button>
+          <button class="resbtn" data-s="3.5">בינוני</button>
+          <button class="resbtn" data-s="2.5">גדול</button>
+          <button class="resbtn" data-s="1.6">ענק</button>
         </div>
-        <div style="font-size:11px; opacity:.6">פיקסלים קטנים = יותר מציאותי (כל פיקסל ≈ מולקולה) אבל כבד יותר. שינוי מנקה את המסך.</div>
+        <div style="font-size:11px; opacity:.6">עולם גדול = יותר פיקסלים (כל פיקסל קרוב יותר למולקולה) אבל כבד יותר. שינוי מנקה את המסך.</div>
+      </div>
+      <div class="stog" style="flex-direction:column; align-items:stretch; gap:8px">
+        <div>⚡ מהירות מרבית של המשחק: <b id="maxSpeedVal">3</b>×</div>
+        <input type="range" id="setMaxSpeed" min="1" max="12" value="3" style="width:100%">
       </div>
       <button class="stog" id="setClearAll" style="justify-content:center; color:#ff9a8a; font-weight:700">🗑️ מחק הכל (נקה את המסך)</button>
       <button id="setClose">סגור</button>
@@ -262,7 +268,7 @@
     </div>
     <div id="sliders">
       <label>גודל <input id="brush" type="range" min="1" max="12" value="3"></label>
-      <label>מהירות <input id="speed" type="range" min="1" max="15" value="10"></label>
+      <label>מהירות <input id="speed" type="range" min="1" max="120" value="10"></label>
     </div>
   </div>
 
@@ -407,7 +413,7 @@ const idx = (x,y) => y*W + x;
 const inB = (x,y) => x>=0 && x<W && y>=0 && y<H;
 
 /* ---------- מצב משחק ---------- */
-let current = WATER, brush = 3, paused = false, speed = 1;
+let current = WATER, brush = 3, paused = false, speed = 1, maxSteps = 3;
 let buildOnAir = true, borderWalls = false, noHeatLoss = false;   // הגדרות
 let painting = false, ptx=0, pty=0;
 let held = null, holdX = 0, holdY = 0;   // כלי היד — גוש חומר שהורם
@@ -1185,6 +1191,7 @@ document.getElementById('setBuild').onchange=e=>buildOnAir=e.target.checked;
 document.getElementById('setGrav').onchange=e=>plantGrav=e.target.checked;
 document.getElementById('setBorder').onchange=e=>{ borderWalls=e.target.checked; if(borderWalls)applyBorder(); else clearBorder(); };
 document.getElementById('setNoLoss').onchange=e=>{ noHeatLoss=e.target.checked; };
+document.getElementById('setMaxSpeed').oninput=e=>{ maxSteps=+e.target.value; document.getElementById('maxSpeedVal').textContent=maxSteps; };
 // מחיקת הכל
 function clearAll(){ grid.fill(0); life.fill(0); aux.fill(0); temp.fill(AMB); velX.fill(0); velY.fill(0); held=null;
   if(borderWalls) applyBorder(); }
@@ -1287,7 +1294,7 @@ function toast(msg){
 let last=performance.now(), fr=0, ft=0, acc=0;
 function loop(now){
   const dt=now-last; last=now;
-  if(!paused){ acc+=speed; let n=0; while(acc>=1 && n<3){ step(); acc--; n++; } }
+  if(!paused){ acc+=speed; let n=0; while(acc>=1 && n<maxSteps){ step(); acc--; n++; } }
   if(painting) paintAt(ptx,pty);   // החזקה רציפה: ממשיך למרוח/לחמם/לקרר כמו ברז
   render();
   fr++; ft+=dt;
