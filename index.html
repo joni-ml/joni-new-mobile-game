@@ -450,9 +450,11 @@ function render() {
   // רשת: מציירים כתבנית סורג (חצי מלא, חצי "חורים") במקום ריבוע אפור מלא — נראה כמו רשת אמיתית
   if (meshCells.length){
     const cw=canvas.width/W, ch=canvas.height/H;
-    ctx.fillStyle='#0a0d13';   // ה"חורים" — מראים את הרקע הכהה (וכך רואים דרך הרשת)
     for (let k=0;k<meshCells.length;k++){
-      const i=meshCells[k], gx=(i%W)*cw, gy=((i/W)|0)*ch, hw=cw/2, hh=ch/2;
+      const i=meshCells[k], f=aux[i];
+      if (f){ const c=MAT[f].color; ctx.fillStyle='rgb('+c[0]+','+c[1]+','+c[2]+')'; }  // נוזל שעובר — נראה בחורי הרשת
+      else ctx.fillStyle='#0a0d13';                                                     // חורים ריקים — כהה
+      const gx=(i%W)*cw, gy=((i/W)|0)*ch, hw=cw/2, hh=ch/2;
       ctx.fillRect(gx+hw, gy, cw-hw, hh);      // חור למעלה-ימין
       ctx.fillRect(gx, gy+hh, hw, ch-hh);      // חור למטה-שמאל
     }
@@ -554,6 +556,7 @@ function react(x,y,i,id){
     case HYDRO:  return reactHydrogen(x,y,i);
     case LEAF:   return reactPlantPart(x,y,i,LEAF);
     case WOOD:   return reactWood(x,y,i);
+    case MESH:   return reactMesh(x,y,i);
   }
   return false;
 }
@@ -786,15 +789,26 @@ function scatter(cx,cy,id,E){
   }
 }
 function moveLiquid(x,y,i,id){
-  // דליפה דרך רשת: הנוזל מטפטף בהדרגה דרך שכבות הרשת, ומחמם/מקרר אותן בדרך
+  // הנוזל נכנס אל תוך חורי הרשת (aux=סוג הנוזל — רואים אותו שם) ואז יורד דרכה תא-אחר-תא (reactMesh)
   if (y+1<H && grid[idx(x,y+1)]===MESH){
-    let ty=y+2; while(ty<H && grid[idx(x,ty)]===MESH) ty++;
-    if (ty<H && (grid[idx(x,ty)]===AIR || canSink(id,grid[idx(x,ty)]))){
-      for(let m=y+1;m<ty;m++){ const mi=idx(x,m); temp[mi]=temp[mi]*0.7 + temp[i]*0.3; }  // חילופי חום עם הרשת
-      if(Math.random()<0.55){ swap(i,idx(x,ty)); return; }                                 // טפטוף הדרגתי
+    const mi=idx(x,y+1);
+    if (aux[mi]===0){
+      aux[mi]=id; temp[mi]=temp[mi]*0.6 + temp[i]*0.4;   // חילופי חום עם הרשת
+      grid[i]=AIR; life[i]=0; temp[i]=AMB; velX[i]=0; velY[i]=0;
+      return;
     }
   }
   moveDynamic(x,y,i,id,'liquid');
+}
+// רשת עם נוזל בפנים (aux): הנוזל יורד אל התא שמתחת, או אל רשת נוספת מתחתיה. חסום → נשאר (נראה בחורים).
+function reactMesh(x,y,i){
+  const f=aux[i]; if(f===0) return false;
+  if (y+1<H){
+    const b=idx(x,y+1), nb=grid[b];
+    if (nb===MESH){ if(aux[b]===0){ aux[b]=f; temp[b]=temp[b]*0.6+temp[i]*0.4; aux[i]=0; } return true; }
+    if (nb===AIR){ grid[b]=f; life[b]=MAT[f].life||0; aux[b]=0; temp[b]=temp[i]; velX[b]=0; velY[b]=0; aux[i]=0; return true; }
+  }
+  return true;
 }
 // גז יכול לעלות דרך אוויר, או "לבעבע" מעלה דרך חומר כבד יותר (נוזל/אבקה) ולדחוף אותו למטה.
 function gasCanRiseInto(gd,n){
