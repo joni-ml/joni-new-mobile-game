@@ -162,6 +162,14 @@
   }
   #toast.show { opacity:1; }
 
+  /* יצירת עולם */
+  #genOverlay { position:absolute; inset:0; z-index:55; background:rgba(6,8,13,.88);
+    display:none; flex-direction:column; align-items:center; justify-content:center; gap:16px; }
+  #genOverlay.show { display:flex; }
+  #genTxt { font-size:18px; font-weight:800; color:#ffd479; text-align:center; padding:0 20px; }
+  #genBar { width:70%; max-width:340px; height:14px; border-radius:8px; background:#1b2029; overflow:hidden; border:1px solid #2a3444; }
+  #genFill { height:100%; width:0%; background:linear-gradient(90deg,#e05a2a,#ffd479); transition:width .15s; }
+
   /* זכוכית מגדלת */
   #mag { position:absolute; width:132px; height:132px; border-radius:50%;
     border:3px solid #e8e0c8; box-shadow:0 6px 18px #000b, inset 0 0 0 2px #0007;
@@ -193,6 +201,7 @@
     <div id="toast"></div>
     <canvas id="mag" width="132" height="132"></canvas>
     <div id="inspect"></div>
+    <div id="genOverlay"><div id="genTxt">🌋 יוצר עולם…</div><div id="genBar"><div id="genFill"></div></div></div>
 
     <!-- הגדרות -->
     <div id="settings">
@@ -216,7 +225,21 @@
         <div>⚡ מהירות מרבית של המשחק: <b id="maxSpeedVal">3</b>×</div>
         <input type="range" id="setMaxSpeed" min="1" max="12" value="3" style="width:100%">
       </div>
-      <button class="stog" id="setClearAll" style="justify-content:center; color:#ff9a8a; font-weight:700">🗑️ מחק הכל (נקה את המסך)</button>
+      <div class="stog" style="flex-direction:column; align-items:stretch; gap:8px">
+        <label style="display:flex; align-items:center; gap:8px; font-size:14.5px; cursor:pointer">
+          <input type="checkbox" id="setClimate" style="width:22px;height:22px;accent-color:#5ec27a">
+          🌡️ אקלים עולם פעיל (שמש מחממת ביום, לילה מקרר, חום מליבת כדור הארץ)
+        </label>
+        <div style="font-size:11px; opacity:.6">כבוי = משחק רגיל בלי שינויי טמפ' מבחוץ. דולק אוטומטית כשיוצרים עולם חדש.</div>
+        <div style="margin-top:6px">☀️ שעה ביום: <b id="todVal">12:00</b></div>
+        <input type="range" id="setTod" min="0" max="1439" value="720" style="width:100%">
+        <label style="display:flex; align-items:center; gap:8px; font-size:13px; margin-top:2px; cursor:pointer">
+          <input type="checkbox" id="setAutoDay" style="width:20px;height:20px;accent-color:#5ec27a">
+          🔄 מחזור יום-לילה אוטומטי (השעה מתקדמת לבד)
+        </label>
+      </div>
+      <button class="stog" id="setClearAll" style="justify-content:center; color:#ffd479; font-weight:700">🌍 עולם חדש (נוצר מלבה מותכת, כמו כדור הארץ!)</button>
+      <button class="stog" id="setWipe" style="justify-content:center; color:#ff9a8a; font-weight:700">🗑️ מחק הכל (נקה למסך ריק)</button>
       <button id="setClose">סגור</button>
     </div>
 
@@ -307,13 +330,15 @@ const MAT = [
   { key:'hydrogen',name:'מימן',  color:[200,225,255], type:'gas', life:600, flam:true, shop:true, pedia:'H · יסוד 1 — גז נפיץ, נשרף למים' },
   { key:'wall',    name:'קיר',   color:[68,72,82],    type:'static', base:true, sys:true, pedia:'קיר בנייה — לא נמס, מבודד חום' },
   { key:'mesh',    name:'רשת',   color:[112,118,130], type:'static', base:true, pedia:'רשת — מוצקים לא עוברים, נוזלים וגזים כן. מוליכה חום' },
+  { key:'bedrock', name:'סלע יסוד',color:[54,54,62],   type:'solid',  density:14, base:true, pedia:'הסלע העמוק והקשה ביותר — עמוק מתחת לקרקע' },
+  { key:'cloud',   name:'ענן',    color:[225,230,238], type:'gas',    life:900, base:true, pedia:'💨 אדים שנשארים ריחוף גבוה לפני שיורדים כגשם' },
 ];
 const ID = {}; MAT.forEach((m,i)=>{ m.id=i; ID[m.key]=i; });
 const AIR=ID.air, STONE=ID.stone, WATER=ID.water, EARTH=ID.earth, MUD=ID.mud,
       SAND=ID.sand, WOOD=ID.wood, SPROUT=ID.sprout, LEAF=ID.leaf, FLOWER=ID.flower,
       SEEDT=ID.seedT, SEEDF=ID.seedF, FIRE=ID.fire, STEAM=ID.steam, ICE=ID.ice,
       ASH=ID.ash, GLASS=ID.glass, LAVA=ID.lava, BASALT=ID.basalt,
-      HYDRO=ID.hydrogen, WALL=ID.wall, MESH=ID.mesh;
+      HYDRO=ID.hydrogen, WALL=ID.wall, MESH=ID.mesh, BEDROCK=ID.bedrock, CLOUD=ID.cloud;
 const TOTAL = MAT.filter(m => !m.shop && !m.sys && m.id!==AIR).length;   // ספירת גילויים (בלי חנות/מערכת)
 
 /* ---------- תכונות תרמיות ----------
@@ -321,17 +346,17 @@ const TOTAL = MAT.filter(m => !m.shop && !m.sys && m.id!==AIR).length;   // ספ
    temp0 = טמפ' התחלתית של חומר כשמניחים אותו. */
 const AMB = 24;
 // אוויר מוליך חום גרוע (מבודד) — כדי שהחום לא "יברח" מהחומרים לחלל הריק.
-const cond  = MAT.map(m => ({air:0.003,water:0.10,ice:0.08,stone:0.045,glass:0.06,sand:0.05,steam:0.006,wall:0,lava:0.16,fire:0.22,mesh:0.12}[m.key] ?? 0.04));
+const cond  = MAT.map(m => ({air:0.003,water:0.10,ice:0.08,stone:0.045,glass:0.06,sand:0.05,steam:0.006,wall:0,lava:0.16,fire:0.22,mesh:0.12,bedrock:0.05,cloud:0.006}[m.key] ?? 0.04));
 // radi = קצב איבוד חום לסביבה (רק ממשטחים חשופים לאוויר). נמוך = החום נשמר. קיר=0.
-const radi  = MAT.map(m => ({lava:0.00003,fire:0.02,steam:0.004,wall:0}[m.key] ?? 0.00005));
+const radi  = MAT.map(m => ({lava:0.00003,fire:0.02,steam:0.004,wall:0,cloud:0.002}[m.key] ?? 0.00005));
 const temp0 = MAT.map(m => ({lava:1200,fire:900,ice:-14,wall:0}[m.key] ?? null));
 
 /* ---------- תכונות פיזיקליות (למשקל/כלי הבדיקה) ----------
    mass = צפיפות יחסית (g/cm³). formula/molecule = מבנה מולקולרי. conduct = מוליך חשמל. */
-const mass    = MAT.map(m=>({air:0.001,water:1.0,ice:0.92,steam:0.0006,stone:2.7,basalt:3.0,sand:1.6,earth:1.5,mud:1.8,wood:0.7,leaf:0.4,flower:0.3,sprout:0.5,seedT:0.6,seedF:0.6,ash:0.5,glass:2.5,lava:2.8,fire:0.0003,hydrogen:0.00009,wall:2}[m.key] ?? 1));
-const formula = MAT.map(m=>({air:'N₂+O₂',water:'H₂O',ice:'H₂O',steam:'H₂O',stone:'SiO₂',basalt:'SiO₂·Mg·Fe',sand:'SiO₂',earth:'SiO₂+C',mud:'SiO₂·H₂O',wood:'C₆H₁₀O₅',leaf:'C₆H₁₀O₅',flower:'C₆H₁₀O₅',sprout:'C₆H₁₀O₅',seedT:'C₆H₁₀O₅',seedF:'C₆H₁₀O₅',ash:'CaCO₃',glass:'SiO₂',lava:'SiO₂',fire:'CO₂+חום',hydrogen:'H₂'}[m.key] ?? '—'));
+const mass    = MAT.map(m=>({air:0.001,water:1.0,ice:0.92,steam:0.0006,stone:2.7,basalt:3.0,sand:1.6,earth:1.5,mud:1.8,wood:0.7,leaf:0.4,flower:0.3,sprout:0.5,seedT:0.6,seedF:0.6,ash:0.5,glass:2.5,lava:2.8,fire:0.0003,hydrogen:0.00009,wall:2,bedrock:3.2,cloud:0.0005}[m.key] ?? 1));
+const formula = MAT.map(m=>({air:'N₂+O₂',water:'H₂O',ice:'H₂O',steam:'H₂O',stone:'SiO₂',basalt:'SiO₂·Mg·Fe',sand:'SiO₂',earth:'SiO₂+C',mud:'SiO₂·H₂O',wood:'C₆H₁₀O₅',leaf:'C₆H₁₀O₅',flower:'C₆H₁₀O₅',sprout:'C₆H₁₀O₅',seedT:'C₆H₁₀O₅',seedF:'C₆H₁₀O₅',ash:'CaCO₃',glass:'SiO₂',lava:'SiO₂',fire:'CO₂+חום',hydrogen:'H₂',bedrock:'SiO₂·Fe·Mg',cloud:'H₂O'}[m.key] ?? '—'));
 const conduct = MAT.map(m=>({water:true,lava:true,fire:true}[m.key] ?? false));
-const molec   = MAT.map(m=>({air:'תערובת גזים',water:'מולקולה קוטבית',ice:'סריג גבישי',steam:'אדי מים',stone:'סריג סיליקט',basalt:'סלע וולקני צפוף',sand:'גרגרי קוורץ',earth:'תערובת אורגנית',mud:'אדמה רוויה',wood:'סיבי תאית',leaf:'תאית + כלורופיל',flower:'רקמה צמחית',sprout:'רקמה צמחית',seedT:'עובר זרע',seedF:'עובר זרע',ash:'שאריות מינרליות',glass:'מוצק אמורפי',lava:'סלע מותך',fire:'פלזמת בעירה',hydrogen:'מולקולה דו-אטומית H₂'}[m.key] ?? '—'));
+const molec   = MAT.map(m=>({air:'תערובת גזים',water:'מולקולה קוטבית',ice:'סריג גבישי',steam:'אדי מים',stone:'סריג סיליקט',basalt:'סלע וולקני צפוף',sand:'גרגרי קוורץ',earth:'תערובת אורגנית',mud:'אדמה רוויה',wood:'סיבי תאית',leaf:'תאית + כלורופיל',flower:'רקמה צמחית',sprout:'רקמה צמחית',seedT:'עובר זרע',seedF:'עובר זרע',ash:'שאריות מינרליות',glass:'מוצק אמורפי',lava:'סלע מותך',fire:'פלזמת בעירה',hydrogen:'מולקולה דו-אטומית H₂',bedrock:'סלע צפוף מאוד',cloud:'טיפות מים זעירות מרחפות'}[m.key] ?? '—'));
 const STATE   = {empty:'—',powder:'אבקה',liquid:'נוזל',solid:'מוצק',gas:'גז',static:'מוצק'};
 // נקודות מעבר מצב אמיתיות (°C): נמס=הופך לנוזל, רותח=הופך לגז
 const meltC = MAT.map(m=>({water:0,ice:0,steam:0,stone:1200,basalt:1200,lava:1200,sand:1700,glass:1700,hydrogen:-259}[m.key] ?? null));
@@ -379,7 +404,7 @@ const MAXV  = 6;        // מהירות מרבית
 const IMPACT_TH = 15;   // אנרגיה מינימלית ליצירת מכתש בפגיעה
 const RMAX  = 5;        // רדיוס פיזור מרבי
 // כמה גז "קל מהאוויר" ועולה: מימן קל מאוד, אדים תלויים בחום
-const LIFT = MAT.map(m=>({steam:0.05,hydrogen:0.5}[m.key] ?? 0.05));
+const LIFT = MAT.map(m=>({steam:0.05,hydrogen:0.5,cloud:0.03}[m.key] ?? 0.05));
 
 /* ---------- Canvas ורשת ---------- */
 const canvas = document.getElementById('game');
@@ -417,6 +442,7 @@ let current = WATER, brush = 3, paused = false, speed = 1, maxSteps = 3;
 let buildOnAir = true, borderWalls = false, noHeatLoss = false;   // הגדרות
 let painting = false, ptx=0, pty=0;
 let held = null, holdX = 0, holdY = 0;   // כלי היד — גוש חומר שהורם
+let timeOfDay = 720, autoDay = false, climateOn = false;   // שעה ביום, מחזור אוטומטי, ומתג האקלים (שמש/לילה/ליבה)
 let score = 0;
 const found = new Uint8Array(MAT.length);
 MAT.forEach(m => { if (m.base) found[m.id] = 1; });
@@ -434,6 +460,11 @@ function render() {
     if (id===FIRE || id===LAVA) {
       const f = 0.65 + Math.random()*0.35;
       r=Math.min(255,c[0]*f+30); g=c[1]*f; b=c[2]*f*0.6;
+    } else if (id===EARTH && i>=W && grid[i-W]===AIR) {
+      r=64; g=150; b=58;              // דשא — אדמה עם פני שטח חשופים לאוויר מלמעלה
+      const t = temp[i];
+      if (t>120){ const h=Math.min(150,(t-120)*0.12); r=Math.min(255,r+h); g=Math.max(0,g-h*0.25); b=Math.max(0,b-h*0.35); }
+      else if (t<6){ const k=Math.min(70,(6-t)*3); b=Math.min(255,b+k); r=Math.max(0,r-k*0.3); g=Math.min(255,g+k*0.25); }
     } else {
       r=c[0]; g=c[1]; b=c[2];
       if (id!==AIR) {
@@ -502,6 +533,27 @@ function step(){
   thermal();   // הולכת חום + מעברי פאזה
 }
 
+/* ===== שמש + ליבת כדור הארץ ===== */
+// עוצמת שמש: 0 בחצות, 1 בצהריים (מחזור סינוסי אמיתי). מחממת רק את פני השטח החשופים לשמיים.
+// בלילה — קרינה לחלל מקררת את פני השטח. הליבה: חום קבוע שעולה מהתחתית ונחלש עם הגובה.
+const SUN_POWER=3.2, NIGHT_COOL=0.9, CORE_POWER=0.06;
+const CORE_BAND = ()=> Math.max(3, Math.floor(H*0.05));
+function applySunAndCore(){
+  if (!climateOn) return;   // כבוי כברירת מחדל — משחק רגיל בלי שינויי טמפ' מבחוץ
+  const sun = Math.max(0, Math.sin((timeOfDay/1440)*Math.PI*2 - Math.PI/2));
+  for (let x=0; x<W; x++){
+    let y=0; while(y<H && grid[idx(x,y)]===AIR) y++;   // התא העליון החשוף לשמיים בטור הזה
+    if (y<H){ const i=idx(x,y); if (grid[i]!==WALL) temp[i] += sun*SUN_POWER - (1-sun)*NIGHT_COOL; }
+  }
+  const band=CORE_BAND();
+  for (let y=H-band; y<H; y++){
+    const depthF = 1 - (H-1-y)/band;
+    for (let x=0; x<W; x++){
+      const i=idx(x,y), id=grid[i];
+      if (id!==AIR && id!==WALL) temp[i] += CORE_POWER*depthF;
+    }
+  }
+}
 /* ===== חום: הולכה, איבוד לסביבה (רק ממשטחים חשופים), ומעברי פאזה ===== */
 function thermal(){
   for (let y=0;y<H;y++) for (let x=0;x<W;x++){
@@ -523,6 +575,7 @@ function thermal(){
     temp2[i]=nt;
   }
   const s=temp; temp=temp2; temp2=s;
+  applySunAndCore();
   for (let i=0;i<grid.length;i++) checkPhase(i);
 }
 function checkPhase(i){
@@ -530,7 +583,10 @@ function checkPhase(i){
   switch(id){
     case WATER:  if (t>=100){ grid[i]=STEAM; life[i]=MAT[STEAM].life; discover(STEAM); }
                  else if (t<=0){ grid[i]=ICE; discover(ICE); } break;
-    case STEAM:  if (t<=75 && Math.random()<0.06) { grid[i]=WATER; life[i]=0; } break;  // מתעבה בהדרגה (כמו גשם)
+    case STEAM:  if (t<=80) { grid[i]=CLOUD; life[i]=MAT[CLOUD].life; } break;   // מתקרר → הופך לענן (מרחף באוויר)
+    case CLOUD:  if (t>=95) { grid[i]=STEAM; life[i]=MAT[STEAM].life; }          // מתחמם שוב → חוזר לאדים
+                 else if (Math.random()<0.0022) { grid[i]=WATER; life[i]=0; }    // אחרי שריחף זמן מה — יורד כגשם
+                 break;
     case ICE:    if (t>=1)  { grid[i]=WATER; } break;
     case STONE:  if (t>=1100){ grid[i]=LAVA; aux[i]=1; discover(LAVA); } break;  // aux=1: לבה שהיתה אבן
     case BASALT: if (t>=1100){ grid[i]=LAVA; aux[i]=0; discover(LAVA); } break;  // בזלת נמסה ללבה טהורה
@@ -848,8 +904,9 @@ function moveGas(x,y,i,id){
       if(gasCanRiseInto(gd,grid[s])){ swap(i,s); moved[s]=1; return; } } }
     return;
   }
-  // פיזור אופקי (הגז מתפשט) — עם רנדומליות
-  if (Math.random()<0.35){ const dir=Math.random()<0.5?1:-1, nx=x+dir;
+  // פיזור אופקי (הגז מתפשט) — עם רנדומליות. עננים נודדים הצידה הרבה יותר (כמו שנשב רוח).
+  const driftP = id===CLOUD ? 0.55 : 0.35;
+  if (Math.random()<driftP){ const dir=Math.random()<0.5?1:-1, nx=x+dir;
     if (nx>=0&&nx<W){ const s=idx(nx,y); if(grid[s]===AIR){ swap(i,s); moved[s]=1; return; } } }
 }
 
@@ -1192,18 +1249,186 @@ document.getElementById('setGrav').onchange=e=>plantGrav=e.target.checked;
 document.getElementById('setBorder').onchange=e=>{ borderWalls=e.target.checked; if(borderWalls)applyBorder(); else clearBorder(); };
 document.getElementById('setNoLoss').onchange=e=>{ noHeatLoss=e.target.checked; };
 document.getElementById('setMaxSpeed').oninput=e=>{ maxSteps=+e.target.value; document.getElementById('maxSpeedVal').textContent=maxSteps; };
-// מחיקת הכל
+function todLabel(m){ const h=Math.floor(m/60), mm=m%60; return (h<10?'0':'')+h+':'+(mm<10?'0':'')+mm; }
+document.getElementById('setTod').oninput=e=>{ timeOfDay=+e.target.value; document.getElementById('todVal').textContent=todLabel(timeOfDay); };
+document.getElementById('setAutoDay').onchange=e=>{ autoDay=e.target.checked; };
+document.getElementById('setClimate').onchange=e=>{ climateOn=e.target.checked; };
+// מחיקת הכל (ריק לגמרי)
 function clearAll(){ grid.fill(0); life.fill(0); aux.fill(0); temp.fill(AMB); velX.fill(0); velY.fill(0); held=null;
   if(borderWalls) applyBorder(); }
-document.getElementById('setClearAll').onclick=()=>{ clearAll(); toast('🗑️ נוקה'); };
+document.getElementById('setWipe').onclick=()=>{ clearAll(); toast('🗑️ נוקה'); };
+document.getElementById('setClearAll').onclick=()=>{ document.getElementById('settings').classList.remove('open'); generateWorld(); };
 // שינוי רזולוציה (גודל פיקסל) — בונה מחדש את הרשת (מנקה), ומסמן את הכפתור הפעיל
+const SIZE_NAMES={9:'ממש קטן',5:'קטן',3.5:'בינוני',2.5:'גדול',1.6:'ענק'};
 function setResolution(s){
   SCALE=s; setup(); if(borderWalls) applyBorder();
   [...document.querySelectorAll('.resbtn')].forEach(b=> b.classList.toggle('on', +b.dataset.s===SCALE));
-  buildPalette(); toast('🔬 רזולוציה: '+(s===5?'רגיל':s===3?'עדין':'עדין מאוד'));
+  buildPalette(); toast('🌍 גודל עולם: '+(SIZE_NAMES[s]||s));
 }
 [...document.querySelectorAll('.resbtn')].forEach(b=> b.onclick=()=>setResolution(+b.dataset.s));
 [...document.querySelectorAll('.resbtn')].forEach(b=> b.classList.toggle('on', +b.dataset.s===SCALE));
+
+/* ===== יצירת עולם — מלבה מותכת (כמו כדור הארץ נוצר), מתקרר ומצמיח יער ===== */
+// רעש פרקטלי פשוט (סכום סינוסים אקראיים) — כל הפעלה נותנת תבנית הרים/איים שונה
+function makeHeightFn(){
+  const n=4+Math.floor(Math.random()*2);
+  const oct=[];
+  for(let i=0;i<n;i++) oct.push({freq:(0.0025+Math.random()*0.012)*Math.pow(1.9,i), amp:1/Math.pow(1.55,i), phase:Math.random()*1000});
+  const norm=oct.reduce((a,o)=>a+o.amp,0);
+  return x=> oct.reduce((s,o)=>s+Math.sin(x*o.freq+o.phase)*o.amp,0)/norm;   // בערך -1..1
+}
+function genOverlayShow(txt){ document.getElementById('genOverlay').classList.add('show');
+  document.getElementById('genTxt').textContent=txt; document.getElementById('genFill').style.width='0%'; }
+function genOverlayProgress(txt,p){ document.getElementById('genTxt').textContent=txt; document.getElementById('genFill').style.width=Math.round(p*100)+'%'; }
+function genOverlayHide(){ document.getElementById('genOverlay').classList.remove('show'); }
+// מריץ fn (thermal בלבד לקירור, או step מלא לגדילה) הרבה פעמים, במנות בין פריימים כדי לא לתקוע את הדפדפן
+function runLoopAsync(totalSteps, fn, label){
+  return new Promise(resolve=>{
+    const cells=W*H, perFrame=Math.max(1, Math.floor(60000/Math.max(1,cells)));
+    let done=0;
+    function tick(){
+      let b=0; while(b<perFrame && done<totalSteps){ fn(); done++; b++; }
+      genOverlayProgress(label, done/totalSteps); render();
+      if(done<totalSteps) requestAnimationFrame(tick); else resolve();
+    }
+    tick();
+  });
+}
+function hasWaterNear(x,y,r){
+  for(let yy=y-r; yy<=y+r; yy++){ if(yy<0||yy>=H) continue;
+    for(let xx=x-r; xx<=x+r; xx++){ if(xx<0||xx>=W) continue; if(grid[idx(xx,yy)]===WATER) return true; } }
+  return false;
+}
+// קירור מהיר ("הרצת זמן מואץ") — ליצירת עולם בלבד, רק לרצועה קטנה מתחת לפני השטח של כל טור
+// (crustDepth, לא תלוי בגובה השכנים). מתחת לרצועה — נשאר חם לנצח, כמו מעטפת/ליבה מותכת אמיתית.
+// שני דברים קריטיים כדי שזה יתכנס מהר: (1) שכן צדדי שנמצא מחוץ לרצועה של הטור *שלו* לא נכלל
+// בהולכה (אחרת הוא כל הזמן מחמם בחזרה מהמעטפת הבלתי-מטופלת שלו), (2) השורה התחתונה של הרצועה
+// לא "שואבת" חום מהמעטפת החמה שמתחתיה (אחרת חצי התחתון של הרצועה תמיד נתקע חם).
+function fastCoolStep(heights, crustDepth){
+  temp2.set(temp);   // ברירת מחדל: כל מה שמחוץ לרצועה נשאר בדיוק כמו שהוא
+  const inBand=(x,y)=> y>=heights[x] && y<heights[x]+crustDepth && y<H;
+  const K=0.16;   // מקדם הולכה קטן ויציב נומרית (מקדם גדול מדי גורם לתנודות שמתפוצצות — לא מתכנס!)
+  for (let x=0; x<W; x++){
+    const y0=heights[x], y1=Math.min(H, y0+crustDepth);
+    for (let y=y0; y<y1; y++){
+      const i=idx(x,y), id=grid[i]; if(id===AIR) continue;
+      const t=temp[i]; let acc=0;
+      if (x>0){ const nx=x-1, g=grid[idx(nx,y)]; if(g===AIR||g===WATER) acc+=AMB-t; else if(inBand(nx,y)) acc+=temp[idx(nx,y)]-t; }
+      if (x<W-1){ const nx=x+1, g=grid[idx(nx,y)]; if(g===AIR||g===WATER) acc+=AMB-t; else if(inBand(nx,y)) acc+=temp[idx(nx,y)]-t; }
+      if (y>y0){ const j=i-W; acc+=temp[j]-t; if(grid[j]===AIR||grid[j]===WATER) acc+=AMB-t; }
+      else acc+=(AMB-t)*1.4;                        // השורה העליונה ביותר — תמיד חשופה לשמיים, קרינה חזקה יותר
+      if (y+1<y1){ const j=i+W; acc+=temp[j]-t; }    // מתחת (בתוך הרצועה — לא נשאב חום מהמעטפת הקבועה שמתחת לרצועה)
+      temp2[i] = t + K*acc;
+    }
+  }
+  const s=temp; temp=temp2; temp2=s;
+  for (let x=0; x<W; x++){ const y0=heights[x], y1=Math.min(H, y0+crustDepth);
+    for (let y=y0; y<y1; y++) checkPhase(idx(x,y)); }
+}
+function discoverAllPresent(){
+  const seen=new Set();
+  for(let i=0;i<grid.length;i++){ const id=grid[i]; if(id===AIR || seen.has(id)) continue; seen.add(id); if(!found[id]) discover(id); }
+}
+let genBusy=false;
+async function generateWorld(){
+  if (genBusy) return; genBusy=true; paused=true;
+  genOverlayShow('🌋 מעצב את פני השטח…');
+  await new Promise(r=>requestAnimationFrame(r));
+
+  // --- שלב 1: תבנית גובה (הרים/יבשת או איים) ---
+  // הים נמוך יחסית למסך — משאיר הרבה שמיים פנויים למעלה כדי שעננים יוכלו לרחף ולנוע בלי להיתקע בתקרה
+  const biome = Math.random()<0.45 ? 'islands' : 'continent';
+  const seaY = Math.floor(H*0.72);
+  const hFn = makeHeightFn();
+  const heights = new Array(W);
+  const bumps=[];
+  if (biome==='islands'){
+    const nB=2+Math.floor(Math.random()*3);
+    for(let i=0;i<nB;i++) bumps.push({cx:Math.random()*W, r:W*(0.06+Math.random()*0.10), h:H*(0.12+Math.random()*0.11)});
+  }
+  for(let x=0;x<W;x++){
+    let h;
+    if (biome==='continent'){
+      const edgeF=Math.min(1,Math.max(0, Math.min(x,(W-1-x))/(W*0.16)));
+      const mtn=Math.max(0,hFn(x))*H*0.24*edgeF;
+      const rolling=hFn(x*0.35+777)*H*0.035;
+      h = seaY - edgeF*H*0.09 - mtn - rolling;
+    } else {
+      let bH=0;
+      for(const b of bumps){ const d=x-b.cx; bH=Math.max(bH, b.h*Math.exp(-(d*d)/(2*b.r*b.r))); }
+      h = seaY + H*0.09 - bH - Math.max(0,hFn(x))*H*0.04;
+    }
+    heights[x]=Math.max(4, Math.min(H-6, Math.round(h)));
+  }
+
+  grid.fill(AIR); life.fill(0); aux.fill(0); temp.fill(AMB); velX.fill(0); velY.fill(0); held=null;
+  const crustDepth = Math.max(13, Math.round(H*0.13));
+
+  // --- שלב 2: שתי שכבות — קרום עליון (אבן לוהטת שתתקרר) וסלע יסוד עמוק וקשה יותר (bedrock, קבוע). בלי מים עדיין!
+  //     סלע היסוד לא נמס לעולם — נשאר מוצק תמיד, כמו הבסיס הקשה האמיתי של כדוה"א מתחת לקרום.
+  for(let x=0;x<W;x++){
+    const y0=heights[x], bandEnd=Math.min(H,y0+crustDepth);
+    for(let y=y0; y<bandEnd; y++){ const i=idx(x,y); grid[i]=STONE; temp[i]=1250+Math.random()*180; }
+    for(let y=bandEnd; y<H; y++){ const i=idx(x,y); grid[i]=BEDROCK; temp[i]=40+Math.random()*55; }
+  }
+
+  // --- שלב 3: קירור רצועת הקרום העליונה בלבד ("זמן מואץ") ---
+  const coolSteps = 280;
+  await runLoopAsync(coolSteps, ()=>fastCoolStep(heights,crustDepth), '🌋 הקרום מתקרר ומתמצק…');
+  // הגבלת ביטחון: אחרי הקירור המהיר יש עדיין חום שיורי בעומק הקרום שממשיך לזלוג למעלה לאט
+  // (הולכת החום ה"אמיתית" איטית בכוונה). בלי זה, עצים שנזרעים יכולים לגמרי להידלק לבד מיד אחרי היצירה.
+  for(let x=0;x<W;x++){ const y0=heights[x], y1=Math.min(H,y0+crustDepth);
+    for(let y=y0;y<y1;y++){ const i=idx(x,y); if(temp[i]>90) temp[i]=90+Math.random()*15; checkPhase(i); } }
+
+  // --- האוקיינוסים/אגמים נוצרים רק אחרי שהקרום התמצק — כמו שבאמת קרה בכדוה"א (בלי זה המים היו מתאדים מיד) ---
+  for(let x=0;x<W;x++) for(let y=seaY; y<heights[x]; y++){ const i=idx(x,y); if(grid[i]===AIR){ grid[i]=WATER; temp[i]=AMB; } }
+
+  // --- שלב 4: עיבוד פני השטח — חוף חול, אדמה+דשא על יבשה, שלג על פסגות.
+  //     עוקבים אחרי קו המתאר החשוף בפועל (כל תא אבן שנוגע באוויר מלמעלה) ולא רק גובה הטור —
+  //     כך גם מדרונות ומצוקים מקבלים שכבת קרקע נאותה, לא רק הפסגה השטוחה.
+  let minH=Infinity,maxH=-Infinity; for(const h of heights){ if(h<minH)minH=h; if(h>maxH)maxH=h; }
+  const snowLine = minH + (maxH-minH)*0.22;
+  for(let x=0;x<W;x++){
+    for(let y=1;y<H;y++){
+      const i=idx(x,y);
+      if (grid[i]!==STONE && grid[i]!==BASALT) continue;
+      const exposedAbove = grid[i-W]===AIR;
+      const exposedSide = (x>0 && grid[i-1]===AIR) || (x<W-1 && grid[i+1]===AIR);
+      if (!exposedAbove && !exposedSide) continue;   // רק פני שטח חשופים (כולל דפנות תלולות/מצוקים מהצד)
+      const below = y+1<H ? idx(x,y+1) : -1;
+      const nearSea = Math.abs(y-seaY) < Math.max(3, H*0.02);
+      if (nearSea){
+        grid[i]=SAND; temp[i]=AMB;
+        if (below>=0 && (grid[below]===STONE||grid[below]===BASALT)){ grid[below]=SAND; temp[below]=AMB; }
+      } else if (y < seaY){
+        const mat = y < snowLine ? ICE : EARTH;
+        grid[i]=mat; temp[i]= mat===ICE ? -6 : AMB;
+        if (below>=0 && (grid[below]===STONE||grid[below]===BASALT)){ grid[below]=mat; temp[below]= mat===ICE?-6:AMB; }
+      }
+    }
+  }
+
+  // --- שלב 5: זריעת יער חוף (רק במקום שבאמת יש מים קרובים — כדי שהעצים באמת יגדלו) ---
+  genOverlayProgress('🌱 מצמיח יער…', 0);
+  let seeded=0;
+  for(let x=2;x<W-2;x++){
+    const hx=heights[x];
+    const surf=grid[idx(x,hx)];
+    if (hx>=H-1 || hx>=seaY || (surf!==EARTH && surf!==SAND)) continue;
+    if (Math.abs(heights[x+1]-heights[x-1])>6) continue;        // לא על מדרון תלול
+    if (!hasWaterNear(x,hx-1,4) && !hasWaterNear(x,hx,4)) continue;   // מים בטווח שתייה (עם קצת מרווח בטיחות)
+    if (Math.random()<0.65){
+      const si=idx(x,hx-1); if(grid[si]===AIR){ grid[si]=SPROUT; life[si]=12+Math.floor(Math.random()*10); aux[si]=0; seeded++; }
+    }
+  }
+  const growSteps = seeded>0 ? Math.min(450, Math.max(150, Math.round(30000000/Math.max(1,W*H)))) : 30;
+  await runLoopAsync(growSteps, step, '🌱 מצמיח יער… ('+seeded+' עצים נזרעו)');
+
+  discoverAllPresent();
+  genOverlayHide(); paused=false; genBusy=false;
+  climateOn=true; const cb=document.getElementById('setClimate'); if(cb) cb.checked=true;
+  toast('🌍 עולם חדש נוצר! ('+(biome==='islands'?'איים':'יבשת עם הרים')+')');
+}
 
 /* ===== מודל בוהר של האטום (חינוכי) ===== */
 // מספר אלקטרונים בכל קליפה (2,8,18,32...) לפי מספר אטומי
@@ -1295,6 +1520,9 @@ let last=performance.now(), fr=0, ft=0, acc=0;
 function loop(now){
   const dt=now-last; last=now;
   if(!paused){ acc+=speed; let n=0; while(acc>=1 && n<maxSteps){ step(); acc--; n++; } }
+  if(!paused && autoDay && climateOn){ timeOfDay=(timeOfDay + dt*0.03) % 1440;
+    const td=document.getElementById('setTod'); if(td && document.activeElement!==td) td.value=Math.floor(timeOfDay);
+    document.getElementById('todVal').textContent=todLabel(Math.floor(timeOfDay)); }
   if(painting) paintAt(ptx,pty);   // החזקה רציפה: ממשיך למרוח/לחמם/לקרר כמו ברז
   render();
   fr++; ft+=dt;
