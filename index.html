@@ -285,6 +285,29 @@ const MAT = [
   { key:'lithium', name:'ליתיום',color:[205,180,195], type:'solid', density:1, flam:true, shop:true, pedia:'Li · יסוד 3 — מתפוצץ במים! חמם >180° → נמס' },
   { key:'beryllium',name:'בריליום',color:[150,195,165],type:'solid', density:3,          shop:true, pedia:'Be · יסוד 4 — מתכת קשה. חמם >1287° → נמס' },
   { key:'wall',    name:'קיר',   color:[68,72,82],    type:'static', base:true, sys:true, pedia:'קיר בנייה — לא נמס, מבודד חום' },
+  // --- יסודות נוספים לחנות (מתווספים בסוף כדי לא לשבור עולמות שמורים) ---
+  { key:'carbon',   name:'פחמן',    color:[44,44,50],    type:'powder', density:2, flam:true, shop:true, pedia:'C · יסוד 6 — בסיס החיים. נשרף ל-CO₂' },
+  { key:'nitrogen', name:'חנקן',    color:[120,150,225], type:'gas', life:600,     shop:true, pedia:'N · יסוד 7 — 78% מהאוויר, רגוע' },
+  { key:'oxygen',   name:'חמצן',    color:[120,200,255], type:'gas', life:600,     shop:true, pedia:'O · יסוד 8 — מזין אש, עם מימן→מים' },
+  { key:'sodium',   name:'נתרן',    color:[192,192,205], type:'solid', density:1, flam:true, shop:true, pedia:'Na · יסוד 11 — מתפוצץ במים! עם כלור→מלח' },
+  { key:'magnesium',name:'מגנזיום', color:[205,208,214], type:'solid', density:2, flam:true, shop:true, pedia:'Mg · יסוד 12 — נשרף באור לבן מסנוור' },
+  { key:'aluminum', name:'אלומיניום',color:[200,205,215],type:'solid', density:3, shop:true, pedia:'Al · יסוד 13 — מתכת קלה, נמסה ב-660°' },
+  { key:'silicon',  name:'צורן',    color:[78,80,96],    type:'solid', density:2, shop:true, pedia:'Si · יסוד 14 — ממנו שבבים וזכוכית' },
+  { key:'sulfur',   name:'גופרית',  color:[224,202,64],  type:'powder', density:2, flam:true, shop:true, pedia:'S · יסוד 16 — צהובה, נשרפת בכחול' },
+  { key:'chlorine', name:'כלור',    color:[150,220,90],  type:'gas', life:600,     shop:true, pedia:'Cl · יסוד 17 — גז ירוק רעיל, עם נתרן→מלח' },
+  { key:'potassium',name:'אשלגן',   color:[176,150,192], type:'solid', density:1, flam:true, shop:true, pedia:'K · יסוד 19 — מתפוצץ במים בסגול!' },
+  { key:'calcium',  name:'סידן',    color:[212,206,182], type:'solid', density:2, shop:true, pedia:'Ca · יסוד 20 — בעצמות ובשיניים' },
+  { key:'iron',     name:'ברזל',    color:[150,150,162], type:'solid', density:8, shop:true, pedia:'Fe · יסוד 26 — נמס ב-1538°, מחליד במים' },
+  { key:'copper',   name:'נחושת',   color:[204,112,72],  type:'solid', density:8, shop:true, pedia:'Cu · יסוד 29 — כתומה, מוליכה חשמל מצוין' },
+  { key:'silver',   name:'כסף',     color:[226,226,230], type:'solid', density:9, shop:true, pedia:'Ag · יסוד 47 — המוליך הכי טוב בטבע' },
+  { key:'tin',      name:'בדיל',    color:[190,192,196], type:'solid', density:6, shop:true, pedia:'Sn · יסוד 50 — נמס בקלות (232°)' },
+  { key:'tungsten', name:'טונגסטן', color:[132,132,142], type:'solid', density:12, shop:true, pedia:'W · יסוד 74 — ההיתוך הכי גבוה (3422°)' },
+  { key:'gold',     name:'זהב',     color:[236,200,72],  type:'solid', density:12, shop:true, pedia:'Au · יסוד 79 — יקר, כבד, לא מחליד' },
+  { key:'mercury',  name:'כספית',   color:[190,195,205], type:'liquid', density:10, shop:true, pedia:'Hg · יסוד 80 — המתכת הנוזלית! רעילה' },
+  { key:'lead',     name:'עופרת',   color:[112,112,128], type:'solid', density:11, shop:true, pedia:'Pb · יסוד 82 — כבדה ורכה, רעילה' },
+  { key:'uranium',  name:'אורניום', color:[96,124,92],   type:'solid', density:12, shop:true, pedia:'U · יסוד 92 — רדיואקטיבי! מתחמם לבד' },
+  { key:'salt',     name:'מלח',     color:[236,236,242], type:'powder', density:2, pedia:'NaCl — 🧂 נתרן + כלור' },
+  { key:'rust',     name:'חלודה',   color:[150,82,46],   type:'powder', density:3, pedia:'Fe₂O₃ — ברזל + מים' },
 ];
 const ID = {}; MAT.forEach((m,i)=>{ m.id=i; ID[m.key]=i; });
 const AIR=ID.air, STONE=ID.stone, WATER=ID.water, EARTH=ID.earth, MUD=ID.mud,
@@ -292,28 +315,40 @@ const AIR=ID.air, STONE=ID.stone, WATER=ID.water, EARTH=ID.earth, MUD=ID.mud,
       SEEDT=ID.seedT, SEEDF=ID.seedF, FIRE=ID.fire, STEAM=ID.steam, ICE=ID.ice,
       ASH=ID.ash, GLASS=ID.glass, LAVA=ID.lava, BASALT=ID.basalt,
       HYDRO=ID.hydrogen, HELIUM=ID.helium, LITH=ID.lithium, BERYL=ID.beryllium, WALL=ID.wall;
+const CARBON=ID.carbon, NITRO=ID.nitrogen, OXY=ID.oxygen, SODIUM=ID.sodium, MAGNES=ID.magnesium,
+      ALUM=ID.aluminum, SILICON=ID.silicon, SULFUR=ID.sulfur, CHLOR=ID.chlorine, POTAS=ID.potassium,
+      CALC=ID.calcium, IRON=ID.iron, COPPER=ID.copper, SILVER=ID.silver, TIN=ID.tin, TUNG=ID.tungsten,
+      GOLD=ID.gold, MERCURY=ID.mercury, LEAD=ID.lead, URANIUM=ID.uranium, SALT=ID.salt, RUST=ID.rust;
 const TOTAL = MAT.filter(m => !m.shop && !m.sys && m.id!==AIR).length;   // ספירת גילויים (בלי חנות/מערכת)
 
 /* ---------- תכונות תרמיות ----------
    AMB = טמפ' הסביבה. cond = מוליכות חום. radi = קצב איבוד חום לסביבה.
    temp0 = טמפ' התחלתית של חומר כשמניחים אותו. */
 const AMB = 24;
-const cond  = MAT.map(m => ({air:0.02,water:0.10,ice:0.08,stone:0.045,glass:0.06,sand:0.05,steam:0.008,wall:0,lava:0.16,fire:0.22,lithium:0.3,beryllium:0.3}[m.key] ?? 0.04));
+const cond  = MAT.map(m => ({air:0.02,water:0.10,ice:0.08,stone:0.045,glass:0.06,sand:0.05,steam:0.008,wall:0,lava:0.16,fire:0.22,lithium:0.3,beryllium:0.3,
+  carbon:0.05,nitrogen:0.008,oxygen:0.008,sodium:0.3,magnesium:0.35,aluminum:0.5,silicon:0.2,sulfur:0.03,chlorine:0.008,potassium:0.3,calcium:0.3,
+  iron:0.35,copper:0.6,silver:0.7,tin:0.3,tungsten:0.4,gold:0.6,mercury:0.2,lead:0.2,uranium:0.15,salt:0.04,rust:0.04}[m.key] ?? 0.04));
 // radi = קצב איבוד חום לסביבה. נמוך = החום נשמר הרבה יותר. קיר=0 (מבודד מושלם), לבה כמעט לא מקרינה.
-const radi  = MAT.map(m => ({lava:0.0002,fire:0.02,steam:0.004,wall:0}[m.key] ?? 0.0006));
-const temp0 = MAT.map(m => ({lava:1200,fire:900,ice:-14,wall:0}[m.key] ?? null));
+const radi  = MAT.map(m => ({lava:0.0002,fire:0.02,steam:0.004,wall:0,nitrogen:0.003,oxygen:0.003,chlorine:0.003,uranium:0.0001}[m.key] ?? 0.0006));
+const temp0 = MAT.map(m => ({lava:1200,fire:900,ice:-14,wall:0,uranium:70}[m.key] ?? null));
 
 /* ---------- תכונות פיזיקליות (למשקל/תנע/כלי הבדיקה) ----------
    mass = צפיפות יחסית (g/cm³) → קובע כמה כבד וכמה כוח בפגיעה.
    formula/molecule = מבנה מולקולרי (לתצוגה, ובסיס לחשמל בעתיד). conduct = מוליך חשמל. */
-const mass    = MAT.map(m=>({air:0.001,water:1.0,ice:0.92,steam:0.0006,stone:2.7,basalt:3.0,sand:1.6,earth:1.5,mud:1.8,wood:0.7,leaf:0.4,flower:0.3,sprout:0.5,seedT:0.6,seedF:0.6,ash:0.5,glass:2.5,lava:2.8,fire:0.0003,hydrogen:0.00009,helium:0.00018,lithium:0.53,beryllium:1.85,wall:2}[m.key] ?? 1));
-const formula = MAT.map(m=>({air:'N₂+O₂',water:'H₂O',ice:'H₂O',steam:'H₂O',stone:'SiO₂',basalt:'SiO₂·Mg·Fe',sand:'SiO₂',earth:'SiO₂+C',mud:'SiO₂·H₂O',wood:'C₆H₁₀O₅',leaf:'C₆H₁₀O₅',flower:'C₆H₁₀O₅',sprout:'C₆H₁₀O₅',seedT:'C₆H₁₀O₅',seedF:'C₆H₁₀O₅',ash:'CaCO₃',glass:'SiO₂',lava:'SiO₂',fire:'CO₂+חום',hydrogen:'H₂',helium:'He',lithium:'Li',beryllium:'Be'}[m.key] ?? '—'));
-const conduct = MAT.map(m=>({water:true,lava:true,fire:true,lithium:true,beryllium:true}[m.key] ?? false));
-const molec   = MAT.map(m=>({air:'תערובת גזים',water:'מולקולה קוטבית',ice:'סריג גבישי',steam:'אדי מים',stone:'סריג סיליקט',basalt:'סלע וולקני צפוף',sand:'גרגרי קוורץ',earth:'תערובת אורגנית',mud:'אדמה רוויה',wood:'סיבי תאית',leaf:'תאית + כלורופיל',flower:'רקמה צמחית',sprout:'רקמה צמחית',seedT:'עובר זרע',seedF:'עובר זרע',ash:'שאריות מינרליות',glass:'מוצק אמורפי',lava:'סלע מותך',fire:'פלזמת בעירה',hydrogen:'מולקולה דו-אטומית H₂',helium:'אטום אצילי בודד',lithium:'מתכת אלקלית רכה',beryllium:'מתכת קלה וקשה'}[m.key] ?? '—'));
+const mass    = MAT.map(m=>({air:0.001,water:1.0,ice:0.92,steam:0.0006,stone:2.7,basalt:3.0,sand:1.6,earth:1.5,mud:1.8,wood:0.7,leaf:0.4,flower:0.3,sprout:0.5,seedT:0.6,seedF:0.6,ash:0.5,glass:2.5,lava:2.8,fire:0.0003,hydrogen:0.00009,helium:0.00018,lithium:0.53,beryllium:1.85,wall:2,
+  carbon:2.2,nitrogen:0.0012,oxygen:0.0014,sodium:0.97,magnesium:1.74,aluminum:2.7,silicon:2.33,sulfur:2.07,chlorine:0.003,potassium:0.86,calcium:1.55,iron:7.87,copper:8.96,silver:10.5,tin:7.3,tungsten:19.3,gold:19.3,mercury:13.5,lead:11.3,uranium:19.1,salt:2.17,rust:5.2}[m.key] ?? 1));
+const formula = MAT.map(m=>({air:'N₂+O₂',water:'H₂O',ice:'H₂O',steam:'H₂O',stone:'SiO₂',basalt:'SiO₂·Mg·Fe',sand:'SiO₂',earth:'SiO₂+C',mud:'SiO₂·H₂O',wood:'C₆H₁₀O₅',leaf:'C₆H₁₀O₅',flower:'C₆H₁₀O₅',sprout:'C₆H₁₀O₅',seedT:'C₆H₁₀O₅',seedF:'C₆H₁₀O₅',ash:'CaCO₃',glass:'SiO₂',lava:'SiO₂',fire:'CO₂+חום',hydrogen:'H₂',helium:'He',lithium:'Li',beryllium:'Be',
+  carbon:'C',nitrogen:'N₂',oxygen:'O₂',sodium:'Na',magnesium:'Mg',aluminum:'Al',silicon:'Si',sulfur:'S₈',chlorine:'Cl₂',potassium:'K',calcium:'Ca',iron:'Fe',copper:'Cu',silver:'Ag',tin:'Sn',tungsten:'W',gold:'Au',mercury:'Hg',lead:'Pb',uranium:'U',salt:'NaCl',rust:'Fe₂O₃'}[m.key] ?? '—'));
+const conduct = MAT.map(m=>({water:true,lava:true,fire:true,lithium:true,beryllium:true,
+  carbon:true,sodium:true,magnesium:true,aluminum:true,potassium:true,calcium:true,iron:true,copper:true,silver:true,tin:true,tungsten:true,gold:true,mercury:true,lead:true,uranium:true}[m.key] ?? false));
+const molec   = MAT.map(m=>({air:'תערובת גזים',water:'מולקולה קוטבית',ice:'סריג גבישי',steam:'אדי מים',stone:'סריג סיליקט',basalt:'סלע וולקני צפוף',sand:'גרגרי קוורץ',earth:'תערובת אורגנית',mud:'אדמה רוויה',wood:'סיבי תאית',leaf:'תאית + כלורופיל',flower:'רקמה צמחית',sprout:'רקמה צמחית',seedT:'עובר זרע',seedF:'עובר זרע',ash:'שאריות מינרליות',glass:'מוצק אמורפי',lava:'סלע מותך',fire:'פלזמת בעירה',hydrogen:'מולקולה דו-אטומית H₂',helium:'אטום אצילי בודד',lithium:'מתכת אלקלית רכה',beryllium:'מתכת קלה וקשה',
+  carbon:'סריג פחמן',nitrogen:'מולקולה דו-אטומית N₂',oxygen:'מולקולה דו-אטומית O₂',sodium:'מתכת אלקלית רכה',magnesium:'מתכת אלקלית-עפרורית',aluminum:'סריג מתכתי קל',silicon:'סריג גבישי',sulfur:'טבעות S₈',chlorine:'גז דו-אטומי Cl₂',potassium:'מתכת אלקלית',calcium:'מתכת עפרורית',iron:'סריג מתכתי',copper:'סריג מתכתי',silver:'סריג מתכתי',tin:'סריג מתכתי',tungsten:'מתכת קשה מאוד',gold:'סריג מתכתי אציל',mercury:'מתכת נוזלית',lead:'מתכת כבדה רכה',uranium:'מתכת רדיואקטיבית',salt:'סריג יוני Na⁺Cl⁻',rust:'תחמוצת ברזל'}[m.key] ?? '—'));
 const STATE   = {empty:'—',powder:'אבקה',liquid:'נוזל',solid:'מוצק',gas:'גז',static:'מוצק'};
 // נקודות מעבר מצב אמיתיות (°C): נמס=הופך לנוזל, רותח=הופך לגז
-const meltC = MAT.map(m=>({water:0,ice:0,steam:0,stone:1200,basalt:1200,lava:1200,sand:1700,glass:1700,hydrogen:-259,helium:-272,lithium:180,beryllium:1287}[m.key] ?? null));
-const boilC = MAT.map(m=>({water:100,ice:100,steam:100,stone:2900,basalt:2900,lava:2900,sand:2950,glass:2950,hydrogen:-253,helium:-269,lithium:1342,beryllium:2470}[m.key] ?? null));
+const meltC = MAT.map(m=>({water:0,ice:0,steam:0,stone:1200,basalt:1200,lava:1200,sand:1700,glass:1700,hydrogen:-259,helium:-272,lithium:180,beryllium:1287,
+  carbon:3550,nitrogen:-210,oxygen:-218,sodium:98,magnesium:650,aluminum:660,silicon:1414,sulfur:115,chlorine:-101,potassium:63,calcium:842,iron:1538,copper:1085,silver:962,tin:232,tungsten:3422,gold:1064,mercury:-39,lead:327,uranium:1132,salt:801,rust:1565}[m.key] ?? null));
+const boilC = MAT.map(m=>({water:100,ice:100,steam:100,stone:2900,basalt:2900,lava:2900,sand:2950,glass:2950,hydrogen:-253,helium:-269,lithium:1342,beryllium:2470,
+  carbon:4827,nitrogen:-196,oxygen:-183,sodium:883,magnesium:1090,aluminum:2470,silicon:3265,sulfur:445,chlorine:-34,potassium:759,calcium:1484,iron:2861,copper:2562,silver:2162,tin:2602,tungsten:5555,gold:2856,mercury:357,lead:1749,uranium:4131,salt:1465}[m.key] ?? null));
 // חומרים אורגניים שנשרפים (לא נמסים) — עץ/עלה/פרח/נבט/זרעים
 const ORGANICS = new Set([WOOD,LEAF,FLOWER,SPROUT,SEEDT,SEEDF]);
 // חומרים שנמסים/רותחים "גנרית" וזוכרים מי הם (מוצק עם נקודת התכה, שלא מטופל בנפרד ולא אורגני)
@@ -321,7 +356,7 @@ const SPECIAL_PH = new Set([WATER,ICE,STEAM,STONE,BASALT,LAVA,SAND,GLASS,MUD]);
 const genPhase = MAT.map(m => meltC[m.id]!=null && !ORGANICS.has(m.id) && !SPECIAL_PH.has(m.id)
   && (m.type==='solid'||m.type==='powder'||m.type==='static'));
 // צמיגות נוזלים: 1=נוזלי מאוד (מים), נמוך=סמיך (לבה/מתכת מותכת זורמות לאט)
-const VISC = MAT.map(m=>({water:1, lava:0.16}[m.key] ?? 0.5));
+const VISC = MAT.map(m=>({water:1, lava:0.16, mercury:0.85}[m.key] ?? 0.5));
 function phaseStr(id){
   if (MAT[id].flam) return 'נשרף ב-~300° (לא נמס)';
   const mel=meltC[id], boi=boilC[id];
@@ -330,7 +365,8 @@ function phaseStr(id){
   return p.join(' · ');
 }
 // ---------- מבנה מולקולרי דו-ממדי (אטומים + קשרים) ----------
-const ATOMCOL={H:'#f0f0f0',He:'#7fe0d8',Li:'#c78ac0',Be:'#8fd08f',O:'#e05555',Si:'#d9a441',C:'#4a4a52',N:'#5566e0',Ca:'#3ba55d',Na:'#b060d0',Cl:'#45b545',Fe:'#c07040',Mg:'#66c090','?':'#888'};
+const ATOMCOL={H:'#f0f0f0',He:'#7fe0d8',Li:'#c78ac0',Be:'#8fd08f',O:'#e05555',Si:'#d9a441',C:'#4a4a52',N:'#5566e0',Ca:'#3ba55d',Na:'#b060d0',Cl:'#45b545',Fe:'#c07040',Mg:'#66c090',
+  Al:'#c0c4cc',S:'#e6d23a',K:'#a05fd0',Cu:'#c86a3a',Ag:'#c8ccd4',Sn:'#9aa0a8',W:'#556070',Au:'#e0b93a',Hg:'#b8bcc8',Pb:'#5a6070',U:'#4faa4f',Ne:'#ff8a5a','?':'#888'};
 const G_WATER={atoms:[['O',0.5,0.62],['H',0.26,0.36],['H',0.74,0.36]],bonds:[[0,1],[0,2]]};
 const G_SIO2 ={atoms:[['Si',0.5,0.5],['O',0.18,0.5],['O',0.82,0.5]],bonds:[[0,1],[0,2]]};
 const G_CO2  ={atoms:[['C',0.5,0.5],['O',0.16,0.5],['O',0.84,0.5]],bonds:[[0,1],[0,2]]};
@@ -338,14 +374,20 @@ const G_AIR  ={atoms:[['N',0.3,0.38],['N',0.3,0.66],['O',0.72,0.38],['O',0.72,0.
 const G_CACO3={atoms:[['Ca',0.2,0.5],['C',0.55,0.5],['O',0.82,0.3],['O',0.86,0.62],['O',0.55,0.84]],bonds:[[0,1],[1,2],[1,3],[1,4]]};
 const G_ORG=(()=>{const a=[];for(let k=0;k<6;k++){const g=Math.PI/3*k-Math.PI/2;a.push(['C',0.5+0.28*Math.cos(g),0.5+0.28*Math.sin(g)]);}a.push(['O',0.5,0.5]);return {atoms:a,bonds:[[0,1],[1,2],[2,3],[3,4],[4,5],[5,0],[2,6]]};})();
 const G_H2={atoms:[['H',0.34,0.5],['H',0.66,0.5]],bonds:[[0,1]]};
-const G_HE={atoms:[['He',0.5,0.5]],bonds:[]};
-const G_LI={atoms:[['Li',0.5,0.5]],bonds:[]};
-const G_BE={atoms:[['Be',0.5,0.5]],bonds:[]};
+const mono=s=>({atoms:[[s,0.5,0.5]],bonds:[]});                          // אטום בודד
+const di=s=>({atoms:[[s,0.34,0.5],[s,0.66,0.5]],bonds:[[0,1]]});        // מולקולה דו-אטומית
+const G_SALT={atoms:[['Na',0.34,0.5],['Cl',0.66,0.5]],bonds:[[0,1]]};
+const G_RUST={atoms:[['Fe',0.3,0.4],['Fe',0.3,0.62],['O',0.66,0.3],['O',0.72,0.55],['O',0.6,0.76]],bonds:[[0,2],[0,3],[1,3],[1,4]]};
 const molGeom = MAT.map(m=>({
   water:G_WATER, ice:G_WATER, steam:G_WATER, mud:G_WATER,
   stone:G_SIO2, basalt:G_SIO2, sand:G_SIO2, glass:G_SIO2, lava:G_SIO2, earth:G_SIO2,
-  air:G_AIR, fire:G_CO2, ash:G_CACO3, hydrogen:G_H2, helium:G_HE, lithium:G_LI, beryllium:G_BE,
-  wood:G_ORG, leaf:G_ORG, flower:G_ORG, sprout:G_ORG, seedT:G_ORG, seedF:G_ORG
+  air:G_AIR, fire:G_CO2, ash:G_CACO3, hydrogen:G_H2, helium:mono('He'), lithium:mono('Li'), beryllium:mono('Be'),
+  wood:G_ORG, leaf:G_ORG, flower:G_ORG, sprout:G_ORG, seedT:G_ORG, seedF:G_ORG,
+  carbon:mono('C'), nitrogen:di('N'), oxygen:di('O'), sodium:mono('Na'), magnesium:mono('Mg'),
+  aluminum:mono('Al'), silicon:mono('Si'), sulfur:mono('S'), chlorine:di('Cl'), potassium:mono('K'),
+  calcium:mono('Ca'), iron:mono('Fe'), copper:mono('Cu'), silver:mono('Ag'), tin:mono('Sn'),
+  tungsten:mono('W'), gold:mono('Au'), mercury:mono('Hg'), lead:mono('Pb'), uranium:mono('U'),
+  salt:G_SALT, rust:G_RUST
 }[m.key] || {atoms:[['?',0.5,0.5]],bonds:[]}));
 function drawMol(mc,id){
   const S=mc.width, g=molGeom[id], x=mc.getContext('2d');
@@ -548,16 +590,55 @@ function react(x,y,i,id){
     case FIRE:   return updateFire(x,y,i);
     case ASH:    return reactAsh(x,y,i);
     case HYDRO:  return reactHydrogen(x,y,i);
-    case LITH:   return reactLithium(x,y,i);
+    case LITH: case SODIUM: case POTAS: return reactAlkali(x,y,i,id);
+    case IRON:   return reactIron(x,y,i);
+    case OXY:    return reactOxygen(x,y,i);
+    case MAGNES: return reactMagnesium(x,y,i);
+    case URANIUM:return reactUranium(x,y,i);
     case LEAF:   return reactPlantPart(x,y,i,LEAF);
     case WOOD:   return reactWood(x,y,i);
   }
   return false;
 }
-// ליתיום: מתפוצץ במגע עם מים (Li + H₂O → פיצוץ + מימן). אחרת מתכת שנופלת/צפה.
-function reactLithium(x,y,i){
+// מתכות אלקליות (ליתיום/נתרן/אשלגן): מתפוצצות במגע עם מים. אשלגן חזק מכולן.
+// נתרן + כלור → מלח (NaCl). אחרת מתכת רגילה (נופלת/נמסה).
+function reactAlkali(x,y,i,id){
   for(const [dx,dy] of NEI4){ const nx=x+dx,ny=y+dy; if(!inB(nx,ny))continue;
-    if(grid[idx(nx,ny)]===WATER){ explode(x,y,i); return true; } }
+    const n=grid[idx(nx,ny)];
+    if(n===WATER){ explode(x,y,i, id===POTAS?6:id===SODIUM?5:4); return true; }
+    if(id===SODIUM && n===CHLOR){ const j=idx(nx,ny);            // Na + Cl → מלח
+      grid[i]=SALT; life[i]=0; pha[i]=0; grid[j]=SALT; life[j]=0; pha[j]=0; discover(SALT); return true; }
+  }
+  return false;
+}
+// ברזל + מים (בטמפ' רגילה) → חלודה, לאט
+function reactIron(x,y,i){
+  if(temp[i]<250) for(const [dx,dy] of NEI4){ const nx=x+dx,ny=y+dy; if(!inB(nx,ny))continue;
+    if(grid[idx(nx,ny)]===WATER && Math.random()<0.0018){ grid[i]=RUST; life[i]=0; pha[i]=0; discover(RUST); return true; } }
+  return false;
+}
+// חמצן מזין בעירה: מגביר אש שכנה, ולאט נצרך לתוכה
+function reactOxygen(x,y,i){
+  let fed=false;
+  for(const [dx,dy] of NEI4){ const nx=x+dx,ny=y+dy; if(!inB(nx,ny))continue;
+    const j=idx(nx,ny), n=grid[j];
+    if(n===FIRE){ if(life[j]<250)life[j]+=3; temp[j]+=10; fed=true; }
+    else if(MAT[n].flam && n!==OXY){ temp[j]+=3; }            // עוזר להתלקח
+  }
+  if(fed && Math.random()<0.05){ grid[i]=FIRE; temp[i]=820; life[i]=MAT[FIRE].life; return true; }
+  return false;
+}
+// מגנזיום: נדלק בקלות ובוער באור לבן לוהט מאוד (~1100°)
+function reactMagnesium(x,y,i){
+  let ig = temp[i]>=473;
+  if(!ig) for(const [dx,dy] of NEI4){ const nx=x+dx,ny=y+dy; if(!inB(nx,ny))continue;
+    const n=grid[idx(nx,ny)]; if(n===FIRE||n===LAVA){ ig=true; break; } }
+  if(ig){ grid[i]=FIRE; temp[i]=1100; life[i]=MAT[FIRE].life+50; discover(FIRE); return true; }
+  return false;
+}
+// אורניום: רדיואקטיבי — מתחמם מעצמו (גוש גדול מתחמם יותר, כמו מסה קריטית)
+function reactUranium(x,y,i){
+  if(temp[i]<250) temp[i]+=2.0;
   return false;
 }
 // עץ: נופל כשאין תמיכה מתחתיו (אם ההגדרה דלוקה)
@@ -585,8 +666,7 @@ function reactHydrogen(x,y,i){
   return false;   // אחרת מתנהג כגז קל (עולה) — moveGas
 }
 // פיצוץ: שחרור חום עצום + הדף שדוחף חומרים החוצה + שרשרת הצתה. מימן נשרף למים.
-function explode(x,y,i){
-  const R=4;
+function explode(x,y,i,R=4){
   for(let dy=-R;dy<=R;dy++) for(let dx=-R;dx<=R;dx++){
     const d=Math.hypot(dx,dy); if(d>R) continue;
     const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
@@ -1054,19 +1134,52 @@ const PT=[
 ['Fr','פרנציום','am',223,'s',7,1],['Ra','ראדיום','ae',226,'s',7,2],['Ac','אקטיניום','act',227,'s',9,3],['Th','תוריום','act',232,'s',9,4],['Pa','פרוטקטיניום','act',231,'s',9,5],['U','אורניום','act',238,'s',9,6],['Np','נפטוניום','act',237,'s',9,7],['Pu','פלוטוניום','act',244,'s',9,8],['Am','אמריציום','act',243,'s',9,9],['Cm','קוריום','act',247,'s',9,10],['Bk','ברקליום','act',247,'s',9,11],['Cf','קליפורניום','act',251,'s',9,12],['Es','איינשטייניום','act',252,'s',9,13],['Fm','פרמיום','act',257,'s',9,14],['Md','מנדלביום','act',258,'s',9,15],['No','נובליום','act',259,'s',9,16],['Lr','לורנציום','act',266,'s',9,17],['Rf','רתרפורדיום','tm',267,'s',7,4],['Db','דובניום','tm',268,'s',7,5],['Sg','סיבורגיום','tm',269,'s',7,6],['Bh','בוריום','tm',270,'s',7,7],['Hs','הסיום','tm',269,'s',7,8],['Mt','מייטנריום','unk',278,'s',7,9],['Ds','דרמשטטיום','unk',281,'s',7,10],['Rg','רנטגניום','unk',282,'s',7,11],['Cn','קופרניציום','tm',285,'s',7,12],['Nh','ניהוניום','ptm',286,'s',7,13],['Fl','פלרוביום','ptm',289,'s',7,14],['Mc','מוסקוביום','ptm',290,'s',7,15],['Lv','ליברמוריום','ptm',293,'s',7,16],['Ts','טנסין','hl',294,'s',7,17],['Og','אוגנסון','ng',294,'g',7,18]
 ];
 const PHASE={s:'מוצק',l:'נוזל',g:'גז'};
-const PLAY={1:HYDRO, 2:HELIUM, 3:LITH, 4:BERYL};   // יסודות שכבר אפשר לשחק בהם
+const PLAY={1:HYDRO, 2:HELIUM, 3:LITH, 4:BERYL, 6:CARBON, 7:NITRO, 8:OXY, 11:SODIUM, 12:MAGNES,
+  13:ALUM, 14:SILICON, 16:SULFUR, 17:CHLOR, 19:POTAS, 20:CALC, 26:IRON, 29:COPPER, 47:SILVER,
+  50:TIN, 74:TUNG, 79:GOLD, 80:MERCURY, 82:LEAD, 92:URANIUM};   // יסודות שאפשר לשחק בהם
 const FACTS={
   1:['🔥 <b>נפיץ מאוד!</b> נשרף בחמצן/אש ויוצר מים 💧','🎈 הגז הקל ביותר ביקום — עולה מהר','⚡ לא מוליך חשמל (כגז)','🥶 רותח ב-253°- (מהקרים ביקום)'],
   2:['🛡️ <b>גז אצילי — לא נשרף ולא מתפוצץ בכלל</b>','🎈 קל מהאוויר — ממלא בלונים שעפים','⚡ לא מוליך חשמל','🥶 היסוד הכי קר להנזלה: 269°-'],
   3:['💥 <b>מתפוצץ במגע עם מים!</b> (מתכת אלקלית)','🪶 קל מהמים — צף עליהם','🔋 מוליך חשמל וחום','🔥 דליק · נמס כבר ב-180°'],
-  4:['🛠️ מתכת קלה, קשה מאוד וחזקה','🔋 מוליכה חשמל וחום','🔥 נמס גבוה מאוד (1287°)','☠️ רעיל מאוד במציאות!']
+  4:['🛠️ מתכת קלה, קשה מאוד וחזקה','🔋 מוליכה חשמל וחום','🔥 נמס גבוה מאוד (1287°)','☠️ רעיל מאוד במציאות!'],
+  6:['🌱 <b>בסיס כל היצורים החיים</b> — פחמן בכל תא','💎 יהלום וגרפיט = שניהם פחמן טהור!','🔥 דליק — נשרף עם חמצן ל-CO₂','🌡️ ההיתוך הכי גבוה כמעט (3550°)'],
+  7:['💨 <b>78% מהאוויר שאנחנו נושמים</b>','😌 יסוד רגוע — כמעט לא מגיב','🧊 נוזלי מאוד קר (196°-) — מקפיא מיד','🌱 חשוב לצמיחת צמחים (דשן)'],
+  8:['🫁 <b>אנחנו נושמים אותו!</b> 21% מהאוויר','🔥 מזין כל בעירה — בלעדיו אין אש','💧 עם מימן → מים','🌊 מומס במים — דגים נושמים אותו'],
+  11:['💥 <b>מתפוצץ במים בכתום!</b> (מתכת אלקלית)','🧂 עם כלור → מלח בישול (NaCl)','🪶 רך כל כך שחותכים אותו בסכין','🔋 מוליך חשמל'],
+  12:['✨ <b>נשרף באור לבן מסנוור וחם מאוד</b>','🎆 משמש בזיקוקים ולפיד','🪶 מתכת קלה וחזקה','🌿 במרכז הכלורופיל שבצמחים'],
+  13:['🥤 <b>מתכת הפחיות והנייר כסף</b>','🪶 קלה מאוד — לכן במטוסים','♻️ ממוחזר בקלות שוב ושוב','🔋 מוליך חשמל וחום מצוין'],
+  14:['💻 <b>ממנו עשויים כל השבבים במחשב</b>','🏖️ אבן/חול/זכוכית = תרכובות שלו','🔌 מוליך למחצה — לב האלקטרוניקה','🌍 היסוד השני הכי נפוץ בקרום כדוה"א'],
+  16:['💛 <b>אבקה צהובה שנשרפת בכחול</b>','🌋 מריחה כמו ביצים סרוחות ליד הרי געש','🧪 ממנו חומצה גופרתית','🔥 דליקה'],
+  17:['☠️ <b>גז ירוק רעיל</b> — שימש כנשק במלחמה','🧂 עם נתרן → מלח בטוח לאכילה','🏊 מחטא מים בבריכות','🥽 כבד מהאוויר — שוקע'],
+  19:['💜 <b>מתפוצץ במים חזק יותר מנתרן — בסגול!</b>','🍌 בבננות (איזוטופ רדיואקטיבי זעיר)','🪶 קל מהמים · רך מאוד','🌱 חשוב לצמחים ולגוף'],
+  20:['🦴 <b>בונה עצמות ושיניים</b>','🥛 בחלב — לכן חשוב לגדילה','🪨 בגיר, שיש וקונכיות','🔥 נשרף באדום-כתום'],
+  26:['🧲 <b>מגנטי! ליבת כדור הארץ עשויה ממנו</b>','🩸 בדם שלנו — נותן לו צבע אדום','🌧️ מחליד (חלודה) במגע עם מים+חמצן','🌡️ נמס ב-1538°'],
+  29:['🔌 <b>מוליך החשמל של כל הכבלים</b>','🗽 פסל החירות מכוסה בו (ולכן ירוק)','🟠 מתכת כתומה-אדמדמה','🦠 הורג חיידקים'],
+  47:['⚡ <b>המוליך הכי טוב שקיים בטבע</b>','💍 תכשיטים ומטבעות','📷 שימש בפיתוח תמונות פעם','🦠 קוטל חיידקים חזק'],
+  50:['🥫 <b>מצפים בו פחיות שימורים</b>','🔧 נמס בקלות (232°) — להלחמה','🔔 עם נחושת → ברונזה','🪶 מתכת רכה'],
+  74:['🌡️ <b>נקודת ההיתוך הכי גבוהה — 3422°!</b>','💡 החוט שבתוך נורות ישנות','🛡️ הכי קשה לחתוך — קשה מאוד','⚙️ במקדחים וכלי חיתוך'],
+  79:['👑 <b>יקר, נוצץ ולא מחליד לעולם</b>','🏋️ כבד מאוד — פי 19 ממים','💍 תכשיטים, מטבעות וזהב','⚡ מוליך מצוין — במעגלים יקרים'],
+  80:['🌡️ <b>המתכת היחידה שנוזלית בחדר!</b>','☠️ רעילה מאוד — אדים מסוכנים','🌡️ הייתה במדחומים ישנים','🪙 כבדה — פי 13.5 ממים'],
+  82:['🏋️ <b>כבדה מאוד ורכה</b>','☢️ עוצרת קרינה — לכן במיגונים','☠️ רעילה — הייתה בצבע ובדלק פעם','🔧 נמסה בקלות (327°)'],
+  92:['☢️ <b>רדיואקטיבי — מתחמם מעצמו!</b>','⚛️ דלק לכורים גרעיניים ולפצצות','🏋️ אחד היסודות הכבדים בטבע','⚠️ מסוכן מאוד במציאות']
 };
 const REACTS={
   1:'🔥 הצת ליד אש → 💧 מים + פיצוץ. עולה כי קל מהאוויר',
   2:'🛡️ אצילי — לא מגיב. שחק בו כגז שעף למעלה',
   3:'💧 זרוק על מים → 💥 פיצוץ! או חמם מעל 180° → נמס לנוזל 🫠',
   4:'🫠 חמם מעל 1287° → נמס לנוזל זוהר. קשה מאוד וקל',
-  8:'חמצן מזין בעירה' };
+  6:'🔥 הצת → נשרף עם חמצן. חמם מאוד → נמס',
+  7:'😌 רגוע — כמעט לא מגיב. קרר מאוד → נוזל',
+  8:'🔥 שים ליד אש → מגביר אותה! עם 💧 מימן → מים',
+  11:'💧 זרוק על מים → 💥 פיצוץ! + 🟢 כלור → 🧂 מלח',
+  12:'🔥 הצת → נשרף באור לבן לוהט (1100°)',
+  17:'🧂 שים ליד נתרן → מלח (NaCl)',
+  19:'💧 זרוק על מים → 💥 פיצוץ ענק! (חזק מנתרן)',
+  26:'🌧️ שים ליד מים → 🟤 חלודה. חמם 1538° → נמס',
+  29:'🫠 חמם 1085° → נמס לנוזל כתום זוהר',
+  74:'🫠 חמם ל-3422° כדי להמיס — הכי קשה!',
+  80:'🌡️ המתכת היחידה שנוזלית בחדר! זורמת כמו כספית אמיתית',
+  92:'☢️ מתחמם לבד! שים אותו וצפה בחום עולה' };
 const ptable=document.getElementById('ptable');
 function buildShop(){
   ptable.innerHTML='';
@@ -1137,7 +1250,7 @@ document.getElementById('setCond').oninput=e=>{ condMul=+e.target.value/10; fire
 // מספר אלקטרונים בכל קליפה (2,8,18,32...) לפי מספר אטומי
 function shells(Z){ const cap=[2,8,18,32,32,18,8]; const sh=[]; let e=Z;
   for(let k=0;k<cap.length&&e>0;k++){ const n=Math.min(cap[k],e); sh.push(n); e-=n; } return sh; }
-const ELEMENT_HE={H:['מימן',1],He:['הליום',2],Li:['ליתיום',3],Be:['בריליום',4],B:['בורון',5],C:['פחמן',6],N:['חנקן',7],O:['חמצן',8],Na:['נתרן',11],Mg:['מגנזיום',12],Si:['צורן',14],Cl:['כלור',17],Ca:['סידן',20],Fe:['ברזל',26]};
+const ELEMENT_HE={H:['מימן',1],He:['הליום',2],Li:['ליתיום',3],Be:['בריליום',4],B:['בורון',5],C:['פחמן',6],N:['חנקן',7],O:['חמצן',8],Ne:['ניאון',10],Na:['נתרן',11],Mg:['מגנזיום',12],Al:['אלומיניום',13],Si:['צורן',14],S:['גופרית',16],Cl:['כלור',17],K:['אשלגן',19],Ca:['סידן',20],Fe:['ברזל',26],Cu:['נחושת',29],Ag:['כסף',47],Sn:['בדיל',50],W:['טונגסטן',74],Au:['זהב',79],Hg:['כספית',80],Pb:['עופרת',82],U:['אורניום',92]};
 function showAtom(sym, list){
   const info=ELEMENT_HE[sym]; if(!info) return;
   const [he,Z]=info, sh=shells(Z);
@@ -1151,9 +1264,10 @@ function showAtom(sym, list){
   }
   const cv=document.getElementById('atomCv'), x=cv.getContext('2d'), S=cv.width, cx=S/2, cy=S/2;
   x.clearRect(0,0,S,S);
-  // קליפות
+  // קליפות — מרווח מותאם כדי שגם אטומים כבדים (הרבה קליפות) ייכנסו במסגרת
+  const gap=Math.min(30,(S/2-26)/Math.max(1,sh.length));
   for(let k=0;k<sh.length;k++){
-    const r=34+k*30;
+    const r=30+k*gap;
     x.strokeStyle='rgba(120,150,200,.4)'; x.lineWidth=1.5;
     x.beginPath(); x.arc(cx,cy,r,0,7); x.stroke();
     // אלקטרונים על הקליפה
