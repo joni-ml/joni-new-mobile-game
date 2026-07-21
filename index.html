@@ -199,6 +199,7 @@
       <label class="stog"><input type="checkbox" id="setGrav" checked> 🍃 צמחים נופלים כשאין תמיכה</label>
       <label class="stog">🌡️ מקסימום חום למברשת: <input type="number" id="setMaxT" min="200" max="6000" step="100" value="4000" style="width:88px;background:#141a24;color:#e8e0c8;border:1px solid #33608a;border-radius:8px;padding:4px 6px;font-size:15px"></label>
       <label class="stog">🔥 מוליכות חום כללית <input type="range" id="setCond" min="1" max="30" value="10" style="flex:1;min-width:120px"></label>
+      <label class="stog"><input type="checkbox" id="setNoLoss"> 🌡️ חומרים לא מאבדים חום לסביבה (רק מוליכים אותו)</label>
       <button id="setClose">סגור</button>
     </div>
 
@@ -470,6 +471,7 @@ const inB = (x,y) => x>=0 && x<W && y>=0 && y<H;
 let current = WATER, brush = 3, paused = false, speed = 1;
 let buildOnAir = true, borderWalls = false;   // הגדרות
 let heatStep = 30, maxTemp = 4000, minTemp = -90, condMul = 1;   // מברשת חום/קור + מוליכות
+let noHeatLoss = false;                                          // הגדרה: חומרים לא מאבדים חום לסביבה
 let held = null, holdX = 0, holdY = 0;         // כלי היד — גוש חומר שמורם
 let painting = false, ptx=0, pty=0;
 let score = 0;
@@ -552,13 +554,16 @@ function thermal(){
   for (let y=0;y<H;y++) for (let x=0;x<W;x++){
     const i=idx(x,y), id=grid[i], ci=cond[id], t=temp[i];
     if (id===WALL){ temp2[i]=0; continue; }   // קיר: תמיד 0°, חום לא נכנס/עובר
-    let acc=0;
-    if (x>0)   { const j=i-1; acc += Math.min(ci,cond[grid[j]])*(temp[j]-t); }
-    if (x<W-1) { const j=i+1; acc += Math.min(ci,cond[grid[j]])*(temp[j]-t); }
-    if (y>0)   { const j=i-W; acc += Math.min(ci,cond[grid[j]])*(temp[j]-t); }
-    if (y<H-1) { const j=i+W; acc += Math.min(ci,cond[grid[j]])*(temp[j]-t); }
+    // עם ההגדרה "בלי איבוד חום": אוויר הופך למבודד מושלם (החום מוליך רק בין חומרים, לא בורח)
+    const ca = (g)=> (noHeatLoss && g===AIR) ? 0 : cond[g];
+    let acc=0, airN=0;
+    if (x>0)   { const j=i-1; const g=grid[j]; if(g===AIR)airN++; acc += Math.min(ci,ca(g))*(temp[j]-t); }
+    if (x<W-1) { const j=i+1; const g=grid[j]; if(g===AIR)airN++; acc += Math.min(ci,ca(g))*(temp[j]-t); }
+    if (y>0)   { const j=i-W; const g=grid[j]; if(g===AIR)airN++; acc += Math.min(ci,ca(g))*(temp[j]-t); }
+    if (y<H-1) { const j=i+W; const g=grid[j]; if(g===AIR)airN++; acc += Math.min(ci,ca(g))*(temp[j]-t); }
     let nt = t + 0.5*acc*condMul;
-    nt += (AMB - nt) * radi[id];
+    // איבוד חום לסביבה קורה רק ממשטחים חשופים לאוויר. חומר סגור בקירות (0 שכני אוויר) לא מתקרר!
+    if (!noHeatLoss && airN>0) nt += (AMB - nt) * radi[id] * airN * 0.25;
     temp2[i]=nt;
   }
   const s=temp; temp=temp2; temp2=s;
@@ -566,6 +571,7 @@ function thermal(){
 }
 function checkPhase(i){
   const id=grid[i], t=temp[i];
+  if (pha[i]!==0 && !(genPhase[id]||id===LAVA||id===GLASS)) pha[i]=0;   // ניקוי מצב צבירה תקוע (למשל מים/קרח לא יכולים להיות "גז מותך")
   switch(id){
     case WATER:  if (t>=100){ grid[i]=STEAM; life[i]=MAT[STEAM].life; discover(STEAM); }
                  else if (t<=0){ grid[i]=ICE; discover(ICE); } break;
@@ -1148,7 +1154,8 @@ function inspectAt(gx,gy,cx,cy){
   const arrow=spd>0.15 ? '↗↘↙↖→↓←↑'[0] : '';
   const kg=(mass[id]*0.1).toFixed(3);
   const joule=(0.5*mass[id]*0.1*vmps*vmps).toFixed(2);
-  const st = pha[i]===2 ? 'גז (רותח)' : pha[i]===1 ? 'נוזל (מותך)' : (STATE[MAT[id].type]||'—');
+  const canPhase = genPhase[id]||id===LAVA||id===GLASS;
+  const st = (canPhase&&pha[i]===2) ? 'גז (רותח)' : (canPhase&&pha[i]===1) ? 'נוזל (מותך)' : (STATE[MAT[id].type]||'—');
   const cc=cond[id], condTxt=(cc>=0.12?'מהירה':cc>=0.06?'בינונית':'איטית');
   inspEl.innerHTML=`
     <span class="ix" id="inspX">✕</span>
@@ -1368,6 +1375,7 @@ document.getElementById('setGrav').onchange=e=>plantGrav=e.target.checked;
 document.getElementById('setBorder').onchange=e=>{ borderWalls=e.target.checked; if(borderWalls)applyBorder(); else clearBorder(); };
 document.getElementById('setMaxT').onchange=e=>{ maxTemp=Math.max(200,+e.target.value||4000); fireMissionFlag('settings'); };
 document.getElementById('setCond').oninput=e=>{ condMul=+e.target.value/10; fireMissionFlag('settings'); };
+document.getElementById('setNoLoss').onchange=e=>{ noHeatLoss=e.target.checked; fireMissionFlag('settings'); };
 
 /* ===== מודל בוהר של האטום (חינוכי) ===== */
 // מספר אלקטרונים בכל קליפה (2,8,18,32...) לפי מספר אטומי
