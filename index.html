@@ -254,6 +254,12 @@
       <button id="btnSave">💾</button>
       <button id="btnClear">🗑️</button>
     </div>
+    <div id="controls">
+      <button id="btnHand">✋ יד</button>
+      <button id="btnBeaker">🧪 כלי זכוכית</button>
+      <button id="btnFlask">⚗️ בקבוקון</button>
+      <button id="btnTube">🥼 מבחנה</button>
+    </div>
     <div id="sliders">
       <label>גודל <input id="brush" type="range" min="1" max="12" value="3"></label>
       <label>מהירות <input id="speed" type="range" min="1" max="15" value="10"></label>
@@ -404,6 +410,7 @@ const inB = (x,y) => x>=0 && x<W && y>=0 && y<H;
 let current = WATER, brush = 3, paused = false, speed = 1;
 let buildOnAir = true, borderWalls = false, noHeatLoss = false;   // הגדרות
 let painting = false, ptx=0, pty=0;
+let held = null, holdX = 0, holdY = 0;   // כלי היד — גוש חומר שהורם
 let score = 0;
 const found = new Uint8Array(MAT.length);
 MAT.forEach(m => { if (m.base) found[m.id] = 1; });
@@ -430,6 +437,13 @@ function render() {
       }
     }
     d[i*4]=r; d[i*4+1]=g; d[i*4+2]=b; d[i*4+3]=255;
+  }
+  if (held){                              // תצוגת הגוש שהורם ביד — עוקב אחרי האצבע
+    for (const c of held.cells){
+      const x=holdX+c.dx, y=holdY+c.dy; if (x<0||x>=W||y<0||y>=H) continue;
+      const j=(y*W+x)*4, col=MAT[c.id].color;
+      d[j]=Math.min(255,col[0]+45); d[j+1]=Math.min(255,col[1]+45); d[j+2]=Math.min(255,col[2]+45); d[j+3]=255;
+    }
   }
   bctx.putImageData(img,0,0);
   ctx.drawImage(buf,0,0,canvas.width,canvas.height);
@@ -772,10 +786,13 @@ function scatter(cx,cy,id,E){
   }
 }
 function moveLiquid(x,y,i,id){
-  // דליפה דרך רשת: נוזל מטפטף מטה דרך כמה שכבות רשת אל התא הפנוי הראשון שמתחתיהן
+  // דליפה דרך רשת: הנוזל מטפטף בהדרגה דרך שכבות הרשת, ומחמם/מקרר אותן בדרך
   if (y+1<H && grid[idx(x,y+1)]===MESH){
     let ty=y+2; while(ty<H && grid[idx(x,ty)]===MESH) ty++;
-    if (ty<H){ const bth=idx(x,ty); if(grid[bth]===AIR || canSink(id,grid[bth])){ swap(i,bth); return; } }
+    if (ty<H && (grid[idx(x,ty)]===AIR || canSink(id,grid[idx(x,ty)]))){
+      for(let m=y+1;m<ty;m++){ const mi=idx(x,m); temp[mi]=temp[mi]*0.7 + temp[i]*0.3; }  // חילופי חום עם הרשת
+      if(Math.random()<0.55){ swap(i,idx(x,ty)); return; }                                 // טפטוף הדרגתי
+    }
   }
   moveDynamic(x,y,i,id,'liquid');
 }
@@ -789,10 +806,13 @@ function moveGas(x,y,i,id){
   // גז לא נעלם לאוויר לעולם — אדים מתעבים למים (checkPhase), מימן נשאר.
   // ציפה: גז חם עולה מהר יותר, ובועות עולות דרך נוזל/אבקה (דוחפות אותם הצידה/למטה).
   const gd=density(id);
-  // מעבר דרך רשת: גז עולה מעלה דרך כמה שכבות רשת אל התא הפנוי הראשון שמעליהן
+  // מעבר דרך רשת: הגז עולה בהדרגה דרך שכבות הרשת ומחמם/מקרר אותן בדרך
   if (y-1>=0 && grid[idx(x,y-1)]===MESH){
     let ty=y-2; while(ty>=0 && grid[idx(x,ty)]===MESH) ty--;
-    if (ty>=0){ const ath=idx(x,ty); if(gasCanRiseInto(gd,grid[ath])){ swap(i,ath); moved[ath]=1; return; } }
+    if (ty>=0 && gasCanRiseInto(gd,grid[idx(x,ty)])){
+      for(let m=y-1;m>ty;m--){ const mi=idx(x,m); temp[mi]=temp[mi]*0.7 + temp[i]*0.3; }
+      if(Math.random()<0.7){ swap(i,idx(x,ty)); moved[idx(x,ty)]=1; return; }
+    }
   }
   const pUp = Math.min(0.75, LIFT[id] + Math.max(0,(temp[i]-AMB))*0.005);
   if (Math.random() < pUp && y-1>=0){
@@ -869,6 +889,8 @@ function paintAt(cx,cy){
   const r=canvas.getBoundingClientRect();
   const gx=Math.floor((cx-r.left)/r.width*W), gy=Math.floor((cy-r.top)/r.height*H);
   if (current==='inspect'){ inspectAt(gx,gy,cx,cy); return; }   // זכוכית מגדלת
+  if (current==='hand'){ holdX=gx; holdY=gy; return; }          // היד רק עוקבת — תפיסה/שחרור ב-down/up
+  if (current==='beaker'||current==='flask'||current==='tube'){ stampVessel(gx,gy,current); painting=false; return; }
   const rad=brush;
   for (let dy=-rad; dy<=rad; dy++) for (let dx=-rad; dx<=rad; dx++){
     if (dx*dx+dy*dy>rad*rad) continue;
@@ -885,12 +907,63 @@ function paintAt(cx,cy){
   }
 }
 function pos(e){ const t=e.touches?e.touches[0]:e; return [t.clientX,t.clientY]; }
-function down(e){ e.preventDefault(); painting=true; [ptx,pty]=pos(e); paintAt(ptx,pty); }
+function toGrid(cx,cy){ const r=canvas.getBoundingClientRect();
+  return [Math.floor((cx-r.left)/r.width*W), Math.floor((cy-r.top)/r.height*H)]; }
+// כלי זכוכית: מטביע כלי (בקר/בקבוקון/מבחנה) בנוי מזכוכית — צריך שגילית זכוכית קודם
+function stampVessel(gx,gy,kind){
+  if (!found[GLASS]){ toast('קודם גלה 🔮 זכוכית! (חמם חול)'); return; }
+  let w,h,neck=0;
+  if (kind==='beaker'){ w=Math.max(6,brush*2+2); h=Math.max(7,brush*2+3); }
+  else if (kind==='flask'){ w=Math.max(7,brush*2+3); h=Math.max(9,brush*2+5); neck=Math.max(2,(w>>2)); } // ארלנמאייר
+  else { w=Math.max(4,brush+2); h=Math.max(10,brush*3+4); }  // מבחנה — צר וגבוה
+  const x0=gx-(w>>1), y0=gy-(h>>1);
+  for(let yy=0;yy<h;yy++) for(let xx=0;xx<w;xx++){
+    const x=x0+xx, y=y0+yy; if(!inB(x,y)) continue; const i=idx(x,y);
+    let wall;
+    if (kind==='flask'){                     // בקבוקון: צוואר צר למעלה, גוף רחב למטה
+      const inNeck = yy < h*0.4;
+      const nx0=(w-neck)>>1, nx1=nx0+neck;
+      if (inNeck) wall = (xx===nx0-1||xx===nx1);
+      else wall = (yy===h-1)||(xx===0)||(xx===w-1)||(yy===Math.floor(h*0.4) && (xx<nx0-1||xx>=nx1)); // כתפיים
+    } else {                                  // בקר/מבחנה: קופסה פתוחה למעלה
+      wall = (yy===h-1)||(xx===0)||(xx===w-1);
+    }
+    if (yy===0 && kind!=='flask') continue;   // פתוח למעלה
+    if (wall){ grid[i]=GLASS; life[i]=0; aux[i]=0; velX[i]=0; velY[i]=0; temp[i]=AMB; discover(GLASS); }
+    else { grid[i]=AIR; life[i]=0; aux[i]=0; velX[i]=0; velY[i]=0; temp[i]=AMB; }  // פנים הכלי — ריק
+  }
+}
+// כלי היד — מרים את כל החומרים ברדיוס לתוך held, ומניח אותם במקום אחר
+function grabHand(gx,gy){
+  const cells=[], rad=brush;
+  for (let dy=-rad; dy<=rad; dy++) for (let dx=-rad; dx<=rad; dx++){
+    if (dx*dx+dy*dy>rad*rad) continue;
+    const x=gx+dx, y=gy+dy; if(!inB(x,y)) continue;
+    const i=idx(x,y), id=grid[i]; if (id===AIR||id===WALL) continue;
+    cells.push({dx,dy,id,temp:temp[i],life:life[i],aux:aux[i]});
+    grid[i]=AIR; life[i]=0; aux[i]=0; velX[i]=0; velY[i]=0; temp[i]=AMB;
+  }
+  if (cells.length){ held={cells}; holdX=gx; holdY=gy; }
+}
+function dropHand(){
+  if (!held) return;
+  for (const c of held.cells){
+    const x=holdX+c.dx, y=holdY+c.dy; if(!inB(x,y)) continue;
+    const i=idx(x,y); if (grid[i]!==AIR) continue;
+    grid[i]=c.id; temp[i]=c.temp; life[i]=c.life; aux[i]=c.aux; velX[i]=0; velY[i]=0;
+  }
+  held=null;
+}
+function down(e){ e.preventDefault(); painting=true; [ptx,pty]=pos(e);
+  if (current==='hand'){ const [gx,gy]=toGrid(ptx,pty); if(!held) grabHand(gx,gy); else { holdX=gx; holdY=gy; } return; }
+  paintAt(ptx,pty); }
 function move(e){ if(!painting) return; e.preventDefault(); const [x,y]=pos(e);
   const steps=Math.max(1,Math.hypot(x-ptx,y-pty)/3);
   for (let s=0;s<=steps;s++) paintAt(ptx+(x-ptx)*s/steps, pty+(y-pty)*s/steps);
   ptx=x; pty=y; }
-function up(){ painting=false; if(current==='inspect') document.getElementById('mag').style.display='none'; }
+function up(){ painting=false;
+  if (current==='hand' && held) dropHand();
+  if (current==='inspect') document.getElementById('mag').style.display='none'; }
 canvas.addEventListener('touchstart',down,{passive:false});
 canvas.addEventListener('touchmove', move,{passive:false});
 canvas.addEventListener('touchend',  up);
@@ -900,14 +973,18 @@ window.addEventListener('mouseup',   up);
 
 /* ===== לוח החומרים + בחירה ===== */
 const matsEl = document.getElementById('materials');
-function setCurrent(v){ current=v; refreshActive(); }
+function setCurrent(v){ if(held && v!=='hand') dropHand(); current=v; refreshActive(); }
 function refreshActive(){
   [...matsEl.children].forEach(c=> c.classList.toggle('active', c.dataset.id!==''&&+c.dataset.id===current));
-  document.getElementById('btnHeat').classList.toggle('selbtn', current==='heat');
-  document.getElementById('btnCool').classList.toggle('selbtn', current==='cool');
-  document.getElementById('btnInspect').classList.toggle('selbtn', current==='inspect');
+  const sel=(id,v)=>document.getElementById(id).classList.toggle('selbtn', current===v);
+  sel('btnHeat','heat'); sel('btnCool','cool'); sel('btnInspect','inspect');
+  sel('btnHand','hand'); sel('btnBeaker','beaker'); sel('btnFlask','flask'); sel('btnTube','tube');
   if (current!=='inspect'){ document.getElementById('mag').style.display='none'; document.getElementById('inspect').style.display='none'; }
 }
+document.getElementById('btnHand').onclick=()=>setCurrent('hand');
+document.getElementById('btnBeaker').onclick=()=>setCurrent('beaker');
+document.getElementById('btnFlask').onclick=()=>setCurrent('flask');
+document.getElementById('btnTube').onclick=()=>setCurrent('tube');
 
 /* ===== זכוכית מגדלת + חלון מידע ===== */
 const magEl = document.getElementById('mag');
@@ -1095,7 +1172,7 @@ document.getElementById('setGrav').onchange=e=>plantGrav=e.target.checked;
 document.getElementById('setBorder').onchange=e=>{ borderWalls=e.target.checked; if(borderWalls)applyBorder(); else clearBorder(); };
 document.getElementById('setNoLoss').onchange=e=>{ noHeatLoss=e.target.checked; };
 // מחיקת הכל
-function clearAll(){ grid.fill(0); life.fill(0); aux.fill(0); temp.fill(AMB); velX.fill(0); velY.fill(0);
+function clearAll(){ grid.fill(0); life.fill(0); aux.fill(0); temp.fill(AMB); velX.fill(0); velY.fill(0); held=null;
   if(borderWalls) applyBorder(); }
 document.getElementById('setClearAll').onclick=()=>{ clearAll(); toast('🗑️ נוקה'); };
 // שינוי רזולוציה (גודל פיקסל) — בונה מחדש את הרשת (מנקה), ומסמן את הכפתור הפעיל
@@ -1156,7 +1233,7 @@ document.getElementById('atomClose').onclick=()=>document.getElementById('atomVi
 document.getElementById('btnHeat').onclick=()=>setCurrent('heat');
 document.getElementById('btnCool').onclick=()=>setCurrent('cool');
 document.getElementById('btnInspect').onclick=()=>setCurrent('inspect');
-document.getElementById('btnClear').onclick=()=>{ grid.fill(0); life.fill(0); aux.fill(0); temp.fill(AMB); velX.fill(0); velY.fill(0); toast('נוקה'); };
+document.getElementById('btnClear').onclick=()=>{ grid.fill(0); life.fill(0); aux.fill(0); temp.fill(AMB); velX.fill(0); velY.fill(0); held=null; toast('נוקה'); };
 const pauseBtn=document.getElementById('btnPause');
 pauseBtn.onclick=()=>{ paused=!paused; pauseBtn.textContent=paused?'▶️':'⏸️'; };
 document.getElementById('btnSave').onclick=()=>save(true);
