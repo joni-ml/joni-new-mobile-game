@@ -710,11 +710,19 @@ function moveSolid (x,y,i,id){ moveDynamic(x,y,i,id,'solid');  }
 function settleLateral(i,y,id,kind){
   if (kind==='solid') return;
   const x=i%W, dir=Math.random()<0.5?1:-1;
+  // קודם — זרימה באלכסון מטה (נופל לשקע)
   for (const dx of [dir,-dir]){ const nx=x+dx;
     if (nx>=0&&nx<W&&y+1<H){ const d=idx(nx,y+1); if(canSink(id,grid[d])){ swap(i,d); return; } } }
   if (kind==='liquid'){
-    for (const dx of [dir,-dir]){ const nx=x+dx;
-      if (nx>=0&&nx<W){ const s=idx(nx,y); if(grid[s]===AIR){ swap(i,s); return; } } }
+    // נוזל זורm רחוק הצידה (עד 3 תאים) כדי להתיישר מהר — פחות "גלים"
+    const reach=3;
+    for (const dx of [dir,-dir]){
+      for (let r=1;r<=reach;r++){ const nx=x+dx*r; if(nx<0||nx>=W) break;
+        const s=idx(nx,y);
+        if(grid[s]===AIR){ swap(i,s); return; }
+        if(grid[s]!==id) break;   // חסום ע"י חומר אחר
+      }
+    }
   }
 }
 
@@ -736,19 +744,32 @@ function scatter(cx,cy,id,E){
   }
 }
 function moveLiquid(x,y,i,id){ moveDynamic(x,y,i,id,'liquid'); }
+// גז יכול לעלות דרך אוויר, או "לבעבע" מעלה דרך חומר כבד יותר (נוזל/אבקה) ולדחוף אותו למטה.
+function gasCanRiseInto(gd,n){
+  if (n===AIR) return true;
+  const t=MAT[n].type;
+  return (t==='liquid'||t==='powder'||t==='gas') && n!==WALL && density(n)>gd;
+}
 function moveGas(x,y,i,id){
   // גז לא נעלם לאוויר לעולם — אדים מתעבים למים (checkPhase), מימן נשאר.
-  // ציפה הדרגתית: גז חם עולה מהר יותר, קר — לאט. לא קופץ מיד למעלה.
-  const pUp = Math.min(0.5, LIFT[id] + Math.max(0,(temp[i]-AMB))*0.004);
+  // ציפה: גז חם עולה מהר יותר, ובועות עולות דרך נוזל/אבקה (דוחפות אותם הצידה/למטה).
+  const gd=density(id);
+  const pUp = Math.min(0.75, LIFT[id] + Math.max(0,(temp[i]-AMB))*0.005);
   if (Math.random() < pUp && y-1>=0){
     const a=idx(x,y-1);
-    if (grid[a]===AIR){ swap(i,a); moved[a]=1; return; }
-    // אם חסום מלמעלה — מנסה באלכסון מעלה
+    if (gasCanRiseInto(gd,grid[a])){ swap(i,a); moved[a]=1; return; }
+    // חסום ישר — מנסה באלכסון מעלה (עם רנדומליות בבחירת הצד)
     const dl=Math.random()<0.5?1:-1;
-    for (const dx of [dl,-dl]){ const nx=x+dx; if(nx>=0&&nx<W){ const u=idx(nx,y-1); if(grid[u]===AIR){ swap(i,u); moved[u]=1; return; } } }
+    for (const dx of [dl,-dl]){ const nx=x+dx; if(nx>=0&&nx<W){ const u=idx(nx,y-1);
+      if(gasCanRiseInto(gd,grid[u])){ swap(i,u); moved[u]=1; return; } } }
+    // עדיין חסום — דוחף הצידה כדי לפנות דרך (ריאלי: הגז מחפש מוצא)
+    const sd=Math.random()<0.5?1:-1;
+    for (const dx of [sd,-sd]){ const nx=x+dx; if(nx>=0&&nx<W){ const s=idx(nx,y);
+      if(gasCanRiseInto(gd,grid[s])){ swap(i,s); moved[s]=1; return; } } }
+    return;
   }
-  // פיזור אופקי איטי (הגז מתפשט)
-  if (Math.random()<0.25){ const dir=Math.random()<0.5?1:-1, nx=x+dir;
+  // פיזור אופקי (הגז מתפשט) — עם רנדומליות
+  if (Math.random()<0.35){ const dir=Math.random()<0.5?1:-1, nx=x+dir;
     if (nx>=0&&nx<W){ const s=idx(nx,y); if(grid[s]===AIR){ swap(i,s); moved[s]=1; return; } } }
 }
 
