@@ -112,8 +112,10 @@
   .ele.blank { background:none!important; border:none; cursor:default; }
   #ptlegend { display:flex; flex-wrap:wrap; gap:5px; margin:10px 0 4px; }
   #ptlegend span { font-size:9.5px; padding:2px 6px; border-radius:6px; color:#0d0f14; font-weight:600; }
-  #eleDetail { display:none; background:#131a26; border:1px solid #33608a; border-radius:12px; padding:12px; margin-top:8px; }
+  #eleDetail { display:none; position:relative; background:#131a26; border:1px solid #33608a; border-radius:12px; padding:12px; padding-top:16px; margin-top:8px; }
   #eleDetail.show { display:block; }
+  #eleDetail .edx { position:absolute; top:6px; left:8px; z-index:2; font-size:22px; line-height:1;
+    padding:6px 13px; border-radius:10px; background:#26303e; color:#e8e0c8; cursor:pointer; font-weight:700; }
   #eleDetail .eh { display:flex; align-items:center; gap:10px; }
   #eleDetail .esym { width:54px; height:54px; border-radius:8px; display:flex; flex-direction:column;
     align-items:center; justify-content:center; color:#0d0f14; flex:0 0 auto; }
@@ -716,13 +718,35 @@ function reactPlantPart(x,y,i,id){
   if(id===FLOWER) return reactFlowerSeed(x,y,i);
   return true;
 }
-// מימן: ליד אש/לבה או מעל טמפ' התלקחות (~560°) → מתפוצץ. הליום (אצילי) לא — לכן אין לו react.
+// מימן: מתלקח מעצמו מעל ~560° (טמפ' התלקחות אמיתית), או ליד אש/לבה/ניצוץ. הליום (אצילי) לא.
 function reactHydrogen(x,y,i){
   let ignite = temp[i]>=560;
   if(!ignite) for(const [dx,dy] of NEI4){ const nx=x+dx,ny=y+dy; if(!inB(nx,ny))continue;
     const n=grid[idx(nx,ny)]; if(n===FIRE||n===LAVA){ ignite=true; break; } }
-  if(ignite){ explode(x,y,i); return true; }
+  if(ignite){ explodeHydrogen(x,y,i); return true; }
   return false;   // אחרת מתנהג כגז קל (עולה) — moveGas
+}
+// פיצוץ מימן אמיתי: 2H₂ + O₂ → 2H₂O. המימן נשרף ל-💨 אדים חמים (~2000°, טמפ' הלהבה),
+// עם גל הדף. גל החום לכל פיקסל פרופורציונלי למרחק מהמרכז (עד ~1600° בליבה).
+function explodeHydrogen(x,y,i){
+  const R=5, R2=R*R;
+  for(let dy=-R;dy<=R;dy++) for(let dx=-R;dx<=R;dx++){
+    const d2=dx*dx+dy*dy; if(d2>R2) continue;
+    const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
+    const j=idx(nx,ny), n=grid[j]; if(n===WALL) continue;
+    const d=Math.sqrt(d2)||1, f=(R-d)/R;
+    temp[j] += f*1600;                                   // גל חום (להבת מימן ~2000°)
+    if(n===HYDRO){ grid[j]=STEAM; life[j]=MAT[STEAM].life; temp[j]=2000; pha[j]=0; moved[j]=1; }  // נשרף ל💧 מים (אדים)
+    else if(n!==AIR){                                    // גל הדף
+      const inv=1/d;
+      velX[j] += dx*inv*f*MAXV*(0.9+Math.random()*0.6);
+      velY[j] += (dy*inv - 0.6)*f*MAXV*(0.8+Math.random()*0.6);
+      if(velX[j]> MAXV)velX[j]= MAXV; if(velX[j]<-MAXV)velX[j]=-MAXV;
+      if(velY[j]> MAXV)velY[j]= MAXV; if(velY[j]<-MAXV)velY[j]=-MAXV;
+      if(MAT[n].flam && Math.random()<0.5){ grid[j]=FIRE; temp[j]=1000; life[j]=MAT[FIRE].life; pha[j]=0; moved[j]=1; }
+    }
+  }
+  grid[i]=STEAM; life[i]=MAT[STEAM].life; temp[i]=2000; pha[i]=0; velX[i]=0; velY[i]=0; moved[i]=1;   // מרכז → אדים חמים (מים)
 }
 // פיצוץ אמיתי: כדור אש במרכז, גל הדף שמעיף הכל (גם מוצקים = רסיסים) לכל הכיוונים,
 // גל חום עז, הצתת שרשרת ומכתש. R = עוצמה — מתכת אלקלית כבדה יותר = פיצוץ גדול יותר.
@@ -752,15 +776,26 @@ function explode(x,y,i,R=4){
   grid[i]=FIRE; temp[i]=1600; life[i]=MAT[FIRE].life; pha[i]=0; velX[i]=0; velY[i]=0; moved[i]=1;   // מרכז = כדור אש
 }
 function reactWater(x,y,i){
+  const consume=()=>{ grid[i]=AIR; life[i]=0; velX[i]=0; velY[i]=0; };
+  // המים נספגים לאדמה — מעדיפים לחלחל כלפי מטה, ונצרכים בתהליך (מים עולים בכסף)
+  const bi = y+1<H ? idx(x,y+1) : -1;
+  if (bi>=0 && grid[bi]===EARTH && Math.random()<0.25){ setCell(bi,MUD); consume(); return true; }
   for (const [dx,dy] of NEI4){
     const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
     const j=idx(nx,ny), n=grid[j];
-    if (n===EARTH && Math.random()<0.22){ setCell(j,MUD); grid[i]=AIR; life[i]=0; velX[i]=0; velY[i]=0; return true; } // המים נספגים — נצרכים
+    if (n===EARTH && Math.random()<0.12){ setCell(j,MUD); consume(); return true; }
     else if (n===STONE && Math.random()<0.0016){ setCell(j,SAND); }
   }
   return false;
 }
 function reactMud(x,y,i){
+  // חלחול: הרטיבות שוקעת דרך הקרקע — בוץ מעביר לחות לאדמה יבשה שמתחתיו (וכך "דרך" אדמה רטובה)
+  const bi = y+1<H ? idx(x,y+1) : -1;
+  if (bi>=0 && grid[bi]===EARTH && Math.random()<0.06){ setCell(bi,MUD); grid[i]=EARTH; life[i]=0; aux[i]=0; return true; }
+  if (bi>=0 && grid[bi]!==EARTH && grid[bi]!==AIR && Math.random()<0.02){   // חסום מלמטה → מתפשט הצידה לאדמה יבשה
+    for(const dx of (Math.random()<0.5?[1,-1]:[-1,1])){ const nx=x+dx;
+      if(nx>=0&&nx<W){ const s=idx(nx,y); if(grid[s]===EARTH){ setCell(s,MUD); grid[i]=EARTH; life[i]=0; aux[i]=0; return true; } } }
+  }
   const below = y+1<H ? grid[idx(x,y+1)] : STONE;
   const aboveIsAir = y-1>=0 && grid[idx(x,y-1)]===AIR;
   let wet=false;   // בוץ רווי מדי (ליד מים) לא מצמיח
@@ -1204,7 +1239,19 @@ const PLAY={1:HYDRO, 2:HELIUM, 3:LITH, 4:BERYL, 6:CARBON, 7:NITRO, 8:OXY, 11:SOD
   50:TIN, 74:TUNG, 79:GOLD, 80:MERCURY, 82:LEAD, 92:URANIUM,
   37:RUBID, 55:CESIUM, 87:FRANC};   // יסודות שאפשר לשחק בהם
 const FACTS={
-  1:['🔥 <b>נפיץ מאוד!</b> נשרף בחמצן/אש ויוצר מים 💧','🎈 הגז הקל ביותר ביקום — עולה מהר','⚡ לא מוליך חשמל (כגז)','🥶 רותח ב-253°- (מהקרים ביקום)'],
+  1:['🌌 <b>90% מכל האטומים ביקום</b> — היסוד הנפוץ ביותר',
+     '☀️ הדלק של השמש: הופכת 600 מיליון טון מימן להליום כל שנייה',
+     '⚛️ היסוד היחיד שיכול להתקיים בלי נייטרון — פרוטון + אלקטרון בלבד',
+     '🎈 קל פי 14 מהאוויר — עולה הכי מהר מכולם',
+     '🔥 <b>נפיץ מאוד!</b> נשרף עם חמצן ויוצר רק 💧 מים — דלק נקי',
+     '👻 בוער בלהבה כמעט בלתי נראית (כחלחלה חיוורת)',
+     '💥 מתפוצץ בתערובת 4%–75% אוויר · מצית מניצוץ זעיר (0.02 mJ)',
+     '🌡️ מתלקח מעצמו ב-~560° · טמפ׳ להבה ~2000°',
+     '🚀 דלק לרקטות (מימן נוזלי) · תאי דלק נתנו לאפולו חשמל ומי שתייה',
+     '🎈 אסון הינדנבורג (1937) — ספינת אוויר מלאה מימן שנשרפה',
+     '🪐 בלב כוכב הלכת צדק הופך למתכת נוזלית בלחץ עצום',
+     '🧬 קשרי מימן מחזיקים את ה-DNA ונותנים למים נקודת רתיחה גבוהה',
+     '🧑‍🔬 התגלה ע"י קוונדיש (1766) · לבואזיה קרא לו "יוצר המים"'],
   2:['🛡️ <b>גז אצילי — לא נשרף ולא מתפוצץ בכלל</b>','🎈 קל מהאוויר — ממלא בלונים שעפים','⚡ לא מוליך חשמל','🥶 היסוד הכי קר להנזלה: 269°-'],
   3:['💥 <b>מתפוצץ במגע עם מים!</b> (מתכת אלקלית)','🪶 קל מהמים — צף עליהם','🔋 מוליך חשמל וחום','🔥 דליק · נמס כבר ב-180°'],
   4:['🛠️ מתכת קלה, קשה מאוד וחזקה','🔋 מוליכה חשמל וחום','🔥 נמס גבוה מאוד (1287°)','☠️ רעיל מאוד במציאות!'],
@@ -1233,7 +1280,7 @@ const FACTS={
   87:['💥 <b>המתכת הכי מתפוצצת בטור!</b>','☢️ רדיואקטיבי ונדיר ביותר בטבע','⏱️ מתפרק תוך דקות — כמעט לא קיים','🧪 היסוד האלקלי הכבד ביותר']
 };
 const REACTS={
-  1:'🔥 הצת ליד אש → 💧 מים + פיצוץ. עולה כי קל מהאוויר',
+  1:'🔥 חמם מעל 560° או הצת ליד אש → 💥 פיצוץ ל-💧 מים (2H₂+O₂→2H₂O, ~2000°). עולה כי קל',
   2:'🛡️ אצילי — לא מגיב. שחק בו כגז שעף למעלה',
   3:'💧 זרוק על מים → 💥 פיצוץ! או חמם מעל 180° → נמס לנוזל 🫠',
   4:'🫠 חמם מעל 1287° → נמס לנוזל זוהר. קשה מאוד וקל',
@@ -1285,6 +1332,7 @@ function showElement(z){
   const atomBtn = ELEMENT_HE[sym] ? '<button class="buy" id="atomBtn" style="background:#3a5580;color:#fff;margin-top:6px">⚛️ צפה במבנה האטום</button>' : '';
   const d=document.getElementById('eleDetail');
   d.innerHTML=`
+    <span class="edx" id="eleX">✕</span>
     <div class="eh">
       <div class="esym" style="background:${col2}"><span class="s">${sym}</span><span class="zz">${z}</span></div>
       <div><div class="en">${he}</div><div class="ec">${CAT[cat][0]} · מסה ${mass} · ${PHASE[ph]}</div></div>
@@ -1292,6 +1340,7 @@ function showElement(z){
     <div class="props">${props}</div>
     ${btn}${atomBtn}`;
   d.classList.add('show');
+  document.getElementById('eleX').onclick=()=>d.classList.remove('show');
   if(playable && !owned) document.getElementById('buyBtn').onclick=()=>{
     found[PLAY[z]]=1; buildPalette(PLAY[z]); buildShop(); showElement(z);
     toast('🛒 קנית: '+he+'!');
