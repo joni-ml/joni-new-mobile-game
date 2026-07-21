@@ -410,10 +410,13 @@ MAT.forEach(m => { if (m.base) found[m.id] = 1; });
 let foundCount = 3;
 
 /* ---------- ציור (כולל זוהר לפי טמפרטורה) ---------- */
+const meshCells = [];
 function render() {
   const d = img.data;
+  meshCells.length = 0;
   for (let i=0; i<grid.length; i++) {
     const id = grid[i]; const c = MAT[id].color;
+    if (id===MESH) meshCells.push(i);
     let r,g,b;
     if (id===FIRE || id===LAVA) {
       const f = 0.65 + Math.random()*0.35;
@@ -430,6 +433,16 @@ function render() {
   }
   bctx.putImageData(img,0,0);
   ctx.drawImage(buf,0,0,canvas.width,canvas.height);
+  // רשת: מציירים כתבנית סורג (חצי מלא, חצי "חורים") במקום ריבוע אפור מלא — נראה כמו רשת אמיתית
+  if (meshCells.length){
+    const cw=canvas.width/W, ch=canvas.height/H;
+    ctx.fillStyle='#0a0d13';   // ה"חורים" — מראים את הרקע הכהה (וכך רואים דרך הרשת)
+    for (let k=0;k<meshCells.length;k++){
+      const i=meshCells[k], gx=(i%W)*cw, gy=((i/W)|0)*ch, hw=cw/2, hh=ch/2;
+      ctx.fillRect(gx+hw, gy, cw-hw, hh);      // חור למעלה-ימין
+      ctx.fillRect(gx, gy+hh, hw, ch-hh);      // חור למטה-שמאל
+    }
+  }
 }
 
 /* ---------- עזרים ---------- */
@@ -472,13 +485,16 @@ function thermal(){
   for (let y=0;y<H;y++) for (let x=0;x<W;x++){
     const i=idx(x,y), id=grid[i], ci=cond[id], t=temp[i];
     if (id===WALL){ temp2[i]=0; continue; }   // קיר: תמיד 0°, חום לא נכנס/עובר
-    // עם ההגדרה "בלי איבוד חום": אוויר הופך למבודד מושלם
-    const ca = (g)=> (noHeatLoss && g===AIR) ? 0 : cond[g];
+    // "בלי איבוד חום": אוויר = מבודד מושלם. רשת חוסמת ~5% מהחום שעובר דרכה (מצטבר עם כמה שכבות).
     let acc=0, airN=0;
-    if (x>0)   { const j=i-1; const g=grid[j]; if(g===AIR)airN++; acc += Math.min(ci,ca(g))*(temp[j]-t); }
-    if (x<W-1) { const j=i+1; const g=grid[j]; if(g===AIR)airN++; acc += Math.min(ci,ca(g))*(temp[j]-t); }
-    if (y>0)   { const j=i-W; const g=grid[j]; if(g===AIR)airN++; acc += Math.min(ci,ca(g))*(temp[j]-t); }
-    if (y<H-1) { const j=i+W; const g=grid[j]; if(g===AIR)airN++; acc += Math.min(ci,ca(g))*(temp[j]-t); }
+    const flow=(j)=>{ const g=grid[j]; if(g===AIR)airN++;
+      let cf=(noHeatLoss && g===AIR)?0:Math.min(ci,cond[g]);
+      if(g===MESH) cf*=0.95;
+      return cf*(temp[j]-t); };
+    if (x>0)   acc+=flow(i-1);
+    if (x<W-1) acc+=flow(i+1);
+    if (y>0)   acc+=flow(i-W);
+    if (y<H-1) acc+=flow(i+W);
     let nt = t + 0.5*acc;
     // איבוד חום קורה רק ממשטחים חשופים לאוויר. חומר סגור בקירות (0 שכני אוויר) לא מתקרר!
     if (!noHeatLoss && airN>0) nt += (AMB - nt) * radi[id] * airN * 0.25;
@@ -756,10 +772,10 @@ function scatter(cx,cy,id,E){
   }
 }
 function moveLiquid(x,y,i,id){
-  // דליפה דרך רשת: נוזל שמעל רשת מטפטף אל התא שמתחתיה (מוצקים לא עוברים — הם נחסמים ברשת)
-  if (y+1<H && grid[idx(x,y+1)]===MESH && y+2<H){
-    const bth=idx(x,y+2);
-    if (grid[bth]===AIR || canSink(id,grid[bth])){ swap(i,bth); return; }
+  // דליפה דרך רשת: נוזל מטפטף מטה דרך כמה שכבות רשת אל התא הפנוי הראשון שמתחתיהן
+  if (y+1<H && grid[idx(x,y+1)]===MESH){
+    let ty=y+2; while(ty<H && grid[idx(x,ty)]===MESH) ty++;
+    if (ty<H){ const bth=idx(x,ty); if(grid[bth]===AIR || canSink(id,grid[bth])){ swap(i,bth); return; } }
   }
   moveDynamic(x,y,i,id,'liquid');
 }
@@ -773,10 +789,10 @@ function moveGas(x,y,i,id){
   // גז לא נעלם לאוויר לעולם — אדים מתעבים למים (checkPhase), מימן נשאר.
   // ציפה: גז חם עולה מהר יותר, ובועות עולות דרך נוזל/אבקה (דוחפות אותם הצידה/למטה).
   const gd=density(id);
-  // מעבר דרך רשת: גז שמתחת לרשת עולה אל התא שמעליה
-  if (y-1>=0 && grid[idx(x,y-1)]===MESH && y-2>=0){
-    const ath=idx(x,y-2);
-    if (gasCanRiseInto(gd,grid[ath])){ swap(i,ath); moved[ath]=1; return; }
+  // מעבר דרך רשת: גז עולה מעלה דרך כמה שכבות רשת אל התא הפנוי הראשון שמעליהן
+  if (y-1>=0 && grid[idx(x,y-1)]===MESH){
+    let ty=y-2; while(ty>=0 && grid[idx(x,ty)]===MESH) ty--;
+    if (ty>=0){ const ath=idx(x,ty); if(gasCanRiseInto(gd,grid[ath])){ swap(i,ath); moved[ath]=1; return; } }
   }
   const pUp = Math.min(0.75, LIFT[id] + Math.max(0,(temp[i]-AMB))*0.005);
   if (Math.random() < pUp && y-1>=0){
