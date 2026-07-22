@@ -311,8 +311,8 @@ const MAT = [
   { key:'air',    name:'אוויר',  color:[6,8,14],      type:'empty'  },
   { key:'stone',  name:'אבן',    color:[120,120,128], type:'solid',  density:8, base:true, pedia:'חומר יסוד — נופלת ושוקעת במים' },
   { key:'water',  name:'מים',    color:[64,132,214],  type:'liquid', density:2, base:true, pedia:'חומר יסוד' },
-  { key:'earth',  name:'אדמה',   color:[112,78,46],   type:'powder', density:5, base:true, pedia:'חומר יסוד' },
-  { key:'mud',    name:'בוץ',    color:[80,56,36],    type:'powder', density:4, pedia:'💧 מים + 🟫 אדמה' },
+  { key:'earth',  name:'אדמה',   color:[124,90,52],   type:'powder', density:5, base:true, pedia:'חומר יסוד — יבשה' },
+  { key:'mud',    name:'בוץ',    color:[46,36,30],    type:'powder', density:4, pedia:'💧 מים + 🟫 אדמה — אדמה רטובה, כהה ורגה יותר' },
   { key:'sand',   name:'חול',    color:[224,196,120], type:'powder', density:5, pedia:'מים שוחקים 🪨 אבן' },
   { key:'wood',   name:'עץ',     color:[120,78,44],   type:'static', flam:true, pedia:'צומח מ🟤 בוץ' },
   { key:'sprout', name:'נבט',    color:[95,185,75],   type:'static', flam:true, pedia:'מופיע על בוץ לח' },
@@ -536,7 +536,7 @@ function step(){
 /* ===== שמש + ליבת כדור הארץ ===== */
 // עוצמת שמש: 0 בחצות, 1 בצהריים (מחזור סינוסי אמיתי). מחממת רק את פני השטח החשופים לשמיים.
 // בלילה — קרינה לחלל מקררת את פני השטח. הליבה: חום קבוע שעולה מהתחתית ונחלש עם הגובה.
-const SUN_POWER=3.2, NIGHT_COOL=0.9, CORE_POWER=0.06;
+const SUN_POWER=0.07, NIGHT_COOL=0.018, CORE_POWER=0.0012;
 const CORE_BAND = ()=> Math.max(3, Math.floor(H*0.05));
 function applySunAndCore(){
   if (!climateOn) return;   // כבוי כברירת מחדל — משחק רגיל בלי שינויי טמפ' מבחוץ
@@ -684,6 +684,11 @@ function reactWater(x,y,i){
 function reactMud(x,y,i){
   const below = y+1<H ? grid[idx(x,y+1)] : STONE;
   const aboveIsAir = y-1>=0 && grid[idx(x,y-1)]===AIR;
+  // חלחול: הרטיבות מועברת לאט לאדמה היבשה שמתחת (כמו מים ששוקעים בקרקע) — התא הזה מתייבש חזרה
+  // לאדמה בזמן שהתא שמתחת נרטב. כך "חזית הרטיבות" יורדת בהדרגה לעומק, לא רק שכבה אחת קבועה.
+  if (below===EARTH && Math.random()<0.012){
+    grid[idx(x,y+1)]=MUD; grid[i]=EARTH; return true;
+  }
   let wet=false;   // בוץ רווי מדי (ליד מים) לא מצמיח
   for(const [dx,dy] of NEI4){ const nx=x+dx,ny=y+dy; if(inB(nx,ny)&&grid[idx(nx,ny)]===WATER){ wet=true; break; } }
   if (!wet && below!==AIR && aboveIsAir && Math.random()<0.0022){
