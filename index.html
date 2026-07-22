@@ -238,6 +238,18 @@
           🔄 מחזור יום-לילה אוטומטי (השעה מתקדמת לבד)
         </label>
       </div>
+      <div class="stog" style="flex-direction:column; align-items:stretch; gap:8px">
+        <div>🌋 מורכבות יצירת העולם</div>
+        <div id="cplxBtns" style="display:flex; gap:6px; flex-wrap:wrap">
+          <button class="resbtn" data-c="simple">⚡ פשוט ומהיר</button>
+          <button class="resbtn" data-c="normal">🌍 רגיל</button>
+          <button class="resbtn" data-c="detailed">🔬 מפורט</button>
+        </div>
+        <div style="font-size:11px; opacity:.6">פשוט = פחות שלבים, פחות פרטים, יצירה מהירה. מפורט = יותר שלבים (יותר הרים/איים/יערות/פרטי חוף), איטי יותר אך עשיר ומציאותי יותר.</div>
+        <div style="margin-top:6px">🏔️ כמות יבשה: <b id="landAmtVal">50%</b></div>
+        <input type="range" id="setLandAmt" min="15" max="85" value="50" style="width:100%">
+        <div style="font-size:11px; opacity:.6">מעט יבשה = בעיקר אוקיינוס עם איים קטנים. הרבה יבשה = יבשת גדולה עם ים מצומצם.</div>
+      </div>
       <button class="stog" id="setClearAll" style="justify-content:center; color:#ffd479; font-weight:700">🌍 עולם חדש (נוצר מלבה מותכת, כמו כדור הארץ!)</button>
       <button class="stog" id="setWipe" style="justify-content:center; color:#ff9a8a; font-weight:700">🗑️ מחק הכל (נקה למסך ריק)</button>
       <button id="setClose">סגור</button>
@@ -330,7 +342,7 @@ const MAT = [
   { key:'hydrogen',name:'מימן',  color:[200,225,255], type:'gas', life:600, flam:true, shop:true, pedia:'H · יסוד 1 — גז נפיץ, נשרף למים' },
   { key:'wall',    name:'קיר',   color:[68,72,82],    type:'static', base:true, sys:true, pedia:'קיר בנייה — לא נמס, מבודד חום' },
   { key:'mesh',    name:'רשת',   color:[112,118,130], type:'static', base:true, pedia:'רשת — מוצקים לא עוברים, נוזלים וגזים כן. מוליכה חום' },
-  { key:'bedrock', name:'סלע יסוד',color:[54,54,62],   type:'solid',  density:14, base:true, pedia:'הסלע העמוק והקשה ביותר — עמוק מתחת לקרקע' },
+  { key:'bedrock', name:'סלע יסוד',color:[62,56,52],   type:'solid',  density:14, base:true, pedia:'הסלע העמוק והקשה ביותר — עמוק מתחת לקרקע' },
   { key:'cloud',   name:'ענן',    color:[225,230,238], type:'gas',    life:900, base:true, pedia:'💨 אדים שנשארים ריחוף גבוה לפני שיורדים כגשם' },
 ];
 const ID = {}; MAT.forEach((m,i)=>{ m.id=i; ID[m.key]=i; });
@@ -1276,6 +1288,14 @@ function todLabel(m){ const h=Math.floor(m/60), mm=m%60; return (h<10?'0':'')+h+
 document.getElementById('setTod').oninput=e=>{ timeOfDay=+e.target.value; document.getElementById('todVal').textContent=todLabel(timeOfDay); };
 document.getElementById('setAutoDay').onchange=e=>{ autoDay=e.target.checked; };
 document.getElementById('setClimate').onchange=e=>{ climateOn=e.target.checked; };
+// מורכבות/כמות שלבים ביצירת עולם + כמות יבשה מול ים
+let genComplexity='normal';
+let landAmount=50;   // אחוז — כמה מהמפה יבשה (משפיע על גובה הבסיס של יבשות/איים)
+[...document.querySelectorAll('#cplxBtns .resbtn')].forEach(b=>{
+  b.onclick=()=>{ genComplexity=b.dataset.c; [...document.querySelectorAll('#cplxBtns .resbtn')].forEach(x=>x.classList.toggle('on', x===b)); };
+});
+document.querySelector('#cplxBtns .resbtn[data-c=normal]').classList.add('on');
+document.getElementById('setLandAmt').oninput=e=>{ landAmount=+e.target.value; document.getElementById('landAmtVal').textContent=landAmount+'%'; };
 // מחיקת הכל (ריק לגמרי)
 function clearAll(){ grid.fill(0); life.fill(0); aux.fill(0); temp.fill(AMB); velX.fill(0); velY.fill(0); held=null;
   if(borderWalls) applyBorder(); }
@@ -1358,41 +1378,52 @@ async function generateWorld(){
   genOverlayShow('🌋 מעצב את פני השטח…');
   await new Promise(r=>requestAnimationFrame(r));
 
+  // --- שלב 0: הגדרות שנקבעו ע"י המשתמש — מורכבות היצירה וכמות היבשה ---
+  const cplx = genComplexity;                          // 'simple' | 'normal' | 'detailed'
+  const landFactor = landAmount/50;                     // 0.3 (מעט יבשה) .. 1.7 (הרבה יבשה)
+
   // --- שלב 1: תבנית גובה (הרים/יבשת או איים) ---
   // הים נמוך יחסית למסך — משאיר הרבה שמיים פנויים למעלה כדי שעננים יוכלו לרחף ולנוע בלי להיתקע בתקרה
   const biome = Math.random()<0.45 ? 'islands' : 'continent';
-  const seaY = Math.floor(H*0.72);
+  // הים קרוב יותר לתחתית המסך מבעבר — כי אין מצלמה/גלילה במשחק הזה, כל מה שמתחת לקרקע
+  // תמיד נראה על המסך. ככל שיש פחות "עומק תת-קרקעי" שמור, ככה פחות סלע יסוד (bedrock) אפור
+  // ישלוט בתמונה ויותר מהמסך יהיה אדמה/דשא נראים לעין — כמו בתמונה אמיתית של נוף.
+  const seaY = Math.floor(H*0.80);
   const hFn = makeHeightFn();
   const heights = new Array(W);
   const bumps=[];
   if (biome==='islands'){
-    const nB=2+Math.floor(Math.random()*3);
-    for(let i=0;i<nB;i++) bumps.push({cx:Math.random()*W, r:W*(0.075+Math.random()*0.11), h:H*(0.16+Math.random()*0.11)});
+    const nBBase = cplx==='simple'?2:cplx==='detailed'?4:3;
+    const nBVar  = cplx==='simple'?1:cplx==='detailed'?4:3;
+    const nB=nBBase+Math.floor(Math.random()*nBVar);
+    for(let i=0;i<nB;i++) bumps.push({cx:Math.random()*W, r:W*(0.09+Math.random()*0.12), h:H*(0.09+Math.random()*0.06)});
   }
   const oceanMargin = W*0.10;   // מרווח אוקיינוס מובטח בקצוות (לא תלוי ברעש) — תמיד יהיו מים אמיתיים
-  const peakCeil = Math.round(H*0.30);   // תקרת גובה — הרים לא יעברו את הנקודה הזו (משאיר שמיים ומונע הרים ענקיים)
+  const peakCeil = Math.round(H*0.58);   // תקרת גובה — גבעות מתונות במקום פסגות דרמטיות (זה תצוגת חתך, לא נוף חיצוני — הר גבוה מדי נראה כמו קיר סלע ענק)
   for(let x=0;x<W;x++){
     let h;
     if (biome==='continent'){
       const edgeF=Math.min(1,Math.max(0, Math.min(x,(W-1-x))/(W*0.16)));
-      const base = H*0.06;                               // בסיס גובה קבוע — מבטיח רצועת יבשה משמעותית גם רחוק ממרכז ההר, לא רק קו דק ליד הים
-      const mtn=Math.max(0,hFn(x))*H*0.16*edgeF;
-      const rolling=hFn(x*0.35+777)*H*0.04;
-      h = seaY - base - edgeF*H*0.04 - mtn - rolling;
+      const base = H*0.04*landFactor;                    // בסיס גובה — קובע כמה יבשה יש, כפוף לסליידר "כמות יבשה"
+      const mtn=Math.max(0,hFn(x))*H*0.08*edgeF*landFactor;
+      const rolling=hFn(x*0.35+777)*H*0.025*landFactor;
+      h = seaY - base - edgeF*H*0.025*landFactor - mtn - rolling;
     } else {
       let bH=0;
       for(const b of bumps){ const d=x-b.cx; bH=Math.max(bH, b.h*Math.exp(-(d*d)/(2*b.r*b.r))); }
-      bH = Math.min(bH, H*0.26);                         // תקרה לגובה הבליטה — מספיק גובה לפנים-האי, לא רק חוף
-      h = seaY + H*0.08 - bH - Math.max(0,hFn(x))*H*0.03;
+      bH = Math.min(bH*landFactor, H*0.15);              // תקרה לגובה הבליטה — גבעת אי מתונה, לא צוק ענק
+      h = seaY + H*0.06/landFactor - bH - Math.max(0,hFn(x))*H*0.02;
     }
     // אוקיינוס מובטח בקצוות המפה — בלי קשר לרעש, כדי שתמיד יהיו מים אמיתיים ומספיקים
     const edgeDist=Math.min(x,W-1-x);
-    if (edgeDist<oceanMargin) h = Math.max(h, seaY + (1-edgeDist/oceanMargin)*H*0.08);
-    heights[x]=Math.max(peakCeil, Math.min(H-6, Math.round(h)));
+    if (edgeDist<oceanMargin) h = Math.max(h, seaY + (1-edgeDist/oceanMargin)*H*0.06);
+    heights[x]=Math.max(peakCeil, Math.min(H-4, Math.round(h)));
   }
 
   grid.fill(AIR); life.fill(0); aux.fill(0); temp.fill(AMB); velX.fill(0); velY.fill(0); held=null;
-  const crustDepth = Math.max(13, Math.round(H*0.13));
+  // קרום עבה בהרבה מבעבר: רוב עומק הקרקע יתלבש באדמה/דשא (שלב 4 למטה), כך שרק שכבה
+  // דקה של סלע יסוד אפור תישאר עמוק-עמוק למטה, ולא תשתלט חזותית על המסך.
+  const crustDepth = Math.max(16, Math.round(H*0.17));
 
   // --- שלב 2: שתי שכבות — קרום עליון (אבן לוהטת שתתקרר) וסלע יסוד עמוק וקשה יותר (bedrock, קבוע). בלי מים עדיין!
   //     סלע היסוד לא נמס לעולם — נשאר מוצק תמיד, כמו הבסיס הקשה האמיתי של כדוה"א מתחת לקרום.
@@ -1403,7 +1434,7 @@ async function generateWorld(){
   }
 
   // --- שלב 3: קירור רצועת הקרום העליונה בלבד ("זמן מואץ") ---
-  const coolSteps = 280;
+  const coolSteps = cplx==='simple'?140:cplx==='detailed'?420:280;
   await runLoopAsync(coolSteps, ()=>fastCoolStep(heights,crustDepth), '🌋 הקרום מתקרר ומתמצק…');
   // הגבלת ביטחון: אחרי הקירור המהיר יש עדיין חום שיורי בעומק הקרום שממשיך לזלוג למעלה לאט
   // (הולכת החום ה"אמיתית" איטית בכוונה). בלי זה, עצים שנזרעים יכולים לגמרי להידלק לבד מיד אחרי היצירה.
@@ -1419,17 +1450,25 @@ async function generateWorld(){
   let minH=Infinity,maxH=-Infinity; for(const h of heights){ if(h<minH)minH=h; if(h>maxH)maxH=h; }
   // מרווח קבוע (לא יחסי לטווח הגבהים!) — אחרת בתבנית שטוחה כמעט הכל "קרוב לפסגה" והופך לשלג בטעות
   const snowLine = minH + Math.max(H*0.045, (maxH-minH)*0.13);
-  const dressDepth=(x,y,mat,t)=>{              // צובע שכבת קרקע עבה יותר (לא רק תא אחד) כלפי מטה
-    for(let d=0; d<6; d++){ const yy=y+d; if(yy>=H) break;
+  const soilDepth = crustDepth;                 // מלבישים אדמה על כל עומק הקרום — כדי שסלע חשוף לא ישלוט חזותית על מדרונות/מצוקים
+  const dressDepth=(x,y,mat,t)=>{              // צובע שכבת קרקע עבה יותר (לא רק תא אחד) כלפי מטה — כמעט כל הקרום, לא רק קצה דק
+    for(let d=0; d<soilDepth; d++){ const yy=y+d; if(yy>=H) break;
       const bi=idx(x,yy); if(grid[bi]!==STONE && grid[bi]!==BASALT) break;
       grid[bi]=mat; temp[bi]=t; }
+  };
+  const airNear=(x,y,r)=>{                     // חשיפה לאוויר גם כמה תאים הצידה — כדי שמדרון מתון (לא רק צוק אנכי) יקבל אדמה על כל פניו הנראים, ולא רק על קו המתאר הדק
+    for(let d=1; d<=r; d++){
+      if (x-d>=0 && grid[idx(x-d,y)]===AIR) return true;
+      if (x+d<W && grid[idx(x+d,y)]===AIR) return true;
+    }
+    return false;
   };
   for(let x=0;x<W;x++){
     for(let y=1;y<H;y++){
       const i=idx(x,y);
       if (grid[i]!==STONE && grid[i]!==BASALT) continue;
       const exposedAbove = grid[i-W]===AIR;
-      const exposedSide = (x>0 && grid[i-1]===AIR) || (x<W-1 && grid[i+1]===AIR);
+      const exposedSide = airNear(x,y,3);
       if (!exposedAbove && !exposedSide) continue;   // רק פני שטח חשופים (כולל דפנות תלולות/מצוקים מהצד)
       const nearSea = Math.abs(y-seaY) < Math.max(3, H*0.02);
       if (nearSea) dressDepth(x,y,SAND,AMB);
@@ -1450,18 +1489,46 @@ async function generateWorld(){
       for(let x=Math.max(0,bestX-half); x<=Math.min(W-1,bestX+half); x++){
         let y=0; while(y<H && grid[idx(x,y)]===AIR) y++;
         if (y>=H) continue;
-        for(let d=0; d<6; d++){
+        for(let d=0; d<crustDepth; d++){
           const yy=y+d; if(yy>=H) break;
           const bi=idx(x,yy), g=grid[bi];
           if (g===WATER || g===BEDROCK || g===AIR) break;
           grid[bi]=EARTH; temp[bi]=AMB;
         }
       }
+    } else {
+      // אין בכלל עמודת יבשה (קרה בהגדרת "מעט יבשה" קיצונית — כל המפה מוצפת) —
+      // יוצרים אי חירום קטן במרכז המפה כדי שתמיד יהיה איפה לשבת, לגדל עצים ולבנות
+      const cx=Math.floor(W/2), half2=12, topY=Math.max(1, seaY-6);
+      for(let x=Math.max(0,cx-half2); x<=Math.min(W-1,cx+half2); x++){
+        for(let y=topY; y<topY+6 && y<H; y++){ const i=idx(x,y); grid[i]=EARTH; temp[i]=AMB; }
+      }
+    }
+  }
+
+  // --- שלב 4.5 (רק ברמת "מפורט"): אגמים פנימיים — שקעים קטנים ביבשה שמתמלאים במים, לא רק אוקיינוס בקצוות ---
+  if (cplx==='detailed'){
+    const inland=[]; for(let x=oceanMargin+8; x<W-oceanMargin-8; x++) if(heights[x]<seaY-8) inland.push(x);
+    const nLakes = inland.length>20 ? 1+Math.floor(Math.random()*2) : 0;
+    for(let L=0; L<nLakes; L++){
+      const lx = inland[Math.floor(Math.random()*inland.length)];
+      let ly=0; while(ly<H && grid[idx(lx,ly)]===AIR) ly++;
+      if (ly>=H-10) continue;
+      const rad = 4+Math.floor(Math.random()*4);
+      for(let dy=-2; dy<=rad; dy++) for(let dx=-rad; dx<=rad; dx++){
+        if (dx*dx+dy*dy>rad*rad) continue;
+        const x=lx+dx, y=ly+dy; if(!inB(x,y)) continue;
+        const gi=grid[idx(x,y)]; if (gi!==STONE && gi!==BASALT && gi!==EARTH && gi!==SAND && gi!==ICE && gi!==AIR) continue;
+        const i=idx(x,y);
+        if (dy<0 && dy> -2) grid[i]=AIR;
+        else { grid[i]=WATER; temp[i]=AMB; }
+      }
     }
   }
 
   // --- שלב 5: זריעת יער חוף (רק במקום שבאמת יש מים קרובים — כדי שהעצים באמת יגדלו) ---
   genOverlayProgress('🌱 מצמיח יער…', 0);
+  const treeProb = cplx==='simple'?0.35:cplx==='detailed'?0.85:0.65;
   let seeded=0;
   for(let x=2;x<W-2;x++){
     const hx=heights[x];
@@ -1469,11 +1536,12 @@ async function generateWorld(){
     if (hx>=H-1 || hx>=seaY || (surf!==EARTH && surf!==SAND)) continue;
     if (Math.abs(heights[x+1]-heights[x-1])>6) continue;        // לא על מדרון תלול
     if (!hasWaterNear(x,hx-1,4) && !hasWaterNear(x,hx,4)) continue;   // מים בטווח שתייה (עם קצת מרווח בטיחות)
-    if (Math.random()<0.65){
+    if (Math.random()<treeProb){
       const si=idx(x,hx-1); if(grid[si]===AIR){ grid[si]=SPROUT; life[si]=12+Math.floor(Math.random()*10); aux[si]=0; seeded++; }
     }
   }
-  const growSteps = seeded>0 ? Math.min(450, Math.max(150, Math.round(30000000/Math.max(1,W*H)))) : 30;
+  const growMul = cplx==='simple'?0.5:cplx==='detailed'?1.4:1;
+  const growSteps = seeded>0 ? Math.min(600, Math.max(100, Math.round(30000000/Math.max(1,W*H)*growMul))) : 30;
   await runLoopAsync(growSteps, step, '🌱 מצמיח יער… ('+seeded+' עצים נזרעו)');
 
   discoverAllPresent();
