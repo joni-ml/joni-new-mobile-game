@@ -363,6 +363,8 @@ const MAT = [
   { key:'chlorine', name:'כלור',  color:[196,224,110], type:'gas',    life:500, shop:true, pedia:'Cl₂ · יסוד 17 — גז ירקרק רעיל, מגיב בחוזקה עם מתכות אלקליות כמו ליתיום' },
   { key:'licl',     name:'מלח (כלוריד ליתיום)', color:[236,233,226], type:'powder', density:4, pedia:'⚡ ליתיום + כלור → מלח גבישי לבן (LiCl) — נמס במים למי מלח' },
   { key:'saltwater',name:'מי מלח', color:[58,146,196], type:'liquid', density:3, pedia:'🧂 מלח שנמס במים — כבד ממים רגילים ומוליך חשמל (בניגוד למים טהורים!)' },
+  { key:'sodium',   name:'נתרן',  color:[214,208,196], type:'solid',  density:1, shop:true, pedia:'Na · יסוד 11 — מתכת אלקלית רכה, מגיבה עם מים בעוצמה גדולה עוד יותר מליתיום' },
+  { key:'nacl',     name:'מלח בישול', color:[244,244,240], type:'powder', density:4, pedia:'🧂 נתרן + כלור → מלח בישול אמיתי (NaCl)! נמס במים למי מלח' },
 ];
 const ID = {}; MAT.forEach((m,i)=>{ m.id=i; ID[m.key]=i; });
 const AIR=ID.air, STONE=ID.stone, WATER=ID.water, EARTH=ID.earth, MUD=ID.mud,
@@ -370,7 +372,8 @@ const AIR=ID.air, STONE=ID.stone, WATER=ID.water, EARTH=ID.earth, MUD=ID.mud,
       SEEDT=ID.seedT, SEEDF=ID.seedF, FIRE=ID.fire, STEAM=ID.steam, ICE=ID.ice,
       ASH=ID.ash, GLASS=ID.glass, LAVA=ID.lava, BASALT=ID.basalt,
       HYDRO=ID.hydrogen, WALL=ID.wall, MESH=ID.mesh, BEDROCK=ID.bedrock, CLOUD=ID.cloud,
-      LITHIUM=ID.lithium, CHLORINE=ID.chlorine, LICL=ID.licl, SALTWATER=ID.saltwater;
+      LITHIUM=ID.lithium, CHLORINE=ID.chlorine, LICL=ID.licl, SALTWATER=ID.saltwater,
+      SODIUM=ID.sodium, NACL=ID.nacl;
 const TOTAL = MAT.filter(m => !m.shop && !m.sys && m.id!==AIR).length;   // ספירת גילויים (בלי חנות/מערכת)
 
 /* ---------- תכונות תרמיות ----------
@@ -378,17 +381,17 @@ const TOTAL = MAT.filter(m => !m.shop && !m.sys && m.id!==AIR).length;   // ספ
    temp0 = טמפ' התחלתית של חומר כשמניחים אותו. */
 const AMB = 24;
 // אוויר מוליך חום גרוע (מבודד) — כדי שהחום לא "יברח" מהחומרים לחלל הריק.
-const cond  = MAT.map(m => ({air:0.003,water:0.10,ice:0.08,stone:0.045,glass:0.06,sand:0.05,steam:0.006,wall:0,lava:0.16,fire:0.22,mesh:0.12,bedrock:0.05,cloud:0.006,lithium:0.20,chlorine:0.006,licl:0.05,saltwater:0.11}[m.key] ?? 0.04));
+const cond  = MAT.map(m => ({air:0.003,water:0.10,ice:0.08,stone:0.045,glass:0.06,sand:0.05,steam:0.006,wall:0,lava:0.16,fire:0.22,mesh:0.12,bedrock:0.05,cloud:0.006,lithium:0.20,chlorine:0.006,licl:0.05,saltwater:0.11,sodium:0.22,nacl:0.05}[m.key] ?? 0.04));
 // radi = קצב איבוד חום לסביבה (רק ממשטחים חשופים לאוויר). נמוך = החום נשמר. קיר=0.
 const radi  = MAT.map(m => ({lava:0.00003,fire:0.02,steam:0.004,wall:0,cloud:0.002,chlorine:0.003}[m.key] ?? 0.00005));
 const temp0 = MAT.map(m => ({lava:1200,fire:900,ice:-14,wall:0}[m.key] ?? null));
 
 /* ---------- תכונות פיזיקליות (למשקל/כלי הבדיקה) ----------
    mass = צפיפות יחסית (g/cm³). formula/molecule = מבנה מולקולרי. conduct = מוליך חשמל. */
-const mass    = MAT.map(m=>({air:0.001,water:1.0,ice:0.92,steam:0.0006,stone:2.7,basalt:3.0,sand:1.6,earth:1.5,mud:1.8,wood:0.7,leaf:0.4,flower:0.3,sprout:0.5,seedT:0.6,seedF:0.6,ash:0.5,glass:2.5,lava:2.8,fire:0.0003,hydrogen:0.00009,wall:2,bedrock:3.2,cloud:0.0005,lithium:0.534,chlorine:0.0032,licl:2.07,saltwater:1.03}[m.key] ?? 1));
-const formula = MAT.map(m=>({air:'N₂+O₂',water:'H₂O',ice:'H₂O',steam:'H₂O',stone:'SiO₂',basalt:'SiO₂·Mg·Fe',sand:'SiO₂',earth:'SiO₂+C',mud:'SiO₂·H₂O',wood:'C₆H₁₀O₅',leaf:'C₆H₁₀O₅',flower:'C₆H₁₀O₅',sprout:'C₆H₁₀O₅',seedT:'C₆H₁₀O₅',seedF:'C₆H₁₀O₅',ash:'CaCO₃',glass:'SiO₂',lava:'SiO₂',fire:'CO₂+חום',hydrogen:'H₂',bedrock:'SiO₂·Fe·Mg',cloud:'H₂O',lithium:'Li',chlorine:'Cl₂',licl:'LiCl',saltwater:'H₂O+LiCl'}[m.key] ?? '—'));
-const conduct = MAT.map(m=>({water:true,lava:true,fire:true,lithium:true,saltwater:true}[m.key] ?? false));
-const molec   = MAT.map(m=>({air:'תערובת גזים',water:'מולקולה קוטבית',ice:'סריג גבישי',steam:'אדי מים',stone:'סריג סיליקט',basalt:'סלע וולקני צפוף',sand:'גרגרי קוורץ',earth:'תערובת אורגנית',mud:'אדמה רוויה',wood:'סיבי תאית',leaf:'תאית + כלורופיל',flower:'רקמה צמחית',sprout:'רקמה צמחית',seedT:'עובר זרע',seedF:'עובר זרע',ash:'שאריות מינרליות',glass:'מוצק אמורפי',lava:'סלע מותך',fire:'פלזמת בעירה',hydrogen:'מולקולה דו-אטומית H₂',bedrock:'סלע צפוף מאוד',cloud:'טיפות מים זעירות מרחפות',lithium:'מתכת — סריג אטומים חוזר',chlorine:'מולקולה דו-אטומית Cl₂',licl:'סריג יוני (Li⁺Cl⁻)',saltwater:'תמיסה — יונים מומסים במים'}[m.key] ?? '—'));
+const mass    = MAT.map(m=>({air:0.001,water:1.0,ice:0.92,steam:0.0006,stone:2.7,basalt:3.0,sand:1.6,earth:1.5,mud:1.8,wood:0.7,leaf:0.4,flower:0.3,sprout:0.5,seedT:0.6,seedF:0.6,ash:0.5,glass:2.5,lava:2.8,fire:0.0003,hydrogen:0.00009,wall:2,bedrock:3.2,cloud:0.0005,lithium:0.534,chlorine:0.0032,licl:2.07,saltwater:1.03,sodium:0.97,nacl:2.17}[m.key] ?? 1));
+const formula = MAT.map(m=>({air:'N₂+O₂',water:'H₂O',ice:'H₂O',steam:'H₂O',stone:'SiO₂',basalt:'SiO₂·Mg·Fe',sand:'SiO₂',earth:'SiO₂+C',mud:'SiO₂·H₂O',wood:'C₆H₁₀O₅',leaf:'C₆H₁₀O₅',flower:'C₆H₁₀O₅',sprout:'C₆H₁₀O₅',seedT:'C₆H₁₀O₅',seedF:'C₆H₁₀O₅',ash:'CaCO₃',glass:'SiO₂',lava:'SiO₂',fire:'CO₂+חום',hydrogen:'H₂',bedrock:'SiO₂·Fe·Mg',cloud:'H₂O',lithium:'Li',chlorine:'Cl₂',licl:'LiCl',saltwater:'H₂O+מלח',sodium:'Na',nacl:'NaCl'}[m.key] ?? '—'));
+const conduct = MAT.map(m=>({water:true,lava:true,fire:true,lithium:true,saltwater:true,sodium:true}[m.key] ?? false));
+const molec   = MAT.map(m=>({air:'תערובת גזים',water:'מולקולה קוטבית',ice:'סריג גבישי',steam:'אדי מים',stone:'סריג סיליקט',basalt:'סלע וולקני צפוף',sand:'גרגרי קוורץ',earth:'תערובת אורגנית',mud:'אדמה רוויה',wood:'סיבי תאית',leaf:'תאית + כלורופיל',flower:'רקמה צמחית',sprout:'רקמה צמחית',seedT:'עובר זרע',seedF:'עובר זרע',ash:'שאריות מינרליות',glass:'מוצק אמורפי',lava:'סלע מותך',fire:'פלזמת בעירה',hydrogen:'מולקולה דו-אטומית H₂',bedrock:'סלע צפוף מאוד',cloud:'טיפות מים זעירות מרחפות',lithium:'מתכת — סריג אטומים חוזר',chlorine:'מולקולה דו-אטומית Cl₂',licl:'סריג יוני (Li⁺Cl⁻)',saltwater:'תמיסה — יונים מומסים במים',sodium:'מתכת — סריג אטומים חוזר',nacl:'סריג יוני (Na⁺Cl⁻)'}[m.key] ?? '—'));
 const STATE   = {empty:'—',powder:'אבקה',liquid:'נוזל',solid:'מוצק',gas:'גז',static:'מוצק'};
 // נקודות מעבר מצב אמיתיות (°C): נמס=הופך לנוזל, רותח=הופך לגז
 const meltC = MAT.map(m=>({water:0,ice:0,steam:0,stone:1200,basalt:1200,lava:1200,sand:1700,glass:1700,hydrogen:-259,saltwater:-5}[m.key] ?? null));
@@ -431,6 +434,9 @@ const G_LI_LATTICE = tileGeom(G_LI_UNIT, 3, 3);        // ליתיום מתכת�
 const G_CL2 = {atoms:[['Cl',0.32,0.5],['Cl',0.68,0.5]],bonds:[[0,1]]};
 const G_LICL_UNIT = {atoms:[['Li',0.28,0.5],['Cl',0.72,0.5]],bonds:[[0,1]]};
 const G_LICL_LATTICE = tileGeom(G_LICL_UNIT, 2, 2);    // מלח מוצק — סריג יוני חוזר (כמו מלח בישול אמיתי)
+const G_NA_LATTICE = tileGeom({atoms:[['Na',0.5,0.5]],bonds:[]}, 3, 3);   // נתרן מתכתי — סריג אטומים חוזר
+const G_NACL_UNIT = {atoms:[['Na',0.28,0.5],['Cl',0.72,0.5]],bonds:[[0,1]]};
+const G_NACL_LATTICE = tileGeom(G_NACL_UNIT, 2, 2);    // מלח בישול — סריג יוני חוזר (NaCl אמיתי)
 // חומר מעורב (בוץ / מי מלח וכו') — לא מולקולה אחת אלא כמה סוגי מולקולות זו-לצד-זו,
 // כדי שרואים בבירור שזה תערובת של כמה חומרים ולא חומר טהור אחד.
 function sideBySide(gA, gB){
@@ -449,7 +455,8 @@ const molGeom = MAT.map(m=>({
   lava:G_SIO2, earth:G_EARTH,
   air:G_AIR, fire:G_CO2, ash:G_CACO3, hydrogen:G_H2,
   wood:G_ORG, leaf:G_ORG, flower:G_ORG, sprout:G_ORG, seedT:G_ORG, seedF:G_ORG,
-  lithium:G_LI_LATTICE, chlorine:G_CL2, licl:G_LICL_LATTICE, saltwater:G_SALTWATER
+  lithium:G_LI_LATTICE, chlorine:G_CL2, licl:G_LICL_LATTICE, saltwater:G_SALTWATER,
+  sodium:G_NA_LATTICE, nacl:G_NACL_LATTICE
 }[m.key] || {atoms:[['?',0.5,0.5]],bonds:[]}));
 function drawMol(mc,id){
   const S=mc.width, g=molGeom[id], x=mc.getContext('2d');
@@ -529,6 +536,7 @@ function render() {
     if (id===FIRE || id===LAVA) {
       const f = 0.65 + Math.random()*0.35;
       if (id===FIRE && aux[i]===2){ r=Math.min(255,235*f+20); g=Math.min(255,35*f); b=Math.min(255,55*f+15); }  // בדיקת להבה של ליתיום — אדום-ארגמן עז
+      else if (id===FIRE && aux[i]===3){ r=Math.min(255,250*f+5); g=Math.min(255,205*f); b=Math.min(255,40*f); }  // בדיקת להבה של נתרן — צהוב-כתום עז
       else { r=Math.min(255,c[0]*f+30); g=c[1]*f; b=c[2]*f*0.6; }
     } else if (id===EARTH && i>=W && grid[i-W]===AIR) {
       r=64; g=150; b=58;              // דשא — אדמה עם פני שטח חשופים לאוויר מלמעלה
@@ -694,6 +702,8 @@ function react(x,y,i,id){
     case MESH:   return reactMesh(x,y,i);
     case LITHIUM:return reactLithium(x,y,i);
     case LICL:   return reactLiCl(x,y,i);
+    case SODIUM: return reactSodium(x,y,i);
+    case NACL:   return reactNaCl(x,y,i);
   }
   return false;
 }
@@ -798,6 +808,55 @@ function reactLiCl(x,y,i){
   }
   return false;
 }
+// נתרן: מתכת אלקלית מתחת לליתיום בטבלה — מגיבה עם מים בעוצמה גדולה עוד יותר (2Na+2H₂O→2NaOH+H₂),
+// פיצוץ גדול יותר עם להבה צהובה-כתומה (בדיקת הלהבה האמיתית של נתרן!). עם כלור: 2Na+Cl₂→2NaCl — מלח בישול.
+function reactSodium(x,y,i){
+  for (const [dx,dy] of NEI4){
+    const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
+    const j=idx(nx,ny), n=grid[j];
+    if (n===WATER || n===SALTWATER){ igniteSodiumWater(x,y,i); return true; }
+    if (n===CHLORINE){
+      grid[i]=NACL; temp[i]=Math.min(900,temp[i]+300); life[i]=0; aux[i]=0; discover(NACL);
+      grid[j]=AIR; life[j]=0; velX[j]=0; velY[j]=0;
+      return true;
+    }
+  }
+  return false;
+}
+function igniteSodiumWater(x,y,i){
+  for(let dy=-4;dy<=4;dy++) for(let dx=-4;dx<=4;dx++){   // רדיוס גדול יותר מליתיום — נתרן מגיב חזק יותר
+    const d2=dx*dx+dy*dy; if(d2>16 || (!dx&&!dy)) continue;
+    const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
+    const j=idx(nx,ny), n=grid[j]; if(n===WALL) continue;
+    const d=Math.sqrt(d2), f=1-d/4.2;
+    temp[j] += f*1150;                                   // גל חום חזק אף יותר
+    if ((n===WATER||n===SALTWATER) && Math.random()<f*0.88){
+      grid[j]=FIRE; temp[j]=2050; life[j]=11; aux[j]=3; moved[j]=1; discover(FIRE);  // aux=3: להבת נתרן (צהובה) → תתעבה לאדים
+    }
+    if (n!==AIR){                                       // הדף — רסיסים נזרקים החוצה במעגל, חזק יותר
+      const inv=1/d;
+      velX[j] += dx*inv*3.1*(0.6+Math.random()*0.5);
+      velY[j] += (dy*inv-0.6)*3.1*(0.6+Math.random()*0.5);
+      if(velX[j]> MAXV)velX[j]= MAXV; if(velX[j]<-MAXV)velX[j]=-MAXV;
+      if(velY[j]> MAXV)velY[j]= MAXV; if(velY[j]<-MAXV)velY[j]=-MAXV;
+    }
+  }
+  grid[i]=FIRE; temp[i]=2200; life[i]=16; aux[i]=3; moved[i]=1;
+  discover(FIRE);
+}
+// מלח בישול (NaCl): נמס במגע עם מים — הופך אותם למי מלח, ונעלם (מומס). בדיוק כמו כלוריד ליתיום.
+function reactNaCl(x,y,i){
+  for (const [dx,dy] of NEI4){
+    const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
+    const j=idx(nx,ny);
+    if (grid[j]===WATER && Math.random()<0.14){
+      grid[j]=SALTWATER; discover(SALTWATER);
+      grid[i]=AIR; life[i]=0; velX[i]=0; velY[i]=0;
+      return true;
+    }
+  }
+  return false;
+}
 function reactWater(x,y,i){
   for (const [dx,dy] of NEI4){
     const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
@@ -881,7 +940,7 @@ function updateFire(x,y,i){
     }
   }
   if (--life[i] <= 1){
-    if (aux[i]===1 || aux[i]===2){ grid[i]=STEAM; life[i]=MAT[STEAM].life; aux[i]=0; return true; }   // להבת מימן/ליתיום → אדים (מים)
+    if (aux[i]===1 || aux[i]===2 || aux[i]===3){ grid[i]=STEAM; life[i]=MAT[STEAM].life; aux[i]=0; return true; }   // להבת מימן/ליתיום/נתרן → אדים (מים)
     if (Math.random()<0.4){ grid[i]=ASH; discover(ASH); } else grid[i]=AIR;
     life[i]=0; return true;
   }
@@ -1297,7 +1356,7 @@ const PT=[
 ['Fr','פרנציום','am',223,'s',7,1],['Ra','ראדיום','ae',226,'s',7,2],['Ac','אקטיניום','act',227,'s',9,3],['Th','תוריום','act',232,'s',9,4],['Pa','פרוטקטיניום','act',231,'s',9,5],['U','אורניום','act',238,'s',9,6],['Np','נפטוניום','act',237,'s',9,7],['Pu','פלוטוניום','act',244,'s',9,8],['Am','אמריציום','act',243,'s',9,9],['Cm','קוריום','act',247,'s',9,10],['Bk','ברקליום','act',247,'s',9,11],['Cf','קליפורניום','act',251,'s',9,12],['Es','איינשטייניום','act',252,'s',9,13],['Fm','פרמיום','act',257,'s',9,14],['Md','מנדלביום','act',258,'s',9,15],['No','נובליום','act',259,'s',9,16],['Lr','לורנציום','act',266,'s',9,17],['Rf','רתרפורדיום','tm',267,'s',7,4],['Db','דובניום','tm',268,'s',7,5],['Sg','סיבורגיום','tm',269,'s',7,6],['Bh','בוריום','tm',270,'s',7,7],['Hs','הסיום','tm',269,'s',7,8],['Mt','מייטנריום','unk',278,'s',7,9],['Ds','דרמשטטיום','unk',281,'s',7,10],['Rg','רנטגניום','unk',282,'s',7,11],['Cn','קופרניציום','tm',285,'s',7,12],['Nh','ניהוניום','ptm',286,'s',7,13],['Fl','פלרוביום','ptm',289,'s',7,14],['Mc','מוסקוביום','ptm',290,'s',7,15],['Lv','ליברמוריום','ptm',293,'s',7,16],['Ts','טנסין','hl',294,'s',7,17],['Og','אוגנסון','ng',294,'g',7,18]
 ];
 const PHASE={s:'מוצק',l:'נוזל',g:'גז'};
-const PLAY={1:HYDRO, 3:LITHIUM, 17:CHLORINE};   // מימן, ליתיום, כלור זמינים — נוסיף עוד יסודות אחד-אחד
+const PLAY={1:HYDRO, 3:LITHIUM, 11:SODIUM, 17:CHLORINE};   // מימן, ליתיום, נתרן, כלור זמינים — נוסיף עוד יסודות אחד-אחד
 const FACTS={
   1:['🌌 <b>90% מכל האטומים ביקום</b> — היסוד הנפוץ ביותר',
      '☀️ הדלק של השמש: הופכת 600 מיליון טון מימן להליום כל שנייה',
@@ -1328,11 +1387,20 @@ const FACTS={
       '🩱 מלבין בדים ונייר — שימש בתעשיית ההלבנה',
       '💨 רעיל בריכוזים גבוהים — פוגע במערכת הנשימה',
       '🧑‍🔬 התגלה ב-1774 ע"י קרל וילהלם שלה'],
+  11:['🧂 <b>יחד עם כלור נותן מלח בישול (NaCl)</b> — המלח שאנחנו אוכלים כל יום!',
+      '💥 מגיב עם מים בעוצמה גדולה עוד יותר מליתיום: 2Na+2H₂O→2NaOH+H₂ — פיצוץ ולהבה',
+      '🎆 בדיקת להבה: נתרן בוער בצהוב-כתום עז — זה מה שנותן לפנסי רחוב ישנים את הצבע הכתום',
+      '🔪 מתכת כה רכה שאפשר לחתוך אותה בסכין — וכסופה ומבריקה בחתך טרי',
+      '🌊 היסוד השישי הכי נפוץ בכדור הארץ · מומס בשפע בים כמלח',
+      '🪫 בטבע אף פעם לא טהור — מגיב מיד עם אוויר ומים, נשמר בשמן',
+      '🧠 יוני נתרן חיוניים לגוף — מעבירים אותות עצביים ומאזנים נוזלים',
+      '🧑‍🔬 בודד לראשונה ב-1807 ע"י המפרי דייווי'],
 };
 const REACTS={
   1:'🔥 חמם מעל 560° או הצת ליד אש → 💥 פיצוץ ל-💧 מים (2H₂+O₂→2H₂O). עולה כי קל',
   3:'💧 נוגע במים → 💥 פיצוץ אדום דרמטי (2Li+2H₂O→2LiOH+H₂) · 🟢 נוגע בכלור → 🧂 מלח (2Li+Cl₂→2LiCl). צף על מים (קל מהם)',
-  17:'⚡ נוגע בליתיום → 🧂 כלוריד ליתיום. עולה לאט מאוד (במציאות כבד מהאוויר)',
+  11:'💧 נוגע במים → 💥 פיצוץ צהוב עוד יותר גדול (2Na+2H₂O→2NaOH+H₂) · 🟢 נוגע בכלור → 🧂 מלח בישול (2Na+Cl₂→2NaCl)',
+  17:'⚡ נוגע בליתיום → 🧂 כלוריד ליתיום · נוגע בנתרן → 🧂 מלח בישול. עולה לאט מאוד (במציאות כבד מהאוויר)',
 };
 const ptable=document.getElementById('ptable');
 function buildShop(){
@@ -1435,11 +1503,12 @@ document.getElementById('setClearAll').onclick=()=>{ document.getElementById('se
 const SIZE_NAMES={9:'ממש קטן',5:'קטן',3.5:'בינוני',2.5:'גדול',1.6:'ענק'};
 function setResolution(s){
   SCALE=s; setup(); if(borderWalls) applyBorder();
-  [...document.querySelectorAll('.resbtn')].forEach(b=> b.classList.toggle('on', +b.dataset.s===SCALE));
+  // חשוב: רק כפתורי הגודל (#resBtns) — לא כפתורי המורכבות (#cplxBtns) שחולקים את אותו class!
+  [...document.querySelectorAll('#resBtns .resbtn')].forEach(b=> b.classList.toggle('on', +b.dataset.s===SCALE));
   buildPalette(); toast('🌍 גודל עולם: '+(SIZE_NAMES[s]||s));
 }
-[...document.querySelectorAll('.resbtn')].forEach(b=> b.onclick=()=>setResolution(+b.dataset.s));
-[...document.querySelectorAll('.resbtn')].forEach(b=> b.classList.toggle('on', +b.dataset.s===SCALE));
+[...document.querySelectorAll('#resBtns .resbtn')].forEach(b=> b.onclick=()=>setResolution(+b.dataset.s));
+[...document.querySelectorAll('#resBtns .resbtn')].forEach(b=> b.classList.toggle('on', +b.dataset.s===SCALE));
 
 /* ===== יצירת עולם — מלבה מותכת (כמו כדור הארץ נוצר), מתקרר ומצמיח יער ===== */
 // רעש פרקטלי פשוט (סכום סינוסים אקראיים) — כל הפעלה נותנת תבנית הרים/איים שונה
@@ -1638,7 +1707,8 @@ async function generateWorld(){
 
   // --- שלב 4.5 (רק ברמת "מפורט"): אגמים פנימיים — שקעים קטנים ביבשה שמתמלאים במים, לא רק אוקיינוס בקצוות ---
   if (cplx==='detailed'){
-    const inland=[]; for(let x=oceanMargin+8; x<W-oceanMargin-8; x++) if(heights[x]<seaY-8) inland.push(x);
+    const im=Math.floor(oceanMargin)+8;   // oceanMargin הוא שבר (W*0.10) — חובה לעגל, אחרת heights[x] עם אינדקס שבר = undefined
+    const inland=[]; for(let x=im; x<W-im; x++) if(heights[x]<seaY-8) inland.push(x);
     const nLakes = inland.length>20 ? 1+Math.floor(Math.random()*2) : 0;
     for(let L=0; L<nLakes; L++){
       const lx = inland[Math.floor(Math.random()*inland.length)];
