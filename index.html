@@ -108,8 +108,22 @@
     display:flex; align-items:center; justify-content:center; cursor:pointer; color:#0d0f14; }
   .ele .z  { position:absolute; top:0; left:2px; font-size:5px; opacity:.65; }
   .ele .sy { font-size:8.5px; font-weight:800; }
-  .ele.owned { outline:2px solid #fff; outline-offset:-1px; }
+  .ele .st { position:absolute; top:-3px; right:-3px; font-size:7px; line-height:1; z-index:2;
+    width:11px; height:11px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    border:1px solid #0d0f14; }
+  .ele.owned { outline:2px solid #ffd479; outline-offset:-1px; box-shadow:0 0 5px 1px #ffd47999; }  /* זהב — כבר קנית */
+  .ele.owned .st { background:#ffd479; color:#0d0f14; }        /* ✓ זהב */
+  .ele.buyable { outline:2px solid #fff; outline-offset:-1px; animation:buyPulse 1.3s ease-in-out infinite; }  /* מסגרת לבנה — אפשר לקנות */
+  .ele.buyable .st { background:#fff; color:#0d0f14; }         /* 🛒 לבן — אפשר לקנות עכשיו */
+  .ele.locked { opacity:.32; filter:grayscale(.4); }           /* עמום — עדיין לא זמין */
+  @keyframes buyPulse { 0%,100%{ box-shadow:0 0 0 0 #ffffff88; } 50%{ box-shadow:0 0 6px 2px #ffffffcc; } }
   .ele.blank { background:none!important; border:none; cursor:default; }
+  #shopSummary { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+  #shopSummary .chip { font-size:11.5px; font-weight:700; padding:4px 9px; border-radius:8px;
+    display:flex; align-items:center; gap:4px; }
+  #shopSummary .chip.own { background:#3a3116; color:#ffd479; border:1px solid #6a5a2a; }   /* זהב — כבר קנית */
+  #shopSummary .chip.buy { background:#252b36; color:#ffffff; border:1px solid #55607a; }   /* לבן — אפשר לקנות */
+  #shopSummary .chip.soon{ background:#20242e; color:#8894a6; border:1px solid #2a3444; }   /* אפור — בעתיד */
   #ptlegend { display:flex; flex-wrap:wrap; gap:5px; margin:10px 0 4px; }
   #ptlegend span { font-size:9.5px; padding:2px 6px; border-radius:6px; color:#0d0f14; font-weight:600; }
   #eleDetail { display:none; position:relative; background:#131a26; border:1px solid #33608a; border-radius:12px; padding:12px; padding-top:16px; margin-top:8px; }
@@ -268,6 +282,7 @@
     <div id="shop">
       <h2>🛒 חנות היסודות</h2>
       <div class="sub">הטבלה המחזורית — כל היסודות ביקום. לחץ על יסוד לפרטים ולקנייה. <b id="kp">🧠 0</b></div>
+      <div id="shopSummary"></div>
       <div id="ptable"></div>
       <div id="ptlegend"></div>
       <div id="eleDetail"></div>
@@ -1322,16 +1337,29 @@ const REACTS={
 const ptable=document.getElementById('ptable');
 function buildShop(){
   ptable.innerHTML='';
+  let nOwned=0, nBuy=0;
   PT.forEach((e,ix)=>{
     const [sym,he,cat,mass,ph,row,col]=e, z=ix+1;
+    const playable=PLAY[z]!==undefined, owned=playable&&found[PLAY[z]];
+    // סטטוס: קנוי (ירוק ✓) · זמין לקנייה (זהב 🛒, מהבהב) · עדיין לא זמין (עמום)
+    let cls='ele', badge='';
+    if (owned){ cls+=' owned'; badge='<span class="st">✓</span>'; nOwned++; }
+    else if (playable){ cls+=' buyable'; badge='<span class="st">🛒</span>'; nBuy++; }
+    else { cls+=' locked'; }
     const c=document.createElement('div');
-    c.className='ele'+(PLAY[z]&&found[PLAY[z]]?' owned':'');
+    c.className=cls;
     c.style.gridRow=row; c.style.gridColumn=col;
     c.style.background=CAT[cat][1];
-    c.innerHTML=`<span class="z">${z}</span><span class="sy">${sym}</span>`;
+    c.innerHTML=`<span class="z">${z}</span><span class="sy">${sym}</span>${badge}`;
     c.onclick=()=>showElement(z);
     ptable.appendChild(c);
   });
+  const nPlay=Object.keys(PLAY).length;
+  const sum=document.getElementById('shopSummary');
+  sum.innerHTML =
+    `<span class="chip buy">🛒 ${nBuy} זמינים לקנייה עכשיו</span>`+
+    `<span class="chip own">✓ ${nOwned} כבר קנית</span>`+
+    `<span class="chip soon">🔜 ${118-nPlay} יתווספו בעתיד</span>`;
   const lg=document.getElementById('ptlegend'); lg.innerHTML='';
   Object.values(CAT).forEach(([nm,col])=>{ const s=document.createElement('span'); s.style.background=col; s.textContent=nm; lg.appendChild(s); });
   document.getElementById('kp').innerHTML='🧠 '+score;
