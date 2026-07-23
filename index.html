@@ -409,6 +409,13 @@ const cond  = MAT.map(m => ({air:0.003,water:0.10,ice:0.08,stone:0.045,glass:0.0
 // radi = קצב איבוד חום לסביבה (רק ממשטחים חשופים לאוויר). נמוך = החום נשמר. קיר=0.
 const radi  = MAT.map(m => ({lava:0.00003,fire:0.02,steam:0.004,wall:0,cloud:0.002,chlorine:0.003,ironmelt:0.00004}[m.key] ?? 0.00005));
 const temp0 = MAT.map(m => ({lava:1200,fire:900,ice:-14,wall:0,ironmelt:1560}[m.key] ?? null));
+// קיבול חום סגולי (specific heat) — כמה אנרגיה צריך כדי לשנות מעלה אחת. גבוה = מתחמם ומתקרר לאט.
+// מים = הגבוה בטבע (למה מים לא רותחים מיד ליד אש), מתכות נמוך (מתחממות מהר). ערכי משחק לפי המדע.
+const heatCap = MAT.map(m=>({
+  water:4.0, saltwater:3.8, ice:2.0, steam:2.0, mud:3.0, cloud:2.0, hydrogen:3.4,
+  wood:2.0, leaf:2.0, flower:2.0, sprout:2.0, seedT:2.0, seedF:2.0, earth:1.3, rust:1.2,
+  iron:0.6, ironmelt:0.6, irongas:0.6, sodium:0.7, lithium:0.9
+}[m.key] ?? 1.0));
 
 /* ---------- תכונות פיזיקליות (למשקל/כלי הבדיקה) ----------
    mass = צפיפות יחסית (g/cm³). formula/molecule = מבנה מולקולרי. conduct = מוליך חשמל. */
@@ -701,7 +708,10 @@ function thermal(){
     if (x<W-1) acc+=flow(i+1);
     if (y>0)   acc+=flow(i-W);
     if (y<H-1) acc+=flow(i+W);
-    let nt = t + 0.5*acc;
+    // קיבול חום סגולי: אותה כמות אנרגיה משנה טמפרטורה פחות בחומר עם קיבול גבוה (מים) ויותר בנמוך (מתכת).
+    // clamp ל-0.7 לשמירה על יציבות נומרית של סכמת ההולכה המפורשת.
+    const hf = Math.min(0.7, 0.5/heatCap[id]);
+    let nt = t + hf*acc;
     // איבוד חום קורה רק ממשטחים חשופים לאוויר. חומר סגור בקירות (0 שכני אוויר) לא מתקרר!
     if (!noHeatLoss && airN>0) nt += (AMB - nt) * radi[id] * airN * 0.25;
     temp2[i]=nt;
@@ -716,7 +726,11 @@ function checkPhase(i){
     case WATER:  if (t>=100){ grid[i]=STEAM; life[i]=MAT[STEAM].life; discover(STEAM); }
                  else if (t<=0){ grid[i]=ICE; discover(ICE); } break;
     // מי מלח: המלח המומס משנה את נקודות המעבר — קופא קר יותר ורותח חם יותר ממים טהורים (תופעה קולגטיבית אמיתית!)
-    case SALTWATER: if (t>=101){ grid[i]=STEAM; life[i]=MAT[STEAM].life; discover(STEAM); }
+    // כשמתאדה — רק המים עולים כאדים, והמלח נשאר מאחור כמשקע גבישי (בדיוק כמו בריכות מלח אמיתיות!)
+    case SALTWATER: if (t>=101){
+                   if (Math.random()<0.18){ grid[i]=NACL; life[i]=0; aux[i]=0; discover(NACL); }   // המלח נשאר
+                   else { grid[i]=STEAM; life[i]=MAT[STEAM].life; discover(STEAM); }                 // המים מתאדים
+                 }
                  else if (t<=-5){ grid[i]=ICE; discover(ICE); } break;
     case STEAM:  if (t<=80) { grid[i]=CLOUD; life[i]=MAT[CLOUD].life; } break;   // מתקרר → הופך לענן (מרחף באוויר)
     case CLOUD:  if (t>=95) { grid[i]=STEAM; life[i]=MAT[STEAM].life; }          // מתחמם שוב → חוזר לאדים
