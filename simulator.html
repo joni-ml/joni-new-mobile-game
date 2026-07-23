@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>🔬 סימולטור פיזיקה</title>
+<style>
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; overflow:hidden; background:#05070c;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; color:#e8eef7; touch-action:none; }
+  #app { display:flex; flex-direction:column; height:100%; }
+  #stage { position:relative; flex:1; min-height:0; overflow:hidden; }
+  #sim { display:block; width:100%; height:100%; image-rendering:pixelated; }
+  #top { position:absolute; top:0; left:0; right:0; z-index:10; display:flex; align-items:center; gap:8px;
+    padding:8px 12px; background:linear-gradient(#05070ccc,#05070c00); pointer-events:none; }
+  #top .title { font-weight:800; font-size:15px; }
+  #top .fps { font-size:11px; opacity:.5; margin-inline-start:auto; direction:ltr; }
+  /* חלון בדיקה */
+  #info { position:absolute; left:8px; bottom:8px; z-index:12; display:none; font-size:12.5px; line-height:1.55;
+    background:rgba(10,14,22,.94); border:1px solid #33608a; border-radius:11px; padding:8px 12px; max-width:min(300px,72vw);
+    box-shadow:0 6px 18px #000a; }
+  #info b { color:#ffd479; }
+  /* בקרת זום */
+  #zoom { position:absolute; left:8px; top:50%; transform:translateY(-50%); z-index:11; display:flex; flex-direction:column; gap:5px; }
+  #zoom button { width:38px; height:38px; border-radius:10px; border:1px solid #3a4658; background:rgba(16,22,32,.86);
+    color:#e8eef7; font-size:19px; font-weight:800; cursor:pointer; box-shadow:0 3px 10px #0007; }
+  #zoom button:active { background:rgba(43,108,255,.5); }
+  #zoom #zpan.on { background:#2b6cff; border-color:#2b6cff; }
+  #zoom #zl { font-size:10.5px; font-weight:700; opacity:.85; text-align:center; background:rgba(16,22,32,.86);
+    border:1px solid #3a4658; border-radius:7px; padding:2px 0; }
+  /* פאנל תחתון */
+  #panel { background:#0b0f17; border-top:1px solid #1a2130; padding:8px 8px 10px; }
+  #mats { display:flex; gap:6px; overflow-x:auto; padding-bottom:6px; scrollbar-width:none; }
+  #mats::-webkit-scrollbar { display:none; }
+  .mat { flex:0 0 auto; min-width:60px; height:52px; border-radius:11px; border:1px solid #263042; background:#141b27;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; cursor:pointer; padding:0 8px; }
+  .mat .sw { width:20px; height:20px; border-radius:6px; border:1px solid #0006; }
+  .mat .nm { font-size:11px; font-weight:700; white-space:nowrap; }
+  .mat.on { border-color:#ffd479; box-shadow:0 0 0 1px #ffd479 inset; }
+  #tools { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+  #tools button { flex:1 1 auto; min-width:62px; height:42px; border-radius:11px; border:1px solid #2a3547; background:#141b27;
+    color:#e8eef7; font-size:13px; font-weight:700; cursor:pointer; }
+  #tools button.on { background:#2b6cff; border-color:#2b6cff; }
+  #sliders { display:flex; gap:14px; margin-top:8px; align-items:center; }
+  #sliders label { display:flex; align-items:center; gap:7px; font-size:12px; flex:1; }
+  #sliders input[type=range] { flex:1; accent-color:#ffd479; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="sim"></canvas>
+    <div id="top"><span class="title">🔬 סימולטור פיזיקה</span><span class="fps" id="fps"></span></div>
+    <div id="zoom">
+      <button id="zin">＋</button><div id="zl">1×</div><button id="zout">－</button>
+      <button id="zpan" title="תזוזה עם אצבע אחת">🖐</button><button id="zres" title="תצוגה מלאה">⛶</button>
+    </div>
+    <div id="info"></div>
+  </div>
+  <div id="panel">
+    <div id="mats"></div>
+    <div id="tools">
+      <button id="tHeat">🔥 חום</button>
+      <button id="tCool">❄️ קור</button>
+      <button id="tInspect">🔍 בדיקה</button>
+      <button id="tPause">⏸️ עצור</button>
+      <button id="tClear">🗑️ נקה</button>
+    </div>
+    <div id="sliders">
+      <label>מברשת <input id="brush" type="range" min="1" max="14" value="4"></label>
+      <label>עוצמת חום <input id="power" type="range" min="5" max="120" value="45"></label>
+    </div>
+  </div>
+</div>
+<script>
+/* =====================================================================
+   סימולטור פיזיקה — אוטומט תאי מבוסס-נתונים.
+   הרעיון המרכזי: כל חומר מוגדר ע"י התכונות האמיתיות שלו (נקודת היתוך,
+   נקודת רתיחה, צפיפות, קיבול חום, מוליכות). המצב (מוצק/נוזל/גז) מחושב
+   אוטומטית מהטמפרטורה — אין המרות מקודדות ידנית. אבן שמתחממת מעל 1200°
+   הופכת לנוזל זוהר (לבה) לבד, מים קופאים/רותחים לבד, וכו'.
+   ===================================================================== */
+
+/* ---------- טבלת החומרים (נתונים מדעיים אמיתיים) ----------
+   melt/boil = נקודות מעבר (°C). dens = צפיפות נוזל/בסיס. solidDens = צפיפות מוצק
+   (קרח קל ממים!). heatCap = קיבול חום סגולי. cond = מוליכות חום.
+   powder = מוצק נשפך (חול/מלח). flam = דליק. noMelt = לא נמס (עץ — רק נשרף). */
+const INF = 1e9;
+const SUB = [
+  { key:'air',    name:'אוויר',  color:[9,11,17],    melt:-INF, boil:-INF, dens:0.0012, heatCap:1.0,  cond:0.02, empty:true },
+  { key:'water',  name:'מים',    color:[42,112,222],  melt:0,    boil:100,  dens:1.00, solidDens:0.92, heatCap:4.18, cond:0.10 },
+  { key:'stone',  name:'אבן',    color:[128,128,132], melt:1200, boil:2900, dens:2.65, heatCap:0.90, cond:0.05 },
+  { key:'sand',   name:'חול',    color:[236,214,134], melt:1710, boil:2230, dens:1.60, heatCap:0.84, cond:0.05, powder:true },
+  { key:'salt',   name:'מלח',    color:[240,240,240], melt:801,  boil:1465, dens:2.16, heatCap:0.88, cond:0.05, powder:true },
+  { key:'iron',   name:'ברזל',   color:[150,150,158], melt:1538, boil:2862, dens:7.87, heatCap:0.45, cond:0.40 },
+  { key:'copper', name:'נחושת',  color:[184,115,51],  melt:1085, boil:2562, dens:8.96, heatCap:0.39, cond:0.45 },
+  { key:'gold',   name:'זהב',    color:[255,215,0],   melt:1064, boil:2700, dens:19.3, heatCap:0.13, cond:0.40 },
+  { key:'wood',   name:'עץ',     color:[133,94,66],   melt:INF,  boil:INF,  dens:0.60, heatCap:1.70, cond:0.04, flam:true, noMelt:true },
+  { key:'oil',    name:'שמן',    color:[122,90,42],   melt:-10,  boil:300,  dens:0.92, heatCap:1.90, cond:0.04, flam:true },
+  { key:'oxygen', name:'חמצן',   color:[200,220,255], melt:-219, boil:-183, dens:0.0014, heatCap:0.92, cond:0.02, gas0:true },
+  { key:'wall',   name:'קיר',    color:[70,74,84],    melt:INF,  boil:INF,  dens:99,   heatCap:1.0,  cond:0.0, noMelt:true, wall:true },
+];
+const ID={}; SUB.forEach((s,i)=>{ s.id=i; ID[s.key]=i; });
+const AIR=ID.air, WATER=ID.water, WALL=ID.wall, OXYGEN=ID.oxygen;
+const AMB=20;   // טמפרטורת החדר
+
+/* ---------- מצב תא לפי טמפרטורה (זו כל ה"כימיה" — פיזיקלי טהור) ---------- */
+function stateOf(id, t){
+  const s=SUB[id];
+  if (t >= s.boil) return 2;   // גז
+  if (t >= s.melt) return 1;   // נוזל
+  return 0;                    // מוצק
+}
+function densOf(id, st){
+  const s=SUB[id];
+  if (s.empty) return s.dens;
+  if (st===2) return 0.002;                 // כל גז — קל מאוד
+  if (st===0) return s.solidDens ?? s.dens; // מוצק (קרח קל ממים)
+  return s.dens;                            // נוזל
+}
+
+/* ---------- קנבס ורשת ---------- */
+const cv=document.getElementById('sim'), ctx=cv.getContext('2d',{alpha:false});
+const buf=document.createElement('canvas'), bctx=buf.getContext('2d',{alpha:false});
+let SCALE=4;                    // גודל תא בפיקסלים (קטן = רזולוציה גבוהה, כל פיקסל תא)
+let W,H, grid, temp, temp2, moved, img;
+let camZ=1, camX=0, camY=0;
+const CAMMAX=16;
+
+function setup(){
+  const st=document.getElementById('stage');
+  const cw=st.clientWidth, ch=st.clientHeight;
+  const dpr=Math.min(window.devicePixelRatio||1, 2);
+  W=Math.max(60, Math.floor(cw/SCALE));
+  H=Math.max(60, Math.floor(ch/SCALE));
+  buf.width=W; buf.height=H; img=bctx.createImageData(W,H);
+  cv.width=Math.floor(cw*dpr); cv.height=Math.floor(ch*dpr);
+  ctx.imageSmoothingEnabled=false;
+  grid=new Uint8Array(W*H);
+  temp=new Float32Array(W*H).fill(AMB);
+  temp2=new Float32Array(W*H);
+  moved=new Uint8Array(W*H);
+  camZ=1; camX=0; camY=0; zlbl();
+}
+const idx=(x,y)=>y*W+x;
+const inB=(x,y)=>x>=0&&x<W&&y>=0&&y<H;
+
+/* ---------- מנוע התנועה ---------- */
+function swap(a,b){ const g=grid[a];grid[a]=grid[b];grid[b]=g; const t=temp[a];temp[a]=temp[b];temp[b]=t; moved[a]=1;moved[b]=1; }
+
+let flip=false;
+function step(){
+  flip=!flip;
+  moved.fill(0);
+  for(let y=H-1;y>=0;y--){
+    for(let k=0;k<W;k++){
+      const x=flip?k:(W-1-k);
+      const i=idx(x,y), id=grid[i];
+      if(id===AIR || id===WALL) continue;
+      if(moved[i]) continue;
+      const st=stateOf(id,temp[i]);
+      if(st===2) moveGas(x,y,i,id);
+      else if(st===1) moveLiquid(x,y,i,id);
+      else moveSolid(x,y,i,id);
+    }
+  }
+  react();
+  thermal();
+}
+// גז: עולה אם הוא קל מהתא שמעליו; מתפזר הצידה
+function moveGas(x,y,i,id){
+  const d=densOf(id,2);
+  if(y>0){ const up=idx(x,y-1), uid=grid[up];
+    if(uid!==WALL && densAt(up)>d+0.0001){ swap(i,up); return; } }
+  // אלכסון מעלה
+  if(y>0){ const dir=Math.random()<.5?1:-1;
+    for(const dx of [dir,-dir]){ const nx=x+dx; if(nx<0||nx>=W)continue; const u=idx(nx,y-1);
+      if(grid[u]!==WALL && densAt(u)>d+0.0001){ swap(i,u); return; } } }
+  // פיזור אופקי
+  if(Math.random()<.4){ const dir=Math.random()<.5?1:-1, nx=x+dir;
+    if(nx>=0&&nx<W){ const s=idx(nx,y); if(grid[s]===AIR){ swap(i,s); return; } } }
+}
+// נוזל: שוקע דרך תא קל יותר; זורם הצידה כדי להתיישר
+function moveLiquid(x,y,i,id){
+  const d=densOf(id,1);
+  if(y<H-1){ const bl=idx(x,y+1);
+    if(grid[bl]!==WALL && densAt(bl)<d-0.0001){ swap(i,bl); return; } }
+  // אלכסון מטה אל חומר קל יותר
+  if(y<H-1){ const dir=Math.random()<.5?1:-1;
+    for(const dx of [dir,-dir]){ const nx=x+dx; if(nx<0||nx>=W)continue; const b=idx(nx,y+1);
+      if(grid[b]!==WALL && densAt(b)<d-0.0001){ swap(i,b); return; } } }
+  // זרימה הצידה (התיישרות) — לתוך אוויר/גז
+  const dir=Math.random()<.5?1:-1;
+  for(const dx of [dir,-dir]){ for(let r=1;r<=4;r++){ const nx=x+dx*r; if(nx<0||nx>=W)break;
+    const s=idx(nx,y), sid=grid[s]; if(sid===WALL)break;
+    if(densAt(s)<d-0.0001 && stateOf(sid,temp[s])>=1 || sid===AIR){ swap(i,s); return; }
+    if(sid!==id)break; } }
+}
+// מוצק: אבקה נשפכת/נערמת; מוצק קשיח נופל או צף לפי צפיפות
+function moveSolid(x,y,i,id){
+  const s=SUB[id], d=densOf(id,0);
+  if(y<H-1){ const bl=idx(x,y+1), bid=grid[bl];
+    if(bid!==WALL && densAt(bl)<d-0.0001){ swap(i,bl); return; } }       // נופל דרך קל יותר (אוויר/נוזל קל)
+  // ציפה: מוצק קל בתוך נוזל כבד — עולה (קרח/עץ צפים על מים)
+  if(y>0){ const up=idx(x,y-1), uid=grid[up];
+    if(uid!==WALL && stateOf(uid,temp[up])===1 && densAt(up)>d+0.0001){ swap(i,up); return; } }
+  if(s.powder && y<H-1){                                                 // אבקה נערמת באלכסון
+    const dir=Math.random()<.5?1:-1;
+    for(const dx of [dir,-dir]){ const nx=x+dx; if(nx<0||nx>=W)continue; const b=idx(nx,y+1);
+      if(grid[b]!==WALL && densAt(b)<d-0.0001){ swap(i,b); return; } } }
+}
+function densAt(i){ const id=grid[i]; return densOf(id, stateOf(id,temp[i])); }
+
+/* ---------- תגובות (מעט כימיה מעבר לפיזיקה הטהורה) ---------- */
+const NEI4=[[1,0],[-1,0],[0,1],[0,-1]];
+function react(){
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const i=idx(x,y), id=grid[i]; if(id===AIR||id===WALL)continue;
+    const s=SUB[id], t=temp[i];
+    // בעירה: חומר דליק חם (>300°) עם חמצן/אוויר סמוך → נשרף, פולט חום, ומשאיר אוויר
+    if(s.flam && t>300){
+      let air=false; for(const[dx,dy]of NEI4){const nx=x+dx,ny=y+dy; if(inB(nx,ny)){const g=grid[idx(nx,ny)]; if(g===AIR||g===OXYGEN){air=true;break;}}}
+      if(air && Math.random()<0.12){
+        temp[i]=Math.max(temp[i],650+Math.random()*250);            // להבה חמה
+        for(const[dx,dy]of NEI4){const nx=x+dx,ny=y+dy; if(!inB(nx,ny))continue; const j=idx(nx,ny),g=grid[j];
+          if(SUB[g].flam) temp[j]+=45;                              // מדליק שכנים דליקים
+          else if(g===OXYGEN){ grid[j]=AIR; temp[j]=Math.max(temp[j],700); } }
+        if(Math.random()<0.04){ grid[i]=AIR; temp[i]=Math.max(t,400); }  // נאכל לאט (הופך לאוויר חם)
+      }
+    }
+    // מלח + מים → המלח נמס (נעלם לתוך המים, שנהיים "מי מלח" — כאן פשוט המלח נצרך אט אט)
+    // (בגרסה הזו נשאיר פשוט; מי-מלח אפשר להוסיף בהמשך)
+  }
+}
+
+/* ---------- חום: הולכה + קיבול חום סגולי + חום כמוס ---------- */
+function thermal(){
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const i=idx(x,y), id=grid[i];
+    if(id===WALL){ temp2[i]=temp[i]; continue; }
+    const t=temp[i], ci=SUB[id].cond;
+    let acc=0, airN=0;
+    const flow=(j)=>{ const g=grid[j]; if(g===AIR)airN++;
+      const cf=Math.min(ci, SUB[g].cond); return cf*(temp[j]-t); };
+    if(x>0)acc+=flow(i-1); if(x<W-1)acc+=flow(i+1);
+    if(y>0)acc+=flow(i-W); if(y<H-1)acc+=flow(i+W);
+    // חום כמוס: ליד נקודת מעבר קיבול החום "קופץ" — הטמפ' נעצרת עד שהמעבר מסתיים
+    let hc=SUB[id].heatCap;
+    const s=SUB[id];
+    if(Math.abs(t-s.melt)<4 || Math.abs(t-s.boil)<4) hc*=6;
+    const hf=Math.min(0.7, 0.5/hc);
+    let nt=t+hf*acc;
+    // איבוד חום קל לאוויר החשוף (מונע חום נצחי), אבל איטי
+    if(airN>0) nt += (AMB-nt)*0.0006*airN;
+    temp2[i]=nt;
+  }
+  const s=temp; temp=temp2; temp2=s;
+}
+
+/* ---------- ציור ---------- */
+function render(){
+  const d=img.data;
+  for(let i=0;i<grid.length;i++){
+    const id=grid[i], t=temp[i];
+    let r,g,b;
+    if(id===AIR){ r=9;g=11;b=17; }
+    else {
+      const s=SUB[id], st=stateOf(id,t); let c=s.color;
+      // צבע לפי מצב עבור מים: קרח בהיר, אדים חיוורים
+      if(id===WATER){ c = st===0?[200,226,245] : st===2?[188,200,216] : s.color; }
+      else if(st===2){ c=[Math.min(255,s.color[0]+40),Math.min(255,s.color[1]+40),Math.min(255,s.color[2]+40)]; }
+      r=c[0];g=c[1];b=c[2];
+      // זוהר לוהט (אינקנדסנציה): מעל ~450° מתחיל לזהור אדום→כתום→לבן
+      if(t>450){ const h=Math.min(210,(t-450)*0.16); r=Math.min(255,r+h); g=Math.min(255,g+h*0.55); b=Math.min(255,b+h*0.16); }
+      else if(t<0){ const k=Math.min(60,-t*1.2); b=Math.min(255,b+k); r=Math.max(0,r-k*0.2); }
+    }
+    d[i*4]=r; d[i*4+1]=g; d[i*4+2]=b; d[i*4+3]=255;
+  }
+  bctx.putImageData(img,0,0);
+  const vw=W/camZ, vh=H/camZ;
+  ctx.drawImage(buf, camX,camY,vw,vh, 0,0,cv.width,cv.height);
+}
+
+/* ---------- קלט ---------- */
+let cur=WATER, tool='paint', brush=4, power=45, paused=false, painting=false, panMode=false, panning=false, pinch=null, ptx=0,pty=0;
+function toGridF(cx,cy){ const r=cv.getBoundingClientRect(), vw=W/camZ, vh=H/camZ;
+  return [camX+(cx-r.left)/r.width*vw, camY+(cy-r.top)/r.height*vh]; }
+function toGrid(cx,cy){ const [a,b]=toGridF(cx,cy); return [Math.floor(a),Math.floor(b)]; }
+function paintAt(cx,cy){
+  const [gx,gy]=toGrid(cx,cy);
+  if(tool==='inspect'){ inspect(gx,gy); return; }
+  const rad=brush;
+  for(let dy=-rad;dy<=rad;dy++)for(let dx=-rad;dx<=rad;dx++){
+    if(dx*dx+dy*dy>rad*rad)continue; const x=gx+dx,y=gy+dy; if(!inB(x,y))continue; const i=idx(x,y);
+    if(tool==='heat'){ if(grid[i]!==WALL) temp[i]=Math.min(6000,temp[i]+power); continue; }
+    if(tool==='cool'){ if(grid[i]!==WALL) temp[i]=Math.max(-250,temp[i]-power); continue; }
+    grid[i]=cur; temp[i]= cur===AIR?AMB : (SUB[cur].gas0?AMB : startTemp(cur));
+  }
+}
+function startTemp(id){ const s=SUB[id];
+  if(s.key==='lava') return 1300;
+  // חומר שמונח נכנס בטמפ' חדר, אבל אם טמפ' החדר מחוץ לתחום המצב שלו — נחזיק אותו במצב הרגיל שלו
+  if(AMB < s.melt && !s.noMelt && s.melt<INF && s.boil<AMB) return s.melt+5;
+  return AMB;
+}
+function inspect(gx,gy){
+  const el=document.getElementById('info');
+  if(!inB(gx,gy)){ el.style.display='none'; return; }
+  const i=idx(gx,gy), id=grid[i], t=temp[i], s=SUB[id];
+  const stName=['מוצק','נוזל','גז'][stateOf(id,t)];
+  const ph=[]; if(s.melt>-INF&&s.melt<INF)ph.push('נמס '+s.melt+'°'); if(s.boil>-INF&&s.boil<INF)ph.push('רותח '+s.boil+'°');
+  el.innerHTML=`<b>${s.name}</b> · ${stName}<br>🌡️ <b>${Math.round(t)}°C</b> · ⚖️ צפיפות ${s.dens}<br>${ph.join(' · ')||'—'}`;
+  el.style.display='block';
+}
+function down(e){ e.preventDefault();
+  const [x,y]=pos(e);
+  if(panMode){ panning=true; ptx=x;pty=y; return; }
+  painting=true; ptx=x;pty=y; paintAt(x,y);
+}
+function move(e){ e.preventDefault(); const [x,y]=pos(e);
+  if(panning){ const r=cv.getBoundingClientRect(),vw=W/camZ,vh=H/camZ; camX-=(x-ptx)/r.width*vw; camY-=(y-pty)/r.height*vh; clampCam(); ptx=x;pty=y; if(paused)render(); return; }
+  if(!painting)return;
+  const steps=Math.max(1,Math.hypot(x-ptx,y-pty)/3);
+  for(let s=0;s<=steps;s++) paintAt(ptx+(x-ptx)*s/steps, pty+(y-pty)*s/steps);
+  ptx=x;pty=y;
+}
+function up(){ painting=false; panning=false; }
+function pos(e){ const t=e.touches?e.touches[0]:e; return [t.clientX,t.clientY]; }
+function midDist(e){ const a=e.touches[0],b=e.touches[1];
+  return {mx:(a.clientX+b.clientX)/2,my:(a.clientY+b.clientY)/2,d:Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY)}; }
+function tStart(e){ if(e.touches.length>=2){ e.preventDefault(); painting=false;panning=false;
+    const m=midDist(e),[fx,fy]=toGridF(m.mx,m.my); pinch={d0:m.d,z0:camZ,fx,fy}; return; } down(e); }
+function tMove(e){ if(pinch&&e.touches.length>=2){ e.preventDefault(); const m=midDist(e);
+    camZ=Math.max(1,Math.min(CAMMAX,pinch.z0*m.d/Math.max(1,pinch.d0)));
+    const r=cv.getBoundingClientRect(),vw=W/camZ,vh=H/camZ; camX=pinch.fx-(m.mx-r.left)/r.width*vw; camY=pinch.fy-(m.my-r.top)/r.height*vh;
+    clampCam(); zlbl(); if(paused)render(); return; } move(e); }
+function tEnd(e){ if(pinch){ if(e.touches.length<2)pinch=null; return; } up(e); }
+cv.addEventListener('touchstart',tStart,{passive:false});
+cv.addEventListener('touchmove',tMove,{passive:false});
+cv.addEventListener('touchend',tEnd);
+cv.addEventListener('mousedown',down); cv.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
+cv.addEventListener('wheel',e=>{ e.preventDefault(); const [fx,fy]=toGridF(e.clientX,e.clientY);
+  setZoom(camZ*(e.deltaY<0?1.15:1/1.15),fx,fy); if(paused)render(); },{passive:false});
+
+/* ---------- מצלמה ---------- */
+function clampCam(){ camZ=Math.max(1,Math.min(CAMMAX,camZ)); const vw=W/camZ,vh=H/camZ;
+  camX=Math.max(0,Math.min(W-vw,camX)); camY=Math.max(0,Math.min(H-vh,camY)); }
+function setZoom(nz,fx,fy){ const vwo=W/camZ,vho=H/camZ,rx=(fx-camX)/vwo,ry=(fy-camY)/vho;
+  camZ=Math.max(1,Math.min(CAMMAX,nz)); const vw=W/camZ,vh=H/camZ; camX=fx-rx*vw; camY=fy-ry*vh; clampCam(); zlbl(); }
+function zc(f){ setZoom(camZ*f, camX+(W/camZ)/2, camY+(H/camZ)/2); if(paused)render(); }
+function zlbl(){ const e=document.getElementById('zl'); if(e)e.textContent=(camZ<1.05?'1':(Math.round(camZ*10)/10))+'×'; }
+document.getElementById('zin').onclick=()=>zc(1.4);
+document.getElementById('zout').onclick=()=>zc(1/1.4);
+document.getElementById('zres').onclick=()=>{ camZ=1;camX=0;camY=0; zlbl(); if(paused)render(); };
+document.getElementById('zpan').onclick=function(){ panMode=!panMode; this.classList.toggle('on',panMode); };
+
+/* ---------- ממשק ---------- */
+const matsEl=document.getElementById('mats');
+function buildMats(){ matsEl.innerHTML='';
+  SUB.forEach(s=>{ if(s.key==='air')return;
+    const d=document.createElement('div'); d.className='mat'+(s.id===cur?' on':''); d.dataset.id=s.id;
+    d.innerHTML=`<span class="sw" style="background:rgb(${s.color.join(',')})"></span><span class="nm">${s.name}</span>`;
+    d.onclick=()=>{ cur=s.id; tool='paint'; refresh(); }; matsEl.appendChild(d); });
+}
+function refresh(){
+  [...matsEl.children].forEach(c=>c.classList.toggle('on', +c.dataset.id===cur && tool==='paint'));
+  const b=(id,tl)=>document.getElementById(id).classList.toggle('on',tool===tl);
+  b('tHeat','heat'); b('tCool','cool'); b('tInspect','inspect');
+  document.getElementById('tPause').classList.toggle('on',paused);
+  if(tool!=='inspect') document.getElementById('info').style.display='none';
+}
+document.getElementById('tHeat').onclick=()=>{ tool='heat'; refresh(); };
+document.getElementById('tCool').onclick=()=>{ tool='cool'; refresh(); };
+document.getElementById('tInspect').onclick=()=>{ tool='inspect'; refresh(); };
+document.getElementById('tPause').onclick=()=>{ paused=!paused; refresh(); };
+document.getElementById('tClear').onclick=()=>{ grid.fill(AIR); temp.fill(AMB); };
+document.getElementById('brush').oninput=e=>brush=+e.target.value;
+document.getElementById('power').oninput=e=>power=+e.target.value;
+
+/* ---------- לולאה ---------- */
+let last=performance.now(), acc=0, frames=0, ft=0;
+function loop(now){
+  const dt=now-last; last=now; ft+=dt; frames++;
+  if(ft>=500){ document.getElementById('fps').textContent=Math.round(frames/ft*1000)+' fps'; frames=0; ft=0; }
+  if(!paused){ step(); }
+  render();
+  requestAnimationFrame(loop);
+}
+/* ---------- התחלה: קרקע אבן + שמיים ---------- */
+function seed(){
+  grid.fill(AIR); temp.fill(AMB);
+  const g=Math.floor(H*0.72);
+  for(let y=g;y<H;y++)for(let x=0;x<W;x++){ grid[idx(x,y)]=ID.stone; }
+  for(let y=g;y<g+3;y++)for(let x=0;x<W;x++){ grid[idx(x,y)]=ID.sand; }
+}
+addEventListener('resize',()=>{ setup(); seed(); });
+setup(); buildMats(); seed(); refresh(); requestAnimationFrame(loop);
+</script>
+</body>
+</html>
