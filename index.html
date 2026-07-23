@@ -188,6 +188,16 @@
   #mag { position:absolute; width:132px; height:132px; border-radius:50%;
     border:3px solid #e8e0c8; box-shadow:0 6px 18px #000b, inset 0 0 0 2px #0007;
     image-rendering:pixelated; pointer-events:none; z-index:50; display:none; }
+  /* בקרת זום צפה על המסך (כמו מפה) */
+  #zoomctl { position:absolute; left:8px; top:50%; transform:translateY(-50%); z-index:48;
+    display:flex; flex-direction:column; gap:5px; }
+  #zoomctl button { width:40px; height:40px; border-radius:10px; border:1px solid #3a4658;
+    background:rgba(16,22,32,.86); color:#e8eef7; font-size:20px; font-weight:800; line-height:1;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 3px 10px #0007; }
+  #zoomctl button:active { background:rgba(43,108,255,.5); }
+  #zoomctl #zpan.on { background:#2b6cff; border-color:#2b6cff; }
+  #zoomctl #zlvl { font-size:11px; font-weight:700; opacity:.85; text-align:center;
+    background:rgba(16,22,32,.86); border:1px solid #3a4658; border-radius:8px; padding:2px 0; }
   /* חלון מידע של פיקסל */
   #inspect { position:absolute; left:8px; right:8px; bottom:8px; z-index:46; display:none;
     background:rgba(12,16,24,.96); border:1px solid #3a4556; border-radius:12px;
@@ -215,6 +225,13 @@
     <div id="toast"></div>
     <canvas id="mag" width="132" height="132"></canvas>
     <div id="inspect"></div>
+    <div id="zoomctl">
+      <button id="zin" title="זום פנימה">＋</button>
+      <div id="zlvl">1×</div>
+      <button id="zout" title="זום החוצה">－</button>
+      <button id="zpan" title="תזוזה עם אצבע אחת">🖐</button>
+      <button id="zreset" title="חזרה לתצוגה מלאה">⛶</button>
+    </div>
     <div id="genOverlay"><div id="genTxt">🌋 יוצר עולם…</div><div id="genBar"><div id="genFill"></div></div></div>
 
     <!-- הגדרות -->
@@ -489,6 +506,26 @@ const buf = document.createElement('canvas');
 const bctx = buf.getContext('2d', { alpha:false });
 let SCALE = 5;   // גודל פיקסל (קטן יותר = רזולוציה גבוהה יותר, כל פיקסל קרוב יותר למולקולה)
 let W, H, grid, life, aux, temp, temp2, velX, velY, moved, img;
+// מצלמה: זום ומיקום. camZoom=1 → כל העולם נראה. camX/camY = פינת שמאל-עליון של החלון הנראה (בקואורדינטות רשת).
+let camZoom=1, camX=0, camY=0;
+const CAM_MAX=12;   // זום מרבי — כל פיקסל ענק, רואים כל תא בנפרד
+function clampCam(){
+  camZoom=Math.max(1, Math.min(CAM_MAX, camZoom));
+  const vw=W/camZoom, vh=H/camZoom;
+  camX=Math.max(0, Math.min(W-vw, camX));
+  camY=Math.max(0, Math.min(H-vh, camY));
+}
+// זום סביב נקודת-רשת מסוימת (fgx,fgy) — כך שהיא נשארת מתחת לאצבע/סמן בזמן הזום
+function setZoom(nz, fgx, fgy){
+  const vwOld=W/camZoom, vhOld=H/camZoom;
+  const fx=(fgx-camX)/vwOld, fy=(fgy-camY)/vhOld;
+  camZoom=Math.max(1, Math.min(CAM_MAX, nz));
+  const vw=W/camZoom, vh=H/camZoom;
+  camX=fgx - fx*vw; camY=fgy - fy*vh;
+  clampCam(); updateZoomLabel();
+}
+function zoomCenter(factor){ setZoom(camZoom*factor, camX+(W/camZoom)/2, camY+(H/camZoom)/2); if(paused) render(); updateZoomLabel(); }
+function updateZoomLabel(){ const el=document.getElementById('zlvl'); if(el) el.textContent=camZoom<1.05?'1×':(Math.round(camZoom*10)/10)+'×'; }
 
 function setup() {
   const stage = document.getElementById('stage');
@@ -509,6 +546,7 @@ function setup() {
   velX = new Float32Array(W*H);   // מהירות אופקית (תנע/פגיעות)
   velY = new Float32Array(W*H);   // מהירות אנכית (כובד)
   moved= new Uint8Array(W*H);     // סימון "כבר זז השנה" (למניעת עיבוד כפול של גז)
+  camZoom=1; camX=0; camY=0; updateZoomLabel();   // מאפסים מצלמה בכל בנייה מחדש של הרשת
 }
 const idx = (x,y) => y*W + x;
 const inB = (x,y) => x>=0 && x<W && y>=0 && y<H;
@@ -561,15 +599,19 @@ function render() {
     }
   }
   bctx.putImageData(img,0,0);
-  ctx.drawImage(buf,0,0,canvas.width,canvas.height);
+  // ציור עם מצלמה: לוקחים רק את החלון הנראה מהחוצץ (camX,camY,vw,vh) ומותחים אותו לכל הקנבס
+  const vw=W/camZoom, vh=H/camZoom;
+  ctx.drawImage(buf, camX, camY, vw, vh, 0,0, canvas.width, canvas.height);
   // רשת: מציירים כתבנית סורג (חצי מלא, חצי "חורים") במקום ריבוע אפור מלא — נראה כמו רשת אמיתית
   if (meshCells.length){
-    const cw=canvas.width/W, ch=canvas.height/H;
+    const cw=canvas.width/vw, ch=canvas.height/vh;   // גודל תא בפיקסלים על המסך (תלוי זום)
     for (let k=0;k<meshCells.length;k++){
       const i=meshCells[k], f=aux[i];
+      const gx=((i%W)-camX)*cw, gy=(((i/W)|0)-camY)*ch;
+      if (gx<-cw||gx>canvas.width||gy<-ch||gy>canvas.height) continue;   // מחוץ לחלון הנראה — דלג
       if (f){ const c=MAT[f].color; ctx.fillStyle='rgb('+c[0]+','+c[1]+','+c[2]+')'; }  // נוזל שעובר — נראה בחורי הרשת
       else ctx.fillStyle='#0a0d13';                                                     // חורים ריקים — כהה
-      const gx=(i%W)*cw, gy=((i/W)|0)*ch, hw=cw/2, hh=ch/2;
+      const hw=cw/2, hh=ch/2;
       ctx.fillRect(gx+hw, gy, cw-hw, hh);      // חור למעלה-ימין
       ctx.fillRect(gx, gy+hh, hw, ch-hh);      // חור למטה-שמאל
     }
@@ -1153,8 +1195,7 @@ function checkMissions(id){
 
 /* ===== קלט (כולל מברשות חום/קור) ===== */
 function paintAt(cx,cy){
-  const r=canvas.getBoundingClientRect();
-  const gx=Math.floor((cx-r.left)/r.width*W), gy=Math.floor((cy-r.top)/r.height*H);
+  const [gx,gy]=toGrid(cx,cy);
   if (current==='inspect'){ inspectAt(gx,gy,cx,cy); return; }   // זכוכית מגדלת
   if (current==='hand'){ holdX=gx; holdY=gy; return; }          // היד רק עוקבת — תפיסה/שחרור ב-down/up
   if (current==='beaker'||current==='flask'||current==='tube'){ stampVessel(gx,gy,current); painting=false; return; }
@@ -1174,8 +1215,11 @@ function paintAt(cx,cy){
   }
 }
 function pos(e){ const t=e.touches?e.touches[0]:e; return [t.clientX,t.clientY]; }
-function toGrid(cx,cy){ const r=canvas.getBoundingClientRect();
-  return [Math.floor((cx-r.left)/r.width*W), Math.floor((cy-r.top)/r.height*H)]; }
+// המרה ממסך לרשת — מתחשבת במצלמה (זום+מיקום)
+function toGridF(cx,cy){ const r=canvas.getBoundingClientRect();
+  const vw=W/camZoom, vh=H/camZoom;
+  return [camX + (cx-r.left)/r.width*vw, camY + (cy-r.top)/r.height*vh]; }
+function toGrid(cx,cy){ const [fx,fy]=toGridF(cx,cy); return [Math.floor(fx), Math.floor(fy)]; }
 // כלי זכוכית: מטביע כלי (בקר/בקבוקון/מבחנה) בנוי מזכוכית — צריך שגילית זכוכית קודם
 function stampVessel(gx,gy,kind){
   if (!found[GLASS]){ toast('קודם גלה 🔮 זכוכית! (חמם חול)'); return; }
@@ -1221,22 +1265,73 @@ function dropHand(){
   }
   held=null;
 }
-function down(e){ e.preventDefault(); painting=true; [ptx,pty]=pos(e);
+let panMode=false;         // מצב תזוזה: אצבע אחת מזיזה את התצוגה במקום לצייר
+let panning=false, pinch=null;
+// מצב צביטה (שתי אצבעות): מרכז + מרחק בין האצבעות
+function midDist(e){
+  const t0=e.touches[0], t1=e.touches[1];
+  return { mx:(t0.clientX+t1.clientX)/2, my:(t0.clientY+t1.clientY)/2,
+           d:Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY) };
+}
+function down(e){ e.preventDefault();
+  // מצב תזוזה עם אצבע אחת — מזיז את המצלמה במקום לצייר
+  if (panMode){ panning=true; [ptx,pty]=pos(e); return; }
+  painting=true; [ptx,pty]=pos(e);
   if (current==='hand'){ const [gx,gy]=toGrid(ptx,pty); if(!held) grabHand(gx,gy); else { holdX=gx; holdY=gy; } return; }
   paintAt(ptx,pty); }
-function move(e){ if(!painting) return; e.preventDefault(); const [x,y]=pos(e);
+function move(e){ e.preventDefault();
+  const [x,y]=pos(e);
+  if (panning){                       // תזוזה: מזיזים את המצלמה לפי תנועת האצבע (הפוך — כמו לגרור מפה)
+    const r=canvas.getBoundingClientRect(), vw=W/camZoom, vh=H/camZoom;
+    camX -= (x-ptx)/r.width*vw; camY -= (y-pty)/r.height*vh; clampCam();
+    ptx=x; pty=y; if(paused) render(); return;
+  }
+  if (!painting) return;
   const steps=Math.max(1,Math.hypot(x-ptx,y-pty)/3);
   for (let s=0;s<=steps;s++) paintAt(ptx+(x-ptx)*s/steps, pty+(y-pty)*s/steps);
   ptx=x; pty=y; }
-function up(){ painting=false;
+function up(){ painting=false; panning=false;
   if (current==='hand' && held) dropHand();
   if (current==='inspect') document.getElementById('mag').style.display='none'; }
-canvas.addEventListener('touchstart',down,{passive:false});
-canvas.addEventListener('touchmove', move,{passive:false});
-canvas.addEventListener('touchend',  up);
+// --- מגע: שתי אצבעות = צביטה לזום + גרירה. אצבע אחת = ציור/תזוזה רגילים ---
+function touchStart(e){
+  if (e.touches.length>=2){ e.preventDefault(); painting=false; panning=false;
+    const m=midDist(e); const [fgx,fgy]=toGridF(m.mx,m.my);
+    pinch={startD:m.d, startZoom:camZoom, fgx, fgy}; return; }
+  down(e);
+}
+function touchMove(e){
+  if (pinch && e.touches.length>=2){ e.preventDefault();
+    const m=midDist(e);
+    camZoom=Math.max(1, Math.min(CAM_MAX, pinch.startZoom * m.d/Math.max(1,pinch.startD)));
+    const r=canvas.getBoundingClientRect(), vw=W/camZoom, vh=H/camZoom;
+    const fracX=(m.mx-r.left)/r.width, fracY=(m.my-r.top)/r.height;
+    camX=pinch.fgx - fracX*vw; camY=pinch.fgy - fracY*vh; clampCam();
+    updateZoomLabel(); if(paused) render(); return;
+  }
+  move(e);
+}
+function touchEnd(e){
+  if (pinch){ if(e.touches.length<2) pinch=null; return; }
+  up(e);
+}
+canvas.addEventListener('touchstart',touchStart,{passive:false});
+canvas.addEventListener('touchmove', touchMove,{passive:false});
+canvas.addEventListener('touchend',  touchEnd);
 canvas.addEventListener('mousedown', down);
 canvas.addEventListener('mousemove', move);
 window.addEventListener('mouseup',   up);
+// גלגלת עכבר (מחשב) — זום סביב הסמן
+canvas.addEventListener('wheel', e=>{ e.preventDefault();
+  const [fgx,fgy]=toGridF(e.clientX,e.clientY);
+  setZoom(camZoom*(e.deltaY<0?1.15:1/1.15), fgx, fgy); updateZoomLabel(); if(paused) render();
+}, {passive:false});
+// בקרת הזום הצפה
+document.getElementById('zin').onclick   = ()=> zoomCenter(1.4);
+document.getElementById('zout').onclick  = ()=> zoomCenter(1/1.4);
+document.getElementById('zreset').onclick= ()=>{ camZoom=1; camX=0; camY=0; updateZoomLabel(); if(paused) render(); };
+document.getElementById('zpan').onclick  = function(){ panMode=!panMode; this.classList.toggle('on',panMode);
+  if(panMode) toast('🖐 מצב תזוזה — גרור עם אצבע אחת כדי לשוטט'); };
 
 /* ===== לוח החומרים + בחירה ===== */
 const matsEl = document.getElementById('materials');
@@ -1574,6 +1669,7 @@ function discoverAllPresent(){
 let genBusy=false;
 async function generateWorld(){
   if (genBusy) return; genBusy=true; paused=true;
+  camZoom=1; camX=0; camY=0; updateZoomLabel();   // תצוגה מלאה של העולם החדש
   genOverlayShow('🌋 מעצב את פני השטח…');
   await new Promise(r=>requestAnimationFrame(r));
 
