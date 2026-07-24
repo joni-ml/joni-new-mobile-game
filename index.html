@@ -1039,6 +1039,14 @@ function reactWater(x,y,i){
   for (const [dx,dy] of NEI4){
     const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
     const j=idx(nx,ny), n=grid[j];
+    // מגע ישיר במשהו לוהט (אש/לבה/מתכת מותכת/כל תא חם מ-150°) → המים רותחים מיד ל-💨 אדים גלויים,
+    // וגוזלים ממנו חום (כך אש נכבית ליד מים, ולבה מתקררת לבזלת). ככה רואים אדים אמיתיים!
+    if (n!==AIR && n!==WATER && n!==STEAM && n!==CLOUD && n!==ICE && n!==WALL && temp[j] >= 150){
+      grid[i]=STEAM; life[i]=MAT[STEAM].life; temp[i]=110; velX[i]=0; velY[i]=0; discover(STEAM);
+      temp[j] -= 55;                 // המים מקררים את הלוהט
+      if (n===FIRE) { grid[j]=aux[j]?STEAM:AIR; temp[j]=Math.min(temp[j],95); life[j]=0; aux[j]=0; }  // אש נכבית במים
+      return true;
+    }
     if (n===EARTH && Math.random()<0.22){ setCell(j,MUD); grid[i]=AIR; life[i]=0; velX[i]=0; velY[i]=0; return true; } // המים נספגים — נצרכים
     else if (n===STONE && Math.random()<0.0016){ setCell(j,SAND); }
   }
