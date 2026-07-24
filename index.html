@@ -258,6 +258,11 @@
         <input type="range" id="setMaxSpeed" min="1" max="12" value="3" style="width:100%">
       </div>
       <div class="stog" style="flex-direction:column; align-items:stretch; gap:8px">
+        <div>🌡️ רדיוס שכני-חום: <b id="hradVal">1</b></div>
+        <input type="range" id="setHrad" min="1" max="4" value="1" style="width:100%">
+        <div style="font-size:11px; opacity:.6">כמה רחוק החום מתפזר בכל צעד. גדול = מציאותי יותר אבל כבד יותר.</div>
+      </div>
+      <div class="stog" style="flex-direction:column; align-items:stretch; gap:8px">
         <label style="display:flex; align-items:center; gap:8px; font-size:14.5px; cursor:pointer">
           <input type="checkbox" id="setClimate" style="width:22px;height:22px;accent-color:#5ec27a">
           🌡️ אקלים עולם פעיל (שמש מחממת ביום, לילה מקרר, חום מליבת כדור הארץ)
@@ -747,6 +752,20 @@ function applySunAndCore(){
   }
 }
 /* ===== חום: הולכה, איבוד לסביבה (רק ממשטחים חשופים), ומעברי פאזה ===== */
+// רדיוס שכני-חום: כמה רחוק כל תא "מרגיש" חום. 1 = 4 השכנים הקרובים (מהיר).
+// גדול יותר = החום מתפזר על פני יותר תאים בכל צעד (מציאותי יותר אך כבד יותר).
+// המשקלים גאוסיאניים ומנורמלים לסכום 4 — כך שהעוצמה זהה לבסיס וההולכה נשארת יציבה נומרית.
+let heatRadius=1, heatNB=null;
+function buildHeatNB(R){
+  if (R<=1){ heatNB=null; return; }
+  const nb=[]; let sum=0; const sig=Math.max(R*0.6,0.6);
+  for(let dy=-R;dy<=R;dy++) for(let dx=-R;dx<=R;dx++){
+    if(dx===0&&dy===0) continue; const r2=dx*dx+dy*dy; if(r2>R*R+0.001) continue;
+    const w=Math.exp(-r2/(2*sig*sig)); nb.push({dx,dy,w}); sum+=w;
+  }
+  for(const n of nb) n.w = n.w/sum*4;   // Σw = 4 (כמו 4 שכנים במשקל 1)
+  heatNB=nb;
+}
 function thermal(){
   for (let y=0;y<H;y++) for (let x=0;x<W;x++){
     const i=idx(x,y), id=grid[i], ci=cond[id], t=temp[i];
@@ -757,16 +776,21 @@ function thermal(){
       let cf=(noHeatLoss && g===AIR)?0:Math.min(ci,cond[g]);
       if(g===MESH) cf*=0.95;
       return cf*(temp[j]-t); };
-    if (x>0)   acc+=flow(i-1);
-    if (x<W-1) acc+=flow(i+1);
-    if (y>0)   acc+=flow(i-W);
-    if (y<H-1) acc+=flow(i+W);
+    if (heatNB){                              // רדיוס מורחב — לולאה על כל השכנים במשקל
+      for(const nb of heatNB){ const nx=x+nb.dx, ny=y+nb.dy; if(!inB(nx,ny)) continue;
+        acc += nb.w * flow(idx(nx,ny)); }
+    } else {                                  // רדיוס 1 — 4 שכנים (מהיר, זהה למקור)
+      if (x>0)   acc+=flow(i-1);
+      if (x<W-1) acc+=flow(i+1);
+      if (y>0)   acc+=flow(i-W);
+      if (y<H-1) acc+=flow(i+W);
+    }
     // קיבול חום סגולי: אותה כמות אנרגיה משנה טמפרטורה פחות בחומר עם קיבול גבוה (מים) ויותר בנמוך (מתכת).
     // clamp ל-0.7 לשמירה על יציבות נומרית של סכמת ההולכה המפורשת.
     const hf = Math.min(0.7, 0.5/heatCap[id]);
     let nt = t + hf*acc;
     // איבוד חום קורה רק ממשטחים חשופים לאוויר. חומר סגור בקירות (0 שכני אוויר) לא מתקרר!
-    if (!noHeatLoss && airN>0) nt += (AMB - nt) * radi[id] * airN * 0.25;
+    if (!noHeatLoss && airN>0) nt += (AMB - nt) * radi[id] * Math.min(airN,4) * 0.25;
     temp2[i]=nt;
   }
   const s=temp; temp=temp2; temp2=s;
@@ -855,6 +879,12 @@ function reactPlantPart(x,y,i,id){
     for(const [dx,dy] of NEI4){ const nx=x+dx,ny=y+dy; if(!inB(nx,ny))continue;
       const n=grid[idx(nx,ny)]; if(n===WOOD||n===LEAF||n===FLOWER||n===SPROUT){ att=true; break; } }
     if(!att && y+1<H && canSink(id,grid[idx(x,y+1)])){ swap(i,idx(x,y+1)); return true; }
+  }
+  // פוטוסינתזה: עלה חשוף לאוויר (אור) הופך מדי פעם אוויר סמוך ל-🫧 חמצן — בדיוק כמו שהחיים
+  // מייצרים את החמצן של כדור הארץ. עובד רק אם גילית כבר חמצן (אחרת סתם ישחרר גז לא מוכר).
+  if(id===LEAF && found[OXYGEN] && temp[i]>2 && temp[i]<60 && Math.random()<0.02){
+    for(const [dx,dy] of NEI4){ const nx=x+dx,ny=y+dy; if(!inB(nx,ny))continue;
+      const j=idx(nx,ny); if(grid[j]===AIR){ grid[j]=OXYGEN; life[j]=MAT[OXYGEN].life; temp[j]=temp[i]; break; } }
   }
   if(id===FLOWER) return reactFlowerSeed(x,y,i);
   return true;
@@ -1739,6 +1769,7 @@ document.getElementById('setGrav').onchange=e=>plantGrav=e.target.checked;
 document.getElementById('setBorder').onchange=e=>{ borderWalls=e.target.checked; if(borderWalls)applyBorder(); else clearBorder(); };
 document.getElementById('setNoLoss').onchange=e=>{ noHeatLoss=e.target.checked; };
 document.getElementById('setMaxSpeed').oninput=e=>{ maxSteps=+e.target.value; document.getElementById('maxSpeedVal').textContent=maxSteps; };
+document.getElementById('setHrad').oninput=e=>{ heatRadius=+e.target.value; document.getElementById('hradVal').textContent=heatRadius; buildHeatNB(heatRadius); };
 function todLabel(m){ const h=Math.floor(m/60), mm=m%60; return (h<10?'0':'')+h+':'+(mm<10?'0':'')+mm; }
 document.getElementById('setTod').oninput=e=>{ timeOfDay=+e.target.value; document.getElementById('todVal').textContent=todLabel(timeOfDay); };
 document.getElementById('setAutoDay').onchange=e=>{ autoDay=e.target.checked; };
