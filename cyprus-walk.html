@@ -103,6 +103,9 @@ function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a
 var canvas=document.getElementById('stage');
 var gl=canvas.getContext('webgl',{antialias:true,alpha:false})||canvas.getContext('experimental-webgl',{antialias:true});
 if(!gl){document.body.innerHTML='<p style="padding:20px;font-family:sans-serif">הדפדפן לא תומך ב-WebGL.</p>';return;}
+// 32-bit indices so a whole grove fits in one buffer
+var uintExt=gl.getExtension('OES_element_index_uint');
+var IDX=uintExt?Uint32Array:Uint16Array, ITYPE=uintExt?gl.UNSIGNED_INT:gl.UNSIGNED_SHORT, MAXV=uintExt?4000000:60000;
 function compile(t,s){var sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);
   if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(sh);return sh;}
 function prog(v,f){var p=gl.createProgram();gl.attachShader(p,compile(gl.VERTEX_SHADER,v));
@@ -192,7 +195,7 @@ ColMesh.prototype.vert=function(p,nr,c){this.v.push(p[0],p[1],p[2],nr[0],nr[1],n
 ColMesh.prototype.tri=function(a,b,c){this.i.push(a,b,c);};
 ColMesh.prototype.upload=function(){this.vbo=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,this.vbo);
   gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(this.v),gl.STATIC_DRAW);this.ibo=gl.createBuffer();
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.ibo);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(this.i),gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.ibo);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new IDX(this.i),gl.STATIC_DRAW);
   this.count=this.i.length;this.v=this.i=null;};
 ColMesh.prototype.bind=function(){gl.bindBuffer(gl.ARRAY_BUFFER,this.vbo);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.ibo);
   gl.enableVertexAttribArray(sA.pos);gl.vertexAttribPointer(sA.pos,3,gl.FLOAT,false,36,0);
@@ -214,6 +217,10 @@ var rng=mulberry32(20240811);
 function rr(a,b){return a+(b-a)*rng();}
 // age 0 (youngest, thin twigs) .. 1 (oldest, thick base ~50yr) from branch radius
 function ageOf(r){var a=(r-0.045)/(0.60-0.045);return a<0?0:(a>1?1:Math.pow(a,0.85));}
+// per-tree placement transform (local tree space -> world): scale, yaw about Y, translate
+var TF={ox:0,oz:0,yaw:0,s:1,c:1,sn:0};
+function tfPos(p){var x=p[0]*TF.s,y=p[1]*TF.s,z=p[2]*TF.s;return [TF.c*x+TF.sn*z+TF.ox, y, -TF.sn*x+TF.c*z+TF.oz];}
+function tfNrm(n){return [TF.c*n[0]+TF.sn*n[2], n[1], -TF.sn*n[0]+TF.c*n[2]];}
 
 // ---------- floor (white block) ----------
 (function(){var S=140,y=0,c=[0.925,0.925,0.895],up=[0,1,0];
@@ -255,7 +262,7 @@ function buildTrunk(){
       var pos=[center[0]+radial[0]*rr2, y, center[2]+radial[2]*rr2];
       // normal approx radial (slightly outward-up)
       var nrm=norm([radial[0],0.12,radial[2]]);
-      ring.push(bark.vert(pos,nrm,[s/segs, y], ringAge));
+      ring.push(bark.vert(tfPos(pos),tfNrm(nrm),[s/segs, y], ringAge));
     }
     rings.push(ring);
     prevCenter=center;
@@ -270,20 +277,20 @@ function buildTrunk(){
 
 // bark branch segment
 function barkCyl(A,B,r0,r1,segs){
-  var axis=sub(B,A),L=len(axis);if(L<1e-5)return;if(bark.n+(segs+1)*2>65000)return;axis=scl(axis,1/L);
+  var axis=sub(B,A),L=len(axis);if(L<1e-5)return;if(bark.n+(segs+1)*2>MAXV)return;axis=scl(axis,1/L);
   var b=orthoBasis(axis),bx=b[0],by=b[1],r0v=[],r1v=[];
   var age0=ageOf(r0),age1=ageOf(r1);
   for(var s=0;s<=segs;s++){var a=s/segs*Math.PI*2,ca=Math.cos(a),sa=Math.sin(a);
     var rad=norm([bx[0]*ca+by[0]*sa,bx[1]*ca+by[1]*sa,bx[2]*ca+by[2]*sa]);
-    r0v.push(bark.vert(add(A,scl(rad,r0)),rad,[s/segs,A[1]],age0));
-    r1v.push(bark.vert(add(B,scl(rad,r1)),rad,[s/segs,B[1]],age1));}
+    r0v.push(bark.vert(tfPos(add(A,scl(rad,r0))),tfNrm(rad),[s/segs,A[1]],age0));
+    r1v.push(bark.vert(tfPos(add(B,scl(rad,r1))),tfNrm(rad),[s/segs,B[1]],age1));}
   for(var s2=0;s2<segs;s2++){bark.tri(r0v[s2],r1v[s2],r1v[s2+1]);bark.tri(r0v[s2],r1v[s2+1],r0v[s2+1]);}
 }
 
 // ---------- individual leaves (leaf-cards grouped into clusters) ----------
 function leafGroup(center,scale,count){
   for(var i=0;i<count;i++){
-    if(leaves.n>62000)return;
+    if(leaves.n>MAXV)return;
     var dir=norm([rr(-1,1),rr(-1,1),rr(-1,1)]);dir=norm([dir[0],dir[1]+0.25,dir[2]]);
     var off=scl(norm([rr(-1,1),rr(-0.6,1),rr(-1,1)]),rr(0,0.95)*scale);
     var b=add(center,off);
@@ -298,7 +305,8 @@ function leafGroup(center,scale,count){
     var tip=add(b,scl(dir,L));
     var s1=add(add(b,scl(dir,L*0.45)),scl(perp,W));
     var s2=add(add(b,scl(dir,L*0.45)),scl(perp,-W));
-    var vb=leaves.vert(b,n,baseC), v1=leaves.vert(s1,n,mid), v2=leaves.vert(s2,n,mid), vt=leaves.vert(tip,n,tipC);
+    var tn=tfNrm(n);
+    var vb=leaves.vert(tfPos(b),tn,baseC), v1=leaves.vert(tfPos(s1),tn,mid), v2=leaves.vert(tfPos(s2),tn,mid), vt=leaves.vert(tfPos(tip),tn,tipC);
     leaves.tri(vb,v1,vt);leaves.tri(vb,vt,v2);
   }
 }
@@ -323,22 +331,47 @@ function branch(base,dir,length,radius,depth){
     var nd2=norm(add(scl(dir,Math.cos(sp2)),scl(ov2,Math.sin(sp2))));nd2=norm([nd2[0],nd2[1]+0.08,nd2[2]]);
     branch(end,nd2,length*rr(0.55,0.7),radius*rr(0.5,0.62),depth-2);}
 }
-var trunkTop=buildTrunk();
-// a few primary limbs off the trunk top
-(function(){var n=4;for(var i=0;i<n;i++){
-  var a=i/n*Math.PI*2+rr(-0.3,0.3),sp=rr(0.35,0.6);
-  var dir=norm([Math.cos(a)*Math.sin(sp),Math.cos(sp),Math.sin(a)*Math.sin(sp)]);
-  dir=norm([dir[0],dir[1]+0.3,dir[2]]);
-  branch(trunkTop.top,dir,rr(3.4,4.2),rr(0.28,0.36),6);}
-  branch(trunkTop.top,[0.03,1,0.02],4.2,0.30,6);})();
+function addShadow(){var R=8.5,seg=40,y=0.02;
+  var c=shadowM.vert(tfPos([0,y,0]),[0,1,0],[1,0,0]),rim=[];
+  for(var s=0;s<=seg;s++){var a=s/seg*Math.PI*2;rim.push(shadowM.vert(tfPos([Math.cos(a)*R,y,Math.sin(a)*R*0.9]),[0,1,0],[0,0,0]));}
+  for(var s2=0;s2<seg;s2++)shadowM.tri(c,rim[s2],rim[s2+1]);}
 
-// ---------- soft shadow ----------
-(function(){var R=8.5,seg=44,y=0.02;
-  var c=shadowM.vert([0,y,0],[0,1,0],[1,0,0]),rim=[];
-  for(var s=0;s<=seg;s++){var a=s/seg*Math.PI*2;rim.push(shadowM.vert([Math.cos(a)*R,y,Math.sin(a)*R*0.9],[0,1,0],[0,0,0]));}
-  for(var s2=0;s2<seg;s2++)shadowM.tri(c,rim[s2],rim[s2+1]);})();
+// build one whole tree (trunk + limbs + leaves + shadow) at a placement
+function buildTree(ox,oz,yaw,scale,seed){
+  rng=mulberry32(seed);
+  TF={ox:ox,oz:oz,yaw:yaw,s:scale,c:Math.cos(yaw),sn:Math.sin(yaw)};
+  var top=buildTrunk().top;
+  var n=4;
+  for(var i=0;i<n;i++){
+    var a=i/n*Math.PI*2+rr(-0.3,0.3),sp=rr(0.35,0.6);
+    var dir=norm([Math.cos(a)*Math.sin(sp),Math.cos(sp),Math.sin(a)*Math.sin(sp)]);
+    dir=norm([dir[0],dir[1]+0.3,dir[2]]);
+    branch(top,dir,rr(3.4,4.2),rr(0.28,0.36),6);
+  }
+  branch(top,[0.03,1,0.02],4.2,0.30,6);
+  addShadow();
+}
+
+// ---------- a grove of 10 trees ----------
+(function(){
+  var place=mulberry32(90125);
+  function pr(a,b){return a+(b-a)*place();}
+  var spots=[[0,0,1.05]];                                   // hero tree at origin
+  var rings=[[16,4],[31,5]];                                // (radius, count) rings -> 10 trees total
+  for(var r=0;r<rings.length;r++){var rad=rings[r][0],cnt=rings[r][1];
+    for(var i=0;i<cnt;i++){
+      var ang=i/cnt*Math.PI*2 + pr(-0.5,0.5) + r*0.6;
+      var d=rad+pr(-5,6);
+      spots.push([Math.cos(ang)*d, Math.sin(ang)*d, pr(0.78,1.25)]);
+    }
+  }
+  for(var t=0;t<spots.length;t++){
+    buildTree(spots[t][0], spots[t][1], pr(0,Math.PI*2), spots[t][2], (t+1)*1337+7);
+  }
+})();
 
 bark.upload();leaves.upload();floorM.upload();shadowM.upload();
+try{console.log('grove verts — bark:',bark.count,'leaf idx:',leaves.count,'uint:',!!uintExt);}catch(e){}
 
 // ---------- camera & controls ----------
 var cam={pos:[0,1.75,20],yaw:0,pitch:0.10};
@@ -412,19 +445,19 @@ function frame(now){
   gl.uniformMatrix4fv(sU.proj,false,fp);gl.uniformMatrix4fv(sU.view,false,fv);
   gl.uniform3fv(sU.cam,cam.pos);gl.uniform3fv(sU.sun,SUN);gl.uniform3fv(sU.sky,SKY_AMB);gl.uniform3fv(sU.horizon,HORIZON);
   gl.uniform1f(sU.opacity,1.0);
-  gl.uniform1i(sU.mode,1);floorM.bind();gl.drawElements(gl.TRIANGLES,floorM.count,gl.UNSIGNED_SHORT,0);
+  gl.uniform1i(sU.mode,1);floorM.bind();gl.drawElements(gl.TRIANGLES,floorM.count,ITYPE,0);
   gl.uniform1i(sU.mode,2);gl.uniform1f(sU.opacity,0.34);gl.enable(gl.BLEND);
   gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);gl.disable(gl.CULL_FACE);
-  shadowM.bind();gl.drawElements(gl.TRIANGLES,shadowM.count,gl.UNSIGNED_SHORT,0);
+  shadowM.bind();gl.drawElements(gl.TRIANGLES,shadowM.count,ITYPE,0);
   gl.depthMask(true);gl.disable(gl.BLEND);
   // bark (bark program) — double-sided so a wrong-facing triangle never shows the back wall
   gl.disable(gl.CULL_FACE);gl.useProgram(bp);
   gl.uniformMatrix4fv(bU.proj,false,fp);gl.uniformMatrix4fv(bU.view,false,fv);
   gl.uniform3fv(bU.cam,cam.pos);gl.uniform3fv(bU.sun,SUN);gl.uniform3fv(bU.sky,SKY_AMB);gl.uniform3fv(bU.horizon,HORIZON);
-  bark.bind();gl.drawElements(gl.TRIANGLES,bark.count,gl.UNSIGNED_SHORT,0);
+  bark.bind();gl.drawElements(gl.TRIANGLES,bark.count,ITYPE,0);
   // leaves (double-sided)
   gl.useProgram(sp);gl.disable(gl.CULL_FACE);gl.uniform1i(sU.mode,0);
-  leaves.bind();gl.drawElements(gl.TRIANGLES,leaves.count,gl.UNSIGNED_SHORT,0);gl.enable(gl.CULL_FACE);
+  leaves.bind();gl.drawElements(gl.TRIANGLES,leaves.count,ITYPE,0);gl.enable(gl.CULL_FACE);
   requestAnimationFrame(frame);
 }
 resize();drawSpeed();requestAnimationFrame(frame);
