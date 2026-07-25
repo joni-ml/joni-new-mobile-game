@@ -133,11 +133,12 @@ var sU={proj:gl.getUniformLocation(sp,'uProj'),view:gl.getUniformLocation(sp,'uV
   sun:gl.getUniformLocation(sp,'uSun'),horizon:gl.getUniformLocation(sp,'uHorizon'),sky:gl.getUniformLocation(sp,'uSky'),
   mode:gl.getUniformLocation(sp,'uMode'),opacity:gl.getUniformLocation(sp,'uOpacity')};
 
-// bark program — procedural aged bark, interleaved pos,nrm,uv
+// bark program — procedural bark that ages along the tree (young reddish -> old grey & cracking)
 var bp=prog(
- 'attribute vec3 aPos;attribute vec3 aNrm;attribute vec2 aUV;uniform mat4 uProj,uView;'+
- 'varying vec3 vN,vW;varying vec2 vUV;void main(){vW=aPos;vN=aNrm;vUV=aUV;gl_Position=uProj*uView*vec4(aPos,1.0);}',
- ['precision highp float;varying vec3 vN,vW;varying vec2 vUV;',
+ 'attribute vec3 aPos;attribute vec3 aNrm;attribute vec2 aUV;attribute float aAge;uniform mat4 uProj,uView;'+
+ 'varying vec3 vN,vW;varying vec2 vUV;varying float vAge;'+
+ 'void main(){vW=aPos;vN=aNrm;vUV=aUV;vAge=aAge;gl_Position=uProj*uView*vec4(aPos,1.0);}',
+ ['precision highp float;varying vec3 vN,vW;varying vec2 vUV;varying float vAge;',
   'uniform vec3 uCam,uSun,uHorizon,uSky;',
   'float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
   'float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);',
@@ -145,25 +146,28 @@ var bp=prog(
   ' return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);}',
   'float fbm(vec2 p){float s=0.,a=.5;for(int k=0;k<4;k++){s+=a*vnoise(p);p*=2.02;a*=.5;}return s;}',
   'void main(){',
-  ' vec3 N=normalize(vN);',
-  ' float u=vUV.x, v=vUV.y;',
-  ' float warp=fbm(vec2(u*10.0,v*0.6))*1.4;',
-  ' float fr=fract(u*14.0+warp+fbm(vec2(u*3.0,v*3.0))*1.2);',
-  ' float groove=smoothstep(0.0,0.5,abs(fr-0.5)*2.0);',          // thin dark furrows, light ridges
-  ' float plates=smoothstep(0.30,0.65,fbm(vec2(u*8.0,v*2.0)));', // bark plate breaks
-  ' float detail=fbm(vec2(u*26.0,v*9.0));',
-  ' float lite=clamp(groove*0.70+plates*0.18+detail*0.28,0.0,1.0);',
-  ' float age=clamp(v/11.0,0.0,1.0);',                           // silvery higher up (as in photo)
-  ' vec3 furrow=mix(vec3(0.20,0.15,0.11),vec3(0.34,0.32,0.29),age);',
-  ' vec3 crest=mix(vec3(0.50,0.41,0.31),vec3(0.80,0.78,0.72),age);',
+  ' vec3 N=normalize(vN);if(!gl_FrontFacing)N=-N;',              // solid on any facing (no see-through)
+  ' float u=vUV.x, v=vUV.y, age=clamp(vAge,0.0,1.0);',
+  ' float warp=fbm(vec2(u*10.0,v*0.6))*(0.7+age*1.3);',
+  ' float fr=fract(u*(6.0+age*12.0)+warp+fbm(vec2(u*3.0,v*3.0))*1.2);',
+  ' float ridged=abs(fr-0.5)*2.0;',
+  ' float groove=smoothstep(0.0,mix(0.20,0.64,age),ridged);',    // furrows deepen & widen with age
+  ' float plate=fbm(vec2(u*7.0,v*2.3));',
+  ' float breakup=smoothstep(mix(0.66,0.40,age),0.32,plate);',   // old bark splits into plates / gaps
+  ' float detail=fbm(vec2(u*27.0,v*9.0));',
+  ' float lite=clamp(groove*0.72+detail*0.24,0.0,1.0);',
+  ' vec3 youngF=vec3(0.30,0.12,0.08), youngC=vec3(0.68,0.35,0.23);', // year 1: reddish young bark
+  ' vec3 oldF=vec3(0.12,0.11,0.10),  oldC=vec3(0.64,0.62,0.57);',   // ~50 yrs: grey, silvered
+  ' vec3 furrow=mix(youngF,oldF,age), crest=mix(youngC,oldC,age);',
   ' vec3 base=mix(furrow,crest,lite);',
+  ' base*=(1.0-breakup*(0.35+age*0.55));',                       // dark fissures where it breaks apart
   ' float ndl=max(dot(N,uSun),0.0);float hemi=0.5+0.5*N.y;',
   ' vec3 ambient=mix(vec3(0.42,0.43,0.40),uSky*0.9,hemi);',
   ' vec3 col=base*(ambient+vec3(1.0,0.95,0.84)*ndl*0.80)+base*0.12;',
   ' float fog=1.0-exp(-length(vW-uCam)*0.0065);',
   ' col=mix(col,uHorizon,clamp(fog,0.0,0.82));',
   ' gl_FragColor=vec4(col,1.0);}'].join('\n'));
-var bA={pos:gl.getAttribLocation(bp,'aPos'),nrm:gl.getAttribLocation(bp,'aNrm'),uv:gl.getAttribLocation(bp,'aUV')};
+var bA={pos:gl.getAttribLocation(bp,'aPos'),nrm:gl.getAttribLocation(bp,'aNrm'),uv:gl.getAttribLocation(bp,'aUV'),age:gl.getAttribLocation(bp,'aAge')};
 var bU={proj:gl.getUniformLocation(bp,'uProj'),view:gl.getUniformLocation(bp,'uView'),cam:gl.getUniformLocation(bp,'uCam'),
   sun:gl.getUniformLocation(bp,'uSun'),horizon:gl.getUniformLocation(bp,'uHorizon'),sky:gl.getUniformLocation(bp,'uSky')};
 
@@ -196,17 +200,20 @@ ColMesh.prototype.bind=function(){gl.bindBuffer(gl.ARRAY_BUFFER,this.vbo);gl.bin
   gl.enableVertexAttribArray(sA.col);gl.vertexAttribPointer(sA.col,3,gl.FLOAT,false,36,24);};
 
 function BarkMesh(){this.v=[];this.i=[];this.n=0;}
-BarkMesh.prototype.vert=function(p,nr,uv){this.v.push(p[0],p[1],p[2],nr[0],nr[1],nr[2],uv[0],uv[1]);return this.n++;};
+BarkMesh.prototype.vert=function(p,nr,uv,age){this.v.push(p[0],p[1],p[2],nr[0],nr[1],nr[2],uv[0],uv[1],age);return this.n++;};
 BarkMesh.prototype.tri=function(a,b,c){this.i.push(a,b,c);};
 BarkMesh.prototype.upload=ColMesh.prototype.upload;
 BarkMesh.prototype.bind=function(){gl.bindBuffer(gl.ARRAY_BUFFER,this.vbo);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.ibo);
-  gl.enableVertexAttribArray(bA.pos);gl.vertexAttribPointer(bA.pos,3,gl.FLOAT,false,32,0);
-  gl.enableVertexAttribArray(bA.nrm);gl.vertexAttribPointer(bA.nrm,3,gl.FLOAT,false,32,12);
-  gl.enableVertexAttribArray(bA.uv);gl.vertexAttribPointer(bA.uv,2,gl.FLOAT,false,32,24);};
+  gl.enableVertexAttribArray(bA.pos);gl.vertexAttribPointer(bA.pos,3,gl.FLOAT,false,36,0);
+  gl.enableVertexAttribArray(bA.nrm);gl.vertexAttribPointer(bA.nrm,3,gl.FLOAT,false,36,12);
+  gl.enableVertexAttribArray(bA.uv);gl.vertexAttribPointer(bA.uv,2,gl.FLOAT,false,36,24);
+  gl.enableVertexAttribArray(bA.age);gl.vertexAttribPointer(bA.age,1,gl.FLOAT,false,36,32);};
 
 var bark=new BarkMesh(),leaves=new ColMesh(),floorM=new ColMesh(),shadowM=new ColMesh();
 var rng=mulberry32(20240811);
 function rr(a,b){return a+(b-a)*rng();}
+// age 0 (youngest, thin twigs) .. 1 (oldest, thick base ~50yr) from branch radius
+function ageOf(r){var a=(r-0.045)/(0.60-0.045);return a<0?0:(a>1?1:Math.pow(a,0.85));}
 
 // ---------- floor (white block) ----------
 (function(){var S=140,y=0,c=[0.925,0.925,0.895],up=[0,1,0];
@@ -234,6 +241,7 @@ function buildTrunk(){
     var cz=Math.cos(t*1.3)*0.20*t - 0.10*t;
     var center=[cx,y,cz];
     var r=baseR*(1-t*0.55) + 0.02;
+    var ringAge=ageOf(r);
     var ring=[];
     for(var s=0;s<=segs;s++){
       var a=s/segs*Math.PI*2;
@@ -247,7 +255,7 @@ function buildTrunk(){
       var pos=[center[0]+radial[0]*rr2, y, center[2]+radial[2]*rr2];
       // normal approx radial (slightly outward-up)
       var nrm=norm([radial[0],0.12,radial[2]]);
-      ring.push(bark.vert(pos,nrm,[s/segs, y]));
+      ring.push(bark.vert(pos,nrm,[s/segs, y], ringAge));
     }
     rings.push(ring);
     prevCenter=center;
@@ -264,10 +272,11 @@ function buildTrunk(){
 function barkCyl(A,B,r0,r1,segs){
   var axis=sub(B,A),L=len(axis);if(L<1e-5)return;if(bark.n+(segs+1)*2>65000)return;axis=scl(axis,1/L);
   var b=orthoBasis(axis),bx=b[0],by=b[1],r0v=[],r1v=[];
+  var age0=ageOf(r0),age1=ageOf(r1);
   for(var s=0;s<=segs;s++){var a=s/segs*Math.PI*2,ca=Math.cos(a),sa=Math.sin(a);
     var rad=norm([bx[0]*ca+by[0]*sa,bx[1]*ca+by[1]*sa,bx[2]*ca+by[2]*sa]);
-    r0v.push(bark.vert(add(A,scl(rad,r0)),rad,[s/segs,A[1]]));
-    r1v.push(bark.vert(add(B,scl(rad,r1)),rad,[s/segs,B[1]]));}
+    r0v.push(bark.vert(add(A,scl(rad,r0)),rad,[s/segs,A[1]],age0));
+    r1v.push(bark.vert(add(B,scl(rad,r1)),rad,[s/segs,B[1]],age1));}
   for(var s2=0;s2<segs;s2++){bark.tri(r0v[s2],r1v[s2],r1v[s2+1]);bark.tri(r0v[s2],r1v[s2+1],r0v[s2+1]);}
 }
 
@@ -408,8 +417,8 @@ function frame(now){
   gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);gl.disable(gl.CULL_FACE);
   shadowM.bind();gl.drawElements(gl.TRIANGLES,shadowM.count,gl.UNSIGNED_SHORT,0);
   gl.depthMask(true);gl.disable(gl.BLEND);
-  // bark (bark program)
-  gl.enable(gl.CULL_FACE);gl.useProgram(bp);
+  // bark (bark program) — double-sided so a wrong-facing triangle never shows the back wall
+  gl.disable(gl.CULL_FACE);gl.useProgram(bp);
   gl.uniformMatrix4fv(bU.proj,false,fp);gl.uniformMatrix4fv(bU.view,false,fv);
   gl.uniform3fv(bU.cam,cam.pos);gl.uniform3fv(bU.sun,SUN);gl.uniform3fv(bU.sky,SKY_AMB);gl.uniform3fv(bU.horizon,HORIZON);
   bark.bind();gl.drawElements(gl.TRIANGLES,bark.count,gl.UNSIGNED_SHORT,0);
