@@ -82,6 +82,8 @@ function len(a){return Math.hypot(a[0],a[1],a[2]);}
 function norm(a){var l=len(a)||1;return [a[0]/l,a[1]/l,a[2]/l];}
 function perspective(f,a,n,fa){var t=1/Math.tan(f/2),nf=1/(n-fa);
   return [t/a,0,0,0, 0,t,0,0, 0,0,(fa+n)*nf,-1, 0,0,2*fa*n*nf,0];}
+function ortho(l,r,b,t,n,f){var lr=1/(l-r),bt=1/(b-t),nf=1/(n-f);
+  return [-2*lr,0,0,0, 0,-2*bt,0,0, 0,0,2*nf,0, (l+r)*lr,(b+t)*bt,(f+n)*nf,1];}
 function lookAt(e,c,u){var z=norm(sub(e,c)),x=norm(cross(u,z)),y=cross(z,x);
   return [x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0, -dot(x,e),-dot(y,e),-dot(z,e),1];}
 function mul(a,b){var o=new Array(16);for(var c=0;c<4;c++)for(var r=0;r<4;r++)
@@ -106,6 +108,12 @@ if(!gl){document.body.innerHTML='<p style="padding:20px;font-family:sans-serif">
 // 32-bit indices so a whole grove fits in one buffer
 var uintExt=gl.getExtension('OES_element_index_uint');
 var IDX=uintExt?Uint32Array:Uint16Array, ITYPE=uintExt?gl.UNSIGNED_INT:gl.UNSIGNED_SHORT, MAXV=uintExt?4000000:60000;
+var derivExt=gl.getExtension('OES_standard_derivatives');   // for bark relief (bump)
+// shared GLSL: sample the shadow map (packed-depth, 3x3 PCF)
+var shadowGLSL=[
+ 'varying vec4 vLP;',
+ 'float shadow(float bias){return 1.0;}'   // dynamic shadow map disabled (kept plumbing inert)
+].join('\n');
 function compile(t,s){var sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);
   if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(sh);return sh;}
 function prog(v,f){var p=gl.createProgram();gl.attachShader(p,compile(gl.VERTEX_SHADER,v));
@@ -114,10 +122,12 @@ function prog(v,f){var p=gl.createProgram();gl.attachShader(p,compile(gl.VERTEX_
 
 // scene program (floor / leaves / shadow) — interleaved pos,nrm,col
 var sp=prog(
- 'attribute vec3 aPos;attribute vec3 aNrm;attribute vec3 aCol;uniform mat4 uProj,uView;'+
- 'varying vec3 vN,vC,vW;void main(){vW=aPos;vN=aNrm;vC=aCol;gl_Position=uProj*uView*vec4(aPos,1.0);}',
+ 'attribute vec3 aPos;attribute vec3 aNrm;attribute vec3 aCol;uniform mat4 uProj,uView,uLightVP;'+
+ 'varying vec3 vN,vC,vW;varying vec4 vLP;'+
+ 'void main(){vW=aPos;vN=aNrm;vC=aCol;vLP=uLightVP*vec4(aPos,1.0);gl_Position=uProj*uView*vec4(aPos,1.0);}',
  ['precision highp float;varying vec3 vN,vC,vW;',
   'uniform vec3 uCam,uSun,uHorizon,uSky;uniform int uMode;uniform float uOpacity;',
+  shadowGLSL,
   'void main(){',
   ' if(uMode==2){gl_FragColor=vec4(0.02,0.03,0.02,vC.x*uOpacity);return;}',
   ' vec3 N=normalize(vN);if(!gl_FrontFacing)N=-N;',
@@ -134,15 +144,25 @@ var sp=prog(
 var sA={pos:gl.getAttribLocation(sp,'aPos'),nrm:gl.getAttribLocation(sp,'aNrm'),col:gl.getAttribLocation(sp,'aCol')};
 var sU={proj:gl.getUniformLocation(sp,'uProj'),view:gl.getUniformLocation(sp,'uView'),cam:gl.getUniformLocation(sp,'uCam'),
   sun:gl.getUniformLocation(sp,'uSun'),horizon:gl.getUniformLocation(sp,'uHorizon'),sky:gl.getUniformLocation(sp,'uSky'),
-  mode:gl.getUniformLocation(sp,'uMode'),opacity:gl.getUniformLocation(sp,'uOpacity')};
+  mode:gl.getUniformLocation(sp,'uMode'),opacity:gl.getUniformLocation(sp,'uOpacity'),
+  lightVP:gl.getUniformLocation(sp,'uLightVP'),shadow:gl.getUniformLocation(sp,'uShadow'),texel:gl.getUniformLocation(sp,'uTexel')};
 
 // bark program — procedural bark that ages along the tree (young reddish -> old grey & cracking)
+var barkBump=derivExt?[
+  ' float h=lite*0.85-breakup*0.7;',                             // height field of the bark relief
+  ' float hx=dFdx(h),hy=dFdy(h);',
+  ' vec3 dpx=dFdx(vW),dpy=dFdy(vW);',
+  ' vec3 T=normalize(dpx-N*dot(N,dpx)),Bt=normalize(cross(N,T));',
+  ' N=normalize(N-(T*hx+Bt*hy)*1.7);'                            // perturb normal -> real furrow shading
+].join('\n'):'';
 var bp=prog(
- 'attribute vec3 aPos;attribute vec3 aNrm;attribute vec2 aUV;attribute float aAge;uniform mat4 uProj,uView;'+
- 'varying vec3 vN,vW;varying vec2 vUV;varying float vAge;'+
- 'void main(){vW=aPos;vN=aNrm;vUV=aUV;vAge=aAge;gl_Position=uProj*uView*vec4(aPos,1.0);}',
+ 'attribute vec3 aPos;attribute vec3 aNrm;attribute vec2 aUV;attribute float aAge;uniform mat4 uProj,uView,uLightVP;'+
+ 'varying vec3 vN,vW;varying vec2 vUV;varying float vAge;varying vec4 vLP;'+
+ 'void main(){vW=aPos;vN=aNrm;vUV=aUV;vAge=aAge;vLP=uLightVP*vec4(aPos,1.0);gl_Position=uProj*uView*vec4(aPos,1.0);}',
+ (derivExt?'#extension GL_OES_standard_derivatives : enable\n':'')+
  ['precision highp float;varying vec3 vN,vW;varying vec2 vUV;varying float vAge;',
   'uniform vec3 uCam,uSun,uHorizon,uSky;',
+  shadowGLSL,
   'float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
   'float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);',
   ' float a=hash(i),b=hash(i+vec2(1.,0.)),c=hash(i+vec2(0.,1.)),d=hash(i+vec2(1.,1.));',
@@ -159,6 +179,7 @@ var bp=prog(
   ' float breakup=smoothstep(mix(0.66,0.40,age),0.32,plate);',   // old bark splits into plates / gaps
   ' float detail=fbm(vec2(u*27.0,v*9.0));',
   ' float lite=clamp(groove*0.72+detail*0.24,0.0,1.0);',
+  barkBump,
   ' vec3 youngF=vec3(0.30,0.12,0.08), youngC=vec3(0.68,0.35,0.23);', // year 1: reddish young bark
   ' vec3 oldF=vec3(0.12,0.11,0.10),  oldC=vec3(0.64,0.62,0.57);',   // ~50 yrs: grey, silvered
   ' vec3 furrow=mix(youngF,oldF,age), crest=mix(youngC,oldC,age);',
@@ -172,7 +193,41 @@ var bp=prog(
   ' gl_FragColor=vec4(col,1.0);}'].join('\n'));
 var bA={pos:gl.getAttribLocation(bp,'aPos'),nrm:gl.getAttribLocation(bp,'aNrm'),uv:gl.getAttribLocation(bp,'aUV'),age:gl.getAttribLocation(bp,'aAge')};
 var bU={proj:gl.getUniformLocation(bp,'uProj'),view:gl.getUniformLocation(bp,'uView'),cam:gl.getUniformLocation(bp,'uCam'),
-  sun:gl.getUniformLocation(bp,'uSun'),horizon:gl.getUniformLocation(bp,'uHorizon'),sky:gl.getUniformLocation(bp,'uSky')};
+  sun:gl.getUniformLocation(bp,'uSun'),horizon:gl.getUniformLocation(bp,'uHorizon'),sky:gl.getUniformLocation(bp,'uSky'),
+  lightVP:gl.getUniformLocation(bp,'uLightVP'),shadow:gl.getUniformLocation(bp,'uShadow'),texel:gl.getUniformLocation(bp,'uTexel')};
+
+// ---------- depth (shadow) program: pack depth into RGBA ----------
+var dp=prog(
+ 'attribute vec3 aPos;uniform mat4 uLightVP;void main(){gl_Position=uLightVP*vec4(aPos,1.0);}',
+ ['precision highp float;',
+  'vec4 packD(float d){vec4 c=fract(d*vec4(16777216.0,65536.0,256.0,1.0));',
+  ' c-=c.xxyz*vec4(0.0,1.0/256.0,1.0/256.0,1.0/256.0);return c;}',
+  'void main(){gl_FragColor=packD(gl_FragCoord.z);}'].join('\n'));
+var dA=gl.getAttribLocation(dp,'aPos'), dU=gl.getUniformLocation(dp,'uLightVP');
+
+// shadow framebuffer
+var SHADOW_RES=2048;
+var shadowTex=gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D,shadowTex);
+gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,SHADOW_RES,SHADOW_RES,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+var shadowFBO=gl.createFramebuffer();
+gl.bindFramebuffer(gl.FRAMEBUFFER,shadowFBO);
+gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,shadowTex,0);
+var shadowDepth=gl.createRenderbuffer();
+gl.bindRenderbuffer(gl.RENDERBUFFER,shadowDepth);
+gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT16,SHADOW_RES,SHADOW_RES);
+gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,shadowDepth);
+try{console.log('shadow FBO status:',gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE?'COMPLETE':gl.checkFramebufferStatus(gl.FRAMEBUFFER));}catch(e){}
+gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+// light view-projection covering the tree
+var lightVP=(function(){
+  var center=[-3,7,-3], eye=add(center,scl(norm([0.35,0.82,0.42]),36));
+  return mul(ortho(-20,20,-20,20,1,80), lookAt(eye,center,[0,1,0]));
+})();
 
 // sky program
 var skp=prog('attribute vec2 aP;varying vec2 vN;void main(){vN=aP;gl_Position=vec4(aP,1.0,1.0);}',
@@ -237,7 +292,7 @@ function orthoBasis(dir){var up=Math.abs(dir[1])>0.95?[1,0,0]:[0,1,0];var x=norm
 // ---------- aged trunk (curved, root-flared, noisy silhouette) ----------
 var TREE_H=15;
 function buildTrunk(){
-  var levels=26,segs=18,baseR=0.62,topH=5.6;
+  var levels=44,segs=30,baseR=0.62,topH=5.6;
   var rings=[],uvBase=[];
   var prevCenter=[0,0,0];
   for(var l=0;l<=levels;l++){
@@ -294,7 +349,7 @@ function leafGroup(center,scale,count){
     var dir=norm([rr(-1,1),rr(-1,1),rr(-1,1)]);dir=norm([dir[0],dir[1]+0.25,dir[2]]);
     var off=scl(norm([rr(-1,1),rr(-0.6,1),rr(-1,1)]),rr(0,0.95)*scale);
     var b=add(center,off);
-    var L=rr(0.32,0.6)*(0.7+scale*0.5), W=L*rr(0.30,0.44);
+    var L=rr(0.20,0.40), W=L*rr(0.34,0.50);   // small leaves; cluster "scale" only spreads them out
     var rv=[rr(-1,1),rr(-1,1),rr(-1,1)];
     var perp=norm(cross(dir,rv));if(len(perp)<0.2)perp=norm(cross(dir,[0.3,1,0.7]));
     var n=norm(cross(dir,perp));
@@ -302,21 +357,33 @@ function leafGroup(center,scale,count){
     var mid=[0.17+g*0.34, 0.33+g*0.36, 0.09+g*0.16];
     var baseC=[mid[0]*0.72,mid[1]*0.72,mid[2]*0.72];
     var tipC=[Math.min(1,mid[0]*1.25+0.04),Math.min(1,mid[1]*1.22+0.05),Math.min(1,mid[2]*1.2)];
-    var tip=add(b,scl(dir,L));
+    // slight cup: raise the mid-rib along the leaf normal, tilt side normals outward
+    var cup=L*0.12;
+    var tip=add(add(b,scl(dir,L)),scl(n,cup*0.5));
     var s1=add(add(b,scl(dir,L*0.45)),scl(perp,W));
     var s2=add(add(b,scl(dir,L*0.45)),scl(perp,-W));
-    var tn=tfNrm(n);
-    var vb=leaves.vert(tfPos(b),tn,baseC), v1=leaves.vert(tfPos(s1),tn,mid), v2=leaves.vert(tfPos(s2),tn,mid), vt=leaves.vert(tfPos(tip),tn,tipC);
+    var nb=tfNrm(n);
+    var n1=tfNrm(norm(add(n,scl(perp,0.5)))), n2=tfNrm(norm(sub(n,scl(perp,0.5))));
+    var vb=leaves.vert(tfPos(b),nb,baseC), v1=leaves.vert(tfPos(s1),n1,mid), v2=leaves.vert(tfPos(s2),n2,mid), vt=leaves.vert(tfPos(tip),nb,tipC);
     leaves.tri(vb,v1,vt);leaves.tri(vb,vt,v2);
   }
 }
 
 // ---------- grow the canopy ----------
 function branch(base,dir,length,radius,depth){
-  var end=add(base,scl(dir,length));
-  barkCyl(base,end,radius,radius*0.72,radius>0.18?7:5);
-  if(depth<=0||radius<0.05){leafGroup(end,Math.max(0.8,radius*8+0.6),Math.round(rr(20,30)));return;}
-  if(depth<=2){leafGroup(add(base,scl(dir,length*0.7)),Math.max(0.7,radius*6),Math.round(rr(10,16)));}
+  // curved, multi-segment limb (organic, smooth) instead of one straight tube
+  var nseg=radius>0.12?3:2, p=base, d=norm(dir), end=base, r=radius;
+  var segRad=radius>0.18?10:7;
+  for(var i=0;i<nseg;i++){
+    var r2=radius*(1-(i+1)/nseg*0.28);
+    var np=add(p,scl(d,length/nseg));
+    barkCyl(p,np,r,r2,segRad);
+    d=norm([d[0]+rr(-0.07,0.07), d[1]-0.045, d[2]+rr(-0.07,0.07)]); // gentle droop + wander
+    p=np; r=r2; end=np;
+  }
+  dir=d;
+  if(depth<=0||radius<0.05){leafGroup(end,Math.max(0.8,radius*8+0.6),Math.round(rr(44,64)));return;}
+  if(depth<=2){leafGroup(add(base,scl(dir,length*0.55)),Math.max(0.7,radius*6),Math.round(rr(22,34)));}
   var kids=depth>4?2:(rng()<0.5?2:3);
   var bb=orthoBasis(dir),p1=bb[0],p2=bb[1],baseAz=rng()*Math.PI*2;
   for(var k=0;k<kids;k++){
@@ -352,26 +419,11 @@ function buildTree(ox,oz,yaw,scale,seed){
   addShadow();
 }
 
-// ---------- a grove of 10 trees ----------
-(function(){
-  var place=mulberry32(90125);
-  function pr(a,b){return a+(b-a)*place();}
-  var spots=[[0,0,1.05]];                                   // hero tree at origin
-  var rings=[[16,4],[31,5]];                                // (radius, count) rings -> 10 trees total
-  for(var r=0;r<rings.length;r++){var rad=rings[r][0],cnt=rings[r][1];
-    for(var i=0;i<cnt;i++){
-      var ang=i/cnt*Math.PI*2 + pr(-0.5,0.5) + r*0.6;
-      var d=rad+pr(-5,6);
-      spots.push([Math.cos(ang)*d, Math.sin(ang)*d, pr(0.78,1.25)]);
-    }
-  }
-  for(var t=0;t<spots.length;t++){
-    buildTree(spots[t][0], spots[t][1], pr(0,Math.PI*2), spots[t][2], (t+1)*1337+7);
-  }
-})();
+// ---------- one tree, built for quality ----------
+buildTree(0,0,0,1.0,20240811);
 
 bark.upload();leaves.upload();floorM.upload();shadowM.upload();
-try{console.log('grove verts — bark:',bark.count,'leaf idx:',leaves.count,'uint:',!!uintExt);}catch(e){}
+try{console.log('verts — bark:',bark.count,'leaf idx:',leaves.count,'uint:',!!uintExt);}catch(e){}
 
 // ---------- camera & controls ----------
 var cam={pos:[0,1.75,20],yaw:0,pitch:0.10};
@@ -418,10 +470,14 @@ setTimeout(hideHint,6500);
 
 // ---------- render ----------
 var W=1,H=1,DPR=1;
-function resize(){DPR=Math.min(window.devicePixelRatio||1,2);
+function resize(){DPR=Math.min(window.devicePixelRatio||1,2.5);
   W=Math.round(canvas.clientWidth*DPR);H=Math.round(canvas.clientHeight*DPR);canvas.width=W;canvas.height=H;drawSpeed();}
 window.addEventListener('resize',resize);
 var SUN=norm([0.35,0.82,0.42]),SKY_AMB=[0.52,0.66,0.90],HORIZON=[0.82,0.89,0.96];
+var flightVP=new Float32Array(lightVP), TEXEL=1/SHADOW_RES;
+function drawDepth(mesh){gl.bindBuffer(gl.ARRAY_BUFFER,mesh.vbo);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,mesh.ibo);
+  gl.enableVertexAttribArray(dA);gl.vertexAttribPointer(dA,3,gl.FLOAT,false,36,0);
+  gl.drawElements(gl.TRIANGLES,mesh.count,ITYPE,0);}
 gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);
 var last=performance.now();
 function frame(now){
@@ -441,19 +497,23 @@ function frame(now){
   gl.uniformMatrix4fv(skU.invvp,false,new Float32Array(invvp));gl.uniform3fv(skU.cam,cam.pos);gl.uniform3fv(skU.sun,SUN);
   gl.drawArrays(gl.TRIANGLES,0,3);gl.enable(gl.DEPTH_TEST);gl.depthMask(true);
   // floor + shadow + leaves (scene program)
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,shadowTex);
   gl.useProgram(sp);
   gl.uniformMatrix4fv(sU.proj,false,fp);gl.uniformMatrix4fv(sU.view,false,fv);
   gl.uniform3fv(sU.cam,cam.pos);gl.uniform3fv(sU.sun,SUN);gl.uniform3fv(sU.sky,SKY_AMB);gl.uniform3fv(sU.horizon,HORIZON);
+  gl.uniformMatrix4fv(sU.lightVP,false,flightVP);gl.uniform1i(sU.shadow,0);gl.uniform1f(sU.texel,TEXEL);
   gl.uniform1f(sU.opacity,1.0);
   gl.uniform1i(sU.mode,1);floorM.bind();gl.drawElements(gl.TRIANGLES,floorM.count,ITYPE,0);
-  gl.uniform1i(sU.mode,2);gl.uniform1f(sU.opacity,0.34);gl.enable(gl.BLEND);
+  // soft contact shadow under the tree
+  gl.uniform1i(sU.mode,2);gl.uniform1f(sU.opacity,0.36);gl.enable(gl.BLEND);
   gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);gl.disable(gl.CULL_FACE);
   shadowM.bind();gl.drawElements(gl.TRIANGLES,shadowM.count,ITYPE,0);
-  gl.depthMask(true);gl.disable(gl.BLEND);
+  gl.depthMask(true);gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);
   // bark (bark program) — double-sided so a wrong-facing triangle never shows the back wall
   gl.disable(gl.CULL_FACE);gl.useProgram(bp);
   gl.uniformMatrix4fv(bU.proj,false,fp);gl.uniformMatrix4fv(bU.view,false,fv);
   gl.uniform3fv(bU.cam,cam.pos);gl.uniform3fv(bU.sun,SUN);gl.uniform3fv(bU.sky,SKY_AMB);gl.uniform3fv(bU.horizon,HORIZON);
+  gl.uniformMatrix4fv(bU.lightVP,false,flightVP);gl.uniform1i(bU.shadow,0);gl.uniform1f(bU.texel,TEXEL);
   bark.bind();gl.drawElements(gl.TRIANGLES,bark.count,ITYPE,0);
   // leaves (double-sided)
   gl.useProgram(sp);gl.disable(gl.CULL_FACE);gl.uniform1i(sU.mode,0);
