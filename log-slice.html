@@ -8,8 +8,8 @@
 <body>
 <title>פרוסת גזע · קליפת אורן</title>
 <style>
-  :root{ --glass:rgba(28,24,20,0.44); --brd:rgba(255,255,255,0.28); --ink:#f4efe8; }
-  html,body{height:100%;margin:0;overflow:hidden;background:#b9b2a8;}
+  :root{ --glass:rgba(28,26,28,0.44); --brd:rgba(255,255,255,0.28); --ink:#f2eff0; }
+  html,body{height:100%;margin:0;overflow:hidden;background:#b4b2b4;}
   #stage{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;
          -webkit-user-select:none;user-select:none;}
   .ui{position:fixed;z-index:10;color:var(--ink);
@@ -21,9 +21,9 @@
   #zoom{position:relative;width:44px;height:240px;border-radius:24px;background:var(--glass);
         border:1px solid var(--brd);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
         box-shadow:0 10px 30px rgba(0,0,0,0.22);touch-action:none;overflow:hidden;}
-  #zfill{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,#d9c3a2,#9b7452);opacity:.5;}
+  #zfill{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,#cfc6d2,#8d8794);opacity:.5;}
   #zknob{position:absolute;left:50%;width:52px;height:24px;margin-left:-26px;border-radius:14px;
-         background:radial-gradient(circle at 50% 30%,#fff7ea,#e6cfae 70%,#bfa079);
+         background:radial-gradient(circle at 50% 30%,#fbf8fa,#ddd6de 70%,#b3aab6);
          border:1px solid rgba(255,255,255,0.7);box-shadow:0 4px 12px rgba(0,0,0,0.3);}
   #zval{font-size:11px;opacity:.85;font-variant-numeric:tabular-nums;text-shadow:0 1px 4px rgba(0,0,0,.5);}
   #hint{left:50%;top:max(18px,env(safe-area-inset-top));transform:translateX(-50%);text-align:center;
@@ -51,6 +51,35 @@ try{var mv=document.createElement('meta');mv.name='viewport';
   mv.content='width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover';
   document.head.appendChild(mv);}catch(e){}
 
+/* ============================================================================
+   ALGORITHM — everything is driven by the two parameter blocks below.
+   SHAPE decides WHICH piece of the log is built (a wedge, a half, a whole
+   disc, a tall billet...). BARK decides how the bark surface behaves.
+   To grow the rest of the tree later: build more pieces with other SHAPEs —
+   they all share one pith at the origin and one trunk axis (+Y), so anything
+   you make lines up with everything else automatically.
+   ========================================================================== */
+var SHAPE={
+  rInner : 2.2,            // inner radius (0 would be a solid disc)
+  rOuter : 20.0,           // outer radius, bark included
+  bark   : 2.6,            // bark thickness
+  angFrom: -Math.PI/8,     // sector start  (angFrom..angTo = 45 deg = 1/8 of the log)
+  angTo  :  Math.PI/8,     // sector end    (use -PI..PI for a whole round slice)
+  yFrom  : -2.25,          // along the trunk axis
+  yTo    :  2.25,          // -> 4.5 cm thick, flat like a pizza
+  seed   : 1.0             // change this and the same shape grows a different piece
+};
+var BARK={
+  relief    : 0.62,   // total height of the bark relief (cm)
+  step      : 0.10,   // one terrace level (cm)  -> 1 mm
+  plate     : 0.62,   // plate size (smaller = bigger plates)
+  crackDepth: 1.15,   // how deep the big fissures cut
+  crackWide : 0.050,  // how wide they are
+  crackRare : 0.50,   // higher = fewer fissures
+  vertical  : 0.17,   // 0..1 : how strongly fissures line up with the trunk axis
+  cutWave   : 0.09    // hand-cut undulation on the sawn faces (cm)
+};
+
 function sub(a,b){return[a[0]-b[0],a[1]-b[1],a[2]-b[2]];}
 function cross(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
 function dot(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
@@ -72,15 +101,9 @@ function prog(v,f){var p=gl.createProgram();gl.attachShader(p,compile(gl.VERTEX_
   gl.attachShader(p,compile(gl.FRAGMENT_SHADER,f));gl.linkProgram(p);
   if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw gl.getProgramInfoLog(p);return p;}
 
-// ================= dimensions (1 unit = 1 cm) =================
-var R=20.0;        // outer radius incl. bark  (pizza-sized)
-var BARK=2.6;      // thick bark
-var R0=2.2;        // rounded / truncated apex at the pith
-var HH=2.25;       // half thickness -> 4.5 cm slice (flat like a pizza)
-var AH=Math.PI/8;  // half angle -> 45 deg wedge = 1/8 of the log
-
-// ================= shared GLSL =================
+// ================= shared GLSL: the bark algorithm =================
 var COMMON=[
+'uniform float uRelief,uStep,uPlate,uCrackDepth,uCrackWide,uCrackRare,uVertical,uSeed,uROuter;',
 'float hash12(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
 'float vn2(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);',
 ' float a=hash12(i),b=hash12(i+vec2(1,0)),c=hash12(i+vec2(0,1)),d=hash12(i+vec2(1,1));',
@@ -92,44 +115,39 @@ var COMMON=[
 '            mix(mix(hash13(i+vec3(0,0,1)),hash13(i+vec3(1,0,1)),f.x),mix(hash13(i+vec3(0,1,1)),hash13(i+vec3(1,1,1)),f.x),f.y),f.z);}',
 'float fbm3(vec3 p){float s=0.,a=.5;for(int k=0;k<5;k++){s+=a*vn3(p);p*=2.03;a*=.5;}return s;}',
 
-'const float STEP=0.10;',   // one terrace level = 1 mm
+// surface coords on the bark: u = arc length around the trunk, v = along the trunk axis
+'vec2 barkUV(float th,float y){return vec2(th*uROuter,y)+uSeed*17.0;}',
 
-// bark surface coords from (theta, y): u = arc length along the trunk, v = across the slice
-'vec2 barkUV(float th,float y){return vec2(th*20.0,y);}',
-
-// continuous, domain-warped height -> nothing is exactly round or exactly straight
+// STEP 1 - a smooth, domain-warped field. Nothing here is ever exactly round or straight.
 'float barkRaw(vec2 uv){',
 ' vec2 w=vec2(fbm2(uv*0.55+1.7),fbm2(uv*0.55+9.3))-0.5;',
-' vec2 p=uv*0.62+w*0.85;',
-' return fbm2(p)*1.0+fbm2(p*2.3)*0.20;}',
-// normalised 0..1 across the range the noise actually occupies
+' vec2 p=uv*uPlate+w*0.80;',
+' return fbm2(p)*1.0+fbm2(p*2.3)*0.18;}',
 'float barkN(vec2 uv){return clamp((barkRaw(uv)-0.30)/0.42,0.0,1.0);}',
-'const float RELIEF=0.80;',   // total bark relief ~8 mm: still flat-ish, but with real depth
 
-// SOFT terrace: flat plateaus with a short riser. Continuous, so it never tears the mesh
-// into the bright jagged slivers a hard floor() produces.
-'float softTerr(float h){',
-' float k=h/STEP;float i=floor(k);float f=k-i;',
-' return (i+smoothstep(0.58,0.97,f))*STEP;}',
+// STEP 2 - soft terraces: flat plateaus joined by a short riser. Continuous, so the
+// mesh never tears into the bright jagged slivers a hard floor() produces.
+'float softTerr(float h,float st){',
+' float k=h/st;float i=floor(k);float f=k-i;',
+' return (i+smoothstep(0.55,0.96,f))*st;}',
 
-// sparse but BIG fissures (few of them, and deep)
+// STEP 3 - fissures. Stretching v makes the iso-lines run ALONG the trunk, so the
+// cracks travel upward and only wander sideways a little, like real bark.
 'float barkCrack(vec2 uv){',
-' float c=fbm2(uv*0.24+31.0);',
-' float line=1.0-smoothstep(0.0,0.055,abs(c-0.5));',            // wide meandering fissure
-' float where=smoothstep(0.48,0.80,fbm2(uv*0.10+7.0));',        // only here and there
+' vec2 cuv=vec2(uv.x,uv.y*uVertical);',
+' float c=fbm2(cuv*0.30+31.0)+fbm2(cuv*0.9+3.0)*0.10;',
+' float line=1.0-smoothstep(0.0,uCrackWide,abs(c-0.5));',
+' float where=smoothstep(uCrackRare,uCrackRare+0.30,fbm2(vec2(uv.x*0.11,uv.y*0.05)+7.0));',
 ' return line*where;}',
 
-'float barkTerr(vec2 uv){return softTerr(barkN(uv)*RELIEF);}',
-
+'float barkTerr(vec2 uv){return softTerr(barkN(uv)*uRelief,uStep);}',
 'float barkDisp(float th,float y){',
 ' vec2 uv=barkUV(th,y);',
-' return barkTerr(uv)-barkCrack(uv)*1.45;}',
+' return barkTerr(uv)-barkCrack(uv)*uCrackDepth;}',
 
-// gentle hand-cut waviness for the sawn faces (about 1 mm)
 'float surfWave(vec3 p){return (fbm3(p*0.42)-0.5)*1.0+(fbm3(p*1.35)-0.5)*0.3;}'
 ].join('\n');
 
-// ================= program =================
 var VS=[
  'attribute vec3 aPos0;attribute vec3 aDir;attribute vec3 aFaceN;',
  'attribute float aW;attribute float aWave;attribute float aKind;',
@@ -145,14 +163,12 @@ var VS=[
 var FS=(deriv?'#extension GL_OES_standard_derivatives : enable\n':'')+[
  'precision highp float;',
  'varying vec3 vP;varying float vKind;',
- 'uniform vec3 uCam,uSun;',
+ 'uniform vec3 uCam,uSun;uniform float uWoodEdge;',
  COMMON,
  // ---------- cut wood: growth rings around the pith, deliberately irregular ----------
  'vec4 woodCol(vec3 p){',
- ' float r=length(p.xz);',
- ' float ang=atan(p.z,p.x);',
- // strong domain warp so rings are never perfect circles
- ' float rr=r+fbm3(vec3(ang*1.5,p.y*0.2,3.0))*0.85+fbm3(p*0.30)*0.45+fbm3(p*0.9)*0.16;',
+ ' float r=length(p.xz);float ang=atan(p.z,p.x);',
+ ' float rr=r+fbm3(vec3(ang*1.5,p.y*0.2,3.0+uSeed))*0.85+fbm3(p*0.30)*0.45+fbm3(p*0.9)*0.16;',
  ' float rings=rr*3.0+1.6*fbm2(vec2(rr*0.20,17.0))+0.7*fbm2(vec2(rr*0.55,5.0));',
  ' float ph=fract(rings);float aa=0.03;',
  '#ifdef GL_OES_standard_derivatives',
@@ -160,73 +176,79 @@ var FS=(deriv?'#extension GL_OES_standard_derivatives : enable\n':'')+[
  '#endif',
  ' float late=smoothstep(0.58-aa,0.80+aa,ph)*(1.0-smoothstep(0.90-aa,1.0+aa,ph));',
  ' float fibre=fbm3(vec3(p.y*2.0,ang*4.0+rr*2.0,7.0));',
- ' vec3 early=vec3(0.87,0.74,0.55), latew=vec3(0.68,0.51,0.33);',
+ ' vec3 early=vec3(0.855,0.760,0.635), latew=vec3(0.660,0.530,0.410);',
  ' vec3 c=mix(early,latew,clamp(late*0.72+fibre*0.14,0.0,1.0));',
  ' float ray=smoothstep(0.76,1.0,fbm3(vec3(ang*28.0,rr*0.4,p.y*0.4)));',
  ' c*=1.0+ray*0.08;',
- ' c*=0.94+0.11*fbm3(p*0.8+4.0);',                              // blotchy, never uniform
- ' float sap=smoothstep(0.55,0.94,r/17.4);',
- ' c=mix(c,c*vec3(1.09,1.08,1.05)+0.04,sap);',
+ ' c*=0.94+0.11*fbm3(p*0.8+4.0);',
+ ' float sap=smoothstep(0.55,0.94,r/uWoodEdge);',
+ ' c=mix(c,c*vec3(1.05,1.06,1.08)+0.04,sap);',
  ' float ca=abs(fract(ang/6.2831*3.0+fbm2(vec2(p.y*0.2,0.0))*0.7)-0.5)*2.0;',
  ' float crack=(1.0-smoothstep(0.0,0.045,ca))*smoothstep(2.0,10.0,r);',
  ' c*=1.0-crack*0.7;',
  ' return vec4(c,late*0.30-crack*1.0+fibre*0.10);}',
- // ---------- pine bark: flat terraced plates, 1 mm steps, occasional deep fissure ----------
+ // ---------- pine bark: cool plates with small warm / violet / blue-grey areas ----------
  'vec4 barkCol(vec3 p){',
  ' float th=atan(p.z,p.x);',
  ' vec2 uv=barkUV(th,p.y);',
- ' float hcm=barkN(uv)*RELIEF;',
- ' float terr=softTerr(hcm);',
- ' float lvl=clamp(terr/RELIEF,0.0,1.0);',                      // 0 = recessed, 1 = top plate
- ' float id=hash12(vec2(floor(hcm/STEP),3.0));',                // per-terrace variation
- ' vec3 deep  =vec3(0.235,0.135,0.090);',                       // dark brown recesses
- ' vec3 rust  =vec3(0.470,0.255,0.155);',                       // warm rust
- ' vec3 salmon=vec3(0.640,0.390,0.255);',                       // freshly exposed under-layer
- ' vec3 tan   =vec3(0.660,0.520,0.390);',                       // warm weathered plate face
- ' vec3 c=mix(deep,rust,smoothstep(0.0,0.20,lvl));',
- ' c=mix(c,salmon,smoothstep(0.14,0.46,lvl));',
- ' c=mix(c,tan,smoothstep(0.42,0.86,lvl));',                    // warm tan on the top plates
- ' c*=0.93+0.15*id;',
- ' float scale=fbm2(uv*6.0);',                                  // fine scaly grain on each plate
- ' c*=0.92+0.17*scale;',
- ' c*=0.88+0.24*fbm2(uv*1.4+id*9.0);',                          // plate-to-plate variation
- // thin dark line right at each terrace riser -> reads as the plate outline
- ' float f=fract(hcm/STEP);',
- ' float edge=smoothstep(0.14,0.0,f)+smoothstep(0.88,1.0,f);',
- ' c*=1.0-edge*0.28;',
+ ' float hcm=barkN(uv)*uRelief;',
+ ' float terr=softTerr(hcm,uStep);',
+ ' float lvl=clamp(terr/uRelief,0.0,1.0);',
+ ' float id=hash12(vec2(floor(hcm/uStep),3.0));',
+ // cool base palette
+ ' vec3 deep  =vec3(0.230,0.180,0.180);',                      // cool dark recess
+ ' vec3 shade =vec3(0.430,0.365,0.350);',
+ ' vec3 lav   =vec3(0.630,0.590,0.600);',                      // lavender-grey plate face
+ ' vec3 c=mix(deep,shade,smoothstep(0.0,0.26,lvl));',
+ ' c=mix(c,lav,smoothstep(0.20,0.62,lvl));',
+ // small AREAS of other hues - slow fields, so they read as regions, never speckle
+ ' float hueA=fbm2(uv*0.26+41.0);',                            // warm terracotta areas
+ ' float hueB=fbm2(uv*0.23+77.0);',                            // cool blue-grey areas
+ ' float hueC=fbm2(uv*0.30+13.0);',                            // violet areas
+ ' float hueD=fbm2(uv*0.28+59.0);',                            // pale sage areas
+ ' vec3 warm  =vec3(0.680,0.395,0.255);',
+ ' vec3 blue  =vec3(0.425,0.500,0.575);',
+ ' vec3 violet=vec3(0.515,0.435,0.565);',
+ ' vec3 sage  =vec3(0.505,0.535,0.470);',
+ ' c=mix(c,warm  ,smoothstep(0.48,0.80,hueA)*0.80*(0.35+0.65*lvl));',
+ ' c=mix(c,blue  ,smoothstep(0.52,0.82,hueB)*0.55);',
+ ' c=mix(c,violet,smoothstep(0.53,0.83,hueC)*0.45);',
+ ' c=mix(c,sage  ,smoothstep(0.60,0.88,hueD)*0.35);',
+ ' c*=0.95+0.11*id;',
+ ' float scale=fbm2(uv*6.0);',
+ ' c*=0.94+0.13*scale;',
+ ' c*=0.93+0.15*fbm2(uv*1.4+id*9.0);',
+ // thin dark line at each terrace riser -> the plate outline
+ ' float f=fract(hcm/uStep);',
+ ' float edge=smoothstep(0.13,0.0,f)+smoothstep(0.89,1.0,f);',
+ ' c*=1.0-edge*0.26;',
  // the occasional big fissure, nearly black
  ' float cr=barkCrack(uv);',
- ' c=mix(c,vec3(0.050,0.036,0.028),smoothstep(0.10,0.60,cr));',
- // grey weathering + lichen only in patches, so brown stays dominant
- ' float wx=smoothstep(0.54,0.90,fbm2(uv*0.33+13.0));',
- ' c=mix(c,vec3(0.575,0.545,0.505),wx*0.42);',
- ' float li=smoothstep(0.62,0.90,fbm2(uv*0.40+21.0))*(1.0-cr);',
- ' c=mix(c,vec3(0.46,0.495,0.395),li*0.30);',
- ' return vec4(c,terr*1.6-cr*1.3+scale*0.12);}',
+ ' c=mix(c,vec3(0.055,0.048,0.050),smoothstep(0.10,0.60,cr));',
+ ' return vec4(c,terr*1.5-cr*1.2+scale*0.10);}',
  'void main(){',
  ' float r=length(vP.xz);',
- ' bool isBark = vKind>0.5 ? true : (r>17.4);',
+ ' bool isBark = vKind>0.5 ? true : (r>uWoodEdge);',
  ' vec4 m = isBark ? barkCol(vP) : woodCol(vP);',
- ' vec3 base=m.rgb;',
- ' vec3 N;',
+ ' vec3 base=m.rgb;vec3 N;',
  '#ifdef GL_OES_standard_derivatives',
  ' N=normalize(cross(dFdx(vP),dFdy(vP)));',
  ' if(dot(N,uCam-vP)<0.0)N=-N;',
  ' float h=m.a;vec3 dpx=dFdx(vP);',
  ' float hx=dFdx(h),hy=dFdy(h);',
  ' vec3 T=normalize(dpx-N*dot(N,dpx)),B=normalize(cross(N,T));',
- ' N=normalize(N-(T*hx+B*hy)*(isBark?0.45:0.14));',
+ ' N=normalize(N-(T*hx+B*hy)*(isBark?0.40:0.14));',
  '#else',
  ' N=normalize(vec3(vP.x,0.0,vP.z));',
  '#endif',
  ' float ndl=max(dot(N,uSun),0.0);',
  ' float hemi=0.5+0.5*N.y;',
- ' vec3 amb=mix(vec3(0.34,0.33,0.32),vec3(0.60,0.63,0.68),hemi);',
+ ' vec3 amb=mix(vec3(0.35,0.35,0.37),vec3(0.62,0.645,0.70),hemi);',
  ' vec3 FILL=normalize(vec3(0.70,0.25,-0.60));',
  ' float ndf=max(dot(N,FILL),0.0);',
- ' vec3 V=normalize(uCam-vP);vec3 H=normalize(uSun+V);',
- ' float spec=pow(max(dot(N,H),0.0),(isBark?10.0:22.0))*(isBark?0.03:0.09);',
- ' vec3 col=base*(amb+vec3(1.0,0.96,0.88)*ndl*0.88+vec3(0.78,0.81,0.88)*ndf*0.36)+vec3(spec);',
+ ' vec3 V=normalize(uCam-vP);vec3 Hh=normalize(uSun+V);',
+ ' float spec=pow(max(dot(N,Hh),0.0),(isBark?10.0:22.0))*(isBark?0.03:0.08);',
+ ' vec3 col=base*(amb+vec3(1.0,0.975,0.93)*ndl*0.86+vec3(0.76,0.80,0.90)*ndf*0.34)+vec3(spec);',
  ' gl_FragColor=vec4(col,1.0);}'
 ].join('\n');
 
@@ -234,78 +256,91 @@ var sp=prog(VS,FS);
 var A={pos:gl.getAttribLocation(sp,'aPos0'),dir:gl.getAttribLocation(sp,'aDir'),
        fn:gl.getAttribLocation(sp,'aFaceN'),w:gl.getAttribLocation(sp,'aW'),
        wave:gl.getAttribLocation(sp,'aWave'),kind:gl.getAttribLocation(sp,'aKind')};
-var U={proj:gl.getUniformLocation(sp,'uProj'),view:gl.getUniformLocation(sp,'uView'),
-       cam:gl.getUniformLocation(sp,'uCam'),sun:gl.getUniformLocation(sp,'uSun')};
+function U(n){return gl.getUniformLocation(sp,n);}
+var uProj=U('uProj'),uView=U('uView'),uCam=U('uCam'),uSun=U('uSun'),uWoodEdge=U('uWoodEdge');
+var uRelief=U('uRelief'),uStep=U('uStep'),uPlate=U('uPlate'),uCrackDepth=U('uCrackDepth'),
+    uCrackWide=U('uCrackWide'),uCrackRare=U('uCrackRare'),uVertical=U('uVertical'),
+    uSeed=U('uSeed'),uROuter=U('uROuter');
 
 var bgp=prog('attribute vec2 aP;varying vec2 v;void main(){v=aP;gl_Position=vec4(aP,0.999,1.0);}',
  ['precision highp float;varying vec2 v;void main(){float t=v.y*0.5+0.5;',
-  ' vec3 c=mix(vec3(0.48,0.47,0.45),vec3(0.86,0.85,0.82),pow(t,0.9));',
+  ' vec3 c=mix(vec3(0.46,0.455,0.465),vec3(0.85,0.845,0.855),pow(t,0.9));',
   ' c*=1.0-0.20*length(v*vec2(0.9,1.0));gl_FragColor=vec4(c,1.0);}'].join('\n'));
 var bgA=gl.getAttribLocation(bgp,'aP');
 var bgBuf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,bgBuf);
 gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
 
-// ================= mesh =================
-var V=[],I=[],nv=0;
-function push(p,d,fn,w,wave,k){
-  V.push(p[0],p[1],p[2], d[0],d[1],d[2], fn[0],fn[1],fn[2], w,wave,k);return nv++;}
-function grid(rows,cols,fn){
-  var idx=[],i,j;
-  for(i=0;i<=rows;i++){var row=[];for(j=0;j<=cols;j++)row.push(fn(i,j));idx.push(row);}
-  for(i=0;i<rows;i++)for(j=0;j<cols;j++){
-    var a=idx[i][j],b=idx[i+1][j],c=idx[i+1][j+1],d=idx[i][j+1];
-    I.push(a,b,c,a,c,d);}
+/* ---------------- generic mesh builder: works for ANY SHAPE ---------------- */
+function buildSolid(S,P){
+  var V=[],I=[],nv=0;
+  function push(p,d,fn,w,wave,k){V.push(p[0],p[1],p[2],d[0],d[1],d[2],fn[0],fn[1],fn[2],w,wave,k);return nv++;}
+  function grid(rows,cols,fn){
+    var idx=[],i,j;
+    for(i=0;i<=rows;i++){var row=[];for(j=0;j<=cols;j++)row.push(fn(i,j));idx.push(row);}
+    for(i=0;i<rows;i++)for(j=0;j<cols;j++){
+      var a=idx[i][j],b=idx[i+1][j],c=idx[i+1][j+1],d=idx[i][j+1];
+      I.push(a,b,c,a,c,d);}
+  }
+  var NA=P.NA,NH=P.NH,NR=P.NR;
+  var span=S.angTo-S.angFrom, hgt=S.yTo-S.yFrom, rad=Math.cos(0);
+  function th(i){return S.angFrom+span*(i/NA);}
+  function yy(j){return S.yFrom+hgt*(j/NH);}
+  function radial(t){return [Math.cos(t),0,Math.sin(t)];}
+  // displacement weight: 1 on the bark surface, easing to 0 as you go inward
+  function wOf(r){var t=(r-(S.rOuter-S.bark))/S.bark;return t<0?0:(t>1?1:t*t*(3-2*t));}
+  // outer bark surface
+  grid(NA,NH,function(i,j){var t=th(i),d=radial(t);
+    return push([Math.cos(t)*S.rOuter,yy(j),Math.sin(t)*S.rOuter],d,d,1.0,0.0,1.0);});
+  // the two cut faces across the trunk (top / bottom of the slice)
+  [[S.yTo,1],[S.yFrom,-1]].forEach(function(e){
+    var fn=[0,e[1],0];
+    grid(NA,NR,function(i,j){var t=th(i),r=S.rInner+(S.rOuter-S.rInner)*(j/NR),d=radial(t);
+      return push([Math.cos(t)*r,e[0],Math.sin(t)*r],d,fn,wOf(r),P.cutWave,r>(S.rOuter-S.bark)?1.0:0.0);});
+  });
+  // the two radial cut faces (only when this is a sector, not a full disc)
+  if(span<Math.PI*1.99){
+    [[S.angFrom,-1],[S.angTo,1]].forEach(function(e){
+      var t=e[0],d=radial(t),s=e[1];
+      var fn=[-Math.sin(t)*s,0,Math.cos(t)*s];
+      grid(NR,NH,function(i,j){var r=S.rInner+(S.rOuter-S.rInner)*(i/NR);
+        return push([Math.cos(t)*r,yy(j),Math.sin(t)*r],d,fn,wOf(r),P.cutWave,r>(S.rOuter-S.bark)?1.0:0.0);});
+    });
+  }
+  // rounded inner face at the pith
+  if(S.rInner>0.001){
+    grid(NA,NH,function(i,j){var t=th(i),d=radial(t);
+      return push([Math.cos(t)*S.rInner,yy(j),Math.sin(t)*S.rInner],d,[-d[0],0,-d[2]],0.0,P.cutWave*0.4,0.0);});
+  }
+  return {V:V,I:I,n:nv};
 }
-var NA=300, NH=86, NR=112;
-function th(i){return -AH+2*AH*(i/NA);}
-function radial(t){return [Math.cos(t),0,Math.sin(t)];}
-function wOf(r){var t=(r-(R-BARK))/BARK;return t<0?0:(t>1?1:t*t*(3-2*t));}
-var WAVE=0.11;   // ~1 mm of hand-cut undulation on the sawn faces
 
-// outer bark surface
-grid(NA,NH,function(i,j){var t=th(i),y=-HH+2*HH*(j/NH),d=radial(t);
-  return push([Math.cos(t)*R,y,Math.sin(t)*R],d,d,1.0,0.0,1.0);});
-// top & bottom cut faces
-[HH,-HH].forEach(function(y){
-  var fn=[0,y>0?1:-1,0];
-  grid(NA,NR,function(i,j){var t=th(i),r=R0+(R-R0)*(j/NR),d=radial(t);
-    return push([Math.cos(t)*r,y,Math.sin(t)*r],d,fn,wOf(r),WAVE,r>(R-BARK)?1.0:0.0);});
-});
-// the two flat radial cut faces
-[-AH,AH].forEach(function(t){
-  var d=radial(t), s=(t<0?-1:1);
-  var fn=[-Math.sin(t)*s,0,Math.cos(t)*s];
-  grid(NR,NH,function(i,j){var r=R0+(R-R0)*(i/NR),y=-HH+2*HH*(j/NH);
-    return push([Math.cos(t)*r,y,Math.sin(t)*r],d,fn,wOf(r),WAVE,r>(R-BARK)?1.0:0.0);});
-});
-// rounded apex face
-grid(NA,NH,function(i,j){var t=th(i),y=-HH+2*HH*(j/NH),d=radial(t);
-  return push([Math.cos(t)*R0,y,Math.sin(t)*R0],d,[-d[0],0,-d[2]],0.0,0.05,0.0);});
-
+var mesh=buildSolid(SHAPE,{NA:300,NH:86,NR:112,cutWave:BARK.cutWave});
 var vbo=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
-gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(V),gl.STATIC_DRAW);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(mesh.V),gl.STATIC_DRAW);
 var ibo=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibo);
-gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new IDX(I),gl.STATIC_DRAW);
-try{console.log('slice verts:',nv,'tris:',I.length/3);}catch(e){}
+gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new IDX(mesh.I),gl.STATIC_DRAW);
+try{console.log('verts:',mesh.n,'tris:',mesh.I.length/3);}catch(e){}
 
 // ================= camera =================
 var yaw=0.85,pitch=0.62,zoomT=0.12;
 (function(){var h=location.hash.replace('#','');if(h){var p=h.split(',').map(Number);
   if(p.length>=3&&p.every(function(x){return!isNaN(x);})){yaw=p[0];pitch=p[1];zoomT=p[2];}}})();
 var FOVY=46*Math.PI/180;
-var CEN=[0.58*R,0,0];
-var RAD=Math.max(Math.hypot(R*Math.cos(AH)-CEN[0],HH,R*Math.sin(AH)),Math.hypot(CEN[0]-R0,HH))*1.02;
+var CEN=[0.58*SHAPE.rOuter,0,0];
+var HHy=(SHAPE.yTo-SHAPE.yFrom)*0.5;
+var RAD=Math.max(Math.hypot(SHAPE.rOuter*Math.cos(SHAPE.angTo)-CEN[0],HHy,SHAPE.rOuter*Math.sin(SHAPE.angTo)),
+                 Math.hypot(CEN[0]-SHAPE.rInner,HHy))*1.02;
 var W=1,H=1,DPR=1;
 function fitDist(){var hv=FOVY/2,hh=Math.atan(Math.tan(hv)*(W/H));return RAD/Math.sin(Math.min(hv,hh));}
-function distOf(t){var f=fitDist();return f*(1.10-0.85*t);}
+function distOf(t){var f=fitDist();return f*(1.10-0.72*t);}
 var SUN=norm([-0.40,0.74,0.54]);
 
 var zEl=document.getElementById('zoom'),zknob=document.getElementById('zknob'),
     zfill=document.getElementById('zfill'),zval=document.getElementById('zval'),zId=null;
 function zApply(cy){var r=zEl.getBoundingClientRect();zoomT=Math.min(1,Math.max(0,1-(cy-r.top)/r.height));drawZoom();}
-function drawZoom(){var r=zEl.getBoundingClientRect(),pad=14,us=r.height-pad*2,yy=pad+(1-zoomT)*us;
-  zknob.style.top=(yy-12)+'px';zfill.style.height=(r.height-yy)+'px';
-  zval.textContent='×'+(0.9+zoomT*5.0).toFixed(1);}
+function drawZoom(){var r=zEl.getBoundingClientRect(),pad=14,us=r.height-pad*2,y=pad+(1-zoomT)*us;
+  zknob.style.top=(y-12)+'px';zfill.style.height=(r.height-y)+'px';
+  zval.textContent='×'+(0.9+zoomT*2.6).toFixed(1);}
 zEl.addEventListener('pointerdown',function(e){zId=e.pointerId;zEl.setPointerCapture(zId);zApply(e.clientY);e.preventDefault();});
 zEl.addEventListener('pointermove',function(e){if(e.pointerId!==zId)return;zApply(e.clientY);e.preventDefault();});
 zEl.addEventListener('pointerup',function(e){if(e.pointerId===zId)zId=null;});
@@ -337,9 +372,14 @@ function frame(){
   var d=distOf(zoomT),cp=Math.cos(pitch);
   var eye=[CEN[0]+Math.sin(yaw)*cp*d,CEN[1]+Math.sin(pitch)*d,CEN[2]+Math.cos(yaw)*cp*d];
   gl.useProgram(sp);
-  gl.uniformMatrix4fv(U.proj,false,new Float32Array(perspective(FOVY,W/H,0.1,400)));
-  gl.uniformMatrix4fv(U.view,false,new Float32Array(lookAt(eye,CEN,[0,1,0])));
-  gl.uniform3fv(U.cam,eye);gl.uniform3fv(U.sun,SUN);
+  gl.uniformMatrix4fv(uProj,false,new Float32Array(perspective(FOVY,W/H,0.1,400)));
+  gl.uniformMatrix4fv(uView,false,new Float32Array(lookAt(eye,CEN,[0,1,0])));
+  gl.uniform3fv(uCam,eye);gl.uniform3fv(uSun,SUN);
+  gl.uniform1f(uWoodEdge,SHAPE.rOuter-SHAPE.bark);
+  gl.uniform1f(uRelief,BARK.relief);gl.uniform1f(uStep,BARK.step);gl.uniform1f(uPlate,BARK.plate);
+  gl.uniform1f(uCrackDepth,BARK.crackDepth);gl.uniform1f(uCrackWide,BARK.crackWide);
+  gl.uniform1f(uCrackRare,BARK.crackRare);gl.uniform1f(uVertical,BARK.vertical);
+  gl.uniform1f(uSeed,SHAPE.seed);gl.uniform1f(uROuter,SHAPE.rOuter);
   gl.bindBuffer(gl.ARRAY_BUFFER,vbo);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibo);
   var ST=48;
   gl.enableVertexAttribArray(A.pos); gl.vertexAttribPointer(A.pos,3,gl.FLOAT,false,ST,0);
@@ -348,7 +388,7 @@ function frame(){
   gl.enableVertexAttribArray(A.w);   gl.vertexAttribPointer(A.w,1,gl.FLOAT,false,ST,36);
   gl.enableVertexAttribArray(A.wave);gl.vertexAttribPointer(A.wave,1,gl.FLOAT,false,ST,40);
   gl.enableVertexAttribArray(A.kind);gl.vertexAttribPointer(A.kind,1,gl.FLOAT,false,ST,44);
-  gl.drawElements(gl.TRIANGLES,I.length,ITYPE,0);
+  gl.drawElements(gl.TRIANGLES,mesh.I.length,ITYPE,0);
   requestAnimationFrame(frame);
 }
 resize();drawZoom();requestAnimationFrame(frame);
