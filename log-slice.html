@@ -104,21 +104,26 @@ var COMMON=[
 ' return fbm2(p)*1.0+fbm2(p*2.3)*0.20;}',
 // normalised 0..1 across the range the noise actually occupies
 'float barkN(vec2 uv){return clamp((barkRaw(uv)-0.30)/0.42,0.0,1.0);}',
-'const float RELIEF=0.45;',   // total bark relief: only ~4.5 mm -> relatively flat
+'const float RELIEF=0.80;',   // total bark relief ~8 mm: still flat-ish, but with real depth
 
-// sparse, occasional DEEP fissures (not everywhere)
+// SOFT terrace: flat plateaus with a short riser. Continuous, so it never tears the mesh
+// into the bright jagged slivers a hard floor() produces.
+'float softTerr(float h){',
+' float k=h/STEP;float i=floor(k);float f=k-i;',
+' return (i+smoothstep(0.58,0.97,f))*STEP;}',
+
+// sparse but BIG fissures (few of them, and deep)
 'float barkCrack(vec2 uv){',
-' float c=fbm2(uv*0.26+31.0);',
-' float line=1.0-smoothstep(0.0,0.022,abs(c-0.5));',            // a thin meandering line
-' float where=smoothstep(0.56,0.86,fbm2(uv*0.11+7.0));',        // only here and there -> few, but big
+' float c=fbm2(uv*0.24+31.0);',
+' float line=1.0-smoothstep(0.0,0.055,abs(c-0.5));',            // wide meandering fissure
+' float where=smoothstep(0.48,0.80,fbm2(uv*0.10+7.0));',        // only here and there
 ' return line*where;}',
 
-// terraced height: flat plates separated by 1 mm steps  (relatively flat, as in the photos)
-'float barkTerr(vec2 uv){return floor(barkN(uv)*RELIEF/STEP)*STEP;}',
+'float barkTerr(vec2 uv){return softTerr(barkN(uv)*RELIEF);}',
 
 'float barkDisp(float th,float y){',
 ' vec2 uv=barkUV(th,y);',
-' return barkTerr(uv)-barkCrack(uv)*0.75;}',
+' return barkTerr(uv)-barkCrack(uv)*1.45;}',
 
 // gentle hand-cut waviness for the sawn faces (about 1 mm)
 'float surfWave(vec3 p){return (fbm3(p*0.42)-0.5)*1.0+(fbm3(p*1.35)-0.5)*0.3;}'
@@ -171,30 +176,33 @@ var FS=(deriv?'#extension GL_OES_standard_derivatives : enable\n':'')+[
  ' float th=atan(p.z,p.x);',
  ' vec2 uv=barkUV(th,p.y);',
  ' float hcm=barkN(uv)*RELIEF;',
- ' float terr=floor(hcm/STEP)*STEP;',
+ ' float terr=softTerr(hcm);',
  ' float lvl=clamp(terr/RELIEF,0.0,1.0);',                      // 0 = recessed, 1 = top plate
  ' float id=hash12(vec2(floor(hcm/STEP),3.0));',                // per-terrace variation
- ' vec3 deep =vec3(0.30,0.195,0.150);',                         // shaded recesses
- ' vec3 salmon=vec3(0.545,0.335,0.250);',                       // freshly exposed under-layer
- ' vec3 grey  =vec3(0.630,0.600,0.575);',                       // weathered plate face (dominant)
- ' vec3 c=mix(deep,salmon,smoothstep(0.0,0.16,lvl));',
- ' c=mix(c,grey,smoothstep(0.10,0.34,lvl));',                   // grey takes over quickly
- ' c*=0.95+0.10*id;',
- ' c=mix(c,grey*vec3(0.96,0.97,1.0),0.18);',                    // keep the plates cool-grey overall
+ ' vec3 deep  =vec3(0.235,0.135,0.090);',                       // dark brown recesses
+ ' vec3 rust  =vec3(0.470,0.255,0.155);',                       // warm rust
+ ' vec3 salmon=vec3(0.640,0.390,0.255);',                       // freshly exposed under-layer
+ ' vec3 tan   =vec3(0.660,0.520,0.390);',                       // warm weathered plate face
+ ' vec3 c=mix(deep,rust,smoothstep(0.0,0.20,lvl));',
+ ' c=mix(c,salmon,smoothstep(0.14,0.46,lvl));',
+ ' c=mix(c,tan,smoothstep(0.42,0.86,lvl));',                    // warm tan on the top plates
+ ' c*=0.93+0.15*id;',
  ' float scale=fbm2(uv*6.0);',                                  // fine scaly grain on each plate
- ' c*=0.93+0.15*scale;',
- ' c*=0.90+0.20*fbm2(uv*1.4+id*9.0);',
- // thin dark line at each terrace step -> reads as the plate outline
+ ' c*=0.92+0.17*scale;',
+ ' c*=0.88+0.24*fbm2(uv*1.4+id*9.0);',                          // plate-to-plate variation
+ // thin dark line right at each terrace riser -> reads as the plate outline
  ' float f=fract(hcm/STEP);',
- ' float edge=smoothstep(0.16,0.0,f);',
- ' c*=1.0-edge*0.30;',
- // the occasional deep fissure, nearly black
+ ' float edge=smoothstep(0.14,0.0,f)+smoothstep(0.88,1.0,f);',
+ ' c*=1.0-edge*0.28;',
+ // the occasional big fissure, nearly black
  ' float cr=barkCrack(uv);',
- ' c=mix(c,vec3(0.055,0.042,0.035),smoothstep(0.15,0.75,cr));',
- // lichen / moss film in patches
- ' float li=smoothstep(0.58,0.88,fbm2(uv*0.40+21.0))*(1.0-cr);',
- ' c=mix(c,vec3(0.49,0.525,0.425),li*0.38);',
- ' return vec4(c,terr*2.0-cr*1.2+scale*0.12);}',
+ ' c=mix(c,vec3(0.050,0.036,0.028),smoothstep(0.10,0.60,cr));',
+ // grey weathering + lichen only in patches, so brown stays dominant
+ ' float wx=smoothstep(0.54,0.90,fbm2(uv*0.33+13.0));',
+ ' c=mix(c,vec3(0.575,0.545,0.505),wx*0.42);',
+ ' float li=smoothstep(0.62,0.90,fbm2(uv*0.40+21.0))*(1.0-cr);',
+ ' c=mix(c,vec3(0.46,0.495,0.395),li*0.30);',
+ ' return vec4(c,terr*1.6-cr*1.3+scale*0.12);}',
  'void main(){',
  ' float r=length(vP.xz);',
  ' bool isBark = vKind>0.5 ? true : (r>17.4);',
@@ -248,7 +256,7 @@ function grid(rows,cols,fn){
     var a=idx[i][j],b=idx[i+1][j],c=idx[i+1][j+1],d=idx[i][j+1];
     I.push(a,b,c,a,c,d);}
 }
-var NA=320, NH=92, NR=120;
+var NA=300, NH=86, NR=112;
 function th(i){return -AH+2*AH*(i/NA);}
 function radial(t){return [Math.cos(t),0,Math.sin(t)];}
 function wOf(r){var t=(r-(R-BARK))/BARK;return t<0?0:(t>1?1:t*t*(3-2*t));}
@@ -307,7 +315,7 @@ var oId=null,lx=0,ly=0;
 canvas.addEventListener('pointerdown',function(e){oId=e.pointerId;lx=e.clientX;ly=e.clientY;
   canvas.setPointerCapture(oId);hideHint();e.preventDefault();});
 canvas.addEventListener('pointermove',function(e){if(e.pointerId!==oId)return;
-  yaw+=(e.clientX-lx)*0.006;pitch+=(e.clientY-ly)*0.006;lx=e.clientX;ly=e.clientY;
+  yaw-=(e.clientX-lx)*0.006;pitch+=(e.clientY-ly)*0.006;lx=e.clientX;ly=e.clientY;
   pitch=Math.max(-1.5,Math.min(1.5,pitch));e.preventDefault();});
 function oEnd(e){if(e.pointerId===oId)oId=null;}
 canvas.addEventListener('pointerup',oEnd);canvas.addEventListener('pointercancel',oEnd);
