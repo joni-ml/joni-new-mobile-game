@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>פיסת עץ · חתך</title>
+</head>
+<body>
+<title>פיסת עץ · חתך</title>
+<style>
+  :root{ --glass:rgba(30,24,18,0.42); --brd:rgba(255,255,255,0.28); --ink:#f4efe7; }
+  html,body{height:100%;margin:0;overflow:hidden;background:#cfc7bb;}
+  #stage{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;
+         -webkit-user-select:none;user-select:none;}
+  .ui{position:fixed;z-index:10;color:var(--ink);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+      -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;}
+  #zwrap{right:max(18px,env(safe-area-inset-right));top:50%;transform:translateY(-50%);
+         display:flex;flex-direction:column;align-items:center;gap:10px;}
+  #zlbl{font-size:12px;letter-spacing:.14em;opacity:.9;writing-mode:vertical-rl;text-shadow:0 1px 4px rgba(0,0,0,.5);}
+  #zoom{position:relative;width:44px;height:240px;border-radius:24px;background:var(--glass);
+        border:1px solid var(--brd);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
+        box-shadow:0 10px 30px rgba(0,0,0,0.22);touch-action:none;overflow:hidden;}
+  #zfill{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,#d8b98a,#a9793f);opacity:.5;}
+  #zknob{position:absolute;left:50%;width:52px;height:24px;margin-left:-26px;border-radius:14px;
+         background:radial-gradient(circle at 50% 30%,#fff7ea,#e6c79a 70%,#c39a63);
+         border:1px solid rgba(255,255,255,0.7);box-shadow:0 4px 12px rgba(0,0,0,0.3);}
+  #zval{font-size:11px;opacity:.85;font-variant-numeric:tabular-nums;text-shadow:0 1px 4px rgba(0,0,0,.5);}
+  #hint{left:50%;top:max(18px,env(safe-area-inset-top));transform:translateX(-50%);text-align:center;
+        background:var(--glass);border:1px solid var(--brd);padding:9px 16px;border-radius:14px;
+        font-size:13px;line-height:1.5;direction:rtl;backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
+        max-width:88vw;transition:opacity .8s ease;text-shadow:0 1px 3px rgba(0,0,0,.35);}
+  #brand{left:max(16px,env(safe-area-inset-left));top:max(16px,env(safe-area-inset-top));
+         font-size:12px;letter-spacing:.2em;opacity:.55;direction:rtl;text-shadow:0 1px 4px rgba(0,0,0,.5);}
+  @media (max-height:520px){ #zoom{height:160px;} }
+</style>
+
+<canvas id="stage"></canvas>
+<div id="brand" class="ui">פיסת עץ · 5×5×20</div>
+<div id="hint" class="ui">גררו כדי לסובב את פיסת העץ &nbsp;·&nbsp; הסרגל שמימין מקרב ומרחיק</div>
+<div id="zwrap" class="ui">
+  <div id="zlbl">זום</div>
+  <div id="zoom"><div id="zfill"></div><div id="zknob"></div></div>
+  <div id="zval">×1</div>
+</div>
+
+<script>
+(function(){
+"use strict";
+try{var mv=document.createElement('meta');mv.name='viewport';
+  mv.content='width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover';
+  document.head.appendChild(mv);}catch(e){}
+
+// ---- math ----
+function sub(a,b){return[a[0]-b[0],a[1]-b[1],a[2]-b[2]];}
+function cross(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
+function dot(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
+function norm(a){var l=Math.hypot(a[0],a[1],a[2])||1;return[a[0]/l,a[1]/l,a[2]/l];}
+function perspective(f,a,n,fa){var t=1/Math.tan(f/2),nf=1/(n-fa);
+  return[t/a,0,0,0,0,t,0,0,0,0,(fa+n)*nf,-1,0,0,2*fa*n*nf,0];}
+function lookAt(e,c,u){var z=norm(sub(e,c)),x=norm(cross(u,z)),y=cross(z,x);
+  return[x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-dot(x,e),-dot(y,e),-dot(z,e),1];}
+function mulm(a,b){var o=new Array(16);for(var c=0;c<4;c++)for(var r=0;r<4;r++)
+  o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];return o;}
+function invert(m){var a00=m[0],a01=m[1],a02=m[2],a03=m[3],a10=m[4],a11=m[5],a12=m[6],a13=m[7],
+  a20=m[8],a21=m[9],a22=m[10],a23=m[11],a30=m[12],a31=m[13],a32=m[14],a33=m[15];
+  var b00=a00*a11-a01*a10,b01=a00*a12-a02*a10,b02=a00*a13-a03*a10,b03=a01*a12-a02*a11,
+  b04=a01*a13-a03*a11,b05=a02*a13-a03*a12,b06=a20*a31-a21*a30,b07=a20*a32-a22*a30,
+  b08=a20*a33-a23*a30,b09=a21*a32-a22*a31,b10=a21*a33-a23*a31,b11=a22*a33-a23*a32;
+  var d=b00*b11-b01*b10+b02*b09+b03*b08-b04*b07+b05*b06;if(!d)return null;d=1/d;
+  return[(a11*b11-a12*b10+a13*b09)*d,(a02*b10-a01*b11-a03*b09)*d,(a31*b05-a32*b04+a33*b03)*d,(a22*b04-a21*b05-a23*b03)*d,
+  (a12*b08-a10*b11-a13*b07)*d,(a00*b11-a02*b08+a03*b07)*d,(a32*b02-a30*b05-a33*b01)*d,(a20*b05-a22*b02+a23*b01)*d,
+  (a10*b10-a11*b08+a13*b06)*d,(a01*b08-a00*b10-a03*b06)*d,(a30*b04-a31*b02+a33*b00)*d,(a21*b02-a20*b04-a23*b00)*d,
+  (a11*b07-a10*b09-a12*b06)*d,(a00*b09-a01*b07+a02*b06)*d,(a31*b01-a30*b03-a32*b00)*d,(a20*b03-a21*b01+a22*b00)*d];}
+
+var canvas=document.getElementById('stage');
+var gl=canvas.getContext('webgl',{antialias:true,alpha:false})||canvas.getContext('experimental-webgl',{antialias:true});
+if(!gl){document.body.innerHTML='<p style="padding:20px;font-family:sans-serif">אין תמיכה ב-WebGL.</p>';return;}
+var deriv=gl.getExtension('OES_standard_derivatives');
+function compile(t,s){var sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);
+  if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(sh);return sh;}
+function prog(v,f){var p=gl.createProgram();gl.attachShader(p,compile(gl.VERTEX_SHADER,v));
+  gl.attachShader(p,compile(gl.FRAGMENT_SHADER,f));gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw gl.getProgramInfoLog(p);return p;}
+
+// ---- background gradient (studio) ----
+var bgp=prog('attribute vec2 aP;varying vec2 v;void main(){v=aP;gl_Position=vec4(aP,0.999,1.0);}',
+ ['precision highp float;varying vec2 v;',
+  'void main(){float t=v.y*0.5+0.5;',
+  ' vec3 top=vec3(0.90,0.88,0.84), bot=vec3(0.55,0.53,0.50);',
+  ' vec3 c=mix(bot,top,pow(t,0.9));',
+  ' c*=1.0-0.18*length(v*vec2(0.9,1.0));',           // soft vignette
+  ' gl_FragColor=vec4(c,1.0);}'].join('\n'));
+var bgA=gl.getAttribLocation(bgp,'aP');
+var bgBuf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,bgBuf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+
+// ---- wood program ----
+var woodFS=(deriv?'#extension GL_OES_standard_derivatives : enable\n':'')+
+ ['precision highp float;',
+  'varying vec3 vP;varying vec3 vN;',
+  'uniform vec3 uCam,uSun;',
+  'float hash3(vec3 p){p=fract(p*0.3183099+0.1);p*=17.0;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}',
+  'float n3(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.-2.*f);',
+  ' return mix(mix(mix(hash3(i),hash3(i+vec3(1,0,0)),f.x),mix(hash3(i+vec3(0,1,0)),hash3(i+vec3(1,1,0)),f.x),f.y),',
+  '            mix(mix(hash3(i+vec3(0,0,1)),hash3(i+vec3(1,0,1)),f.x),mix(hash3(i+vec3(0,1,1)),hash3(i+vec3(1,1,1)),f.x),f.y),f.z);}',
+  'float fbm(vec3 p){float s=0.,a=.5;for(int k=0;k<5;k++){s+=a*n3(p);p*=2.03;a*=.5;}return s;}',
+  // wood field -> returns vec4(color.rgb, height)
+  'vec4 wood(vec3 p){',
+  ' float x=p.x;',                                   // length axis
+  ' float cy=0.7*sin(x*0.14)+0.35*sin(x*0.05+1.0);', // meandering pith -> natural grain
+  ' float cz=0.7*cos(x*0.12+0.6)+0.30*sin(x*0.08);',
+  ' vec2 d=vec2(p.y-cy,p.z-cz);',
+  ' float ang=atan(d.y,d.x);',
+  ' float r=length(d);',
+  ' r+=fbm(vec3(ang*1.6,x*0.12,3.0))*0.42;',         // rings wobble (not perfect circles)
+  ' r+=fbm(p*0.7)*0.16;',
+  // per-year ring WIDTH variation: good years wide, drought years narrow
+  ' float rings=r*5.2 + 1.35*fbm(vec3(r*0.85,17.0,0.0)) + 0.5*fbm(vec3(r*2.1,5.0,0.0));',
+  ' float ph=fract(rings);',
+  ' float aa=0.02;',
+  '#ifdef GL_OES_standard_derivatives',
+  ' aa=clamp(fwidth(rings)*0.9,0.015,0.42);',        // anti-alias rings -> no moire at distance
+  '#endif',
+  ' float late=smoothstep(0.60-aa,0.80+aa,ph)*(1.0-smoothstep(0.90-aa,1.0+aa,ph));',
+  ' float fine=fbm(vec3(x*3.5,ang*4.0+r*3.0,7.0));', // longitudinal fibre grain
+  ' vec3 lightW=vec3(0.84,0.66,0.44);',              // earlywood (warm honey)
+  ' vec3 darkW =vec3(0.55,0.38,0.22);',              // latewood
+  ' vec3 col=mix(lightW,darkW, clamp(late*0.9+fine*0.14,0.0,1.0));',
+  ' col*=0.94+0.12*fine;',
+  // medullary rays: faint radial flecks running outward from the pith
+  ' float ray=smoothstep(0.72,1.0,fbm(vec3(ang*26.0,r*0.5,x*0.35)));',
+  ' col*=1.0+ray*0.10;',
+  // radial drying cracks / checks from the pith
+  ' float cang=abs(fract(ang/6.2831*3.0+fbm(vec3(x*0.1,0.0,0.0))*0.6)-0.5)*2.0;',
+  ' float crack=(1.0-smoothstep(0.0,0.055,cang))*smoothstep(0.25,1.6,r)*(0.6+0.4*fbm(vec3(x*0.5,r,0.0)));',
+  ' col*=1.0-crack*0.72;',
+  // weathering: winters & summers -> silvery-grey patina that LIGHTENS & desaturates in patches
+  ' float weather=fbm(p*0.22);',
+  ' vec3 patina=vec3(0.68,0.645,0.59);',
+  ' col=mix(col,patina, clamp(0.08+0.34*smoothstep(0.42,0.88,weather),0.0,0.38));',
+  ' col*=0.96+0.07*fbm(p*1.1+11.0);',                // gentle aged mottling
+  ' float h=late*0.6 - crack*1.4 + fine*0.15;',      // relief height field
+  ' return vec4(col,h);}',
+  // tool marks left by the blade on a cut face, in that face-s own plane
+  'float toolMarks(vec3 p,vec3 N){',
+  ' vec2 uv = abs(N.x)>0.5 ? p.zy : (abs(N.y)>0.5 ? p.xz : p.xy);',
+  ' float chatter=sin(uv.x*8.0+fbm(vec3(uv*0.5,0.0))*5.0)*0.5+0.5;',   // blade chatter ridges
+  ' float scratch=fbm(vec3(uv.x*40.0,uv.y*2.0,3.0));',                  // fine drag scratches
+  ' return chatter*0.35+scratch*0.65;}',
+  'void main(){',
+  ' vec3 N=normalize(vN);',
+  ' vec4 w=wood(vP);vec3 base=w.rgb;',
+  // blade marks on the cut surface + darkened, slightly worn edges
+  ' float tm=toolMarks(vP,N);',
+  ' base*=0.95+0.10*tm;',
+  ' vec3 q=abs(vP)/vec3(10.0,2.5,2.5);',
+  ' float edge=smoothstep(0.86,1.0,max(max(q.x,q.y),q.z));',
+  ' base*=1.0-edge*0.16;',
+  '#ifdef GL_OES_standard_derivatives',
+  ' float h=w.a+tm*0.10; vec3 dpx=dFdx(vP),dpy=dFdy(vP);',
+  ' float hx=dFdx(h),hy=dFdy(h);',
+  ' vec3 T=normalize(dpx-N*dot(N,dpx)),B=normalize(cross(N,T));',
+  ' N=normalize(N-(T*hx+B*hy)*1.3);',
+  '#endif',
+  ' float ndl=max(dot(N,uSun),0.0);',
+  ' float hemi=0.5+0.5*N.y;',
+  ' vec3 amb=mix(vec3(0.38,0.36,0.34),vec3(0.62,0.64,0.68),hemi);',
+  // fill light from the opposite side so end grain and shaded faces stay readable
+  ' vec3 FILL=normalize(vec3(0.75,0.20,-0.55));',
+  ' float ndf=max(dot(N,FILL),0.0);',
+  ' vec3 V=normalize(uCam-vP);vec3 H=normalize(uSun+V);',
+  ' float spec=pow(max(dot(N,H),0.0),18.0)*0.10;',   // faint sheen
+  ' vec3 col=base*(amb+vec3(1.0,0.96,0.88)*ndl*0.85+vec3(0.80,0.82,0.88)*ndf*0.40)+vec3(spec);',
+  ' gl_FragColor=vec4(col,1.0);}'].join('\n');
+var wp=prog(
+ 'attribute vec3 aPos;attribute vec3 aNrm;uniform mat4 uProj,uView;varying vec3 vP,vN;'+
+ 'void main(){vP=aPos;vN=aNrm;gl_Position=uProj*uView*vec4(aPos,1.0);}', woodFS);
+var wA={pos:gl.getAttribLocation(wp,'aPos'),nrm:gl.getAttribLocation(wp,'aNrm')};
+var wU={proj:gl.getUniformLocation(wp,'uProj'),view:gl.getUniformLocation(wp,'uView'),
+        cam:gl.getUniformLocation(wp,'uCam'),sun:gl.getUniformLocation(wp,'uSun')};
+
+// ---- block geometry: 20 (X) x 5 (Y) x 5 (Z) ----
+var HX=10, HY=2.5, HZ=2.5;
+var V=[], I=[], nv=0;
+function quad(a,b,c,d,n){var i0=vert(a,n),i1=vert(b,n),i2=vert(c,n),i3=vert(d,n);
+  I.push(i0,i2,i1,i0,i3,i2);}   // CCW as seen from outside (outward normals)
+function vert(p,n){V.push(p[0],p[1],p[2],n[0],n[1],n[2]);return nv++;}
+// 8 corners
+var c=[[-HX,-HY,-HZ],[HX,-HY,-HZ],[HX,HY,-HZ],[-HX,HY,-HZ],
+       [-HX,-HY,HZ],[HX,-HY,HZ],[HX,HY,HZ],[-HX,HY,HZ]];
+quad(c[5],c[4],c[7],c[6],[0,0,1]);   // +Z
+quad(c[0],c[1],c[2],c[3],[0,0,-1]);  // -Z
+quad(c[1],c[5],c[6],c[2],[1,0,0]);   // +X end
+quad(c[4],c[0],c[3],c[7],[-1,0,0]);  // -X end
+quad(c[3],c[2],c[6],c[7],[0,1,0]);   // +Y
+quad(c[4],c[5],c[1],c[0],[0,-1,0]);  // -Y
+var vbo=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(V),gl.STATIC_DRAW);
+var ibo=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibo);
+gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(I),gl.STATIC_DRAW);
+
+// ---- orbit camera ----
+var yaw=0.9, pitch=0.42, zoomT=0.10;
+(function(){var h=location.hash.replace('#','');if(h){var p=h.split(',').map(Number);
+  if(p.length>=3&&p.every(function(x){return!isNaN(x);})){yaw=p[0];pitch=p[1];zoomT=p[2];}}})();
+var FOVY=48*Math.PI/180, RADIUS=Math.hypot(HX,HY,HZ);
+// distance that just fits the block for the CURRENT aspect (portrait-safe), then zoom in from there
+function fitDist(){
+  var hv=FOVY/2, hh=Math.atan(Math.tan(hv)*(W/H));
+  return RADIUS/Math.sin(Math.min(hv,hh));
+}
+function distFromT(t){var f=fitDist();return f*(1.12-0.78*t);}   // t up -> closer
+var SUN=norm([-0.42,0.72,0.55]);
+
+// zoom slider
+var zEl=document.getElementById('zoom'),zknob=document.getElementById('zknob'),
+    zfill=document.getElementById('zfill'),zval=document.getElementById('zval'),zId=null;
+function zApply(cy){var r=zEl.getBoundingClientRect();zoomT=Math.min(1,Math.max(0,1-(cy-r.top)/r.height));drawZoom();}
+function drawZoom(){var r=zEl.getBoundingClientRect(),pad=14,us=r.height-pad*2,yy=pad+(1-zoomT)*us;
+  zknob.style.top=(yy-12)+'px';zfill.style.height=(r.height-yy)+'px';
+  zval.textContent='×'+(0.6+zoomT*2.4).toFixed(1);}
+zEl.addEventListener('pointerdown',function(e){zId=e.pointerId;zEl.setPointerCapture(zId);zApply(e.clientY);e.preventDefault();});
+zEl.addEventListener('pointermove',function(e){if(e.pointerId!==zId)return;zApply(e.clientY);e.preventDefault();});
+zEl.addEventListener('pointerup',function(e){if(e.pointerId===zId)zId=null;});
+zEl.addEventListener('pointercancel',function(e){if(e.pointerId===zId)zId=null;});
+
+// drag to orbit
+var oId=null,lx=0,ly=0;
+canvas.addEventListener('pointerdown',function(e){oId=e.pointerId;lx=e.clientX;ly=e.clientY;
+  canvas.setPointerCapture(oId);hideHint();e.preventDefault();});
+canvas.addEventListener('pointermove',function(e){if(e.pointerId!==oId)return;
+  yaw+=(e.clientX-lx)*0.006;pitch+=(e.clientY-ly)*0.006;lx=e.clientX;ly=e.clientY;
+  pitch=Math.max(-1.5,Math.min(1.5,pitch));e.preventDefault();});
+function oEnd(e){if(e.pointerId===oId)oId=null;}
+canvas.addEventListener('pointerup',oEnd);canvas.addEventListener('pointercancel',oEnd);
+window.addEventListener('contextmenu',function(e){e.preventDefault();});
+var hintEl=document.getElementById('hint'),hg=false;
+function hideHint(){if(hg)return;hg=true;hintEl.style.opacity='0';setTimeout(function(){hintEl.style.display='none';},900);}
+setTimeout(hideHint,6000);
+
+// ---- render ----
+var W=1,H=1,DPR=1;
+function resize(){DPR=Math.min(window.devicePixelRatio||1,2.5);
+  W=Math.round(canvas.clientWidth*DPR);H=Math.round(canvas.clientHeight*DPR);canvas.width=W;canvas.height=H;drawZoom();}
+window.addEventListener('resize',resize);
+gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);
+function frame(){
+  if(W!==Math.round(canvas.clientWidth*DPR)||H!==Math.round(canvas.clientHeight*DPR))resize();
+  gl.viewport(0,0,W,H);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  // background
+  gl.disable(gl.DEPTH_TEST);gl.depthMask(false);gl.useProgram(bgp);
+  gl.bindBuffer(gl.ARRAY_BUFFER,bgBuf);gl.enableVertexAttribArray(bgA);gl.vertexAttribPointer(bgA,2,gl.FLOAT,false,0,0);
+  gl.drawArrays(gl.TRIANGLES,0,3);gl.enable(gl.DEPTH_TEST);gl.depthMask(true);
+  // camera
+  var d=distFromT(zoomT),cp=Math.cos(pitch);
+  var eye=[Math.sin(yaw)*cp*d, Math.sin(pitch)*d, Math.cos(yaw)*cp*d];
+  var proj=perspective(FOVY,W/H,0.1,300);
+  var view=lookAt(eye,[0,0,0],[0,1,0]);
+  gl.useProgram(wp);
+  gl.uniformMatrix4fv(wU.proj,false,new Float32Array(proj));
+  gl.uniformMatrix4fv(wU.view,false,new Float32Array(view));
+  gl.uniform3fv(wU.cam,eye);gl.uniform3fv(wU.sun,SUN);
+  gl.bindBuffer(gl.ARRAY_BUFFER,vbo);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibo);
+  gl.enableVertexAttribArray(wA.pos);gl.vertexAttribPointer(wA.pos,3,gl.FLOAT,false,24,0);
+  gl.enableVertexAttribArray(wA.nrm);gl.vertexAttribPointer(wA.nrm,3,gl.FLOAT,false,24,12);
+  gl.drawElements(gl.TRIANGLES,I.length,gl.UNSIGNED_SHORT,0);
+  requestAnimationFrame(frame);
+}
+resize();drawZoom();requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
