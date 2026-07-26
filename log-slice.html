@@ -70,7 +70,7 @@ var SHAPE={
   seed   : 1.0             // change this and the same shape grows a different piece
 };
 var BARK={
-  relief    : 0.62,   // total height of the bark relief (cm)
+  relief    : 0.52,   // height of the main bark relief (cm); peaks taper above this
   step      : 0.10,   // one terrace level (cm)  -> 1 mm
   plate     : 0.62,   // plate size (smaller = bigger plates)
   crackDepth: 1.15,   // how deep the big fissures cut
@@ -123,7 +123,12 @@ var COMMON=[
 ' vec2 w=vec2(fbm2(uv*0.55+1.7),fbm2(uv*0.55+9.3))-0.5;',
 ' vec2 p=uv*uPlate+w*0.80;',
 ' return fbm2(p)*1.0+fbm2(p*2.3)*0.18;}',
-'float barkN(vec2 uv){return clamp((barkRaw(uv)-0.30)/0.42,0.0,1.0);}',
+// STEP 1b - NO hard ceiling. A hard clamp would fuse every high area into one
+// dead-flat plateau. Instead, past the knee each further layer adds half of what
+// the one below it added: the terraces keep coming but shrink geometrically, so
+// the stack tapers to a peak and still terminates.
+'float softSat(float x){return x<=1.0 ? x : 1.0+(1.0-exp2(-(x-1.0)));}',
+'float barkN(vec2 uv){return softSat(max((barkRaw(uv)-0.30)/0.42,0.0));}',
 
 // STEP 2 - soft terraces: flat plateaus joined by a short riser. Continuous, so the
 // mesh never tears into the bright jagged slivers a hard floor() produces.
@@ -332,7 +337,7 @@ var RAD=Math.max(Math.hypot(SHAPE.rOuter*Math.cos(SHAPE.angTo)-CEN[0],HHy,SHAPE.
                  Math.hypot(CEN[0]-SHAPE.rInner,HHy))*1.02;
 var W=1,H=1,DPR=1;
 function fitDist(){var hv=FOVY/2,hh=Math.atan(Math.tan(hv)*(W/H));return RAD/Math.sin(Math.min(hv,hh));}
-function distOf(t){var f=fitDist();return f*(1.10-0.72*t);}
+function distOf(t){var f=fitDist();return f*(1.10-0.85*t);}
 var SUN=norm([-0.40,0.74,0.54]);
 
 var zEl=document.getElementById('zoom'),zknob=document.getElementById('zknob'),
@@ -340,7 +345,7 @@ var zEl=document.getElementById('zoom'),zknob=document.getElementById('zknob'),
 function zApply(cy){var r=zEl.getBoundingClientRect();zoomT=Math.min(1,Math.max(0,1-(cy-r.top)/r.height));drawZoom();}
 function drawZoom(){var r=zEl.getBoundingClientRect(),pad=14,us=r.height-pad*2,y=pad+(1-zoomT)*us;
   zknob.style.top=(y-12)+'px';zfill.style.height=(r.height-y)+'px';
-  zval.textContent='×'+(0.9+zoomT*2.6).toFixed(1);}
+  zval.textContent='×'+(0.9+zoomT*5.0).toFixed(1);}
 zEl.addEventListener('pointerdown',function(e){zId=e.pointerId;zEl.setPointerCapture(zId);zApply(e.clientY);e.preventDefault();});
 zEl.addEventListener('pointermove',function(e){if(e.pointerId!==zId)return;zApply(e.clientY);e.preventDefault();});
 zEl.addEventListener('pointerup',function(e){if(e.pointerId===zId)zId=null;});
