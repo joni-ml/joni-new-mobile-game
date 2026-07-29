@@ -52,6 +52,14 @@
   #brand{left:max(16px,env(safe-area-inset-left));top:max(16px,env(safe-area-inset-top));
          font-size:12px;letter-spacing:.22em;opacity:.55;direction:rtl;
          text-shadow:0 1px 4px rgba(0,0,0,.5);}
+  #qwrap{right:max(16px,env(safe-area-inset-right));bottom:max(22px,env(safe-area-inset-bottom));
+         display:flex;flex-direction:column;align-items:flex-end;gap:6px;
+         background:var(--glass);border:1px solid var(--glass-brd);padding:9px 13px;border-radius:14px;
+         backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);direction:rtl;
+         box-shadow:0 8px 24px rgba(0,0,0,0.22);}
+  #qlbl{font-size:12px;letter-spacing:.10em;opacity:.92;text-shadow:0 1px 3px rgba(0,0,0,.45);}
+  #quality{width:132px;accent-color:#9cc266;cursor:pointer;}
+  #qval{font-size:11px;opacity:.8;font-variant-numeric:tabular-nums;text-shadow:0 1px 3px rgba(0,0,0,.45);}
   @media (max-height:520px){ #speed{height:150px;} }
 </style>
 
@@ -59,6 +67,11 @@
 <div id="brand" class="ui">קפריסין · שיטוט</div>
 <div id="hint" class="ui">גררו על המסך כדי להביט &nbsp;·&nbsp; ג׳ויסטיק לתנועה &nbsp;·&nbsp; הסרגל שמימין קובע מהירות</div>
 <div id="joy" class="ui"><div class="ring"></div><div id="knob"></div></div>
+<div id="qwrap" class="ui">
+  <div id="qlbl">איכות</div>
+  <input type="range" id="quality" min="1" max="6" step="1" value="5">
+  <div id="qval">גבוהה</div>
+</div>
 <div id="speedWrap" class="ui">
   <div id="speedLbl">מהירות</div>
   <div id="speed"><div id="fill"></div><div id="sknob"></div></div>
@@ -500,9 +513,20 @@ function hideHint(){if(hintGone)return;hintGone=true;hintEl.style.opacity='0';se
 setTimeout(hideHint,6500);
 
 // ---------- render ----------
+// Quality = how many pixels we actually render. Dropping it is the one lever that
+// reliably buys frame rate on a phone, and the scene rebuilds nothing to apply it.
+var QSCALE=[0.45,0.60,0.75,0.90,1.00,1.25];
+var QNAME=['נמוכה מאוד','נמוכה','בינונית','טובה','גבוהה','מקסימלית'];
+var qEl=document.getElementById('quality'),qVal=document.getElementById('qval');
+var qIdx=parseInt(qEl.value,10)-1;
 var W=1,H=1,DPR=1;
-function resize(){DPR=Math.min(window.devicePixelRatio||1,2.5);
-  W=Math.round(canvas.clientWidth*DPR);H=Math.round(canvas.clientHeight*DPR);canvas.width=W;canvas.height=H;drawSpeed();}
+function resize(){
+  DPR=Math.min((window.devicePixelRatio||1)*QSCALE[qIdx],2.5);
+  W=Math.round(canvas.clientWidth*DPR);H=Math.round(canvas.clientHeight*DPR);
+  canvas.width=W;canvas.height=H;drawSpeed();}
+qEl.addEventListener('input',function(e){
+  qIdx=parseInt(e.target.value,10)-1;qVal.textContent=QNAME[qIdx];resize();});
+qVal.textContent=QNAME[qIdx];
 window.addEventListener('resize',resize);
 var SUN=norm([0.35,0.82,0.42]),SKY_AMB=[0.52,0.66,0.90],HORIZON=[0.82,0.89,0.96];
 var flightVP=new Float32Array(lightVP), TEXEL=1/SHADOW_RES;
