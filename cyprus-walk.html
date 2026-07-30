@@ -179,55 +179,27 @@ var bp=prog(
   'float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);',
   ' float a=hash(i),b=hash(i+vec2(1.,0.)),c=hash(i+vec2(0.,1.)),d=hash(i+vec2(1.,1.));',
   ' return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);}',
-  'float fbm(vec2 p){float s=0.,a=.5;for(int k=0;k<4;k++){s+=a*vnoise(p);p*=2.02;a*=.5;}return s;}',
-  // ---- the pine-bark algorithm from the log slice, in centimetre space ----
-  'const float RELIEF=0.76, STEP=0.10;',
-  'float barkRaw(vec2 uv){',
-  ' vec2 w=vec2(fbm(uv*0.55+1.7),fbm(uv*0.55+9.3))-0.5;',
-  ' vec2 p=uv*0.30+w*0.80;',
-  ' return fbm(p)*1.0+fbm(p*2.3)*0.18;}',
-  // no hard ceiling: past the knee each layer adds half of the one below, so the
-  // stack tapers to a peak instead of fusing into one dead-flat plateau
-  'float softSat(float x){return x<=1.0 ? x : 1.0+(1.0-exp2(-(x-1.0)));}',
-  'float softTerr(float h,float st){float k=h/st;float i=floor(k);float f=k-i;',
-  ' return (i+smoothstep(0.55,0.96,f))*st;}',
-  // fissures stretched along the trunk axis, so they travel upward
-  'float barkCrack(vec2 uv){',
-  ' vec2 cuv=vec2(uv.x,uv.y*0.17);',
-  ' float c=fbm(cuv*0.30+31.0)+fbm(cuv*0.9+3.0)*0.10;',
-  ' float line=1.0-smoothstep(0.0,0.055,abs(c-0.5));',
-  ' float where=smoothstep(0.50,0.80,fbm(vec2(uv.x*0.11,uv.y*0.05)+7.0));',
-  ' return line*where;}',
+  // ---- CHEAP bark: a colour map plus a little height, nothing more. ----
+  // The full plate/terrace/fissure algorithm lives in log-slice.html; it costs
+  // ~20 fbm evaluations per pixel, which is fine for one hero object but far too
+  // heavy to repeat across a forest. This version uses 3 noise lookups.
   'void main(){',
   ' vec3 N=normalize(vN);if(!gl_FrontFacing)N=-N;',              // solid on any facing (no see-through)
   ' float age=clamp(vAge,0.0,1.0);',
-  // Keep this in the same numeric range the slice was tuned for. Feeding real
-  // centimetres (x up to ~390) pushes the detail octaves past the pixel rate and
-  // the whole thing aliases into granite speckle.
-  ' vec2 uvCm=vec2(vUV.x*40.0, vUV.y*13.0);',                    // around the trunk / up it
-  ' float hcm=softSat(max((barkRaw(uvCm)-0.30)/0.42,0.0))*RELIEF;',
-  ' float terr=softTerr(hcm,STEP);',
-  ' float lvl=clamp(terr/RELIEF,0.0,1.0);',
-  ' float cr=barkCrack(uvCm);',
-  ' float scale=fbm(uvCm*6.0);',
-  ' float hRelief=(terr*1.5-cr*1.2+scale*0.10)*age;',            // young twigs stay smooth
+  ' vec2 uv=vec2(vUV.x*40.0, vUV.y*13.0);',                      // around the trunk / up it
+  // vertical strands: pure arithmetic, no noise, and it reads as bark grain
+  ' float strand=abs(fract(uv.x*1.15+vnoise(vec2(uv.x*0.45,uv.y*0.10))*3.4)-0.5)*2.0;',
+  ' float groove=smoothstep(0.05,0.95,strand);',
+  ' float n1=vnoise(uv*1.3);',                                   // broad blotches
+  ' float n2=vnoise(uv*5.5);',                                   // fine grain
+  ' float h=(groove*0.38+n1*0.42+n2*0.20);',                     // noise leads, strands only hint
+  ' float hRelief=h*age*0.55;',
   barkBump,
-  // cool weathered plates with small warm / blue / violet areas
-  ' vec3 deep  =vec3(0.230,0.180,0.180);',
-  ' vec3 shade =vec3(0.430,0.365,0.350);',
-  ' vec3 lav   =vec3(0.630,0.590,0.600);',
-  ' vec3 old=mix(deep,shade,smoothstep(0.0,0.26,lvl));',
-  ' old=mix(old,lav,smoothstep(0.20,0.62,lvl));',
-  ' float hueA=fbm(uvCm*0.26+41.0), hueB=fbm(uvCm*0.23+77.0), hueC=fbm(uvCm*0.30+13.0);',
-  ' old=mix(old,vec3(0.680,0.395,0.255),smoothstep(0.48,0.80,hueA)*0.80*(0.35+0.65*lvl));',
-  ' old=mix(old,vec3(0.425,0.500,0.575),smoothstep(0.52,0.82,hueB)*0.55);',
-  ' old=mix(old,vec3(0.515,0.435,0.565),smoothstep(0.53,0.83,hueC)*0.45);',
-  ' old*=0.94+0.13*scale;',
-  ' float f=fract(hcm/STEP);',
-  ' old*=1.0-(smoothstep(0.13,0.0,f)+smoothstep(0.89,1.0,f))*0.26;',
-  ' old=mix(old,vec3(0.055,0.048,0.050),smoothstep(0.10,0.60,cr));',
-  // young growth is still smooth and reddish; old wood carries the full plate texture
-  ' vec3 young=mix(vec3(0.34,0.155,0.10),vec3(0.70,0.40,0.27),clamp(scale*0.9+0.25,0.0,1.0));',
+  ' vec3 youngD=vec3(0.30,0.135,0.085), youngL=vec3(0.72,0.42,0.28);',
+  ' vec3 oldD  =vec3(0.235,0.205,0.205), oldL  =vec3(0.665,0.630,0.625);',
+  ' vec3 young=mix(youngD,youngL,h);',
+  ' vec3 old  =mix(oldD,oldL,h);',
+  ' old=mix(old,vec3(0.60,0.38,0.26),smoothstep(0.62,0.95,n1)*0.45);',   // a few warm patches
   ' vec3 base=mix(young,old,smoothstep(0.18,0.62,age));',
   ' float ndl=max(dot(N,uSun),0.0);float hemi=0.5+0.5*N.y;',
   ' vec3 ambient=mix(vec3(0.42,0.43,0.40),uSky*0.9,hemi);',
@@ -417,7 +389,7 @@ function leafGroup(center,scale,count){
 function branch(base,dir,length,radius,depth){
   // curved, multi-segment limb (organic, smooth) instead of one straight tube
   var nseg=radius>0.12?3:2, p=base, d=norm(dir), end=base, r=radius;
-  var segRad=radius>0.18?10:7;
+  var segRad=radius>0.18?8:(radius>0.09?6:4);   // thin twigs need very few sides
   for(var i=0;i<nseg;i++){
     var r2=radius*(1-(i+1)/nseg*0.28);
     var np=add(p,scl(d,length/nseg));
@@ -426,9 +398,11 @@ function branch(base,dir,length,radius,depth){
     p=np; r=r2; end=np;
   }
   dir=d;
-  if(depth<=0||radius<0.05){leafGroup(end,Math.max(0.8,radius*8+0.6),Math.round(rr(44,64)));return;}
-  if(depth<=2){leafGroup(add(base,scl(dir,length*0.55)),Math.max(0.7,radius*6),Math.round(rr(22,34)));}
-  var kids=depth>4?2:(rng()<0.5?2:3);
+  // fewer leaves per cluster now that there are far more branches carrying them
+  if(depth<=0||radius<0.05){leafGroup(end,Math.max(0.8,radius*8+0.6),Math.round(rr(14,20)));return;}
+  if(depth<=2){leafGroup(add(base,scl(dir,length*0.55)),Math.max(0.7,radius*6),Math.round(rr(7,11)));}
+  // denser, wilder branching
+  var kids=depth>4?3:(rng()<0.35?3:4);
   var bb=orthoBasis(dir),p1=bb[0],p2=bb[1],baseAz=rng()*Math.PI*2;
   for(var k=0;k<kids;k++){
     var az=baseAz+k/kids*Math.PI*2+rr(-0.5,0.5),spread=rr(0.35,0.72);
@@ -437,10 +411,15 @@ function branch(base,dir,length,radius,depth){
     nd=norm([nd[0],nd[1]+0.10,nd[2]]);
     branch(end,nd,length*rr(0.72,0.84),radius*rr(0.60,0.72),depth-1);
   }
-  if(depth>1&&rng()<0.55){var az2=rng()*Math.PI*2,sp2=rr(0.5,0.9);
+  // extra side twigs, and a second one now and then -> a much wilder crown
+  if(depth>1&&rng()<0.85){var az2=rng()*Math.PI*2,sp2=rr(0.5,0.95);
     var ov2=add(scl(p1,Math.cos(az2)),scl(p2,Math.sin(az2)));
     var nd2=norm(add(scl(dir,Math.cos(sp2)),scl(ov2,Math.sin(sp2))));nd2=norm([nd2[0],nd2[1]+0.08,nd2[2]]);
     branch(end,nd2,length*rr(0.55,0.7),radius*rr(0.5,0.62),depth-2);}
+  if(depth>2&&rng()<0.55){var az3=rng()*Math.PI*2,sp3=rr(0.6,1.05);
+    var ov3=add(scl(p1,Math.cos(az3)),scl(p2,Math.sin(az3)));
+    var nd3=norm(add(scl(dir,Math.cos(sp3)),scl(ov3,Math.sin(sp3))));nd3=norm([nd3[0],nd3[1]+0.05,nd3[2]]);
+    branch(add(base,scl(dir,length*0.5)),nd3,length*rr(0.42,0.58),radius*rr(0.40,0.52),depth-2);}
 }
 function addShadow(){var R=8.5,seg=40,y=0.02;
   var c=shadowM.vert(tfPos([0,y,0]),[0,1,0],[1,0,0]),rim=[];
@@ -452,12 +431,12 @@ function buildTree(ox,oz,yaw,scale,seed){
   rng=mulberry32(seed);
   TF={ox:ox,oz:oz,yaw:yaw,s:scale,c:Math.cos(yaw),sn:Math.sin(yaw)};
   var top=buildTrunk().top;
-  var n=4;
+  var n=6;                                     // more primary limbs off the crown
   for(var i=0;i<n;i++){
-    var a=i/n*Math.PI*2+rr(-0.3,0.3),sp=rr(0.35,0.6);
+    var a=i/n*Math.PI*2+rr(-0.3,0.3),sp=rr(0.35,0.68);
     var dir=norm([Math.cos(a)*Math.sin(sp),Math.cos(sp),Math.sin(a)*Math.sin(sp)]);
     dir=norm([dir[0],dir[1]+0.3,dir[2]]);
-    branch(top,dir,rr(3.4,4.2),rr(0.28,0.36),6);
+    branch(top,dir,rr(3.2,4.2),rr(0.26,0.36),6);
   }
   branch(top,[0.03,1,0.02],4.2,0.30,6);
   addShadow();
