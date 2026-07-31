@@ -128,14 +128,30 @@ var sp=prog(
  ['precision highp float;varying vec3 vN,vC,vW;',
   'uniform vec3 uCam,uSun,uHorizon,uSky;uniform int uMode;uniform float uOpacity;',
   shadowGLSL,
+  // same "vertical strand + blotch + fine grain" language as the branch bark, so
+  // rocks read as belonging to the same world -- just keyed by world position
+  // instead of a UV attribute, since rocks share this program with the floor/leaves.
+  'float hashS(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
+  'float vnoiseS(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);',
+  ' float a=hashS(i),b=hashS(i+vec2(1.,0.)),c=hashS(i+vec2(0.,1.)),d=hashS(i+vec2(1.,1.));',
+  ' return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);}',
   'void main(){',
   ' if(uMode==2){gl_FragColor=vec4(0.02,0.03,0.02,vC.x*uOpacity);return;}',
   ' vec3 N=normalize(vN);if(!gl_FrontFacing)N=-N;',
+  ' vec3 vcol=vC;',
+  ' if(uMode==3){',
+  '   vec2 ruv=vec2(atan(vW.z,vW.x)*3.0, vW.y*2.6);',
+  '   float strand=abs(fract(ruv.x*1.3+vnoiseS(vec2(ruv.x*0.4,ruv.y*0.3))*2.6)-0.5)*2.0;',
+  '   float groove=smoothstep(0.10,0.92,strand);',
+  '   float n1=vnoiseS(ruv*1.1),n2=vnoiseS(ruv*4.5);',
+  '   float h=groove*0.36+n1*0.40+n2*0.24;',
+  '   vcol*=0.58+0.84*h;',
+  ' }',
   ' float ndl=max(dot(N,uSun),0.0);',
   ' float hemi=0.5+0.5*N.y;',
   ' vec3 ambient=mix(vec3(0.30,0.31,0.25),uSky,hemi);',
-  ' vec3 col=vC*(ambient+vec3(1.0,0.95,0.84)*ndl*0.95);',
-  ' if(uMode==0)col+=vC*max(dot(N,-uSun),0.0)*vec3(0.12,0.16,0.07);',   // leaf backlight only
+  ' vec3 col=vcol*(ambient+vec3(1.0,0.95,0.84)*ndl*0.95);',
+  ' if(uMode==0)col+=vcol*max(dot(N,-uSun),0.0)*vec3(0.12,0.16,0.07);',   // leaf backlight only
   ' if(uMode==1){vec2 g=abs(fract(vW.xz*0.5)-0.5);',
   '   col*=mix(0.90,1.0,smoothstep(0.0,0.035,min(g.x,g.y)));}',
   ' float fog=1.0-exp(-length(vW-uCam)*0.0065);',
@@ -187,7 +203,7 @@ var bp=prog(
   ' vec3 young=mix(youngD,youngL,h);',
   ' vec3 old  =mix(oldD,oldL,h);',
   ' old=mix(old,vec3(0.60,0.38,0.26),smoothstep(0.62,0.95,n1)*0.45);',   // a few warm patches
-  ' vec3 base=mix(young,old,smoothstep(0.18,0.62,age));',
+  ' vec3 base=mix(young,old,smoothstep(0.05,0.30,age));',   // almost every branch reads as trunk bark now
   ' float ndl=max(dot(N,uSun),0.0);float hemi=0.5+0.5*N.y;',
   ' vec3 ambient=mix(vec3(0.42,0.43,0.40),uSky*0.9,hemi);',
   ' vec3 col=base*(ambient+vec3(1.0,0.95,0.84)*ndl*0.80)+base*0.12;',
@@ -277,7 +293,7 @@ function rr(a,b){return a+(b-a)*rng();}
 // The trunk itself always sits at r>=0.30, so it is always age=1. This curve is deliberately
 // steep so mid-thickness branches age into full trunk-like bark quickly too -- only the very
 // last, thinnest twigs stay in the young reddish colour.
-function ageOf(r){var a=(r-0.03)/(0.34-0.03);return a<0?0:(a>1?1:Math.pow(a,0.62));}
+function ageOf(r){var a=(r-0.02)/(0.20-0.02);return a<0?0:(a>1?1:Math.pow(a,0.50));}
 // per-tree placement transform (local tree space -> world): scale, yaw about Y, translate
 var TF={ox:0,oz:0,yaw:0,s:1,c:1,sn:0};
 function tfPos(p){var x=p[0]*TF.s,y=p[1]*TF.s,z=p[2]*TF.s;return [TF.c*x+TF.sn*z+TF.ox, y, -TF.sn*x+TF.c*z+TF.oz];}
