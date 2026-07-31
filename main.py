@@ -374,10 +374,10 @@
             <button onclick="makeSaveCode()" style="flex:1; padding:9px; background:#3a5a2a; color:#fff; border:none; border-radius:6px; font-family:inherit; font-size:12px; cursor:pointer;">📤 צור קוד שמירה</button>
           </div>
           <div id="saveCodeBox" style="display:none; margin-bottom:12px;">
-            <textarea id="saveCodeArea" rows="3" onclick="this.select()" style="width:100%; box-sizing:border-box; font-size:10px; background:#0d1018; color:#8fe0a0; border:1px solid #4a4230; border-radius:6px; padding:6px; direction:ltr;"></textarea>
+            <textarea id="saveCodeArea" rows="3" dir="ltr" onclick="this.select()" style="width:100%; box-sizing:border-box; font-size:10px; background:#0d1018; color:#8fe0a0; border:1px solid #4a4230; border-radius:6px; padding:6px; direction:ltr; unicode-bidi:plaintext; text-align:left;"></textarea>
             <button onclick="copySaveCode()" style="width:100%; margin-top:5px; padding:8px; background:#2f5a8a; color:#fff; border:none; border-radius:6px; font-family:inherit; font-size:12px; cursor:pointer;">📋 העתק</button>
           </div>
-          <textarea id="loadCodeArea" rows="3" placeholder="הדבק כאן קוד שמירה כדי לטעון עולם" style="width:100%; box-sizing:border-box; font-size:10px; background:#0d1018; color:#fff; border:1px solid #4a4230; border-radius:6px; padding:6px; direction:ltr;"></textarea>
+          <textarea id="loadCodeArea" rows="3" dir="ltr" placeholder="הדבק כאן קוד שמירה כדי לטעון עולם" style="width:100%; box-sizing:border-box; font-size:10px; background:#0d1018; color:#fff; border:1px solid #4a4230; border-radius:6px; padding:6px; direction:ltr; unicode-bidi:plaintext; text-align:left;"></textarea>
           <button onclick="loadFromCode()" style="width:100%; margin-top:5px; padding:9px; background:#5a4a2a; color:#fff; border:none; border-radius:6px; font-family:inherit; font-size:12px; cursor:pointer;">📥 טען מקוד שמירה</button>
         </div>
       </div>
@@ -2350,15 +2350,11 @@ function decodeEmoji(s){
   if(r>0) bytes.length = bytes.length-(5-r);   // drop the padding bytes of the last group
   return new Uint8Array(bytes);
 }
-async function encodeSave(data){
-  const json = JSON.stringify(data);
-  if (typeof CompressionStream !== 'undefined'){
-    try{ const bytes=new TextEncoder().encode(json); const ab=await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer(); return 'E1:'+encodeEmoji(new Uint8Array(ab)); }catch(e){}
-  }
-  return await gzipB64(json);   // fallback for old phones
-}
+// Reliable letters/digits (base64). Emoji encoding was tried but many glyphs showed as blank boxes and got
+// dropped/reordered (RTL) on copy, breaking loads — plain text survives copy/paste everywhere.
+async function encodeSave(data){ return await gzipB64(JSON.stringify(data)); }
 async function decodeSave(str){
-  str = (str||'').trim();
+  str = (str||'').replace(/\s+/g,'').trim();   // copy/paste can sprinkle spaces or newlines — strip them
   if (str.startsWith('E1:')) return JSON.parse(await gunzipBytesToStr(decodeEmoji(str.slice(3))));
   if (str.startsWith('G1:')) return JSON.parse(await gunzipB64(str.slice(3)));
   if (str.startsWith('R1:')) return JSON.parse(decodeURIComponent(escape(atob(str.slice(3)))));
