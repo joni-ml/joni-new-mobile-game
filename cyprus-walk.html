@@ -52,14 +52,6 @@
   #brand{left:max(16px,env(safe-area-inset-left));top:max(16px,env(safe-area-inset-top));
          font-size:12px;letter-spacing:.22em;opacity:.55;direction:rtl;
          text-shadow:0 1px 4px rgba(0,0,0,.5);}
-  #qwrap{right:max(16px,env(safe-area-inset-right));bottom:max(22px,env(safe-area-inset-bottom));
-         display:flex;flex-direction:column;align-items:flex-end;gap:6px;
-         background:var(--glass);border:1px solid var(--glass-brd);padding:9px 13px;border-radius:14px;
-         backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);direction:rtl;
-         box-shadow:0 8px 24px rgba(0,0,0,0.22);}
-  #qlbl{font-size:12px;letter-spacing:.10em;opacity:.92;text-shadow:0 1px 3px rgba(0,0,0,.45);}
-  #quality{width:132px;accent-color:#9cc266;cursor:pointer;}
-  #qval{font-size:11px;opacity:.8;font-variant-numeric:tabular-nums;text-shadow:0 1px 3px rgba(0,0,0,.45);}
   @media (max-height:520px){ #speed{height:150px;} }
 </style>
 
@@ -67,11 +59,6 @@
 <div id="brand" class="ui">קפריסין · שיטוט</div>
 <div id="hint" class="ui">גררו על המסך כדי להביט &nbsp;·&nbsp; ג׳ויסטיק לתנועה &nbsp;·&nbsp; הסרגל שמימין קובע מהירות</div>
 <div id="joy" class="ui"><div class="ring"></div><div id="knob"></div></div>
-<div id="qwrap" class="ui">
-  <div id="qlbl">איכות</div>
-  <input type="range" id="quality" min="1" max="6" step="1" value="5">
-  <div id="qval">גבוהה</div>
-</div>
 <div id="speedWrap" class="ui">
   <div id="speedLbl">מהירות</div>
   <div id="speed"><div id="fill"></div><div id="sknob"></div></div>
@@ -148,7 +135,7 @@ var sp=prog(
   ' float hemi=0.5+0.5*N.y;',
   ' vec3 ambient=mix(vec3(0.30,0.31,0.25),uSky,hemi);',
   ' vec3 col=vC*(ambient+vec3(1.0,0.95,0.84)*ndl*0.95);',
-  ' col+=vC*max(dot(N,-uSun),0.0)*vec3(0.12,0.16,0.07);',       // leaf backlight
+  ' if(uMode==0)col+=vC*max(dot(N,-uSun),0.0)*vec3(0.12,0.16,0.07);',   // leaf backlight only
   ' if(uMode==1){vec2 g=abs(fract(vW.xz*0.5)-0.5);',
   '   col*=mix(0.90,1.0,smoothstep(0.0,0.035,min(g.x,g.y)));}',
   ' float fog=1.0-exp(-length(vW-uCam)*0.0065);',
@@ -283,11 +270,14 @@ BarkMesh.prototype.bind=function(){gl.bindBuffer(gl.ARRAY_BUFFER,this.vbo);gl.bi
   gl.enableVertexAttribArray(bA.uv);gl.vertexAttribPointer(bA.uv,2,gl.FLOAT,false,36,24);
   gl.enableVertexAttribArray(bA.age);gl.vertexAttribPointer(bA.age,1,gl.FLOAT,false,36,32);};
 
-var bark=new BarkMesh(),leaves=new ColMesh(),floorM=new ColMesh(),shadowM=new ColMesh();
+var bark=new BarkMesh(),leaves=new ColMesh(),floorM=new ColMesh(),shadowM=new ColMesh(),rocks=new ColMesh();
 var rng=mulberry32(20240811);
 function rr(a,b){return a+(b-a)*rng();}
-// age 0 (youngest, thin twigs) .. 1 (oldest, thick base ~50yr) from branch radius
-function ageOf(r){var a=(r-0.045)/(0.60-0.045);return a<0?0:(a>1?1:Math.pow(a,0.85));}
+// age 0 (youngest, thin twigs) .. 1 (oldest bark, plated like the trunk) from branch radius.
+// The trunk itself always sits at r>=0.30, so it is always age=1. This curve is deliberately
+// steep so mid-thickness branches age into full trunk-like bark quickly too -- only the very
+// last, thinnest twigs stay in the young reddish colour.
+function ageOf(r){var a=(r-0.03)/(0.34-0.03);return a<0?0:(a>1?1:Math.pow(a,0.62));}
 // per-tree placement transform (local tree space -> world): scale, yaw about Y, translate
 var TF={ox:0,oz:0,yaw:0,s:1,c:1,sn:0};
 function tfPos(p){var x=p[0]*TF.s,y=p[1]*TF.s,z=p[2]*TF.s;return [TF.c*x+TF.sn*z+TF.ox, y, -TF.sn*x+TF.c*z+TF.oz];}
@@ -425,6 +415,95 @@ function addShadow(){var R=8.5,seg=40,y=0.02;
   var c=shadowM.vert(tfPos([0,y,0]),[0,1,0],[1,0,0]),rim=[];
   for(var s=0;s<=seg;s++){var a=s/seg*Math.PI*2;rim.push(shadowM.vert(tfPos([Math.cos(a)*R,y,Math.sin(a)*R*0.9]),[0,1,0],[0,0,0]));}
   for(var s2=0;s2<seg;s2++)shadowM.tri(c,rim[s2],rim[s2+1]);}
+// a small ground-contact shadow under a rock, so it still reads as grounded once
+// distance fog fades the floor toward the same pale tone as the sky
+function addRockShadow(cx,cz,radius){var R=radius*1.25,seg=10,y=0.02;
+  var c=shadowM.vert([cx,y,cz],[0,1,0],[0.85,0,0]),rim=[];
+  for(var s=0;s<=seg;s++){var a=s/seg*Math.PI*2;rim.push(shadowM.vert([cx+Math.cos(a)*R,y,cz+Math.sin(a)*R],[0,1,0],[0,0,0]));}
+  for(var s2=0;s2<seg;s2++)shadowM.tri(c,rim[s2],rim[s2+1]);}
+
+// ---------- rocks: angular, faceted low-poly stones scattered like Cyprus scree ----------
+// Cheap on purpose (flat-shaded, a handful of triangles each) so a whole field of them
+// costs less than the tree's leaves. Built once at load, independent of the tree's own
+// random seed/scale, so the rocks stay put even though the tree changes every time.
+var ICO_V=[[-1,1.618,0],[1,1.618,0],[-1,-1.618,0],[1,-1.618,0],[0,-1,1.618],[0,1,1.618],
+  [0,-1,-1.618],[0,1,-1.618],[1.618,0,-1],[1.618,0,1],[-1.618,0,-1],[-1.618,0,1]].map(norm);
+var ICO_F=[[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],
+  [3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
+function subdivIco(verts,faces){
+  var nv=verts.slice(),nf=[],cache={};
+  function mid(a,b){var k=a<b?a+'_'+b:b+'_'+a;if(cache[k]!=null)return cache[k];
+    var va=nv[a],vb=nv[b];
+    nv.push(norm([(va[0]+vb[0])/2,(va[1]+vb[1])/2,(va[2]+vb[2])/2]));
+    var idx=nv.length-1;cache[k]=idx;return idx;}
+  for(var f=0;f<faces.length;f++){var a=faces[f][0],b=faces[f][1],c=faces[f][2];
+    var ab=mid(a,b),bc=mid(b,c),ca=mid(c,a);
+    nf.push([a,ab,ca],[ab,b,bc],[ca,bc,c],[ab,bc,ca]);}
+  return {v:nv,f:nf};
+}
+var ICO_SUB=subdivIco(ICO_V,ICO_F);   // one extra facet level, used for the bigger boulders
+
+function buildRock(mesh,center,radius,seed){
+  var rrng=mulberry32(seed);
+  function rn(a,b){return a+(b-a)*rrng();}
+  var big=radius>0.9, verts=(big?ICO_SUB:{v:ICO_V,f:ICO_F}).v, faces=(big?ICO_SUB:{v:ICO_V,f:ICO_F}).f;
+  var sx=rn(0.75,1.30), sy=rn(0.42,0.82), sz=rn(0.75,1.30);       // flattened, slab-like
+  var tiltA=rn(-0.55,0.55), tiltB=rn(0,Math.PI*2);
+  var jitter=verts.map(function(){return rn(0.70,1.30);});        // per-vertex -> angular, shattered look
+  function localVert(idx){
+    var v=verts[idx],j=jitter[idx];
+    var p=[v[0]*sx*j, v[1]*sy*j, v[2]*sz*j];
+    var ca=Math.cos(tiltA),sa=Math.sin(tiltA);
+    var py=[p[0], p[1]*ca-p[2]*sa, p[1]*sa+p[2]*ca];
+    var cb=Math.cos(tiltB),sb=Math.sin(tiltB);
+    return [py[0]*cb-py[2]*sb, py[1], py[0]*sb+py[2]*cb];
+  }
+  var local=verts.map(function(_,i){return localVert(i);});
+  // An icosahedron rests on a single vertex tip, which reads as a rock precariously
+  // balanced with daylight under its belly. Flatten the lowest slice toward one plane
+  // so several vertices share the ground contact instead of just one point.
+  var minY0=Math.min.apply(null,local.map(function(p){return p[1];}));
+  var maxY0=Math.max.apply(null,local.map(function(p){return p[1];}));
+  var band=minY0+(maxY0-minY0||1)*0.16;
+  local=local.map(function(p){
+    if(p[1]>=band)return p;
+    var t=(p[1]-minY0)/(band-minY0||1);
+    return [p[0], minY0+(p[1]-minY0)*(0.15+0.55*t), p[2]];
+  });
+  var minY=Math.min.apply(null,local.map(function(p){return p[1];}));
+  function worldVert(p){return [p[0]*radius+center[0], (p[1]-minY)*radius+center[1], p[2]*radius+center[2]];}
+  // rock tone: pick one family per rock, then vary a little per face
+  var fam=rn(0,1);
+  var base= fam<0.32?[0.565,0.550,0.530]        // grey
+           :fam<0.58?[0.455,0.355,0.270]        // warm brown
+           :fam<0.80?[0.465,0.495,0.520]        // cool blue-grey schist
+                     :[0.435,0.275,0.200];      // rust-brown
+  for(var f=0;f<faces.length;f++){
+    var fa=faces[f],pa=worldVert(local[fa[0]]),pb=worldVert(local[fa[1]]),pc=worldVert(local[fa[2]]);
+    var nrm=norm(cross(sub(pb,pa),sub(pc,pa)));
+    var tone=0.85+rn(0,0.30);
+    var col=[base[0]*tone,base[1]*tone,base[2]*tone];
+    var patch=rn(0,1);
+    if(patch<0.14){col=[col[0]*0.5+0.62*0.5*rn(0.7,1.1),col[1]*0.5+0.63*0.5*rn(0.7,1.1),col[2]*0.5+0.24*0.5*rn(0.7,1.1)];}      // lichen (yellow-green)
+    else if(patch<0.24){col=[col[0]*0.4+0.76*0.6,col[1]*0.4+0.74*0.6,col[2]*0.4+0.68*0.6];}    // pale crustose lichen
+    var ia=mesh.vert(pa,nrm,col),ib=mesh.vert(pb,nrm,col),ic=mesh.vert(pc,nrm,col);
+    mesh.tri(ia,ib,ic);
+  }
+}
+function buildRockField(){
+  var place=mulberry32(918273);
+  function pr(a,b){return a+(b-a)*place();}
+  var count=70;
+  for(var i=0;i<count;i++){
+    var sizeT=pr(0,1);
+    var radius=0.10*Math.pow(38,sizeT);              // ~0.10 .. ~3.8, lots of small ones, a few huge
+    var ang=pr(0,Math.PI*2);
+    var dist=2.0+radius*1.3+pr(0,55);                 // bigger rocks tend to sit further from the trunk
+    var cx=Math.cos(ang)*dist,cz=Math.sin(ang)*dist;
+    buildRock(rocks,[cx,0,cz],radius,Math.floor(pr(1,2e9)));
+    if(radius>0.22)addRockShadow(cx,cz,radius);        // skip tiny pebbles, not worth the blend cost
+  }
+}
 
 // build one whole tree (trunk + limbs + leaves + shadow) at a placement
 function buildTree(ox,oz,yaw,scale,seed){
@@ -442,10 +521,14 @@ function buildTree(ox,oz,yaw,scale,seed){
   addShadow();
 }
 
-// ---------- one tree, built for quality ----------
-buildTree(0,0,0,1.0,20240811);
+// ---------- one tree, a little different every time you open the game ----------
+var TREE_SEED=Math.floor(Math.random()*2147483647);
+var TREE_SCALE=0.85+Math.random()*0.30;   // slightly bigger or smaller each time
+var TREE_YAW=Math.random()*Math.PI*2;     // and turned to face a different way
+buildTree(0,0,TREE_YAW,TREE_SCALE,TREE_SEED);
+buildRockField();
 
-bark.upload();leaves.upload();floorM.upload();shadowM.upload();
+bark.upload();leaves.upload();floorM.upload();shadowM.upload();rocks.upload();
 try{console.log('verts — bark:',bark.count,'leaf idx:',leaves.count,'uint:',!!uintExt);}catch(e){}
 
 // ---------- camera & controls ----------
@@ -492,20 +575,10 @@ function hideHint(){if(hintGone)return;hintGone=true;hintEl.style.opacity='0';se
 setTimeout(hideHint,6500);
 
 // ---------- render ----------
-// Quality = how many pixels we actually render. Dropping it is the one lever that
-// reliably buys frame rate on a phone, and the scene rebuilds nothing to apply it.
-var QSCALE=[0.45,0.60,0.75,0.90,1.00,1.25];
-var QNAME=['נמוכה מאוד','נמוכה','בינונית','טובה','גבוהה','מקסימלית'];
-var qEl=document.getElementById('quality'),qVal=document.getElementById('qval');
-var qIdx=parseInt(qEl.value,10)-1;
 var W=1,H=1,DPR=1;
-function resize(){
-  DPR=Math.min((window.devicePixelRatio||1)*QSCALE[qIdx],2.5);
+function resize(){DPR=Math.min(window.devicePixelRatio||1,2.5);
   W=Math.round(canvas.clientWidth*DPR);H=Math.round(canvas.clientHeight*DPR);
   canvas.width=W;canvas.height=H;drawSpeed();}
-qEl.addEventListener('input',function(e){
-  qIdx=parseInt(e.target.value,10)-1;qVal.textContent=QNAME[qIdx];resize();});
-qVal.textContent=QNAME[qIdx];
 window.addEventListener('resize',resize);
 var SUN=norm([0.35,0.82,0.42]),SKY_AMB=[0.52,0.66,0.90],HORIZON=[0.82,0.89,0.96];
 var flightVP=new Float32Array(lightVP), TEXEL=1/SHADOW_RES;
@@ -538,6 +611,8 @@ function frame(now){
   gl.uniformMatrix4fv(sU.lightVP,false,flightVP);gl.uniform1i(sU.shadow,0);gl.uniform1f(sU.texel,TEXEL);
   gl.uniform1f(sU.opacity,1.0);
   gl.uniform1i(sU.mode,1);floorM.bind();gl.drawElements(gl.TRIANGLES,floorM.count,ITYPE,0);
+  // rocks (same program, flat-shaded, no floor tiling / no leaf backlight)
+  gl.uniform1i(sU.mode,3);rocks.bind();gl.drawElements(gl.TRIANGLES,rocks.count,ITYPE,0);
   // soft contact shadow under the tree
   gl.uniform1i(sU.mode,2);gl.uniform1f(sU.opacity,0.36);gl.enable(gl.BLEND);
   gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);gl.disable(gl.CULL_FACE);
