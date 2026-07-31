@@ -481,11 +481,15 @@ function buildRock(mesh,center,radius,seed){
   for(var f=0;f<faces.length;f++){
     var fa=faces[f],pa=worldVert(local[fa[0]]),pb=worldVert(local[fa[1]]),pc=worldVert(local[fa[2]]);
     var nrm=norm(cross(sub(pb,pa),sub(pc,pa)));
-    var tone=0.85+rn(0,0.30);
+    var tone=0.90+rn(0,0.20);                     // gentler per-face jitter -> reads as stone, not a gem
     var col=[base[0]*tone,base[1]*tone,base[2]*tone];
     var patch=rn(0,1);
-    if(patch<0.14){col=[col[0]*0.5+0.62*0.5*rn(0.7,1.1),col[1]*0.5+0.63*0.5*rn(0.7,1.1),col[2]*0.5+0.24*0.5*rn(0.7,1.1)];}      // lichen (yellow-green)
-    else if(patch<0.24){col=[col[0]*0.4+0.76*0.6,col[1]*0.4+0.74*0.6,col[2]*0.4+0.68*0.6];}    // pale crustose lichen
+    if(patch<0.08){col=[col[0]*0.72+0.62*0.28*rn(0.8,1.05),col[1]*0.72+0.63*0.28*rn(0.8,1.05),col[2]*0.72+0.24*0.28*rn(0.8,1.05)];}   // sparse lichen (yellow-green), lightly blended
+    else if(patch<0.14){col=[col[0]*0.65+0.76*0.35,col[1]*0.65+0.74*0.35,col[2]*0.65+0.68*0.35];}    // pale crustose lichen, subtler
+    // faint ambient occlusion near the ground contact -- faces whose average height is low get darkened a touch
+    var avgY=(pa[1]+pb[1]+pc[1])/3-center[1];
+    var ao=1.0-0.16*Math.exp(-avgY/(radius*0.4+0.05));
+    col=[col[0]*ao,col[1]*ao,col[2]*ao];
     var ia=mesh.vert(pa,nrm,col),ib=mesh.vert(pb,nrm,col),ic=mesh.vert(pc,nrm,col);
     mesh.tri(ia,ib,ic);
   }
