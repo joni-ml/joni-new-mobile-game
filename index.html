@@ -739,7 +739,7 @@ let netGuestDmg = {};          // host-side accumulator of damage owed to each g
 let netPlayerCount = 1;        // 1 + connected guests (host view)
 let enemyIdSeq = 0;            // host-assigned enemy ids for network sync
 // all player positions the host must consider (its own + every connected guest)
-function allPlayers(){ const arr=[{x:player.x, y:player.y, id:null}]; for(const id in remotePlayers){ const r=remotePlayers[id]; arr.push({x:r.x, y:r.y, id}); } return arr; }
+function allPlayers(){ const arr=[{x:player.x, y:player.y, id:null}]; if(!inCave){ for(const id in remotePlayers){ const r=remotePlayers[id]; arr.push({x:r.x, y:r.y, id}); } } return arr; }   // in a private cave, only you
 function nearestPlayer(x,y){ let best=null, bd=Infinity; for(const pl of allPlayers()){ const d=Math.hypot(pl.x-x, pl.y-y); if(d<bd){ bd=d; best=pl; } } return best||{x:player.x,y:player.y,id:null}; }
 // route damage to whichever player an enemy reached: local player directly, guests via the network
 function damagePlayer(targetId, amount){
@@ -1377,8 +1377,10 @@ function update(dt){
   if (player.attackCd>0) player.attackCd -= dt; if ((keys[' '] || actionHeld) && !fishing) tryAction();
   const curBiome = biomeAt(Math.floor(player.x/TILE), Math.floor(player.y/TILE));
   const inEternalNight = eternalNightActive && !crystalActivated;
-  // Only the host (or a solo player) spawns & simulates enemies/animals; guests render what the host sends.
-  if (!netClient){
+  // Host/solo simulate the surface; guests render the host's snapshot. BUT a player in their own cave always
+  // self-simulates it locally (even a guest), since the cave is a private instance not shared over the network.
+  const simSelf = inCave || !netClient;
+  if (simSelf){
     const pc = netPlayerCount;   // more players -> more monsters, spawned around a random player
     // scheduled siege boss every 5th night, at night, no crystal-devices etc.
     if (isNight && !inCave && dayNum%5===0 && dayNum>0 && bossSpawnedForDay!==dayNum && !cheatNoEnemies){ bossSpawnedForDay=dayNum; spawnBoss(); }
@@ -1391,7 +1393,7 @@ function update(dt){
     if (cheatNoEnemies && enemies.length) enemies = enemies.filter(e=>e===boss);
     updateEnemies(dt); updateAnimals(dt);
   }
-  if (!netClient) updatePickups();   // host/solo runs pickup collection for everyone
+  if (simSelf) updatePickups();   // host/solo (and anyone in their cave) runs pickup collection
   updateProjectiles(dt); updateParticles(dt);
   
   const ibtn = document.getElementById('interactBtn');
@@ -1804,8 +1806,9 @@ function genCaveMap(){
   return { world:w, sx, sy };
 }
 function enterCave(caveId){
-  if (net.active){ showToast('המערות זמינות רק במשחק יחיד'); return; }
   if (inCave) return;
+  // In co-op each player gets their OWN private cave; while underground you're isolated from the shared
+  // surface sync (you self-simulate your cave, and you don't send/receive surface tiles or monsters).
   if (!caveId) caveId = 'c0';
   surfaceState = { world, px:player.x, py:player.y, enemies, animals, chests, cropTiles, pickups };
   currentCaveId = caveId;
@@ -1933,7 +1936,7 @@ function ensurePeerJs(){
   return _peerLoading;
 }
 function initShadow(){ netShadow = []; for(let y=0;y<MAPH;y++){ netShadow[y]=[]; for(let x=0;x<MAPW;x++) netShadow[y][x]=world[y][x].type; } }
-function makeShortCode(){ return String(1 + Math.floor(Math.random()*9998)); } // 1..9999 (not 10000)
+function makeShortCode(){ return String(1000 + Math.floor(Math.random()*9000)); } // fixed 4-digit room code 1000..9999
 
 function openNetPanel(mode){
   document.getElementById('netPanel').classList.add('open');
@@ -1987,7 +1990,7 @@ function netGuestConnect(){
   const peer = { conn, id:'host', open:false }; net.peers=[peer]; netWireConn(peer);
 }
 function netDoJoin(){
-  const code = (document.getElementById('netJoinCode').value||'').trim();
+  const code = (document.getElementById('netJoinCode').value||'').replace(/[^0-9]/g,'').trim();
   if (!code){ showToast('הכנס קוד'); return; }
   net.hostCode = code;
   document.getElementById('netStatus').textContent='טוען חיבור...';
@@ -2041,6 +2044,7 @@ function applyNetInit(msg){
   showToast('🔗 נכנסת לעולם המשותף!');
 }
 function applyNetTiles(cells){
+  if (inCave) return;   // I'm underground in my private cave — don't let surface tile updates overwrite it
   for(const c of cells){ const [x,y,type,hp,maxHp,stage,species,mature]=c; if(world[y]&&world[y][x]){ const tile={type,hp,timer:0}; if(maxHp)tile.maxHp=maxHp; if(stage)tile.stage=stage;
     if(PLAYER_BUILT_TILES.includes(type)){ tile.def=enemyHitsFor(type); tile.defMax=tile.def; }
     if(type===T.CROP){ tile.species = species || 'wheat'; tile.cx=x; tile.cy=y; tile.stage=stage||0; if(mature){ tile.mature=true; tile.stage=3; tile.bred=true; } else { tile.growAt = performance.now()+opCropGrowSeconds*1000; cropTiles.push(tile); } }  // both host & guest grow the crop locally
@@ -2058,7 +2062,7 @@ function netHandleMessage(peer, msg){
   if (msg.t==='tiles'){ applyNetTiles(msg.cells); if(net.isHost) netRelay(peer, msg); return; }
   if (msg.t==='time'){ if(!net.isHost){ dayNum=msg.dayNum; time=msg.time; eternalNightActive=msg.en; if(msg.cyc)CYCLE_LEN=msg.cyc; if(msg.dusk)DUSK_LEN=msg.dusk; if(msg.dawn)DAWN_LEN=msg.dawn; } return; }
   if (msg.t==='ent'){ if(!net.isHost) applyNetEntities(msg); return; }               // guest: render host's monsters/animals/pickups/chests
-  if (msg.t==='dmg'){ if(msg.to===net.selfId && !cheatGodMode){ let amt=msg.amt; if(player.equipment.bone_shield){ amt*=0.75; for(let i=0;i<3;i++) spawnParticle(player.x+(Math.random()*16-8), player.y+(Math.random()*16-8), '#fff', 3); } player.health -= amt; if(!player.hurtSfxCd||player.hurtSfxCd<=0){ sfxHurt(); player.hurtSfxCd=0.5; } } return; }  // a monster hit me on the host's sim
+  if (msg.t==='dmg'){ if(msg.to===net.selfId && !cheatGodMode && !inCave){ let amt=msg.amt; if(player.equipment.bone_shield){ amt*=0.75; for(let i=0;i<3;i++) spawnParticle(player.x+(Math.random()*16-8), player.y+(Math.random()*16-8), '#fff', 3); } player.health -= amt; if(!player.hurtSfxCd||player.hurtSfxCd<=0){ sfxHurt(); player.hurtSfxCd=0.5; } } return; }  // a monster hit me on the host's sim
   if (msg.t==='hit'){ if(net.isHost) hostApplyHit(msg, peer); return; }               // host: a guest damaged a monster
   if (msg.t==='ahit'){ if(net.isHost){ const a=animals.find(an=>Math.hypot(an.x-msg.x,an.y-msg.y)<24); if(a){ if(a.isSpider){ revealSpider(a); } else { animals=animals.filter(x=>x!==a); sendToPeer(peer,{t:'reward', items:{meat:2,bones:1}, hunger:15}); } } } return; }  // host: guest killed an animal -> reward the guest
   if (msg.t==='reward'){ if(msg.items){ for(const k in msg.items) player.inv[k]=(player.inv[k]||0)+msg.items[k]; } if(msg.hunger) player.hunger=Math.min(player.maxHunger, player.hunger+msg.hunger); renderBag(); return; }  // guest: got loot for a kill
@@ -2067,6 +2071,7 @@ function netHandleMessage(peer, msg){
   if (msg.t==='perm'){ if(!net.isHost){ guestCheatsAllowed = !!msg.cheats; showToast(msg.cheats?'🤝 המארח איפשר לך צ׳יטים':'🔒 המארח חסם צ׳יטים'); } return; }
 }
 function applyNetEntities(msg){
+  if (inCave) return;   // ignore the host's surface monsters while I'm in my private cave (I sim my own)
   // update enemies by id so we can smoothly interpolate them (targets tx/ty) instead of teleporting
   const incoming = msg.e||[]; const byId={}; for(const e of enemies) byId[e.id]=e;
   const next=[];
@@ -2109,8 +2114,8 @@ function netTick(dt){
   // smooth interpolation of remote players (and guest-side enemies) toward their latest network positions
   for (const id in remotePlayers){ const rp=remotePlayers[id]; if(rp.tx!=null){ rp.x += (rp.tx-rp.x)*0.3; rp.y += (rp.ty-rp.y)*0.3; } }
   if (!net.isHost){ for (const e of enemies){ if(e.tx!=null){ e.x += (e.tx-e.x)*0.35; e.y += (e.ty-e.y)*0.35; } } }
-  if (now-netLastPos > 80){ netLastPos=now; netSend({ t:'p', id:net.selfId, x:Math.round(player.x), y:Math.round(player.y), facing:player.facing, hp:Math.round(player.health), name:net.name, color:playerSkin, torch:((player.inv.torch||0)>0)?1:0 }); }
-  if (net.isHost && now-netLastEnt > 90){
+  if (!inCave && now-netLastPos > 80){ netLastPos=now; netSend({ t:'p', id:net.selfId, x:Math.round(player.x), y:Math.round(player.y), facing:player.facing, hp:Math.round(player.health), name:net.name, color:playerSkin, torch:((player.inv.torch||0)>0)?1:0 }); }
+  if (!inCave && net.isHost && now-netLastEnt > 90){
     netLastEnt = now;
     // broadcast every monster + animal + pickup + chest so guests see (and can fight) the same threats & items
     const es = enemies.map(e=>({ id:e.id, x:Math.round(e.x), y:Math.round(e.y), k:e.kind, hp:e.hp, mh:e.maxHp, f:e.facing }));
@@ -2121,7 +2126,7 @@ function netTick(dt){
     // pay out accumulated damage to each guest
     for (const id in netGuestDmg){ if (netGuestDmg[id] > 0.4){ netSend({ t:'dmg', to:id, amt:netGuestDmg[id] }); netGuestDmg[id]=0; } }
   }
-  if (now-netLastDiff > 500){ netLastDiff=now; netSendDiff(); if(net.isHost) netSend({ t:'time', dayNum, time, en:(eternalNightActive&&!crystalActivated), cyc:CYCLE_LEN, dusk:DUSK_LEN, dawn:DAWN_LEN }); }
+  if (now-netLastDiff > 500){ netLastDiff=now; if(!inCave) netSendDiff(); if(net.isHost) netSend({ t:'time', dayNum, time, en:(eternalNightActive&&!crystalActivated), cyc:CYCLE_LEN, dusk:DUSK_LEN, dawn:DAWN_LEN }); }
   for (const id in remotePlayers){ if (now - remotePlayers[id].last > 3500) delete remotePlayers[id]; }
 }
 function netReset(){
@@ -2132,6 +2137,7 @@ function netReset(){
   remotePlayers={}; netShadow=null; netGuestDmg={}; setConnBanner(false); closeNetPanel();
 }
 function drawRemotePlayers(){
+  if (inCave) return;   // teammates are on the surface; don't draw them inside my private cave
   const now=performance.now();
   for (const id in remotePlayers){ const rp=remotePlayers[id];
     const moving = (now - (rp.lastMove||0)) < 320;
@@ -2317,9 +2323,43 @@ async function gunzipB64(payload){
   const ab = await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
   return new TextDecoder().decode(ab);
 }
-async function encodeSave(data){ return await gzipB64(JSON.stringify(data)); }
+async function gunzipBytesToStr(u8){
+  const ab = await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+  return new TextDecoder().decode(ab);
+}
+// A 1024-emoji alphabet. Because it's a big alphabet, each emoji carries 10 bits, so the code needs far
+// FEWER symbols than base64 (~40% fewer) — easier to move around. Encode/decode use the same numeric
+// alphabet, so it round-trips perfectly even if a given emoji shows as a blank box on some device.
+const EMOJI_ALPHA=[]; for(let c=0x1F300;c<=0x1F5FF;c++) EMOJI_ALPHA.push(c); for(let c=0x1F900;c<=0x1F9FF;c++) EMOJI_ALPHA.push(c);
+const EMOJI_INDEX={}; for(let i=0;i<EMOJI_ALPHA.length;i++) EMOJI_INDEX[EMOJI_ALPHA[i]]=i;
+function encodeEmoji(u8){
+  const B=u8.length; const r=B%5; let out=String.fromCodePoint(EMOJI_ALPHA[r]);   // header emoji = remainder (padding info)
+  for(let i=0;i<B;i+=5){ const b0=u8[i]||0,b1=u8[i+1]||0,b2=u8[i+2]||0,b3=u8[i+3]||0,b4=u8[i+4]||0;
+    const val=b0*4294967296+b1*16777216+b2*65536+b3*256+b4;   // 40-bit group -> four 10-bit emojis
+    out+=String.fromCodePoint(EMOJI_ALPHA[Math.floor(val/1073741824)%1024])+String.fromCodePoint(EMOJI_ALPHA[Math.floor(val/1048576)%1024])+String.fromCodePoint(EMOJI_ALPHA[Math.floor(val/1024)%1024])+String.fromCodePoint(EMOJI_ALPHA[val%1024]);
+  }
+  return out;
+}
+function decodeEmoji(s){
+  const idx=[]; for(const ch of s){ const k=EMOJI_INDEX[ch.codePointAt(0)]; if(k===undefined) throw new Error('bad emoji'); idx.push(k); }
+  const r=idx[0]; const body=idx.slice(1); const bytes=[];
+  for(let i=0;i<body.length;i+=4){ const e0=body[i]||0,e1=body[i+1]||0,e2=body[i+2]||0,e3=body[i+3]||0;
+    const val=e0*1073741824+e1*1048576+e2*1024+e3;
+    bytes.push(Math.floor(val/4294967296)%256, Math.floor(val/16777216)%256, Math.floor(val/65536)%256, Math.floor(val/256)%256, val%256);
+  }
+  if(r>0) bytes.length = bytes.length-(5-r);   // drop the padding bytes of the last group
+  return new Uint8Array(bytes);
+}
+async function encodeSave(data){
+  const json = JSON.stringify(data);
+  if (typeof CompressionStream !== 'undefined'){
+    try{ const bytes=new TextEncoder().encode(json); const ab=await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer(); return 'E1:'+encodeEmoji(new Uint8Array(ab)); }catch(e){}
+  }
+  return await gzipB64(json);   // fallback for old phones
+}
 async function decodeSave(str){
   str = (str||'').trim();
+  if (str.startsWith('E1:')) return JSON.parse(await gunzipBytesToStr(decodeEmoji(str.slice(3))));
   if (str.startsWith('G1:')) return JSON.parse(await gunzipB64(str.slice(3)));
   if (str.startsWith('R1:')) return JSON.parse(decodeURIComponent(escape(atob(str.slice(3)))));
   return JSON.parse(decodeURIComponent(escape(atob(str))));   // legacy (uncompressed) codes still load
@@ -2969,7 +3009,7 @@ function draw(){
       }
     }
     // teammates holding a torch light up their own area for you too
-    if (net.active){ for (const id in remotePlayers){ const rp=remotePlayers[id]; if(!rp.torch) continue; const rr=torchLightRadius*gameZoom; const rx=(rp.x-player.x)*gameZoom+W/2, ry=(rp.y-player.y)*gameZoom+H/2; const g2=lightCtx.createRadialGradient(rx,ry,5*gameZoom,rx,ry,rr); g2.addColorStop(0,'rgba(0,0,0,1)'); g2.addColorStop(1,'rgba(0,0,0,0)'); lightCtx.fillStyle=g2; lightCtx.beginPath(); lightCtx.arc(rx,ry,rr,0,6.3); lightCtx.fill(); } }
+    if (net.active && !inCave){ for (const id in remotePlayers){ const rp=remotePlayers[id]; if(!rp.torch) continue; const rr=torchLightRadius*gameZoom; const rx=(rp.x-player.x)*gameZoom+W/2, ry=(rp.y-player.y)*gameZoom+H/2; const g2=lightCtx.createRadialGradient(rx,ry,5*gameZoom,rx,ry,rr); g2.addColorStop(0,'rgba(0,0,0,1)'); g2.addColorStop(1,'rgba(0,0,0,0)'); lightCtx.fillStyle=g2; lightCtx.beginPath(); lightCtx.arc(rx,ry,rr,0,6.3); lightCtx.fill(); } }
     lightCtx.globalCompositeOperation = 'source-over'; ctx.drawImage(lightCanvas, 0, 0);
   }
   if (gfxLevel >= 5) { let vignGrad = ctx.createRadialGradient(W/2, H/2, Math.min(W, H) * 0.4, W/2, H/2, Math.max(W, H) * 0.75); vignGrad.addColorStop(0, 'rgba(0,0,0,0)'); vignGrad.addColorStop(1, 'rgba(0,0,0,0.5)'); ctx.fillStyle = vignGrad; ctx.fillRect(0, 0, W, H); }
