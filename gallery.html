@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>קפריסין · שיטוט</title>
+<title>גלריה · עצים ואבנים בשורה</title>
 </head>
 <body>
-<title>קפריסין · שיטוט</title>
+<title>גלריה · עצים ואבנים בשורה</title>
 <style>
   :root{ --glass: rgba(18,26,20,0.42); --glass-brd: rgba(255,255,255,0.28);
          --leaf:#8ec152; --ink:#f2f7ee; }
@@ -56,8 +56,8 @@
 </style>
 
 <canvas id="stage"></canvas>
-<div id="brand" class="ui">קפריסין · שיטוט</div>
-<div id="hint" class="ui">גררו על המסך כדי להביט &nbsp;·&nbsp; ג׳ויסטיק לתנועה &nbsp;·&nbsp; הסרגל שמימין קובע מהירות</div>
+<div id="brand" class="ui">גלריה · עצים ואבנים בשורה</div>
+<div id="hint" class="ui">כל עץ מסומן במספרו · העצים משמאל לימין, שורת האבנים מאחור · גררו להביט, ג׳ויסטיק לזוז</div>
 <div id="joy" class="ui"><div class="ring"></div><div id="knob"></div></div>
 <div id="speedWrap" class="ui">
   <div id="speedLbl">מהירות</div>
@@ -553,31 +553,52 @@ function buildTree(ox,oz,yaw,scale,seed){
   addShadow();
 }
 
-// ---------- one tree, picked from a numbered series (not a fresh dice roll) ----------
-// Every tree "number" is a specific, reproducible slot in an endless series: the same
-// number always builds the exact same tree (seed, size and turn all come from it), so
-// a favourite tree can be pinned with ?tree=123 in the URL instead of being lost the
-// next time the page loads. Leave the number out and one is drawn at random.
+// ---------- a whole row of trees, each a specific numbered slot in the series ----------
+// Every tree "number" is a reproducible slot: the same number always builds the exact
+// same tree (seed, size and turn all come from it). Lining several numbers up side by
+// side is exactly how you browse the series and see how different it really gets.
 var TREE_SERIES_SIZE=100000;
 function treeParamsForNumber(n){
   var r=mulberry32(Math.imul(n,2654435761)^0x9e3779b9);
   return {seed:Math.floor(r()*2147483647), scale:0.85+r()*0.30, yaw:r()*Math.PI*2};
 }
-var urlTreeN=parseInt(new URLSearchParams(location.search).get('tree'),10);
-var TREE_NUMBER=(urlTreeN>=0&&urlTreeN<TREE_SERIES_SIZE)?urlTreeN:Math.floor(Math.random()*TREE_SERIES_SIZE);
-var TP=treeParamsForNumber(TREE_NUMBER);
-buildTree(0,0,TP.yaw,TP.scale,TP.seed);
-buildRockField();
+// pick from ?trees=12,340,5001,... in the URL, or fall back to a spread-out sample
+var urlTrees=(new URLSearchParams(location.search).get('trees')||'')
+  .split(',').map(function(s){return parseInt(s,10);}).filter(function(n){return n>=0&&n<TREE_SERIES_SIZE;});
+var TREE_NUMBERS=urlTrees.length?urlTrees:[3,271,4820,19042,55310,88213];
+var TREE_SPACING=15;
+var rowStartX=-(TREE_NUMBERS.length-1)*TREE_SPACING/2;
+var treeRowInfo=[];
+for(var ti=0;ti<TREE_NUMBERS.length;ti++){
+  var num=TREE_NUMBERS[ti], tp=treeParamsForNumber(num), tx=rowStartX+ti*TREE_SPACING;
+  buildTree(tx,0,tp.yaw,tp.scale,tp.seed);
+  treeRowInfo.push('#'+num+' (x='+tx.toFixed(0)+')');
+}
+
+// ---------- a row of rocks, smallest to largest, laid out left to right ----------
+var ROCK_ROW_N=9, rockRowZ=-24, rxCursor=rowStartX-6;
+for(var ri=0;ri<ROCK_ROW_N;ri++){
+  var t=ri/(ROCK_ROW_N-1);
+  var radius=0.10*Math.pow(3.8/0.10,t);           // smallest pebble .. largest boulder, log-spaced
+  rxCursor+=radius*1.4+1.6;
+  buildRock(rocks,[rxCursor,0,rockRowZ],radius,5000+ri*913);
+  addRockShadow(rxCursor,rockRowZ,radius);
+  rxCursor+=radius*1.4;
+}
+
 try{
   var brandEl=document.getElementById('brand');
-  if(brandEl)brandEl.textContent=brandEl.textContent+'  ·  עץ #'+TREE_NUMBER;
+  if(brandEl)brandEl.textContent=brandEl.textContent+'  ·  '+treeRowInfo.join('  ·  ');
+  var hintEl0=document.getElementById('hint');
+  if(hintEl0)hintEl0.textContent='עצים משמאל לימין: '+TREE_NUMBERS.map(function(n){return '#'+n;}).join(', ')+
+    '  ·  אבנים מאחור: מהקטנה לגדולה  ·  גררו להביט, ג׳ויסטיק לזוז';
 }catch(e){}
 
 bark.upload();leaves.upload();floorM.upload();shadowM.upload();rocks.upload();
 try{console.log('verts — bark:',bark.count,'leaf idx:',leaves.count,'uint:',!!uintExt);}catch(e){}
 
 // ---------- camera & controls ----------
-var cam={pos:[0,1.75,20],yaw:0,pitch:0.10};
+var cam={pos:[0,22,105],yaw:0,pitch:-0.20};   // pulled back and up so the whole row is visible at once
 (function(){var h=location.hash.replace('#','');if(h){var p=h.split(',').map(Number);
   if(p.length>=5&&p.every(function(x){return!isNaN(x);})){cam.pos=[p[0],p[1],p[2]];cam.yaw=p[3];cam.pitch=p[4];}}})();
 function forward(){var cp=Math.cos(cam.pitch);return [Math.sin(cam.yaw)*cp,Math.sin(cam.pitch),-Math.cos(cam.yaw)*cp];}
