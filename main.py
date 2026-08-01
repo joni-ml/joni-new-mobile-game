@@ -370,6 +370,10 @@
         <div id="savesList" style="width:min(88vw,340px);"></div>
         <div style="width:min(88vw,340px); margin-top:14px; border-top:1px solid #4a4230; padding-top:12px;">
           <div class="sub" style="margin:0 0 8px;">🔑 קוד שמירה (עובד גם דרך Shortcut)</div>
+          <div style="display:flex; gap:6px; margin-bottom:8px;">
+            <button onclick="setSaveCodeStyle('emoji'); makeSaveCode();" style="flex:1; padding:8px; background:#5a3a6a; color:#fff; border:none; border-radius:6px; font-family:inherit; font-size:11px; cursor:pointer;">😀 קוד אימוג׳ים</button>
+            <button onclick="setSaveCodeStyle('letters'); makeSaveCode();" style="flex:1; padding:8px; background:#3a4a6a; color:#fff; border:none; border-radius:6px; font-family:inherit; font-size:11px; cursor:pointer;">🔤 קוד אותיות</button>
+          </div>
           <div style="display:flex; gap:6px; margin-bottom:10px;">
             <button onclick="makeSaveCode()" style="flex:1; padding:9px; background:#3a5a2a; color:#fff; border:none; border-radius:6px; font-family:inherit; font-size:12px; cursor:pointer;">📤 צור קוד שמירה</button>
           </div>
@@ -2057,7 +2061,7 @@ function netHandleMessage(peer, msg){
   if (!msg || typeof msg!=='object') { try{ msg=JSON.parse(msg); }catch(e){ return; } }
   if (msg.t==='init'){ applyNetInit(msg); return; }
   if (msg.t==='p'){ const prev=remotePlayers[msg.id]; const moved = prev && (Math.abs((prev.tx!=null?prev.tx:prev.x)-msg.x)>0.5||Math.abs((prev.ty!=null?prev.ty:prev.y)-msg.y)>0.5);
-    remotePlayers[msg.id]={ x: prev?prev.x:msg.x, y: prev?prev.y:msg.y, tx:msg.x, ty:msg.y, facing:msg.facing, hp:msg.hp, name:msg.name, color:msg.color, torch:msg.torch, last:performance.now(), lastMove: moved?performance.now():((prev&&prev.lastMove)||0), wf:((prev&&prev.wf)||0), _peer: net.isHost?peer:null };
+    remotePlayers[msg.id]={ x: prev?prev.x:msg.x, y: prev?prev.y:msg.y, tx:msg.x, ty:msg.y, facing:msg.facing, hp:msg.hp, name:msg.name, color:msg.color, torch:msg.torch, last:performance.now(), lastMove: moved?performance.now():((prev&&prev.lastMove)||0), wf:((prev&&prev.wf)||0), kills:((prev&&prev.kills)|0), _peer: net.isHost?peer:null };
     if(net.isHost) netRelay(peer, msg); return; }
   if (msg.t==='tiles'){ applyNetTiles(msg.cells); if(net.isHost) netRelay(peer, msg); return; }
   if (msg.t==='time'){ if(!net.isHost){ dayNum=msg.dayNum; time=msg.time; eternalNightActive=msg.en; if(msg.cyc)CYCLE_LEN=msg.cyc; if(msg.dusk)DUSK_LEN=msg.dusk; if(msg.dawn)DAWN_LEN=msg.dawn; } return; }
@@ -2085,7 +2089,11 @@ function hostApplyHit(msg, peer){
   const e = enemies.find(en=>en.id===msg.id); if(!e) return;
   e.hp -= msg.dmg; enemyHitReaction(e);
   spawnParticle(e.x, e.y, '#e04a30', 4);
-  if (e.hp<=0){ if(e===boss){ onBossDeath(); } enemies = enemies.filter(en=>en!==e); stats.monstersKilled++;
+  if (e.hp<=0){ if(e===boss){ onBossDeath(); } enemies = enemies.filter(en=>en!==e);
+    // credit the kill to the GUEST who landed it (not the host), so each player's count is their own
+    let credited=false;
+    for (const id in remotePlayers){ if (remotePlayers[id]._peer===peer){ remotePlayers[id].kills=(remotePlayers[id].kills|0)+1; credited=true; break; } }
+    if (!credited) stats.monstersKilled++;
     const bones = e.kind==='wolf'?3:e.kind==='siberian_wolf'?4:e.kind==='brute'?5:2;
     sendToPeer(peer, { t:'reward', items:{ bones } });   // the guest who killed it gets the loot
   }
@@ -2258,7 +2266,10 @@ function buildSaveData(name){
   const playerCopy = JSON.parse(JSON.stringify(Object.assign({}, player, {placingItem:null})));
   if (playerCopy.inv){ for(const k in playerCopy.inv){ if(!playerCopy.inv[k]) delete playerCopy.inv[k]; } }   // drop the many zero entries
   ['speedBoostTimer','efficiencyBoostTimer','slowTimer','sweetTimer','glowTimer','calmTimer','harvestTimer','strengthTimer','moving','moveT'].forEach(k=>{ if(!playerCopy[k]) delete playerCopy[k]; });
-  const base = { v:2, name, ts:Date.now(), gameMode, dayNum, time, eternalNightDay, eternalNightActive, crystalPlaced, crystalActivated, crystalBonusDays, crystalDevicePos, challengeStartDay, player:playerCopy, stats:JSON.parse(JSON.stringify(stats)), chests:JSON.parse(JSON.stringify(chests)) };
+  // who you're playing with: their names, colors and kill counts travel with the save too
+  const roster = [{ name: playerName||myName(), color: playerSkin, kills: stats.monstersKilled|0 }];
+  for (const id in remotePlayers){ const rp=remotePlayers[id]; roster.push({ name: rp.name||'שחקן', color: rp.color||'#888888', kills: rp.kills|0 }); }
+  const base = { v:2, name, ts:Date.now(), gameMode, dayNum, time, eternalNightDay, eternalNightActive, crystalPlaced, crystalActivated, crystalBonusDays, crystalDevicePos, challengeStartDay, roster, player:playerCopy, stats:JSON.parse(JSON.stringify(stats)), chests:JSON.parse(JSON.stringify(chests)) };
   // Tiny format: store the world SEED + only the tiles you changed. Falls back to the full world if anything looks off.
   try{ base.seed = worldSeed>>>0; base.wd = diffWorld(); }
   catch(e){ base.world = serializeWorld(); }
@@ -2306,6 +2317,110 @@ function loadWorld(id){
   applySaveData(data);
   showToast('📂 נטען: '+(data.name||''));
 }
+/* ============ Compact BINARY save format ============
+   The old code stored the whole save as JSON, and most of it was junk the game recomputes anyway
+   (moveFrom, moveDuration, attackCd, walkFrame...). Writing only the meaningful values as raw bytes
+   shrinks a fresh-world save from ~817 JSON chars to a few dozen bytes, which is what actually makes
+   the final code short. These lists are APPEND-ONLY so old codes keep working when new items are added. */
+const SAVE_ITEMS = ['wood','stone','coal','iron','iron_ingot','berry','meat','torch','bones','wheat','seeds','bowl','dough','bread','cooked_meat','fruit_salad','crystal','reinforcement','raw_fish','cooked_fish','big_fish','pufferfish','eel','golden_fish','cave_crystal','honey_jar','clover','sunflower','herb','poppy','bluebell','goldenrod','glowcap','nightshade','crystalbloom','emberlily','moonflower','healing_potion','speed_potion','glow_lantern','harvest_charm','calm_incense','strength_brew','moon_elixir','item_wall','item_wall_thorn','item_bone_wall','item_campfire','item_furnace','item_crafting_table','item_upgraded_table','item_chest','item_crystal_device','item_lucky','item_beehive','item_garden_table','arrowWood','arrowIron','arrowBone'];
+const SAVE_EQUIP = ['axe','pickaxe','sword','bow','iron_axe','iron_pickaxe','iron_sword','shovel','bucket','fishing_rod','bone_shield'];
+const SAVE_FACING = ['down','up','left','right','down-left','down-right','up-left','up-right'];
+const SAVE_WEAPON = ['sword','iron_sword','bow'];
+const SAVE_MODES  = ['crystal','survival','challenge','test'];
+const SAVE_SPECIES= ['wheat','clover','sunflower','herb','poppy','bluebell','goldenrod','glowcap','nightshade','crystalbloom','emberlily','moonflower'];
+
+function BW(){ const a=[]; return {
+  a, u8(v){ a.push(v&255); }, u16(v){ v=v|0; a.push((v>>8)&255, v&255); }, u32(v){ v=v>>>0; a.push((v>>>24)&255,(v>>>16)&255,(v>>>8)&255,v&255); },
+  str(s){ const b=new TextEncoder().encode(String(s||'').slice(0,60)); a.push(Math.min(255,b.length)); for(let i=0;i<b.length&&i<255;i++) a.push(b[i]); },
+  bytes(){ return new Uint8Array(a); } }; }
+function BR(u8arr){ let i=0; const d=u8arr; return {
+  u8(){ return d[i++]|0; }, u16(){ const v=(d[i]<<8)|d[i+1]; i+=2; return v; }, u32(){ const v=((d[i]<<24)>>>0)+(d[i+1]<<16)+(d[i+2]<<8)+d[i+3]; i+=4; return v>>>0; },
+  str(){ const n=d[i++]|0; const s=new TextDecoder().decode(d.slice(i,i+n)); i+=n; return s; },
+  left(){ return d.length-i; } }; }
+function colorToRgb(c){ c=String(c||'#2f5f8a'); const m=/^#?([0-9a-f]{6})$/i.exec(c.trim()); if(m){ const n=parseInt(m[1],16); return [(n>>16)&255,(n>>8)&255,n&255]; }
+  const m2=/rgb\((\d+)[ ,]+(\d+)[ ,]+(\d+)/i.exec(c); if(m2) return [+m2[1]&255,+m2[2]&255,+m2[3]&255]; return [47,95,138]; }
+function rgbToColor(r,g,b){ return '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join(''); }
+
+function saveToBinary(d){
+  const w=BW();
+  w.u8(1);                                   // format version
+  w.u32((d.seed||0)>>>0);
+  w.u8(Math.max(0,SAVE_MODES.indexOf(d.gameMode||'crystal')));
+  w.u16(Math.min(65535,d.dayNum||1));
+  w.u16(Math.min(65535,Math.round((d.time||0)*10)));
+  let flags = (d.eternalNightActive?1:0)|(d.crystalPlaced?2:0)|(d.crystalActivated?4:0)|(d.crystalDevicePos?8:0)|(d.world?16:0);
+  w.u8(flags);
+  w.u16(Math.min(65535,d.eternalNightDay||5)); w.u8(Math.min(255,d.crystalBonusDays||0)); w.u8(Math.min(255,d.challengeStartDay||2));
+  if (d.crystalDevicePos){ w.u16(d.crystalDevicePos.tx|0); w.u16(d.crystalDevicePos.ty|0); }
+  const pl=d.player||{};
+  w.u16(Math.max(0,Math.round(pl.x||0))); w.u16(Math.max(0,Math.round(pl.y||0)));
+  w.u16(Math.max(0,Math.round(pl.health||100))); w.u16(Math.max(0,Math.round(pl.maxHealth||100)));
+  w.u16(Math.max(0,Math.round(pl.hunger||100))); w.u16(Math.max(0,Math.round(pl.maxHunger||100)));
+  w.u8(Math.max(0,SAVE_FACING.indexOf(pl.facing||'down')));
+  w.u8(Math.max(0,SAVE_WEAPON.indexOf(pl.activeWeapon||'sword')));
+  w.u8(Math.min(255,pl.gatherBonus||0)); w.u8(Math.min(255,pl.breakReach||2)); w.u8(Math.min(255,Math.round((pl.speedBonus||0)*10)));
+  let eq=0; SAVE_EQUIP.forEach((k,i)=>{ if(pl.equipment && pl.equipment[k]) eq |= (1<<i); }); w.u16(eq);
+  const inv=pl.inv||{}; const ients=SAVE_ITEMS.map((k,i)=>[i,inv[k]|0]).filter(e=>e[1]>0);
+  w.u8(Math.min(255,ients.length)); for(const [i,c] of ients.slice(0,255)){ w.u8(i); w.u16(Math.min(65535,c)); }
+  const st=d.stats||{};
+  w.u16(Math.min(65535,st.animalsKilled||0)); w.u16(Math.min(65535,st.monstersKilled||0)); w.u16(Math.min(65535,st.blocksDestroyed||0));
+  w.u8(Math.min(255,Math.round(st.maxBreakDist||2))); w.u16(Math.min(65535,st.luckyOpened||0));
+  const dc=(st.dailyChoices||[]).slice(0,60); w.u8(dc.length); for(const c of dc){ w.u16(c.day|0); w.str(c.label||''); }
+  w.str(d.name||'');
+  const ch=(d.chests||[]).slice(0,255); w.u8(ch.length);
+  for(const c of ch){ w.u16(Math.round(c.x)); w.u16(Math.round(c.y)); const it=Object.keys(c.items||{}).map(k=>[SAVE_ITEMS.indexOf(k),c.items[k]|0]).filter(e=>e[0]>=0&&e[1]>0).slice(0,255);
+    w.u8(it.length); for(const [i,n] of it){ w.u8(i); w.u16(Math.min(65535,n)); } }
+  const roster=(d.roster||[]).slice(0,32); w.u8(roster.length);
+  for(const r of roster){ w.str(r.name||''); const [rr,gg,bb]=colorToRgb(r.color); w.u8(rr); w.u8(gg); w.u8(bb); w.u16(Math.min(65535,r.kills||0)); }
+  const wd=d.wd||{}; const keys=Object.keys(wd); w.u16(Math.min(65535,keys.length));
+  for(const k of keys.slice(0,65535)){ const o=wd[k]; w.u16(+k & 65535); w.u8(o.t|0);
+    let f=0; if(o.hp!=null)f|=1; if(o.m!=null)f|=2; if(o.d!=null)f|=4; if(o.dm!=null)f|=8; if(o.sh!=null)f|=16; if(o.s!=null)f|=32; if(o.sp!=null)f|=64; if(o.r||o.mt)f|=128;
+    w.u8(f);
+    if(f&1)w.u16(Math.max(0,Math.min(65535,o.hp))); if(f&2)w.u16(Math.max(0,Math.min(65535,o.m)));
+    if(f&4)w.u16(Math.max(0,Math.min(65535,o.d))); if(f&8)w.u16(Math.max(0,Math.min(65535,o.dm)));
+    if(f&16){ w.u16(Math.max(0,Math.min(65535,o.sh||0))); w.u16(Math.max(0,Math.min(65535,o.shm||0))); }
+    if(f&32)w.u8(o.s|0);
+    if(f&64)w.u8(Math.max(0,SAVE_SPECIES.indexOf(o.sp)));
+    if(f&128)w.u8((o.r?1:0)|(o.mt?2:0));
+  }
+  return w.bytes();
+}
+function saveFromBinary(u8arr){
+  const r=BR(u8arr); const ver=r.u8(); if(ver!==1) throw new Error('bad version');
+  const d={ v:2 };
+  d.seed=r.u32(); d.gameMode=SAVE_MODES[r.u8()]||'crystal';
+  d.dayNum=r.u16(); d.time=r.u16()/10;
+  const flags=r.u8();
+  d.eternalNightActive=!!(flags&1); d.crystalPlaced=!!(flags&2); d.crystalActivated=!!(flags&4);
+  d.eternalNightDay=r.u16(); d.crystalBonusDays=r.u8(); d.challengeStartDay=r.u8();
+  if (flags&8){ const tx=r.u16(), ty=r.u16(); d.crystalDevicePos={ tx, ty, x:tx*TILE+TILE/2, y:ty*TILE+TILE/2 }; }
+  const pl={};
+  pl.x=r.u16(); pl.y=r.u16(); pl.health=r.u16(); pl.maxHealth=r.u16(); pl.hunger=r.u16(); pl.maxHunger=r.u16();
+  pl.facing=SAVE_FACING[r.u8()]||'down'; pl.activeWeapon=SAVE_WEAPON[r.u8()]||'sword';
+  pl.gatherBonus=r.u8(); pl.breakReach=r.u8(); pl.speedBonus=r.u8()/10;
+  const eq=r.u16(); pl.equipment={}; SAVE_EQUIP.forEach((k,i)=>{ if(eq&(1<<i)) pl.equipment[k]=1; });
+  pl.inv={}; const ni=r.u8(); for(let i=0;i<ni;i++){ const idx=r.u8(), c=r.u16(); const key=SAVE_ITEMS[idx]; if(key) pl.inv[key]=c; }
+  pl.gridX=Math.floor(pl.x/TILE); pl.gridY=Math.floor(pl.y/TILE);
+  d.player=pl;
+  const st={}; st.animalsKilled=r.u16(); st.monstersKilled=r.u16(); st.blocksDestroyed=r.u16(); st.maxBreakDist=r.u8(); st.luckyOpened=r.u16();
+  const ndc=r.u8(); st.dailyChoices=[]; for(let i=0;i<ndc;i++){ const day=r.u16(); const label=r.str(); st.dailyChoices.push({day,label}); }
+  d.stats=st;
+  d.name=r.str();
+  const nch=r.u8(); d.chests=[];
+  for(let i=0;i<nch;i++){ const x=r.u16(), y=r.u16(); const n=r.u8(); const items={}; for(let j=0;j<n;j++){ const idx=r.u8(), c=r.u16(); const key=SAVE_ITEMS[idx]; if(key) items[key]=c; } d.chests.push({x,y,items}); }
+  const nr=r.u8(); d.roster=[]; for(let i=0;i<nr;i++){ const name=r.str(); const rr=r.u8(), gg=r.u8(), bb=r.u8(); const kills=r.u16(); d.roster.push({name,color:rgbToColor(rr,gg,bb),kills}); }
+  const nwd=r.u16(); d.wd={};
+  for(let i=0;i<nwd;i++){ const idx=r.u16(); const o={ t:r.u8() }; const f=r.u8();
+    if(f&1)o.hp=r.u16(); if(f&2)o.m=r.u16(); if(f&4)o.d=r.u16(); if(f&8)o.dm=r.u16();
+    if(f&16){ o.sh=r.u16(); o.shm=r.u16(); }
+    if(f&32)o.s=r.u8();
+    if(f&64)o.sp=SAVE_SPECIES[r.u8()]||'wheat';
+    if(f&128){ const b=r.u8(); if(b&1)o.r=1; if(b&2)o.mt=1; }
+    d.wd[idx]=o;
+  }
+  return d;
+}
+
 /* ---- Portable save code: works even when localStorage is blocked (Shortcut / data: link) ---- */
 // Compress the save with the browser's built-in gzip so the code is MUCH shorter (usually 4-6x smaller).
 // Prefix marks the format: G1 = gzip+base64, R1 = raw base64 fallback (old phones without CompressionStream).
@@ -2350,11 +2465,57 @@ function decodeEmoji(s){
   if(r>0) bytes.length = bytes.length-(5-r);   // drop the padding bytes of the last group
   return new Uint8Array(bytes);
 }
-// Reliable letters/digits (base64). Emoji encoding was tried but many glyphs showed as blank boxes and got
-// dropped/reordered (RTL) on copy, breaking loads — plain text survives copy/paste everywhere.
-async function encodeSave(data){ return await gzipB64(JSON.stringify(data)); }
+/* ---- Code output ----
+   Payload = compact binary (optionally gzipped when that's actually smaller), then rendered either as
+   letters (S:) or as emojis (M:). The emoji set is a curated 256 of the oldest, most universally supported
+   emojis (Unicode 6.0/6.1, single code point, no skin tones / ZWJ / variation selectors) so they don't show
+   as empty boxes. Every emoji code is decoded back and byte-compared before it's shown; if it doesn't match
+   exactly, we silently fall back to letters. That's why a broken code can't be produced any more. */
+const EMOJI256=(function(){ const a=[];
+  for(let c=0x1F600;c<=0x1F64F;c++) a.push(c);   // smileys  (80)
+  for(let c=0x1F400;c<=0x1F43E;c++) a.push(c);   // animals  (63)
+  for(let c=0x1F330;c<=0x1F37C;c++) a.push(c);   // plants/food (77)
+  for(let c=0x1F680;c<=0x1F6A4;c++) a.push(c);   // transport (37)
+  return a.slice(0,256); })();
+const EMOJI256_IDX={}; EMOJI256.forEach((cp,i)=>EMOJI256_IDX[cp]=i);
+function bytesToEmoji(u8){ let s=''; for(let i=0;i<u8.length;i++) s+=String.fromCodePoint(EMOJI256[u8[i]]); return s; }
+function emojiToBytes(str){ const out=[]; for(const ch of str){ const i=EMOJI256_IDX[ch.codePointAt(0)]; if(i===undefined) throw new Error('bad emoji'); out.push(i); } return new Uint8Array(out); }
+function bytesToB64(u8){ let bin=''; for(let i=0;i<u8.length;i++) bin+=String.fromCharCode(u8[i]); return btoa(bin); }
+function b64ToBytes(s){ const bin=atob(s); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return u; }
+async function gzipBytes(u8){ const ab=await new Response(new Blob([u8]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer(); return new Uint8Array(ab); }
+async function gunzipBytes(u8){ const ab=await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer(); return new Uint8Array(ab); }
+// Build the payload: [flag byte] + body. flag 0 = raw binary, 1 = gzipped binary.
+async function buildPayload(data){
+  const raw = saveToBinary(data);
+  let body = raw, flag = 0;
+  if (raw.length > 120 && typeof CompressionStream !== 'undefined'){
+    try{ const gz = await gzipBytes(raw); if (gz.length < raw.length){ body = gz; flag = 1; } }catch(e){}
+  }
+  const out = new Uint8Array(body.length+1); out[0]=flag; out.set(body,1); return out;
+}
+async function payloadToData(payload){
+  const flag = payload[0]; let body = payload.slice(1);
+  if (flag===1) body = await gunzipBytes(body);
+  return saveFromBinary(body);
+}
+let saveCodeStyle = 'emoji';   // 'emoji' or 'letters'
+async function encodeSave(data, style){
+  style = style || saveCodeStyle;
+  try{
+    const payload = await buildPayload(data);
+    if (style === 'emoji'){
+      const code = 'M:'+bytesToEmoji(payload);
+      // self-check: decode it right back and require an exact byte match before handing it to the player
+      try{ const back = emojiToBytes(code.slice(2)); let same = back.length===payload.length; if(same) for(let i=0;i<back.length;i++){ if(back[i]!==payload[i]){ same=false; break; } }
+        if (same) return code; }catch(e){}
+    }
+    return 'S:'+bytesToB64(payload);
+  }catch(e){ return await gzipB64(JSON.stringify(data)); }   // last-resort: old JSON format
+}
 async function decodeSave(str){
   str = (str||'').replace(/\s+/g,'').trim();   // copy/paste can sprinkle spaces or newlines — strip them
+  if (str.startsWith('M:')) return await payloadToData(emojiToBytes(str.slice(2)));   // compact binary, emoji
+  if (str.startsWith('S:')) return await payloadToData(b64ToBytes(str.slice(2)));     // compact binary, letters
   if (str.startsWith('E1:')) return JSON.parse(await gunzipBytesToStr(decodeEmoji(str.slice(3))));
   if (str.startsWith('G1:')) return JSON.parse(await gunzipB64(str.slice(3)));
   if (str.startsWith('R1:')) return JSON.parse(decodeURIComponent(escape(atob(str.slice(3)))));
@@ -2373,6 +2534,8 @@ async function makeSaveCode(){
   showToast('📋 סמן הכל והעתק — הדבק ל-Google Keep או לכל מקום');
 }
 function copySaveCode(){ const ta=document.getElementById('saveCodeArea'); if(!ta) return; const ok=copyTextFrom(ta); showToast(ok ? 'הקוד הועתק 📋' : 'הקוד מסומן — לחץ "העתק" מהתפריט של הטלפון 📋'); }
+function copyStatsCode(){ const el=document.getElementById('statsCode'); if(!el) return; const ok=copyTextFrom(el); showToast(ok ? ('הקוד הועתק 📋: '+el.value) : 'הקוד מסומן — לחץ "העתק" מהתפריט של הטלפון 📋'); }
+function setSaveCodeStyle(s){ saveCodeStyle = s; showToast(s==='emoji' ? '😀 קוד באימוג׳ים (קצר יותר)' : '🔤 קוד באותיות (הכי בטוח)'); }
 async function loadFromCode(){
   const ta=document.getElementById('loadCodeArea'); if(!ta) return;
   const str=(ta.value||'').trim(); if(!str){ showToast('הדבק קוד שמירה קודם'); return; }
@@ -2506,14 +2669,22 @@ function renderStats(){
     ['📅 יום נוכחי', dayNum],
   ];
   if (net.active){
-    const code = net.isHost ? (net.myCode||'—') : (net.hostCode||'—');
-    rows.push(['🌐 קוד השרת הנוכחי', code]);
     rows.push(['👥 שחקנים בעולם', netPlayerCount]);
     rows.push(['🕹️ התפקיד שלך', net.isHost ? 'מארח' : 'אורח']);
-    const others = Object.values(remotePlayers).map(p=>p.name).filter(Boolean);
-    if (others.length) rows.push(['🙂 חברים מחוברים', others.join(', ')]);
+    for (const id in remotePlayers){ const rp=remotePlayers[id];
+      rows.push(['<span style="color:'+(rp.color||'#888')+'">●</span> '+(rp.name||'שחקן'), '👾 '+(rp.kills|0)]); }
   }
-  document.getElementById('statsBody').innerHTML = rows.map(r=>`<div class="statRow"><span>${r[0]}</span><b>${r[1]}</b></div>`).join('');
+  let html = rows.map(r=>`<div class="statRow"><span>${r[0]}</span><b>${r[1]}</b></div>`).join('');
+  // The room code stays visible mid-game (tap to select) so a friend can still join after you've started.
+  if (net.active){
+    const code = net.isHost ? (net.myCode||'—') : (net.hostCode||'—');
+    html += `<div class="statRow" style="flex-direction:column; align-items:stretch; gap:5px; padding-top:8px;">
+      <span>🌐 קוד להצטרפות (גם באמצע משחק)</span>
+      <input id="statsCode" readonly value="${code}" onclick="this.select()" dir="ltr" style="width:100%; box-sizing:border-box; text-align:center; font-size:22px; letter-spacing:4px; font-family:inherit; background:#0d1018; color:#4a9aff; border:1px solid #4a4230; border-radius:6px; padding:6px;">
+      <button onclick="copyStatsCode()" style="padding:6px; background:#2f5a8a; color:#fff; border:none; border-radius:5px; font-family:inherit; font-size:11px; cursor:pointer;">📋 העתק קוד</button>
+    </div>`;
+  }
+  document.getElementById('statsBody').innerHTML = html;
   const ch = stats.dailyChoices;
   document.getElementById('statsChoices').innerHTML = ch.length ? ch.map(c=>`<div class="statRow"><span>יום ${c.day}</span><b>${c.label}</b></div>`).join('') : '<div class="statRow"><span>עדיין לא בחרת שדרוגים</span></div>';
 }
