@@ -210,6 +210,7 @@
     <div class="settingRow"><label>☀️ תאורת מסך (למשחק בשמש):</label><input type="range" min="0.8" max="1.8" step="0.1" value="1.0" oninput="changeAppBrightness(this.value)"></div>
     <div class="settingRow"><label>🕹️ סוג רשת תנועה:</label><select id="gridMode" onchange="changeGridMode(this.value)"><option value="smooth">🏃 תנועה חופשית</option><option value="quarter">📐 רבע בלוק</option><option value="half">📏 חצי בלוק</option><option value="full">🧱 בלוק מלא</option></select></div>
     <div class="settingRow"><label>🎨 רמת יופי וגרפיקה (1-6):</label><input type="range" min="1" max="6" step="1" value="1" oninput="changeGraphics(this.value)"></div>
+    <div class="settingRow"><label>🕶️ מבט:</label><button onclick="toggleView3D()" style="width:100%; padding:9px; background:#2a4a6a; color:#fff; border:1px solid #4a9aff; border-radius:6px; font-family:inherit; font-size:12px; cursor:pointer;">החלף בין תלת־מימד (גוף ראשון) למבט מלמעלה</button></div>
     <div class="settingRow" id="noiseSection" style="display:none; border-top:1px dashed #4a4230; padding-top:8px;">
       <label>🎛️ טקסטורה 6 — רעש (סאונד) לבלוקים:</label>
       <div class="noiseToggleRow"><span>הכל</span><input type="checkbox" id="noiseAll" checked onchange="setAllNoise(this.checked)"></div>
@@ -342,6 +343,15 @@
         <div class="wt">🌙 הישרדות רגילה</div>
         <div class="wd">בלי קריסטל ובלי לילה נצחי — רק לילות רגילים. פשוט לשרוד ולבנות כמה שרוצים.</div>
       </div>
+      <div class="worldCard" style="cursor:default; border-color:#4a9aff;">
+        <div class="wt">🕶️ תלת־מימד — גוף ראשון</div>
+        <div class="wd">רואים את העולם מהעיניים שלך: עצים, מפלצות, חיות, חברים והכול. הג׳ויסטיק מסובב ימינה/שמאלה והולך קדימה/אחורה. בחר עולם:</div>
+        <div style="display:flex; gap:6px; margin-top:10px; justify-content:center; flex-wrap:wrap;">
+          <button onclick="start3D('survival')" class="dayPick" style="background:#2a4a6a; border-color:#4a9aff;">🌙 הישרדות</button>
+          <button onclick="start3D('crystal')" class="dayPick" style="background:#2a4a6a; border-color:#4a9aff;">💎 קריסטל</button>
+          <button onclick="start3D('challenge')" class="dayPick" style="background:#2a4a6a; border-color:#4a9aff;">⚔️ אתגר</button>
+        </div>
+      </div>
       <div class="worldCard" style="cursor:default;">
         <div class="wt">⚔️ אתגר — לילה נצחי</div>
         <div class="wd">בלי קריסטל. בחר באיזה יום יתחיל הלילה הנצחי — ואז המשחק מתחיל:</div>
@@ -429,7 +439,15 @@
 
 <script>
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
+let ctx = canvas.getContext('2d');   // 'let' so the 3D view can temporarily redirect drawing into an offscreen sprite canvas
+const screenCtx = ctx;
+// Run any existing 2D drawing code into an offscreen canvas, so the 3D view reuses the SAME artwork.
+function renderToCanvas(w, h, fn){
+  const c = document.createElement('canvas'); c.width=w; c.height=h;
+  const oc = c.getContext('2d'); const saved = ctx;
+  ctx = oc; try{ fn(oc); } catch(e){} finally { ctx = saved; }
+  return c;
+}
 let W, H;
 function resizeCanvas(){
   // Use the canvas's OWN rendered box so the backing store always matches what's on screen.
@@ -723,6 +741,8 @@ let eternalNightDay = 5;       // effective day the eternal night begins for the
 let userEternalDay = 5;        // the crystal-world day chosen via secret code 2020 (persists across mode switches)
 let challengeStartDay = 2;      // in the eternal-night (challenge) world, the day the eternal night begins (player picks 1-5)
 function startChallenge(d){ challengeStartDay = Math.max(1, Math.min(5, d||2)); startWorld('challenge'); }
+function start3D(mode){ view3d = true; camAngle = Math.PI/2; startWorld(mode||'survival'); showToast('🕶️ מצב גוף ראשון! הג׳ויסטיק: ימינה/שמאלה מסתובב, קדימה/אחורה הולך'); }
+function toggleView3D(){ view3d = !view3d; if (view3d) camAngle = Math.PI/2; showToast(view3d ? '🕶️ עברת לתלת־מימד (גוף ראשון)' : '🗺️ חזרת למבט מלמעלה'); }
 let stats = { animalsKilled:0, monstersKilled:0, blocksDestroyed:0, maxBreakDist:2, luckyOpened:0, dailyChoices:[] };
 let bonusShownForDay = 0;      // guards against re-triggering the morning bonus in the same day
 let luckyQueue = [];           // pending saved choice-sets, attached to lucky blocks in order they're placed
@@ -865,8 +885,9 @@ const names = {wood:'🪵 עץ',stone:'🪨 אבן',coal:'⚫ פחם',iron:'🔶
 
 function canCraft(r){ for(const k in r.cost){ if((player.inv[k]||0) < r.cost[k]) return false; } return true; }
 
-function frontPos(){ 
+function frontPos(){
   let dirX = 0, dirY = 0;
+  if (view3d){ return { fx: player.x + Math.cos(camAngle)*(TILE*1.5), fy: player.y + Math.sin(camAngle)*(TILE*1.5) }; }   // first person: you build/mine where you look
   if (joyActive && (Math.abs(joyDX)>0.1 || Math.abs(joyDY)>0.1)) {
       let mag = Math.hypot(joyDX, joyDY); dirX = joyDX / mag; dirY = joyDY / mag;
   } else {
@@ -1331,6 +1352,17 @@ function update(dt){
   if (player.hurtSfxCd > 0) player.hurtSfxCd -= dt;
   let dx=0, dy=0; if (keys['w']||keys['arrowup']) dy-=1; if (keys['s']||keys['arrowdown']) dy+=1; if (keys['a']||keys['arrowleft']) dx-=1; if (keys['d']||keys['arrowright']) dx+=1;
   if (joyActive && (Math.abs(joyDX)>0.2||Math.abs(joyDY)>0.2)){ dx=joyDX; dy=joyDY; }
+  if (view3d){
+    // First person: left/right turns your head, up/down walks the way you're looking.
+    const turn = dx, fwd = -dy;
+    if (Math.abs(turn) > 0.15) camAngle += turn * dt * 2.6;
+    camAngle = (camAngle + Math.PI*2) % (Math.PI*2);
+    dx = Math.cos(camAngle) * fwd; dy = Math.sin(camAngle) * fwd;
+    // keep the 2D facing in sync so mining/building/attacking all aim where you look
+    const a = camAngle;
+    player.facing = (a < 0.393 || a >= 5.890) ? 'right' : a < 1.178 ? 'down-right' : a < 1.963 ? 'down'
+                  : a < 2.749 ? 'down-left' : a < 3.534 ? 'left' : a < 4.320 ? 'up-left' : a < 5.105 ? 'up' : 'up-right';
+  }
   let isWaterTile = isWater(tileAt(player.x, player.y)); 
   
   let currentSpeed = (player.speed + (player.speedBonus||0)) * (isWaterTile ? 0.5 : 1.0);
@@ -1344,7 +1376,8 @@ function update(dt){
 
   if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) {
     player.isWalking = true; player.walkFrame += dt * 10;
-    if (Math.abs(dx) > 0.1 && Math.abs(dy) > 0.1) {
+    if (view3d){ /* facing already follows the camera, don't override it when walking backwards */ }
+    else if (Math.abs(dx) > 0.1 && Math.abs(dy) > 0.1) {
         player.facing = (dy > 0 ? 'down' : 'up') + '-' + (dx > 0 ? 'right' : 'left');
     } else if (Math.abs(dx) >= Math.abs(dy)) {
         player.facing = dx > 0 ? 'right' : 'left';
@@ -1353,7 +1386,7 @@ function update(dt){
     }
   } else { player.isWalking = false; }
 
-  if (motionGrid === 'smooth') {
+  if (motionGrid === 'smooth' || view3d) {   // first person always walks smoothly
     if (player.isWalking) { let nextX = player.x + dx * currentSpeed; let nextY = player.y + dy * currentSpeed; if (!isSolid(tileAt(nextX, player.y))) player.x = nextX; if (!isSolid(tileAt(player.x, nextY))) player.y = nextY; }
   } else {
     let stepSize = TILE; if (motionGrid === 'half') stepSize = TILE / 2; if (motionGrid === 'quarter') stepSize = TILE / 4;
@@ -3011,8 +3044,290 @@ function drawResourceShape(t, sx, sy, tileObj){
   ctx.restore();
 }
 
+// Animal artwork at the current origin — shared by the top-down view and the 3D billboards.
+function drawAnimalArt(a){ let hop = Math.abs(Math.sin(performance.now() * 0.008)) * 3.5; ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.beginPath(); ctx.ellipse(0, 6, 6, 2.5, 0, 0, 6.3); ctx.fill(); ctx.fillStyle = '#f5f5f5'; ctx.beginPath(); ctx.arc(0, -2 - hop, 6, 0, 6.3); ctx.fill(); ctx.beginPath(); ctx.arc(4, -6 - hop, 4.5, 0, 6.3); ctx.fill(); ctx.fillRect(1, -14 - hop, 1.8, 6); ctx.fillRect(4, -14 - hop, 1.8, 6); if (gfxLevel >= 5) { ctx.fillStyle = '#ffb3b3'; ctx.fillRect(1.5, -12 - hop, 0.8, 4); ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(-6, -2 - hop, 2.2, 0, 6.3); ctx.fill(); } ctx.fillStyle = '#ff9999'; ctx.fillRect(6, -6 - hop, 1.5, 1.5); if (a.isSpider && getNightFactor() > 0.4){ ctx.fillStyle='#ff2b2b'; ctx.shadowColor='#ff2b2b'; ctx.shadowBlur=6; ctx.fillRect(2.5, -7 - hop, 1.8, 1.8); ctx.fillRect(5.5, -7 - hop, 1.8, 1.8); ctx.shadowBlur=0; } }
+// Enemy artwork drawn at the current origin, so both the top-down view and the 3D billboards use the SAME art.
+function drawEnemyArt(e, withHpBar){
+    let bob = Math.sin(performance.now() * 0.008 + e.x) * 2.5; let isRight = (e.facing === 'right');
+    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(0, 7, 8, 3, 0, 0, 6.3); ctx.fill();
+    if (e.kind === 'zombie') { ctx.fillStyle = '#3c7a4b'; ctx.beginPath(); ctx.ellipse(0, -2 + bob, 7, 9, 0, 0, 6.3); ctx.fill(); ctx.fillStyle = '#2c5a35'; ctx.fillRect(isRight ? 3 : -9, -3 + bob, 6, 3.5); ctx.fillStyle = '#ffea00'; if (isRight) { ctx.fillRect(2, -6 + bob, 1.5, 1.5); ctx.fillRect(5, -6 + bob, 1.5, 1.5); } else { ctx.fillRect(-5, -6 + bob, 1.5, 1.5); ctx.fillRect(-2, -6 + bob, 1.5, 1.5); } }
+    else if (e.kind === 'wolf' || e.kind === 'siberian_wolf') { ctx.fillStyle = enemyColor[e.kind]; ctx.beginPath(); ctx.ellipse(0, bob, 10, 6, 0, 0, 6.3); ctx.fill(); let hX = isRight ? 7 : -7; ctx.beginPath(); ctx.arc(hX, -3 + bob, 4, 0, 6.3); ctx.fill(); ctx.beginPath(); ctx.moveTo(hX - 1, -6 + bob); ctx.lineTo(hX, -11 + bob); ctx.lineTo(hX + 1, -6 + bob); ctx.fill(); ctx.fillStyle = e.kind === 'wolf' ? '#e74c3c' : '#00d2ff'; ctx.fillRect(isRight ? hX + 1 : hX - 2, -4 + bob, 1.5, 1.5); }
+    else if (e.kind === 'scorpion') { ctx.fillStyle = '#b5743b'; ctx.beginPath(); ctx.ellipse(0, 1, 9, 5, 0, 0, 6.3); ctx.fill(); ctx.strokeStyle = '#b5743b'; ctx.lineWidth = 2.5; ctx.beginPath(); if (isRight) { ctx.arc(-5, -4, 6, 0, Math.PI, true); ctx.stroke(); ctx.fillStyle = '#733f15'; ctx.fillRect(-5, -10, 2.5, 2.5); } else { ctx.arc(5, -4, 6, 0, Math.PI, true); ctx.stroke(); ctx.fillStyle = '#733f15'; ctx.fillRect(5, -10, 2.5, 2.5); } }
+    else if (e.kind === 'archer') { ctx.fillStyle = '#4a3a6a'; ctx.beginPath(); ctx.ellipse(0, -2+bob, 7, 9, 0, 0, 6.3); ctx.fill(); ctx.strokeStyle='#c9a0ff'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(isRight?5:-5, -2+bob, 6, -1, 1); ctx.stroke(); ctx.fillStyle='#ffe94a'; ctx.fillRect(-2,-6+bob,1.6,1.6); ctx.fillRect(2,-6+bob,1.6,1.6); }
+    else if (e.kind === 'wraith') { ctx.globalAlpha = 0.55; const wg = ctx.createRadialGradient(0,-4+bob,1,0,-2+bob,11); wg.addColorStop(0,'#c9c9ff'); wg.addColorStop(1,'#5a5a9a'); ctx.fillStyle = wg; ctx.beginPath(); ctx.arc(0,-4+bob,8,Math.PI,0); ctx.lineTo(6,6+bob); ctx.lineTo(2,2+bob); ctx.lineTo(0,7+bob); ctx.lineTo(-2,2+bob); ctx.lineTo(-6,6+bob); ctx.closePath(); ctx.fill(); ctx.globalAlpha=1; ctx.fillStyle='#1a1a2a'; ctx.beginPath(); ctx.arc(-2.5,-5+bob,1.3,0,6.3); ctx.arc(2.5,-5+bob,1.3,0,6.3); ctx.fill(); }
+    else if (e.kind === 'brute') { ctx.fillStyle = '#5a3a2a'; ctx.beginPath(); ctx.ellipse(0, bob, 13, 12, 0, 0, 6.3); ctx.fill(); ctx.fillStyle='#3a2418'; ctx.fillRect(-10,-8+bob,6,6); ctx.fillRect(4,-8+bob,6,6); ctx.fillStyle='#ffea00'; ctx.fillRect(isRight?4:-9,-3+bob,2,2); ctx.fillRect(isRight?8:-5,-3+bob,2,2); }
+    else if (e.kind === 'spider') { ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=2; for(let s=-1;s<=1;s+=2){ for(let li=0; li<3; li++){ ctx.beginPath(); ctx.moveTo(0, bob); ctx.lineTo(s*(9+li*2), bob - 6 + li*6); ctx.stroke(); } } ctx.fillStyle='#2a2a2e'; ctx.beginPath(); ctx.ellipse(0, bob, 7, 6, 0, 0, 6.3); ctx.fill(); ctx.beginPath(); ctx.arc(0, -4+bob, 4, 0, 6.3); ctx.fill(); ctx.fillStyle='#ff3030'; ctx.fillRect(-2.5,-5+bob,1.8,1.8); ctx.fillRect(1,-5+bob,1.8,1.8); }
+    else if (e.kind === 'mummy') { ctx.fillStyle='#d8cba0'; ctx.beginPath(); ctx.ellipse(0,-2+bob,7,9,0,0,6.3); ctx.fill(); ctx.strokeStyle='#b0a480'; ctx.lineWidth=1.5; for(let i=-4;i<=4;i+=3){ ctx.beginPath(); ctx.moveTo(-7,i+bob); ctx.lineTo(7,i+bob); ctx.stroke(); } ctx.fillStyle='#3a2a10'; ctx.fillRect(-3,-6+bob,2,2); ctx.fillRect(1,-6+bob,2,2); }
+    else if (e.kind === 'frost_wraith') { ctx.globalAlpha=0.62; const fg=ctx.createRadialGradient(0,-4+bob,1,0,-2+bob,11); fg.addColorStop(0,'#dff4ff'); fg.addColorStop(1,'#4a8ac0'); ctx.fillStyle=fg; ctx.beginPath(); ctx.arc(0,-4+bob,8,Math.PI,0); ctx.lineTo(6,6+bob); ctx.lineTo(2,2+bob); ctx.lineTo(0,7+bob); ctx.lineTo(-2,2+bob); ctx.lineTo(-6,6+bob); ctx.closePath(); ctx.fill(); ctx.globalAlpha=1; ctx.fillStyle='#0a3a5a'; ctx.beginPath(); ctx.arc(-2.5,-5+bob,1.3,0,6.3); ctx.arc(2.5,-5+bob,1.3,0,6.3); ctx.fill(); }
+    else if (e.kind === 'boss') { ctx.save(); ctx.scale(2.6,2.6); ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(0,6,9,3,0,0,6.3); ctx.fill(); ctx.fillStyle='#eae6d6'; ctx.beginPath(); ctx.ellipse(0,-1+bob*0.4,8,10,0,0,6.3); ctx.fill(); ctx.fillStyle='#c8c0a8'; ctx.fillRect(-8,0+bob*0.4,16,2.5); ctx.fillRect(-8,4+bob*0.4,16,2.5); ctx.fillStyle='#111'; ctx.fillRect(-4,-5+bob*0.4,3,3); ctx.fillRect(1,-5+bob*0.4,3,3); ctx.fillStyle='#ff3b3b'; ctx.fillRect(-3.4,-4.4+bob*0.4,1.4,1.4); ctx.fillRect(1.6,-4.4+bob*0.4,1.4,1.4); ctx.restore(); }
+    if (withHpBar && e!==boss){ ctx.fillStyle='#222'; ctx.fillRect(-14, -18 + bob, 28, 3); ctx.fillStyle='#c94a3d'; ctx.fillRect(-14, -18 + bob, 28*(e.hp/e.maxHp), 3); }
+}
+
+/* ============ First-person 3D view (raycaster) ============
+   Renders the SAME world/tiles/creatures as the top-down view, seen from the player's own eyes.
+   Full-block tiles (rock, walls, ore) are raycast as solid walls; everything else that stands on the
+   ground (trees, plants, tables, monsters, animals, teammates, dropped items) is drawn as a billboard
+   using its real 2D artwork, so the world looks like itself. */
+let view3d = false;
+let camAngle = 0;                 // where you're looking, in radians
+const WALL3D = {};                // tile type -> base wall color
+(function(){
+  // Only things that are genuinely WALLS get raycast as full-height walls.
+  WALL3D[T.WALL]='#8c8c86'; WALL3D[T.CAVE_WALL]='#6e6e7c'; WALL3D[T.BONE_WALL]='#ded6c0';
+  WALL3D[T.WALL_THORN]='#6b7a3a'; WALL3D[T.FURNACE]='#6a6a6a';
+  WALL3D[T.CRYSTAL_DEVICE]='#7ae0ff'; WALL3D[T.TABLET]='#c0b48a'; WALL3D[T.LUCKY]='#e0c534';
+})();
+// Everything that just SITS on the ground is a billboard object — stone and ore veins are chunky boulders
+// and crystals lying on the floor, not tall walls.
+const SPRITE3D = new Set([T.TREE,T.PINE,T.TRUNK,T.SAPLING,T.CACTUS,T.BUSH,T.CROP,T.WHEAT,T.SKULL,
+  T.PLACED_TORCH,T.CAMPFIRE,T.CRAFTING_TABLE,T.UPGRADED_TABLE,T.BEEHIVE,T.GARDEN_TABLE,T.CAVE_IN,T.CAVE_UP,
+  T.ROCK,T.COAL,T.IRONROCK,T.CRYSTAL_ORE,T.CAVE_CRYSTAL]);
+const SPRITE3D_H = { }; SPRITE3D_H[T.TREE]=2.3; SPRITE3D_H[T.PINE]=2.5; SPRITE3D_H[T.TRUNK]=0.9; SPRITE3D_H[T.CACTUS]=1.5;
+SPRITE3D_H[T.CRAFTING_TABLE]=0.9; SPRITE3D_H[T.UPGRADED_TABLE]=0.9; SPRITE3D_H[T.GARDEN_TABLE]=0.9;
+SPRITE3D_H[T.BUSH]=0.8; SPRITE3D_H[T.CROP]=0.8; SPRITE3D_H[T.WHEAT]=0.8; SPRITE3D_H[T.SKULL]=0.6;
+SPRITE3D_H[T.CAVE_IN]=0.5; SPRITE3D_H[T.CAVE_UP]=0.5; SPRITE3D_H[T.PLACED_TORCH]=1.2;
+SPRITE3D_H[T.ROCK]=0.95; SPRITE3D_H[T.COAL]=0.95; SPRITE3D_H[T.IRONROCK]=1.0;
+SPRITE3D_H[T.CRYSTAL_ORE]=1.15; SPRITE3D_H[T.CAVE_CRYSTAL]=1.15;
+
+const tileSprCache = {};
+// Trees get real volume in first person: a trunk column plus a cloud of leaves (or stacked conifer tiers).
+function treeSprite(kind){
+  const key = 'tree3d:'+kind;
+  if (tileSprCache[key]) return tileSprCache[key];
+  const c = renderToCanvas(64, 96, ()=>{
+    ctx.fillStyle='#6b4423'; ctx.fillRect(27, 44, 10, 52);          // trunk
+    ctx.fillStyle='#54331a'; ctx.fillRect(27, 44, 3.5, 52);         // shaded side
+    if (kind==='trunk') return;
+    if (kind==='pine'){
+      const tiers=[{y:58,w:24},{y:42,w:19},{y:27,w:14}];
+      for (const t of tiers){
+        ctx.fillStyle='#1c5233'; ctx.beginPath(); ctx.moveTo(32,t.y-26); ctx.lineTo(32-t.w,t.y); ctx.lineTo(32+t.w,t.y); ctx.closePath(); ctx.fill();
+        ctx.fillStyle='#eef4f8'; ctx.beginPath(); ctx.moveTo(32,t.y-26); ctx.lineTo(32-t.w*0.4,t.y-14); ctx.lineTo(32+t.w*0.4,t.y-14); ctx.closePath(); ctx.fill();
+      }
+    } else {
+      const g = ctx.createRadialGradient(24,22,3, 32,32,30);
+      g.addColorStop(0,'#6cbf5e'); g.addColorStop(1,'#1f5225');
+      ctx.fillStyle = g; ctx.beginPath();
+      ctx.arc(19,38,14,0,6.3); ctx.arc(45,38,14,0,6.3); ctx.arc(32,20,17,0,6.3); ctx.arc(32,34,19,0,6.3);
+      ctx.fill();
+    }
+  });
+  tileSprCache[key]=c; return c;
+}
+function tileSprite(t, tile){
+  if (t===T.TREE) return treeSprite('tree');
+  if (t===T.PINE) return treeSprite('pine');
+  if (t===T.TRUNK) return treeSprite('trunk');
+  const key = t + (tile && tile.species ? ':'+tile.species : '') + (tile && tile.mature ? ':m' : '');
+  if (tileSprCache[key]) return tileSprCache[key];
+  const c = renderToCanvas(64, 64, ()=>{ drawResourceShape(t, 16, 32, tile); });
+  tileSprCache[key] = c; return c;
+}
+// Fog has to tint only the sprite's visible pixels ('source-atop'); painting a plain rect over its
+// bounding box would show up as a translucent grey square around trees.
+let sprTint = null;
+function tintedSprite(img, amt, col){
+  if (amt < 0.03) return img;
+  if (!sprTint) sprTint = document.createElement('canvas');
+  if (sprTint.width!==img.width || sprTint.height!==img.height){ sprTint.width=img.width; sprTint.height=img.height; }
+  const g = sprTint.getContext('2d');
+  g.setTransform(1,0,0,1,0,0); g.clearRect(0,0,sprTint.width,sprTint.height);
+  g.globalCompositeOperation='source-over'; g.drawImage(img,0,0);
+  g.globalCompositeOperation='source-atop'; g.fillStyle='rgba('+col[0]+','+col[1]+','+col[2]+','+Math.min(0.9,amt)+')';
+  g.fillRect(0,0,sprTint.width,sprTint.height);
+  g.globalCompositeOperation='source-over';
+  return sprTint;
+}
+let entScratch = null;
+function entitySprite(fn){
+  if (!entScratch){ entScratch = document.createElement('canvas'); entScratch.width=64; entScratch.height=64; }
+  const g = entScratch.getContext('2d'); g.clearRect(0,0,64,64);
+  const saved = ctx; ctx = g; g.save(); g.translate(32, 44);
+  try{ fn(); }catch(e){} finally { g.restore(); ctx = saved; }
+  return entScratch;
+}
+function shade(hex, f){
+  const n=parseInt(hex.slice(1),16); let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+  r=Math.round(r*f); g=Math.round(g*f); b=Math.round(b*f);
+  return 'rgb('+Math.min(255,r)+','+Math.min(255,g)+','+Math.min(255,b)+')';
+}
+function view3dRange(){
+  const nf = getNightFactor(); const torch = (player.inv.torch||0)>0 || player.glowTimer>0;
+  if (inCave) return torch ? 11 : 4.5;
+  if (nf > 0.5) return torch ? 10 : 6.5;
+  return 24;
+}
+function draw3D(){
+  const nf = getNightFactor();
+  // Haze colour: pale sky by day (things fade INTO the distance), near-black at night and underground.
+  const fogCol = inCave ? [10,10,14]
+    : [Math.round(10+158*(1-nf)), Math.round(14+186*(1-nf)), Math.round(26+196*(1-nf))];
+  const maxD = view3dRange();
+  const posX = player.x/TILE, posY = player.y/TILE;
+  const dirX = Math.cos(camAngle), dirY = Math.sin(camAngle);
+  const fov = 0.72;                                   // ~72% plane -> comfortable field of view
+  const planeX = -dirY*fov, planeY = dirX*fov;
+  const horizon = H*0.5;
+  ctx.imageSmoothingEnabled = false;   // keep the pixel art crisp instead of blurry when scaled up
+
+  // ---- sky / ceiling ----
+  if (inCave){ ctx.fillStyle = '#15151c'; ctx.fillRect(0,0,W,horizon); }
+  else {
+    const sky = ctx.createLinearGradient(0,0,0,horizon);
+    if (nf > 0.5){ sky.addColorStop(0,'#05060d'); sky.addColorStop(1,'#141a2c'); }
+    else { sky.addColorStop(0,'#5aa8e0'); sky.addColorStop(1,'#bfe0f0'); }
+    ctx.fillStyle = sky; ctx.fillRect(0,0,W,horizon);
+  }
+  // ---- floor (cheap floor-casting so you actually see grass / sand / snow / water underfoot) ----
+  ctx.fillStyle = 'rgb('+fogCol[0]+','+fogCol[1]+','+fogCol[2]+')'; ctx.fillRect(0,horizon,W,H-horizon);
+  // graphics level drives the render resolution: low = chunky and fast, high = fine detail
+  const q = gfxLevel;
+  const rowStep = q<=2 ? 9 : q<=4 ? 6 : 4;
+  const colStep = q<=2 ? 44 : q<=4 ? 32 : 22;
+  for (let y = horizon+rowStep; y < H; y += rowStep){
+    const rowDist = (0.5*H) / (y - horizon);
+    if (rowDist > maxD) continue;
+    const fog = Math.min(1, rowDist/maxD);
+    for (let sx = 0; sx < W; sx += colStep){
+      const cx0 = 2*(sx+colStep/2)/W - 1;
+      const wx = posX + (dirX + planeX*cx0)*rowDist, wy = posY + (dirY + planeY*cx0)*rowDist;
+      const tx = Math.floor(wx), ty = Math.floor(wy);
+      if (tx<0||ty<0||tx>=MAPW||ty>=MAPH) continue;
+      const tl = world[ty][tx]; if (!tl) continue;
+      // underground the top-down palette is almost black; lift it so first person stays readable
+      ctx.fillStyle = inCave ? ((tl.type===T.CAVE_FLOOR||tl.type===T.ALTAR_FLOOR) ? '#55555f' : '#3a3a44')
+                             : groundColor(biomeAt(tx,ty), tl.type);
+      ctx.globalAlpha = 1-fog; ctx.fillRect(sx, y, colStep+1, rowStep+1); ctx.globalAlpha = 1;
+    }
+  }
+
+  // ---- walls (DDA raycast) ----
+  const step = q<=2 ? 5 : q<=4 ? 3 : 2;   // ray density follows the graphics level too
+  const zBuf = new Float32Array(Math.ceil(W/step)+1);
+  for (let x = 0, col = 0; x < W; x += step, col++){
+    const camX = 2*x/W - 1;
+    const rdx = dirX + planeX*camX, rdy = dirY + planeY*camX;
+    let mapX = Math.floor(posX), mapY = Math.floor(posY);
+    const dDistX = Math.abs(1/(rdx||1e-9)), dDistY = Math.abs(1/(rdy||1e-9));
+    let stepX, stepY, sideDistX, sideDistY;
+    if (rdx < 0){ stepX=-1; sideDistX=(posX-mapX)*dDistX; } else { stepX=1; sideDistX=(mapX+1-posX)*dDistX; }
+    if (rdy < 0){ stepY=-1; sideDistY=(posY-mapY)*dDistY; } else { stepY=1; sideDistY=(mapY+1-posY)*dDistY; }
+    let hit = null, side = 0, dist = 0;
+    for (let iter=0; iter<160; iter++){
+      if (sideDistX < sideDistY){ sideDistX += dDistX; mapX += stepX; side = 0; }
+      else { sideDistY += dDistY; mapY += stepY; side = 1; }
+      if (mapX<0||mapY<0||mapX>=MAPW||mapY>=MAPH) break;
+      dist = side===0 ? (sideDistX-dDistX) : (sideDistY-dDistY);
+      if (dist > maxD) break;
+      const tl = world[mapY][mapX];
+      if (tl && WALL3D[tl.type] !== undefined){ hit = tl; break; }
+    }
+    zBuf[col] = hit ? Math.max(0.0001, dist) : 1e9;
+    if (!hit) continue;
+    const lineH = H / dist;
+    let y0 = horizon - lineH/2, y1 = horizon + lineH/2;
+    const base = WALL3D[hit.type] || '#888';
+    const fog = Math.min(1, dist/maxD);
+    ctx.fillStyle = shade(base, (side===1 ? 0.72 : 1) * (1-0.45*fog));
+    ctx.fillRect(x, y0, step+1, y1-y0);
+    // damage darkening so a wall you're mining visibly cracks apart
+    const frac = hit.maxHp ? Math.max(0, hit.hp)/hit.maxHp : 1;
+    if (frac < 0.99){ ctx.fillStyle='rgba(0,0,0,'+(0.45*(1-frac))+')'; ctx.fillRect(x,y0,step+1,y1-y0); }
+  }
+
+  // ---- billboards: props, monsters, animals, teammates, dropped items ----
+  const sprites = [];
+  const r = Math.ceil(maxD)+1;
+  const px = Math.floor(posX), py = Math.floor(posY);
+  for (let ty=Math.max(0,py-r); ty<=Math.min(MAPH-1,py+r); ty++)
+    for (let tx=Math.max(0,px-r); tx<=Math.min(MAPW-1,px+r); tx++){
+      const tl = world[ty][tx]; if (!tl || !SPRITE3D.has(tl.type)) continue;
+      sprites.push({ x:tx+0.5, y:ty+0.5, img:tileSprite(tl.type, tl), h:(SPRITE3D_H[tl.type]||1.2) });
+    }
+  for (const e of enemies) sprites.push({ x:e.x/TILE, y:e.y/TILE, ent:e, kind:'enemy', h:(e.kind==='boss'?2.4:1.05) });
+  for (const a of animals) sprites.push({ x:a.x/TILE, y:a.y/TILE, ent:a, kind:'animal', h:0.6 });
+  if (pickups) for (const pk of pickups) sprites.push({ x:pk.x/TILE, y:pk.y/TILE, ent:pk, kind:'pickup', h:0.45 });
+  if (net.active && !inCave) for (const id in remotePlayers){ const rp=remotePlayers[id]; sprites.push({ x:rp.x/TILE, y:rp.y/TILE, ent:rp, kind:'peer', h:1.15 }); }
+  for (const s of sprites){ const ddx=s.x-posX, ddy=s.y-posY; s.d = ddx*ddx+ddy*ddy; }
+  sprites.sort((a,b)=>b.d-a.d);   // far to near
+
+  const invDet = 1/(planeX*dirY - dirX*planeY);
+  for (const s of sprites){
+    const rx = s.x-posX, ry = s.y-posY;
+    const tX = invDet*(dirY*rx - dirX*ry);
+    const tY = invDet*(-planeY*rx + planeX*ry);     // depth along the view direction
+    if (tY <= 0.15 || tY > maxD) continue;
+    let img = s.img;
+    if (!img){
+      if (s.kind==='enemy') img = entitySprite(()=>drawEnemyArt(s.ent, false));
+      else if (s.kind==='animal') img = entitySprite(()=>drawAnimalArt(s.ent));
+      else if (s.kind==='peer') img = entitySprite(()=>{ const rp=s.ent; ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(0,7,7,3,0,0,6.3); ctx.fill(); ctx.fillStyle=rp.color||'#2f5f8a'; ctx.fillRect(-5,-4,10,10); ctx.fillStyle='#e8b98a'; ctx.beginPath(); ctx.arc(0,-9,5,0,6.3); ctx.fill(); ctx.fillStyle='#5a3a1e'; ctx.beginPath(); ctx.arc(0,-11,5.2,3.14,0); ctx.fill(); });
+      else if (s.kind==='pickup') img = entitySprite(()=>{ const emo=(names[s.ent.item]||'📦').split(' ')[0]; ctx.font='18px serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(emo,0,0); });
+      else continue;
+    }
+    const lineH = H/tY;
+    const sh = lineH * s.h;                       // sprite height in pixels
+    const sw = sh * (img.width/img.height);
+    const floorY = horizon + lineH/2;             // where the ground is at this distance
+    const scrX = (W/2)*(1 + tX/tY);
+    const x0 = Math.floor(scrX - sw/2), y0 = Math.floor(floorY - sh);
+    const fog = Math.min(1, tY/maxD);
+    img = tintedSprite(img, fog*0.85, fogCol);      // distance haze, applied to the artwork only
+    // draw in vertical stripes so walls correctly hide sprites behind them
+    const sStep = Math.max(2, step);
+    for (let sx = Math.max(0,x0); sx < Math.min(W, x0+sw); sx += sStep){
+      const col = Math.floor(sx/step);
+      if (zBuf[col] !== undefined && tY >= zBuf[col]) continue;
+      const u = (sx-x0)/sw * img.width, uw = Math.max(1, (sStep/sw)*img.width);
+      ctx.drawImage(img, u, 0, uw, img.height, sx, y0, sStep+1, sh);
+    }
+  }
+
+  // ---- soft haze band right at the horizon (walls/sprites/floor already fade individually) ----
+  if (q >= 3){
+    const band = Math.max(60, H*0.16);
+    const fg = ctx.createLinearGradient(0,horizon-band,0,horizon+band);
+    fg.addColorStop(0,'rgba('+fogCol[0]+','+fogCol[1]+','+fogCol[2]+',0)');
+    fg.addColorStop(0.5,'rgba('+fogCol[0]+','+fogCol[1]+','+fogCol[2]+',0.45)');
+    fg.addColorStop(1,'rgba('+fogCol[0]+','+fogCol[1]+','+fogCol[2]+',0)');
+    ctx.fillStyle = fg; ctx.fillRect(0,horizon-band,W,band*2);
+  }
+  // Darkness as a torch-lit vignette: you can see straight ahead, the edges fall away into the dark.
+  if (nf > 0.02){
+    const torch = (player.inv.torch||0)>0 || player.glowTimer>0;
+    const edge = inCave ? (torch?0.80:0.92) : nf*(torch?0.55:0.72);
+    const core = inCave ? (torch?0.06:0.30) : nf*(torch?0.04:0.22);
+    const vg = ctx.createRadialGradient(W/2,horizon,Math.min(W,H)*0.06, W/2,horizon,Math.max(W,H)*0.72);
+    vg.addColorStop(0,'rgba(0,0,0,'+core+')'); vg.addColorStop(1,'rgba(0,0,0,'+edge+')');
+    ctx.fillStyle = vg; ctx.fillRect(0,0,W,H);
+  }
+
+  // ---- your own hands + crosshair ----
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  const bobY = player.isWalking ? Math.abs(Math.sin(performance.now()*0.008))*7 : 0;
+  // Arm + weapon sit in the middle at the bottom, clear of the joystick and the action buttons.
+  ctx.save(); ctx.translate(W*0.52, H-4+bobY); ctx.rotate(-0.28);
+  ctx.fillStyle='#e8b98a'; ctx.fillRect(-14, -4, 28, 80);
+  ctx.fillStyle='#d3a274'; ctx.fillRect(-14, -4, 5, 80);
+  ctx.restore();
+  const wsel = player.activeWeapon;
+  ctx.font='42px serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(wsel==='bow'?'🏹':(player.equipment.iron_sword?'⚔️':'🗡️'), W*0.47, H-64+bobY);
+  ctx.restore();
+  ctx.strokeStyle='rgba(255,255,255,0.75)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(W/2-10,H/2); ctx.lineTo(W/2-3,H/2); ctx.moveTo(W/2+3,H/2); ctx.lineTo(W/2+10,H/2);
+  ctx.moveTo(W/2,H/2-10); ctx.lineTo(W/2,H/2-3); ctx.moveTo(W/2,H/2+3); ctx.lineTo(W/2,H/2+10); ctx.stroke();
+  // what you're aiming at (so building/mining is predictable)
+  const fp = frontPos(); const ftx=Math.floor(fp.fx/TILE), fty=Math.floor(fp.fy/TILE);
+  if (world[fty] && world[fty][ftx] && world[fty][ftx].type!==T.GRASS){
+    ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.font='11px "Courier New", monospace'; ctx.textAlign='center';
+    ctx.fillText((names[Object.keys(T).find(k=>T[k]===world[fty][ftx].type)]||''), W/2, H/2+26);
+  }
+}
 function draw(){
   syncCanvasSize();
+  if (view3d){ ctx.clearRect(0,0,W,H); draw3D(); drawMinimap(); return; }
   ctx.clearRect(0,0,W,H); ctx.save(); ctx.translate(W/2, H/2); ctx.scale(gameZoom, gameZoom); ctx.translate(-player.x, -player.y);
   const visibleW = W / gameZoom; const visibleH = H / gameZoom;
   const startX=Math.max(0,Math.floor((player.x - visibleW/2)/TILE)), startY=Math.max(0,Math.floor((player.y - visibleH/2)/TILE));
@@ -3033,23 +3348,9 @@ function draw(){
   for (const p of particles){ ctx.globalAlpha=Math.max(0,p.life/0.6); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.3); ctx.fill(); ctx.globalAlpha=1; }
   for (const p of projectiles){ ctx.fillStyle='#fff'; ctx.fillRect(p.x-2, p.y-2, 4, 4); }
   for (const p of enemyProjectiles){ if(p.bone){ ctx.fillStyle='#e8e0d0'; ctx.fillRect(p.x-2, p.y-3, 4, 6); } else { ctx.fillStyle='#8a2f1a'; ctx.fillRect(p.x-2, p.y-2, 4, 4); } }
-  for (const a of animals){ ctx.save(); ctx.translate(a.x, a.y); let hop = Math.abs(Math.sin(performance.now() * 0.008)) * 3.5; ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.beginPath(); ctx.ellipse(0, 6, 6, 2.5, 0, 0, 6.3); ctx.fill(); ctx.fillStyle = '#f5f5f5'; ctx.beginPath(); ctx.arc(0, -2 - hop, 6, 0, 6.3); ctx.fill(); ctx.beginPath(); ctx.arc(4, -6 - hop, 4.5, 0, 6.3); ctx.fill(); ctx.fillRect(1, -14 - hop, 1.8, 6); ctx.fillRect(4, -14 - hop, 1.8, 6); if (gfxLevel >= 5) { ctx.fillStyle = '#ffb3b3'; ctx.fillRect(1.5, -12 - hop, 0.8, 4); ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(-6, -2 - hop, 2.2, 0, 6.3); ctx.fill(); } ctx.fillStyle = '#ff9999'; ctx.fillRect(6, -6 - hop, 1.5, 1.5); if (a.isSpider && getNightFactor() > 0.4){ ctx.fillStyle='#ff2b2b'; ctx.shadowColor='#ff2b2b'; ctx.shadowBlur=6; ctx.fillRect(2.5, -7 - hop, 1.8, 1.8); ctx.fillRect(5.5, -7 - hop, 1.8, 1.8); ctx.shadowBlur=0; } ctx.restore(); }
+  for (const a of animals){ ctx.save(); ctx.translate(a.x, a.y); drawAnimalArt(a); ctx.restore(); }
   const enemyColor = {zombie:'#3c7a4b', scorpion:'#b5743b', wolf:'#3a3a3a', siberian_wolf:'#d5e2eb'};
-  for (const e of enemies){
-    ctx.save(); ctx.translate(e.x, e.y); let bob = Math.sin(performance.now() * 0.008 + e.x) * 2.5; let isRight = (e.facing === 'right');
-    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(0, 7, 8, 3, 0, 0, 6.3); ctx.fill();
-    if (e.kind === 'zombie') { ctx.fillStyle = '#3c7a4b'; ctx.beginPath(); ctx.ellipse(0, -2 + bob, 7, 9, 0, 0, 6.3); ctx.fill(); ctx.fillStyle = '#2c5a35'; ctx.fillRect(isRight ? 3 : -9, -3 + bob, 6, 3.5); ctx.fillStyle = '#ffea00'; if (isRight) { ctx.fillRect(2, -6 + bob, 1.5, 1.5); ctx.fillRect(5, -6 + bob, 1.5, 1.5); } else { ctx.fillRect(-5, -6 + bob, 1.5, 1.5); ctx.fillRect(-2, -6 + bob, 1.5, 1.5); } }
-    else if (e.kind === 'wolf' || e.kind === 'siberian_wolf') { ctx.fillStyle = enemyColor[e.kind]; ctx.beginPath(); ctx.ellipse(0, bob, 10, 6, 0, 0, 6.3); ctx.fill(); let hX = isRight ? 7 : -7; ctx.beginPath(); ctx.arc(hX, -3 + bob, 4, 0, 6.3); ctx.fill(); ctx.beginPath(); ctx.moveTo(hX - 1, -6 + bob); ctx.lineTo(hX, -11 + bob); ctx.lineTo(hX + 1, -6 + bob); ctx.fill(); ctx.fillStyle = e.kind === 'wolf' ? '#e74c3c' : '#00d2ff'; ctx.fillRect(isRight ? hX + 1 : hX - 2, -4 + bob, 1.5, 1.5); }
-    else if (e.kind === 'scorpion') { ctx.fillStyle = '#b5743b'; ctx.beginPath(); ctx.ellipse(0, 1, 9, 5, 0, 0, 6.3); ctx.fill(); ctx.strokeStyle = '#b5743b'; ctx.lineWidth = 2.5; ctx.beginPath(); if (isRight) { ctx.arc(-5, -4, 6, 0, Math.PI, true); ctx.stroke(); ctx.fillStyle = '#733f15'; ctx.fillRect(-5, -10, 2.5, 2.5); } else { ctx.arc(5, -4, 6, 0, Math.PI, true); ctx.stroke(); ctx.fillStyle = '#733f15'; ctx.fillRect(5, -10, 2.5, 2.5); } }
-    else if (e.kind === 'archer') { ctx.fillStyle = '#4a3a6a'; ctx.beginPath(); ctx.ellipse(0, -2+bob, 7, 9, 0, 0, 6.3); ctx.fill(); ctx.strokeStyle='#c9a0ff'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(isRight?5:-5, -2+bob, 6, -1, 1); ctx.stroke(); ctx.fillStyle='#ffe94a'; ctx.fillRect(-2,-6+bob,1.6,1.6); ctx.fillRect(2,-6+bob,1.6,1.6); }
-    else if (e.kind === 'wraith') { ctx.globalAlpha = 0.55; const wg = ctx.createRadialGradient(0,-4+bob,1,0,-2+bob,11); wg.addColorStop(0,'#c9c9ff'); wg.addColorStop(1,'#5a5a9a'); ctx.fillStyle = wg; ctx.beginPath(); ctx.arc(0,-4+bob,8,Math.PI,0); ctx.lineTo(6,6+bob); ctx.lineTo(2,2+bob); ctx.lineTo(0,7+bob); ctx.lineTo(-2,2+bob); ctx.lineTo(-6,6+bob); ctx.closePath(); ctx.fill(); ctx.globalAlpha=1; ctx.fillStyle='#1a1a2a'; ctx.beginPath(); ctx.arc(-2.5,-5+bob,1.3,0,6.3); ctx.arc(2.5,-5+bob,1.3,0,6.3); ctx.fill(); }
-    else if (e.kind === 'brute') { ctx.fillStyle = '#5a3a2a'; ctx.beginPath(); ctx.ellipse(0, bob, 13, 12, 0, 0, 6.3); ctx.fill(); ctx.fillStyle='#3a2418'; ctx.fillRect(-10,-8+bob,6,6); ctx.fillRect(4,-8+bob,6,6); ctx.fillStyle='#ffea00'; ctx.fillRect(isRight?4:-9,-3+bob,2,2); ctx.fillRect(isRight?8:-5,-3+bob,2,2); }
-    else if (e.kind === 'spider') { ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=2; for(let s=-1;s<=1;s+=2){ for(let li=0; li<3; li++){ ctx.beginPath(); ctx.moveTo(0, bob); ctx.lineTo(s*(9+li*2), bob - 6 + li*6); ctx.stroke(); } } ctx.fillStyle='#2a2a2e'; ctx.beginPath(); ctx.ellipse(0, bob, 7, 6, 0, 0, 6.3); ctx.fill(); ctx.beginPath(); ctx.arc(0, -4+bob, 4, 0, 6.3); ctx.fill(); ctx.fillStyle='#ff3030'; ctx.fillRect(-2.5,-5+bob,1.8,1.8); ctx.fillRect(1,-5+bob,1.8,1.8); }
-    else if (e.kind === 'mummy') { ctx.fillStyle='#d8cba0'; ctx.beginPath(); ctx.ellipse(0,-2+bob,7,9,0,0,6.3); ctx.fill(); ctx.strokeStyle='#b0a480'; ctx.lineWidth=1.5; for(let i=-4;i<=4;i+=3){ ctx.beginPath(); ctx.moveTo(-7,i+bob); ctx.lineTo(7,i+bob); ctx.stroke(); } ctx.fillStyle='#3a2a10'; ctx.fillRect(-3,-6+bob,2,2); ctx.fillRect(1,-6+bob,2,2); }
-    else if (e.kind === 'frost_wraith') { ctx.globalAlpha=0.62; const fg=ctx.createRadialGradient(0,-4+bob,1,0,-2+bob,11); fg.addColorStop(0,'#dff4ff'); fg.addColorStop(1,'#4a8ac0'); ctx.fillStyle=fg; ctx.beginPath(); ctx.arc(0,-4+bob,8,Math.PI,0); ctx.lineTo(6,6+bob); ctx.lineTo(2,2+bob); ctx.lineTo(0,7+bob); ctx.lineTo(-2,2+bob); ctx.lineTo(-6,6+bob); ctx.closePath(); ctx.fill(); ctx.globalAlpha=1; ctx.fillStyle='#0a3a5a'; ctx.beginPath(); ctx.arc(-2.5,-5+bob,1.3,0,6.3); ctx.arc(2.5,-5+bob,1.3,0,6.3); ctx.fill(); }
-    else if (e.kind === 'boss') { ctx.save(); ctx.scale(2.6,2.6); ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(0,6,9,3,0,0,6.3); ctx.fill(); ctx.fillStyle='#eae6d6'; ctx.beginPath(); ctx.ellipse(0,-1+bob*0.4,8,10,0,0,6.3); ctx.fill(); ctx.fillStyle='#c8c0a8'; ctx.fillRect(-8,0+bob*0.4,16,2.5); ctx.fillRect(-8,4+bob*0.4,16,2.5); ctx.fillStyle='#111'; ctx.fillRect(-4,-5+bob*0.4,3,3); ctx.fillRect(1,-5+bob*0.4,3,3); ctx.fillStyle='#ff3b3b'; ctx.fillRect(-3.4,-4.4+bob*0.4,1.4,1.4); ctx.fillRect(1.6,-4.4+bob*0.4,1.4,1.4); ctx.restore(); }
-    if (e!==boss){ ctx.fillStyle='#222'; ctx.fillRect(-14, -18 + bob, 28, 3); ctx.fillStyle='#c94a3d'; ctx.fillRect(-14, -18 + bob, 28*(e.hp/e.maxHp), 3); } ctx.restore();
-  }
+  for (const e of enemies){ ctx.save(); ctx.translate(e.x, e.y); drawEnemyArt(e, true); ctx.restore(); }
 
   if (net.active) drawRemotePlayers();
 
