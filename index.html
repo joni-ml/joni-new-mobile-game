@@ -395,7 +395,7 @@ const MAT = [
   { key:'ironmelt', name:'ברזל מותך', color:[255,150,60], type:'liquid', density:9, pedia:'🔥 ברזל חם מ-1538° — נוזל זוהר וכבד ששוקע דרך הסלע המותך (כך נוצרה ליבת כדוה"א)' },
   { key:'rust',     name:'חלודה', color:[150,74,42],   type:'powder', density:4, pedia:'🟤 ברזל + מים לאורך זמן → חלודה (Fe₂O₃) — תחמוצת ברזל' },
   { key:'rockgas',  name:'אדי סלע', color:[190,120,150], type:'gas',   life:500, pedia:'🌋 לבה רותחת מעל 2500° → אדי סלע (גז!). מתקררת → מתעבה חזרה ללבה' },
-  { key:'irongas',  name:'אדי ברזל', color:[210,150,140], type:'gas',  life:500, pedia:'🔥 ברזל מותך רותח מעל 2861° → אדי ברזל (גז). מתקרר → חוזר לברזל מותך' },
+  { key:'irongas',  name:'אדי מתכת', color:[210,150,140], type:'gas',  life:500, pedia:'🔥 מתכת מותכת רותחת (בחום עצום) → אדי מתכת (גז). מתקררת → מתעבה חזרה למתכת מותכת' },
   { key:'oxygen',   name:'חמצן',   color:[205,225,255], type:'gas',   life:800, shop:true, pedia:'O₂ · יסוד 8 — בלעדיו אין בעירה! מזין את האש ומחזק אותה. החיים מייצרים אותו' },
   { key:'gold',     name:'זהב',   color:[255,215,0],    type:'solid', density:19, shop:true, pedia:'Au · יסוד 79 — המתכת הכבדה והיקרה. שוקעת מתחת לכל דבר (אפילו ברזל!), ולא מחלידה לעולם' },
   { key:'copper',   name:'נחושת', color:[184,115,51],   type:'solid', density:9,  shop:true, pedia:'Cu · יסוד 29 — מוליך חשמל וחום מצוין. מחליד עם הזמן לירוק-תכלת (פטינה)' },
@@ -442,8 +442,8 @@ const conduct = MAT.map(m=>({water:true,lava:true,fire:true,lithium:true,saltwat
 const molec   = MAT.map(m=>({air:'תערובת גזים',water:'מולקולה קוטבית',ice:'סריג גבישי',steam:'אדי מים',stone:'סריג סיליקט',basalt:'סלע וולקני צפוף',sand:'גרגרי קוורץ',earth:'תערובת אורגנית',mud:'אדמה רוויה',wood:'סיבי תאית',leaf:'תאית + כלורופיל',flower:'רקמה צמחית',sprout:'רקמה צמחית',seedT:'עובר זרע',seedF:'עובר זרע',ash:'שאריות מינרליות',glass:'מוצק אמורפי',lava:'סלע מותך',fire:'פלזמת בעירה',hydrogen:'מולקולה דו-אטומית H₂',bedrock:'סלע צפוף מאוד',cloud:'טיפות מים זעירות מרחפות',lithium:'מתכת — סריג אטומים חוזר',chlorine:'מולקולה דו-אטומית Cl₂',licl:'סריג יוני (Li⁺Cl⁻)',saltwater:'תמיסה — יונים מומסים במים',sodium:'מתכת — סריג אטומים חוזר',nacl:'סריג יוני (Na⁺Cl⁻)',iron:'מתכת — סריג אטומים חוזר',ironmelt:'מתכת מותכת',rust:'תחמוצת ברזל Fe₂O₃',rockgas:'אדי סיליקט',irongas:'אדי מתכת',oxygen:'מולקולה דו-אטומית O₂',gold:'מתכת — סריג אטומים חוזר',copper:'מתכת — סריג אטומים חוזר',aluminum:'מתכת — סריג אטומים חוזר',mercury:'מתכת נוזלית',moltenmetal:'מתכת מותכת',potassium:'מתכת — סריג אטומים חוזר',rubidium:'מתכת — סריג אטומים חוזר',cesium:'מתכת — סריג אטומים חוזר'}[m.key] ?? '—'));
 const STATE   = {empty:'—',powder:'אבקה',liquid:'נוזל',solid:'מוצק',gas:'גז',static:'מוצק'};
 // נקודות מעבר מצב אמיתיות (°C): נמס=הופך לנוזל, רותח=הופך לגז
-const meltC = MAT.map(m=>({water:0,ice:0,steam:0,stone:1200,basalt:1200,lava:1200,sand:1700,glass:1700,hydrogen:-259,saltwater:-5,iron:1538,ironmelt:1538,rockgas:1200,irongas:1538,oxygen:-219,gold:1064,copper:1085,aluminum:660,mercury:-39}[m.key] ?? null));
-const boilC = MAT.map(m=>({water:100,ice:100,steam:100,stone:2900,basalt:2900,lava:2900,sand:2950,glass:2950,hydrogen:-253,saltwater:101,iron:2861,ironmelt:2861,rockgas:2900,irongas:2861,oxygen:-183,gold:2700,copper:2562,aluminum:2470,mercury:357}[m.key] ?? null));
+const meltC = MAT.map(m=>({water:0,ice:0,steam:0,stone:1200,basalt:1200,lava:1200,sand:1700,glass:1700,hydrogen:-259,saltwater:-5,iron:1538,ironmelt:1538,rockgas:1200,irongas:1538,oxygen:-219,gold:1064,copper:1085,aluminum:660,mercury:-39,lithium:180,sodium:98,potassium:63,rubidium:39,cesium:28}[m.key] ?? null));
+const boilC = MAT.map(m=>({water:100,ice:100,steam:100,stone:2900,basalt:2900,lava:2900,sand:2950,glass:2950,hydrogen:-253,saltwater:101,iron:2861,ironmelt:2861,rockgas:2900,irongas:2861,oxygen:-183,gold:2700,copper:2562,aluminum:2470,mercury:357,lithium:1342,sodium:883,potassium:759,rubidium:688,cesium:671}[m.key] ?? null));
 function phaseStr(id){
   if (MAT[id].flam) return 'נשרף ב-~300° (לא נמס)';
   const mel=meltC[id], boi=boilC[id];
@@ -832,16 +832,26 @@ function checkPhase(i){
                  } break;
     case ROCKGAS: if (t<=2400){ grid[i]=LAVA; aux[i]=0; life[i]=0; }  break;    // אדי סלע מתקררים → מתעבים ללבה
     case SAND:   if (t>=1400){ grid[i]=GLASS; discover(GLASS); } break;
+    case GLASS:  if (t>=1700){ grid[i]=LAVA; aux[i]=1; discover(LAVA); } break;   // זכוכית נמסה חזרה לנוזל זוהר (סיליקה מותכת)
     case IRON:   if (t>=1538){ grid[i]=IRONMELT; discover(IRONMELT); } break;   // ברזל נמס
-    case IRONMELT: if (t>=2861){ grid[i]=IRONGAS; life[i]=MAT[IRONGAS].life; discover(IRONGAS); }  // ברזל מותך רותח → אדי ברזל
+    case IRONMELT: if (t>=2861){ grid[i]=IRONGAS; aux[i]=0; life[i]=MAT[IRONGAS].life; discover(IRONGAS); }  // ברזל מותך רותח → אדי מתכת
                  else if (t<=1500){ grid[i]=IRON; discover(IRON); } break;      // ברזל מותך מתמצק
-    case IRONGAS: if (t<=2800){ grid[i]=IRONMELT; life[i]=0; } break;           // אדי ברזל מתעבים → ברזל מותך
-    // מתכות שנמסות למתכת מותכת אחת שזוכרת מי היא (aux=סוג המתכת), ומתמצקת חזרה כשמתקררת מתחת לנקודת ההיתוך
+    // אדי מתכת זוכרים מאיזו מתכת באו (aux): מתעבים חזרה למתכת המותכת שלה (או לברזל מותך אם זה ברזל)
+    case IRONGAS: { const src=aux[i], bp=src?(boilC[src]||2500):2861;
+                 if (t<=bp-60){ grid[i]= src?MOLTENMETAL:IRONMELT; life[i]=0; } } break;
+    // מתכות שנמסות למתכת מותכת אחת שזוכרת מי היא (aux=סוג המתכת), מתמצקת חזרה בקירור ורותחת בחום גבוה
     case GOLD:     if (t>=1064){ grid[i]=MOLTENMETAL; aux[i]=GOLD;     discover(MOLTENMETAL); } break;
     case COPPER:   if (t>=1085){ grid[i]=MOLTENMETAL; aux[i]=COPPER;   discover(MOLTENMETAL); } break;
     case ALUMINUM: if (t>=660) { grid[i]=MOLTENMETAL; aux[i]=ALUMINUM; discover(MOLTENMETAL); } break;
-    case MOLTENMETAL: { const src=aux[i]||IRON, mp=meltC[src]||1200;
-                 if (t<=mp-40){ grid[i]=src; aux[i]=0; discover(src); } } break;
+    // מתכות אלקליות — נקודת היתוך נמוכה מאוד (צזיום כבר ב-28°!). נמסות למתכת מותכת זוהרת שזוכרת מי היא.
+    case LITHIUM:   if (t>=180){ grid[i]=MOLTENMETAL; aux[i]=LITHIUM;   discover(MOLTENMETAL); } break;
+    case SODIUM:    if (t>=98) { grid[i]=MOLTENMETAL; aux[i]=SODIUM;    discover(MOLTENMETAL); } break;
+    case POTASSIUM: if (t>=63) { grid[i]=MOLTENMETAL; aux[i]=POTASSIUM; discover(MOLTENMETAL); } break;
+    case RUBIDIUM:  if (t>=39) { grid[i]=MOLTENMETAL; aux[i]=RUBIDIUM;  discover(MOLTENMETAL); } break;
+    case CESIUM:    if (t>=28) { grid[i]=MOLTENMETAL; aux[i]=CESIUM;    discover(MOLTENMETAL); } break;
+    case MOLTENMETAL: { const src=aux[i]||IRON, mp=meltC[src]||1200, bp=boilC[src]||2500;
+                 if (t>=bp){ grid[i]=IRONGAS; life[i]=MAT[IRONGAS].life; discover(IRONGAS); }   // מתכת מותכת רותחת → אדי מתכת (aux=המתכת נשמר)
+                 else if (t<=mp-10){ grid[i]=src; aux[i]=0; discover(src); } } break;            // מתמצקת חזרה למתכת שלה
     case MUD:    if (t>=140) { grid[i]=EARTH; } break;         // מתייבש
     case WOOD: case LEAF: case SPROUT: case FLOWER: case SEEDT: case SEEDF:
       if (t>=300){ grid[i]=FIRE; temp[i]=760; life[i]=MAT[FIRE].life; discover(FIRE); } break;
