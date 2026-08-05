@@ -220,6 +220,9 @@
     <div class="settingRow"><label>🔎 מרחק מצלמה:</label><input type="range" min="0.6" max="2.6" step="0.1" value="1.5" oninput="changeZoom(this.value)"></div>
     <div class="settingRow"><label>🕹️ גודל ג'ויסטיק תנועה:</label><input type="range" min="80" max="260" step="5" value="120" oninput="changeJoySize(this.value)"></div>
     <div class="settingRow"><label>🔴 גודל לחצן תקיפה (⚔️):</label><input type="range" min="65" max="180" step="5" value="80" oninput="changeActionSize(this.value)"></div>
+    <div class="settingRow" style="margin-top:12px; border-top:1px dashed #4a4230; padding-top:8px;"><label>📍 תפקוד בקרה מותאם (לתלת־מימד)</label></div>
+    <div class="settingRow"><label>מיקום ג'ויסטיק (קו הבאי):</label><select id="joyPos" onchange="changeJoyPosition(this.value)" style="width:100%;"><option value="left">🔵 שמאל</option><option value="center">🟣 אמצע</option><option value="right">🟢 ימין</option></select></div>
+    <div class="settingRow"><label>מיקום לחצנים (פעולה):</label><select id="actionPos" onchange="changeActionPosition(this.value)" style="width:100%;"><option value="right">🟢 ימין</option><option value="center">🟣 אמצע</option><option value="left">🔵 שמאל</option></select></div>
     <div class="settingRow" style="flex-direction:row; justify-content:space-between; align-items:center;"><label>🏷️ הצג שמות של שחקנים אחרים</label><input type="checkbox" checked onchange="showPlayerNames=this.checked"></div>
     <div style="display:flex; gap:6px; margin-top:6px;">
       <button onclick="saveWorld()" style="flex:1; padding:8px; background:#3a5a2a; color:#fff; border:none; border-radius:6px; font-family:inherit; cursor:pointer;">💾 שמור עולם</button>
@@ -564,6 +567,45 @@ function changeGridMode(val) { motionGrid = val; showToast('רשת תנועה ש
 function changeAppBrightness(val) { document.getElementById('game').style.filter = `brightness(${val})`; }
 function changeJoySize(val) { const zone = document.getElementById('joyZone'); zone.style.width = val + 'px'; zone.style.height = val + 'px'; JOY_R = parseInt(val) * 0.4; }
 function changeActionSize(val) { const btn = document.getElementById('actionBtn'); btn.style.width = val + 'px'; btn.style.height = val + 'px'; btn.style.fontSize = (parseInt(val) * 0.33) + 'px'; const ibtn = document.getElementById('interactBtn'); ibtn.style.width = (parseInt(val) * 0.7) + 'px'; ibtn.style.height = (parseInt(val) * 0.7) + 'px'; ibtn.style.fontSize = (parseInt(val) * 0.25) + 'px'; }
+let controlJoyPos = 'left', controlActionPos = 'right';  // control layout positions
+function changeJoyPosition(pos) { controlJoyPos = pos; applyControlLayout(); localStorage.setItem('controlJoyPos', pos); }
+function changeActionPosition(pos) { controlActionPos = pos; applyControlLayout(); localStorage.setItem('controlActionPos', pos); }
+function loadControlLayout() {
+  const saved = localStorage.getItem('controlJoyPos');
+  if (saved) { controlJoyPos = saved; document.getElementById('joyPos').value = saved; }
+  const saved2 = localStorage.getItem('controlActionPos');
+  if (saved2) { controlActionPos = saved2; document.getElementById('actionPos').value = saved2; }
+  applyControlLayout();
+}
+function applyControlLayout() {
+  const tc = document.getElementById('touchControls');
+  const jz = document.getElementById('joyZone');
+  const bh = document.getElementById('btnHolder');
+  const pb = document.getElementById('placeBtn');
+  // Reset to default layout
+  tc.style.justifyContent = 'space-between';
+  jz.style.position = 'relative'; jz.style.order = 0;
+  bh.style.order = 0; pb.style.left = '26px';
+  if (controlJoyPos === 'left' && controlActionPos === 'right') {
+    tc.style.justifyContent = 'space-between';
+  } else if (controlJoyPos === 'left' && controlActionPos === 'left') {
+    jz.style.order = 0; bh.style.order = 1; tc.style.justifyContent = 'flex-start'; tc.style.gap = '20px';
+  } else if (controlJoyPos === 'center' && controlActionPos === 'right') {
+    jz.style.order = 0; bh.style.order = 1; tc.style.justifyContent = 'space-around';
+  } else if (controlJoyPos === 'center' && controlActionPos === 'center') {
+    jz.style.order = 0; bh.style.order = 1; tc.style.justifyContent = 'center'; tc.style.gap = '50px';
+  } else if (controlJoyPos === 'right' && controlActionPos === 'left') {
+    jz.style.order = 1; bh.style.order = 0; tc.style.justifyContent = 'space-between';
+  } else if (controlJoyPos === 'right' && controlActionPos === 'right') {
+    jz.style.order = 0; bh.style.order = 1; tc.style.justifyContent = 'flex-end'; tc.style.gap = '20px';
+  } else if (controlJoyPos === 'center' && controlActionPos === 'left') {
+    jz.style.order = 1; bh.style.order = 0; tc.style.justifyContent = 'space-around';
+  } else if (controlJoyPos === 'right' && controlActionPos === 'center') {
+    jz.style.order = 1; bh.style.order = 0; tc.style.justifyContent = 'space-around';
+  }
+  pb.style.left = controlJoyPos === 'left' ? '26px' : controlJoyPos === 'center' ? 'calc(50vw - 31px)' : 'auto';
+  pb.style.right = controlJoyPos === 'right' ? '26px' : 'auto';
+}
 function changeUIScale(val) { document.getElementById('hudLeft').style.transform = `scale(${val})`; document.getElementById('minimap').style.transform = `scale(${val})`; document.getElementById('actionMenu').style.transform = `scale(${val})`; document.getElementById('bagPanel').style.transform = `scale(${val})`; document.getElementById('settingsPanel').style.transform = `scale(${val})`; document.getElementById('statsPanel').style.transform = `scale(${val})`; }
 
 let actx = null;
@@ -614,6 +656,7 @@ canvas.addEventListener('touchmove', e=>{
     const dx = t.clientX - lookX, dy = t.clientY - lookY;
     lookX = t.clientX; lookY = t.clientY; lookMoved += Math.abs(dx) + Math.abs(dy);
     camAngle = (camAngle + dx * LOOK_SENS + Math.PI*2) % (Math.PI*2);
+    camPitch = Math.max(-Math.PI/3, Math.min(Math.PI/3, camPitch - dy * LOOK_SENS));
     e.preventDefault();
   }
 }, {passive:false});
@@ -633,8 +676,9 @@ canvas.addEventListener('mousedown', e=>{
 });
 window.addEventListener('mousemove', e=>{
   if (!view3d || lookId!=='mouse') return;
-  const dx = e.clientX - lookX; lookX = e.clientX; lookMoved += Math.abs(dx) + Math.abs(e.clientY-lookY); lookY = e.clientY;
+  const dx = e.clientX - lookX, dy = e.clientY - lookY; lookX = e.clientX; lookMoved += Math.abs(dx) + Math.abs(dy); lookY = e.clientY;
   camAngle = (camAngle + dx * LOOK_SENS + Math.PI*2) % (Math.PI*2);
+  camPitch = Math.max(-Math.PI/3, Math.min(Math.PI/3, camPitch - dy * LOOK_SENS));
 });
 window.addEventListener('mouseup', e=>{
   if (lookId!=='mouse') return; const wasTap = lookMoved < 12; lookId = null;
@@ -785,8 +829,8 @@ let eternalNightDay = 5;       // effective day the eternal night begins for the
 let userEternalDay = 5;        // the crystal-world day chosen via secret code 2020 (persists across mode switches)
 let challengeStartDay = 2;      // in the eternal-night (challenge) world, the day the eternal night begins (player picks 1-5)
 function startChallenge(d){ challengeStartDay = Math.max(1, Math.min(5, d||2)); startWorld('challenge'); }
-function start3D(mode){ view3d = true; camAngle = Math.PI/2; startWorld(mode||'survival'); showToast('🕶️ מצב גוף ראשון! הג׳ויסטיק: ימינה/שמאלה מסתובב, קדימה/אחורה הולך'); }
-function toggleView3D(){ view3d = !view3d; if (view3d) camAngle = Math.PI/2; showToast(view3d ? '🕶️ עברת לתלת־מימד (גוף ראשון)' : '🗺️ חזרת למבט מלמעלה'); }
+function start3D(mode){ view3d = true; camAngle = Math.PI/2; camPitch = 0; startWorld(mode||'survival'); showToast('🕶️ מצב גוף ראשון! הג׳ויסטיק: ימינה/שמאלה מסתובב, קדימה/אחורה הולך, סוג לחיצה לראיה למעלה/למטה'); }
+function toggleView3D(){ view3d = !view3d; if (view3d) { camAngle = Math.PI/2; camPitch = 0; } showToast(view3d ? '🕶️ עברת לתלת־מימד (גוף ראשון)' : '🗺️ חזרת למבט מלמעלה'); }
 let stats = { animalsKilled:0, monstersKilled:0, blocksDestroyed:0, maxBreakDist:2, luckyOpened:0, dailyChoices:[] };
 let bonusShownForDay = 0;      // guards against re-triggering the morning bonus in the same day
 let luckyQueue = [];           // pending saved choice-sets, attached to lucky blocks in order they're placed
@@ -3112,7 +3156,8 @@ function drawEnemyArt(e, withHpBar){
    ground (trees, plants, tables, monsters, animals, teammates, dropped items) is drawn as a billboard
    using its real 2D artwork, so the world looks like itself. */
 let view3d = false;
-let camAngle = 0;                 // where you're looking, in radians
+let camAngle = 0;                 // where you're looking (yaw), in radians
+let camPitch = 0;                 // looking up/down (pitch), in radians; clamped to ±π/3
 const WALL3D = {};                // tile type -> base wall color
 (function(){
   // Only things that are genuinely WALLS get raycast as full-height walls.
@@ -3157,30 +3202,75 @@ function treeSprite(kind){
   });
   tileSprCache[key]=c; return c;
 }
-// Ore / stone as a cluster of three standing crystals, big enough to read at a glance.
+// Ore / stone as 3D voxel cubes that look different from different angles
 const ORE_LOOK = {};
 ORE_LOOK[T.ROCK]        = { a:'#9a9a92', b:'#6e6e68', c:'#c2c2ba' };
 ORE_LOOK[T.COAL]        = { a:'#3c3c3c', b:'#1c1c1c', c:'#5c5c5c' };
 ORE_LOOK[T.IRONROCK]    = { a:'#d9903f', b:'#8c5416', c:'#ffc172' };
 ORE_LOOK[T.CRYSTAL_ORE] = { a:'#67d9ff', b:'#2a86b8', c:'#c8f4ff' };
 ORE_LOOK[T.CAVE_CRYSTAL]= { a:'#8fd0e0', b:'#3a7f96', c:'#d6f6ff' };
-function oreSprite(t){
-  const key='ore3d:'+t; if (tileSprCache[key]) return tileSprCache[key];
+function oreSprite(t, angle){
+  // angle is the camera angle relative to the ore; if not provided, use a default 2D sprite
+  if (angle === undefined){
+    const key='ore3d:'+t; if (tileSprCache[key]) return tileSprCache[key];
+    const L = ORE_LOOK[t] || ORE_LOOK[T.ROCK];
+    const c = renderToCanvas(72, 72, ()=>{
+      ctx.fillStyle='rgba(0,0,0,0.30)'; ctx.beginPath(); ctx.ellipse(36,66,26,7,0,0,6.3); ctx.fill();   // ground contact
+      // three prisms: left small, middle tall, right medium
+      const shards=[{x:16,w:24,h:26},{x:37,w:30,h:40},{x:57,w:22,h:22}];
+      for (const s of shards){
+        const baseY=66, topY=baseY-s.h, hw=s.w/2;
+        ctx.fillStyle=L.b; ctx.beginPath(); ctx.moveTo(s.x-hw,baseY); ctx.lineTo(s.x-hw*0.55,topY+4); ctx.lineTo(s.x,topY); ctx.lineTo(s.x,baseY); ctx.closePath(); ctx.fill();
+        ctx.fillStyle=L.a; ctx.beginPath(); ctx.moveTo(s.x+hw,baseY); ctx.lineTo(s.x+hw*0.55,topY+4); ctx.lineTo(s.x,topY); ctx.lineTo(s.x,baseY); ctx.closePath(); ctx.fill();
+        ctx.fillStyle=L.c; ctx.beginPath(); ctx.moveTo(s.x,topY); ctx.lineTo(s.x-hw*0.55,topY+4); ctx.lineTo(s.x,topY+11); ctx.closePath(); ctx.fill();
+      }
+      ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=1.2;
+      for (const s of shards){ const baseY=66, topY=baseY-s.h; ctx.beginPath(); ctx.moveTo(s.x,topY); ctx.lineTo(s.x,baseY); ctx.stroke(); }
+    });
+    tileSprCache[key]=c; return c;
+  }
+  // Dynamic 3D ore: draw voxels from the viewer's angle
   const L = ORE_LOOK[t] || ORE_LOOK[T.ROCK];
   const c = renderToCanvas(72, 72, ()=>{
     ctx.fillStyle='rgba(0,0,0,0.30)'; ctx.beginPath(); ctx.ellipse(36,66,26,7,0,0,6.3); ctx.fill();   // ground contact
-    // three prisms: left small, middle tall, right medium
-    const shards=[{x:16,w:24,h:26},{x:37,w:30,h:40},{x:57,w:22,h:22}];
-    for (const s of shards){
-      const baseY=66, topY=baseY-s.h, hw=s.w/2;
-      ctx.fillStyle=L.b; ctx.beginPath(); ctx.moveTo(s.x-hw,baseY); ctx.lineTo(s.x-hw*0.55,topY+4); ctx.lineTo(s.x,topY); ctx.lineTo(s.x,baseY); ctx.closePath(); ctx.fill();
-      ctx.fillStyle=L.a; ctx.beginPath(); ctx.moveTo(s.x+hw,baseY); ctx.lineTo(s.x+hw*0.55,topY+4); ctx.lineTo(s.x,topY); ctx.lineTo(s.x,baseY); ctx.closePath(); ctx.fill();
-      ctx.fillStyle=L.c; ctx.beginPath(); ctx.moveTo(s.x,topY); ctx.lineTo(s.x-hw*0.55,topY+4); ctx.lineTo(s.x,topY+11); ctx.closePath(); ctx.fill();
+    // Draw three cube voxels in a cluster; show different faces based on angle
+    // angle is in radians; normalize to 0-2π
+    const a = ((angle % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
+    const n = Math.sin(a), c = Math.cos(a);  // normal vector for which face is visible
+    // Three cube positions forming a cluster
+    const cubes = [{ox:-8,oy:0,oz:2},{ox:0,oy:-2,oz:6},{ox:8,oy:0,oz:0}];
+    const faces = [];
+    for (const cube of cubes){
+      const dist = cube.ox*n - cube.oy*c;  // determine which faces are visible
+      // front face
+      if (dist > 0){
+        faces.push({z:cube.oz-10, draw:()=>{
+          ctx.fillStyle=L.a; ctx.fillRect(36+cube.ox-8, 66-cube.oz, 16, 20);
+          ctx.strokeStyle='rgba(0,0,0,0.3)'; ctx.lineWidth=1; ctx.strokeRect(36+cube.ox-8, 66-cube.oz, 16, 20);
+        }});
+      }
+      // side face (right)
+      if (dist > -4){
+        faces.push({z:cube.oz-8, draw:()=>{
+          ctx.fillStyle=L.b;
+          ctx.beginPath(); ctx.moveTo(36+cube.ox+8, 66-cube.oz); ctx.lineTo(36+cube.ox+12, 66-cube.oz+3);
+          ctx.lineTo(36+cube.ox+12, 66-cube.oz+23); ctx.lineTo(36+cube.ox+8, 66-cube.oz+20); ctx.closePath(); ctx.fill();
+          ctx.strokeStyle='rgba(0,0,0,0.3)'; ctx.lineWidth=1; ctx.stroke();
+        }});
+      }
+      // top face
+      faces.push({z:cube.oz+10, draw:()=>{
+        ctx.fillStyle=L.c;
+        ctx.beginPath(); ctx.moveTo(36+cube.ox-8, 66-cube.oz); ctx.lineTo(36+cube.ox+8, 66-cube.oz-8);
+        ctx.lineTo(36+cube.ox+12, 66-cube.oz-5); ctx.lineTo(36+cube.ox-4, 66-cube.oz+5); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle='rgba(0,0,0,0.3)'; ctx.lineWidth=1; ctx.stroke();
+      }});
     }
-    ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=1.2;
-    for (const s of shards){ const baseY=66, topY=baseY-s.h; ctx.beginPath(); ctx.moveTo(s.x,topY); ctx.lineTo(s.x,baseY); ctx.stroke(); }
+    // Sort faces by depth and draw far to near
+    faces.sort((a,b)=>a.z-b.z);
+    for (const f of faces) f.draw();
   });
-  tileSprCache[key]=c; return c;
+  return c;
 }
 // Cheap hex -> [r,g,b] cache for the floor renderer
 const _rgbCache = {};
@@ -3294,7 +3384,7 @@ function draw3D(){
   const dirX = Math.cos(camAngle), dirY = Math.sin(camAngle);
   const fov = 0.72;                                   // ~72% plane -> comfortable field of view
   const planeX = -dirY*fov, planeY = dirX*fov;
-  const horizon = H*0.5;
+  const horizon = H*0.5 + camPitch*H*0.35;             // pitch shifts horizon up/down
   ctx.imageSmoothingEnabled = false;   // keep the pixel art crisp instead of blurry when scaled up
 
   // ---- sky / ceiling ----
@@ -3354,7 +3444,14 @@ function draw3D(){
   for (let ty=Math.max(0,py-r); ty<=Math.min(MAPH-1,py+r); ty++)
     for (let tx=Math.max(0,px-r); tx<=Math.min(MAPW-1,px+r); tx++){
       const tl = world[ty][tx]; if (!tl || !SPRITE3D.has(tl.type)) continue;
-      sprites.push({ x:tx+0.5, y:ty+0.5, img:tileSprite(tl.type, tl), h:(SPRITE3D_H[tl.type]||1.2), solid:isSolid(tl) });
+      // For ore objects, pass the angle from player to ore so sprite shows 3D depth
+      let img = tileSprite(tl.type, tl);
+      if (ORE_LOOK[tl.type]){
+        const dx = tx+0.5-posX, dy = ty+0.5-posY;
+        const relAngle = Math.atan2(dy, dx) - camAngle;
+        img = oreSprite(tl.type, relAngle);
+      }
+      sprites.push({ x:tx+0.5, y:ty+0.5, img:img, h:(SPRITE3D_H[tl.type]||1.2), solid:isSolid(tl) });
     }
   for (const e of enemies) sprites.push({ x:e.x/TILE, y:e.y/TILE, ent:e, kind:'enemy', h:(e.kind==='boss'?2.4:1.05) });
   for (const a of animals) sprites.push({ x:a.x/TILE, y:a.y/TILE, ent:a, kind:'animal', h:0.6 });
@@ -3688,7 +3785,7 @@ function loop(now){
 (function(){ const sw=document.querySelectorAll('.skinSwatch'); if(sw.length){ const i=Math.floor(Math.random()*sw.length); setSkin(sw[i].style.backgroundColor, sw[i]); } })();
 // restore the saved name into the start-screen field
 (function(){ const inp=document.getElementById('playerNameInput'); if(inp && playerName) inp.value = playerName; })();
-gameMode = 'crystal'; initGame(); gameStarted = false; refreshSavesUI(); requestAnimationFrame(loop);
+gameMode = 'crystal'; initGame(); gameStarted = false; refreshSavesUI(); loadControlLayout(); requestAnimationFrame(loop);
 </script>
 </body>
 </html>
