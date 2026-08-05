@@ -594,8 +594,52 @@ function buildFromScreen(clientX, clientY){
   tapTarget = null;
   return true;
 }
-canvas.addEventListener('touchstart', e=>{ ensureAudio(); if(fishing){ tryFishHook(); e.preventDefault(); return; } if(!player.placingItem) return; const t=e.changedTouches[0]; if(buildFromScreen(t.clientX, t.clientY)) e.preventDefault(); }, {passive:false});
-canvas.addEventListener('mousedown', e=>{ if(!player.placingItem) return; buildFromScreen(e.clientX, e.clientY); });
+/* Roblox-style look control: in first person, dragging anywhere on the screen swings the camera.
+   A drag that barely moves is still treated as a tap, so tap-to-build keeps working. */
+let lookId = null, lookX = 0, lookY = 0, lookMoved = 0;
+const LOOK_SENS = 0.0055;      // radians per pixel dragged
+canvas.addEventListener('touchstart', e=>{
+  ensureAudio();
+  if(fishing){ tryFishHook(); e.preventDefault(); return; }
+  const t = e.changedTouches[0];
+  if (view3d && lookId === null){ lookId = t.identifier; lookX = t.clientX; lookY = t.clientY; lookMoved = 0; }
+  if(!player.placingItem) return;
+  if(view3d) return;                                    // in 3D we decide on touchend (tap vs drag)
+  if(buildFromScreen(t.clientX, t.clientY)) e.preventDefault();
+}, {passive:false});
+canvas.addEventListener('touchmove', e=>{
+  if (!view3d || lookId === null) return;
+  for (const t of e.changedTouches){
+    if (t.identifier !== lookId) continue;
+    const dx = t.clientX - lookX, dy = t.clientY - lookY;
+    lookX = t.clientX; lookY = t.clientY; lookMoved += Math.abs(dx) + Math.abs(dy);
+    camAngle = (camAngle + dx * LOOK_SENS + Math.PI*2) % (Math.PI*2);
+    e.preventDefault();
+  }
+}, {passive:false});
+canvas.addEventListener('touchend', e=>{
+  if (lookId === null) return;
+  for (const t of e.changedTouches){
+    if (t.identifier !== lookId) continue;
+    const wasTap = lookMoved < 12;                      // barely moved -> it was a tap, not a look
+    lookId = null;
+    if (wasTap && view3d && player.placingItem){ if(buildFromScreen(t.clientX, t.clientY)) e.preventDefault(); }
+  }
+}, {passive:false});
+canvas.addEventListener('touchcancel', ()=>{ lookId = null; });
+canvas.addEventListener('mousedown', e=>{
+  if (view3d){ lookId='mouse'; lookX=e.clientX; lookY=e.clientY; lookMoved=0; return; }
+  if(!player.placingItem) return; buildFromScreen(e.clientX, e.clientY);
+});
+window.addEventListener('mousemove', e=>{
+  if (!view3d || lookId!=='mouse') return;
+  const dx = e.clientX - lookX; lookX = e.clientX; lookMoved += Math.abs(dx) + Math.abs(e.clientY-lookY); lookY = e.clientY;
+  camAngle = (camAngle + dx * LOOK_SENS + Math.PI*2) % (Math.PI*2);
+});
+window.addEventListener('mouseup', e=>{
+  if (lookId!=='mouse') return; const wasTap = lookMoved < 12; lookId = null;
+  if (wasTap && view3d && player.placingItem) buildFromScreen(e.clientX, e.clientY);
+});
 let joyActive=false, joyDX=0, joyDY=0, joyTouchId=null; const joyZone = document.getElementById('joyZone'); const joyStick = document.getElementById('joyStick'); let JOY_R = 48;
 function joyStart(e){ ensureAudio(); const t = e.changedTouches?e.changedTouches[0]:e; joyTouchId = e.changedTouches?t.identifier:'mouse'; joyActive=true; joyMove(e); }
 function joyMove(e){ if(!joyActive) return; let t; if (e.changedTouches){ t = Array.from(e.changedTouches).find(tt=>tt.identifier===joyTouchId); if(!t) return; } else t = e; const rect = joyZone.getBoundingClientRect(); const cx = rect.left+rect.width/2, cy = rect.top+rect.height/2; let dx = t.clientX-cx, dy = t.clientY-cy; const dist = Math.hypot(dx,dy); if (dist > JOY_R){ dx = dx/dist*JOY_R; dy = dy/dist*JOY_R; } joyStick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`; joyDX = dx/JOY_R; joyDY = dy/JOY_R; }
@@ -1353,11 +1397,10 @@ function update(dt){
   let dx=0, dy=0; if (keys['w']||keys['arrowup']) dy-=1; if (keys['s']||keys['arrowdown']) dy+=1; if (keys['a']||keys['arrowleft']) dx-=1; if (keys['d']||keys['arrowright']) dx+=1;
   if (joyActive && (Math.abs(joyDX)>0.2||Math.abs(joyDY)>0.2)){ dx=joyDX; dy=joyDY; }
   if (view3d){
-    // First person: left/right turns your head, up/down walks the way you're looking.
-    const turn = dx, fwd = -dy;
-    if (Math.abs(turn) > 0.15) camAngle += turn * dt * 2.6;
-    camAngle = (camAngle + Math.PI*2) % (Math.PI*2);
-    dx = Math.cos(camAngle) * fwd; dy = Math.sin(camAngle) * fwd;
+    // First person (Roblox style): drag the screen to look, joystick walks and side-steps.
+    const strafe = dx, fwd = -dy;
+    const cs = Math.cos(camAngle), sn = Math.sin(camAngle);
+    dx = cs*fwd - sn*strafe; dy = sn*fwd + cs*strafe;
     // keep the 2D facing in sync so mining/building/attacking all aim where you look
     const a = camAngle;
     player.facing = (a < 0.393 || a >= 5.890) ? 'right' : a < 1.178 ? 'down-right' : a < 1.963 ? 'down'
@@ -3114,10 +3157,94 @@ function treeSprite(kind){
   });
   tileSprCache[key]=c; return c;
 }
+// Ore / stone as a cluster of three standing crystals, big enough to read at a glance.
+const ORE_LOOK = {};
+ORE_LOOK[T.ROCK]        = { a:'#9a9a92', b:'#6e6e68', c:'#c2c2ba' };
+ORE_LOOK[T.COAL]        = { a:'#3c3c3c', b:'#1c1c1c', c:'#5c5c5c' };
+ORE_LOOK[T.IRONROCK]    = { a:'#d9903f', b:'#8c5416', c:'#ffc172' };
+ORE_LOOK[T.CRYSTAL_ORE] = { a:'#67d9ff', b:'#2a86b8', c:'#c8f4ff' };
+ORE_LOOK[T.CAVE_CRYSTAL]= { a:'#8fd0e0', b:'#3a7f96', c:'#d6f6ff' };
+function oreSprite(t){
+  const key='ore3d:'+t; if (tileSprCache[key]) return tileSprCache[key];
+  const L = ORE_LOOK[t] || ORE_LOOK[T.ROCK];
+  const c = renderToCanvas(72, 72, ()=>{
+    ctx.fillStyle='rgba(0,0,0,0.30)'; ctx.beginPath(); ctx.ellipse(36,66,26,7,0,0,6.3); ctx.fill();   // ground contact
+    // three prisms: left small, middle tall, right medium
+    const shards=[{x:16,w:24,h:26},{x:37,w:30,h:40},{x:57,w:22,h:22}];
+    for (const s of shards){
+      const baseY=66, topY=baseY-s.h, hw=s.w/2;
+      ctx.fillStyle=L.b; ctx.beginPath(); ctx.moveTo(s.x-hw,baseY); ctx.lineTo(s.x-hw*0.55,topY+4); ctx.lineTo(s.x,topY); ctx.lineTo(s.x,baseY); ctx.closePath(); ctx.fill();
+      ctx.fillStyle=L.a; ctx.beginPath(); ctx.moveTo(s.x+hw,baseY); ctx.lineTo(s.x+hw*0.55,topY+4); ctx.lineTo(s.x,topY); ctx.lineTo(s.x,baseY); ctx.closePath(); ctx.fill();
+      ctx.fillStyle=L.c; ctx.beginPath(); ctx.moveTo(s.x,topY); ctx.lineTo(s.x-hw*0.55,topY+4); ctx.lineTo(s.x,topY+11); ctx.closePath(); ctx.fill();
+    }
+    ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=1.2;
+    for (const s of shards){ const baseY=66, topY=baseY-s.h; ctx.beginPath(); ctx.moveTo(s.x,topY); ctx.lineTo(s.x,baseY); ctx.stroke(); }
+  });
+  tileSprCache[key]=c; return c;
+}
+// Cheap hex -> [r,g,b] cache for the floor renderer
+const _rgbCache = {};
+function hexRGB(h){
+  if (_rgbCache[h]) return _rgbCache[h];
+  let r=90,g=90,b=90;
+  if (h[0]==='#'){ const n=parseInt(h.slice(1),16); r=(n>>16)&255; g=(n>>8)&255; b=n&255; }
+  return (_rgbCache[h]=[r,g,b]);
+}
+// Colour lookup so the per-pixel floor loop never touches strings (that was the slow part).
+const FLOOR_LUT = []; const BIOME_BY_IDX = [BIOME.FOREST, BIOME.SNOW, BIOME.DESERT, BIOME.PLAINS];
+const CAVE_RGB_FLOOR = [0x55,0x55,0x5f], CAVE_RGB_WALL = [0x3a,0x3a,0x44];
+function biomeIdx(x,y){ const nx=x/MAPW, ny=y/MAPH; if (ny<0.45) return nx<0.5?0:1; return nx<0.5?2:3; }
+function floorRGB(type, bIdx){
+  const k = type*4 + bIdx; let v = FLOOR_LUT[k];
+  if (!v) v = FLOOR_LUT[k] = hexRGB(groundColor(BIOME_BY_IDX[bIdx], type));   // only called above ground
+  return v;
+}
+let floorBuf=null, floorImg=null;
+function drawFloor3D(posX,posY,dirX,dirY,planeX,planeY,horizon,maxD,fogCol,q){
+  const scale = q<=2 ? 5 : q<=4 ? 4 : 3;                 // buffer resolution follows the quality slider
+  const bw = Math.max(2, Math.ceil(W/scale)), bh = Math.max(2, Math.ceil((H-horizon)/scale));
+  if (!floorBuf){ floorBuf = document.createElement('canvas'); }
+  if (floorBuf.width!==bw || floorBuf.height!==bh){ floorBuf.width=bw; floorBuf.height=bh; floorImg=null; }
+  const fctx = floorBuf.getContext('2d');
+  if (!floorImg || floorImg.width!==bw || floorImg.height!==bh) floorImg = fctx.createImageData(bw,bh);
+  const data = floorImg.data;
+  const halfH = 0.5*H;
+  for (let by=0; by<bh; by++){
+    const sy = by*scale + 1;                              // screen row below the horizon
+    const rowDist = halfH / Math.max(0.5, sy);
+    const fog = Math.min(1, rowDist/maxD);
+    const inv = 1-fog;
+    const rowStepX = (planeX*2*rowDist)/bw, rowStepY = (planeY*2*rowDist)/bw;
+    let wx = posX + (dirX - planeX)*rowDist, wy = posY + (dirY - planeY)*rowDist;
+    let o = by*bw*4;
+    for (let bx=0; bx<bw; bx++, wx+=rowStepX, wy+=rowStepY){
+      const tx = wx|0, ty = wy|0;
+      let r=fogCol[0], g=fogCol[1], b=fogCol[2];
+      if (tx>=0 && ty>=0 && tx<MAPW && ty<MAPH && rowDist<=maxD){
+        const tl = world[ty][tx];
+        if (tl){
+          const c = inCave ? ((tl.type===T.CAVE_FLOOR||tl.type===T.ALTAR_FLOOR) ? CAVE_RGB_FLOOR : CAVE_RGB_WALL)
+                           : floorRGB(tl.type, biomeIdx(tx,ty));
+          let cr=c[0], cg=c[1], cb=c[2];
+          // faint seam at tile edges so the ground reads as real blocks you can line yourself up with
+          const fx = wx-tx, fy = wy-ty;
+          if (fx<0.035||fx>0.965||fy<0.035||fy>0.965){ cr*=0.82; cg*=0.82; cb*=0.82; }
+          r = cr*inv + fogCol[0]*fog; g = cg*inv + fogCol[1]*fog; b = cb*inv + fogCol[2]*fog;
+        }
+      }
+      data[o++]=r; data[o++]=g; data[o++]=b; data[o++]=255;
+    }
+  }
+  fctx.putImageData(floorImg,0,0);
+  const sm = ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled = true;   // smooth upscale = no hard pixels
+  ctx.drawImage(floorBuf, 0, 0, bw, bh, 0, horizon, W, H-horizon);
+  ctx.imageSmoothingEnabled = sm;
+}
 function tileSprite(t, tile){
   if (t===T.TREE) return treeSprite('tree');
   if (t===T.PINE) return treeSprite('pine');
   if (t===T.TRUNK) return treeSprite('trunk');
+  if (ORE_LOOK[t]) return oreSprite(t);
   const key = t + (tile && tile.species ? ':'+tile.species : '') + (tile && tile.mature ? ':m' : '');
   if (tileSprCache[key]) return tileSprCache[key];
   const c = renderToCanvas(64, 64, ()=>{ drawResourceShape(t, 16, 32, tile); });
@@ -3180,26 +3307,11 @@ function draw3D(){
   }
   // ---- floor (cheap floor-casting so you actually see grass / sand / snow / water underfoot) ----
   ctx.fillStyle = 'rgb('+fogCol[0]+','+fogCol[1]+','+fogCol[2]+')'; ctx.fillRect(0,horizon,W,H-horizon);
-  // graphics level drives the render resolution: low = chunky and fast, high = fine detail
-  const q = gfxLevel;
-  const rowStep = q<=2 ? 9 : q<=4 ? 6 : 4;
-  const colStep = q<=2 ? 44 : q<=4 ? 32 : 22;
-  for (let y = horizon+rowStep; y < H; y += rowStep){
-    const rowDist = (0.5*H) / (y - horizon);
-    if (rowDist > maxD) continue;
-    const fog = Math.min(1, rowDist/maxD);
-    for (let sx = 0; sx < W; sx += colStep){
-      const cx0 = 2*(sx+colStep/2)/W - 1;
-      const wx = posX + (dirX + planeX*cx0)*rowDist, wy = posY + (dirY + planeY*cx0)*rowDist;
-      const tx = Math.floor(wx), ty = Math.floor(wy);
-      if (tx<0||ty<0||tx>=MAPW||ty>=MAPH) continue;
-      const tl = world[ty][tx]; if (!tl) continue;
-      // underground the top-down palette is almost black; lift it so first person stays readable
-      ctx.fillStyle = inCave ? ((tl.type===T.CAVE_FLOOR||tl.type===T.ALTAR_FLOOR) ? '#55555f' : '#3a3a44')
-                             : groundColor(biomeAt(tx,ty), tl.type);
-      ctx.globalAlpha = 1-fog; ctx.fillRect(sx, y, colStep+1, rowStep+1); ctx.globalAlpha = 1;
-    }
-  }
+  const q = gfxLevel;   // graphics level drives the render resolution
+  // Per-pixel floor casting into a small buffer, then scaled up smoothly. Doing the maths per pixel makes
+  // the ground rock-solid (the old coarse rectangles wobbled as you walked) and the upscale removes the
+  // hard pixel edges. Faint tile seams are drawn in so you can read where each block sits on the floor.
+  drawFloor3D(posX, posY, dirX, dirY, planeX, planeY, horizon, maxD, fogCol, q);
 
   // ---- walls (DDA raycast) ----
   const step = q<=2 ? 5 : q<=4 ? 3 : 2;   // ray density follows the graphics level too
@@ -3242,7 +3354,7 @@ function draw3D(){
   for (let ty=Math.max(0,py-r); ty<=Math.min(MAPH-1,py+r); ty++)
     for (let tx=Math.max(0,px-r); tx<=Math.min(MAPW-1,px+r); tx++){
       const tl = world[ty][tx]; if (!tl || !SPRITE3D.has(tl.type)) continue;
-      sprites.push({ x:tx+0.5, y:ty+0.5, img:tileSprite(tl.type, tl), h:(SPRITE3D_H[tl.type]||1.2) });
+      sprites.push({ x:tx+0.5, y:ty+0.5, img:tileSprite(tl.type, tl), h:(SPRITE3D_H[tl.type]||1.2), solid:isSolid(tl) });
     }
   for (const e of enemies) sprites.push({ x:e.x/TILE, y:e.y/TILE, ent:e, kind:'enemy', h:(e.kind==='boss'?2.4:1.05) });
   for (const a of animals) sprites.push({ x:a.x/TILE, y:a.y/TILE, ent:a, kind:'animal', h:0.6 });
@@ -3272,6 +3384,15 @@ function draw3D(){
     const scrX = (W/2)*(1 + tX/tY);
     const x0 = Math.floor(scrX - sw/2), y0 = Math.floor(floorY - sh);
     const fog = Math.min(1, tY/maxD);
+    // Solid objects get a shadow patch on the ground so their footprint — and where you'd bump into
+    // them — is obvious before you walk in.
+    const centreCol = Math.floor(scrX/step);
+    if (s.solid && (zBuf[centreCol]===undefined || tY < zBuf[centreCol])){
+      const fw = lineH*0.92, fh = lineH*0.22;
+      ctx.save(); ctx.globalAlpha = 0.30*(1-fog); ctx.fillStyle='#000';
+      ctx.beginPath(); ctx.ellipse(scrX, floorY, Math.max(2,fw/2), Math.max(1,fh/2), 0, 0, 6.3); ctx.fill();
+      ctx.restore();
+    }
     img = tintedSprite(img, fog*0.85, fogCol);      // distance haze, applied to the artwork only
     // draw in vertical stripes so walls correctly hide sprites behind them
     const sStep = Math.max(2, step);
