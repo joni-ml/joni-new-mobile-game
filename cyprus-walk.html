@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>קפריסין · שיטוט</title>
+</head>
+<body>
+<title>קפריסין · שיטוט</title>
+<style>
+  :root{ --glass: rgba(18,26,20,0.42); --glass-brd: rgba(255,255,255,0.28);
+         --leaf:#8ec152; --ink:#f2f7ee; }
+  html,body{height:100%;margin:0;overflow:hidden;background:#bcd7ee;}
+  #stage{position:fixed;inset:0;width:100%;height:100%;display:block;
+         touch-action:none;-webkit-user-select:none;user-select:none;}
+  .ui{position:fixed;z-index:10;color:var(--ink);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+      -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;}
+
+  #joy{left:max(22px,env(safe-area-inset-left));bottom:max(30px,env(safe-area-inset-bottom));
+       width:132px;height:132px;border-radius:50%;
+       background:radial-gradient(circle at 50% 42%,rgba(255,255,255,0.14),var(--glass));
+       border:1px solid var(--glass-brd);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
+       box-shadow:0 10px 30px rgba(0,0,0,0.25);touch-action:none;}
+  #knob{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;
+        background:radial-gradient(circle at 40% 35%,#fbfff4,#a9cf74 70%,#7fae4c);
+        border:1px solid rgba(255,255,255,0.7);box-shadow:0 6px 16px rgba(0,0,0,0.3);
+        transition:transform .04s linear;}
+  #joy .ring{position:absolute;inset:14px;border-radius:50%;border:1px dashed rgba(255,255,255,0.22);}
+
+  #speedWrap{right:max(18px,env(safe-area-inset-right));top:50%;transform:translateY(-50%);
+             display:flex;flex-direction:column;align-items:center;gap:10px;}
+  #speedLbl{font-size:12px;letter-spacing:.14em;opacity:.9;writing-mode:vertical-rl;
+            text-shadow:0 1px 4px rgba(0,0,0,.5);}
+  #speed{position:relative;width:44px;height:220px;border-radius:24px;
+         background:var(--glass);border:1px solid var(--glass-brd);
+         backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
+         box-shadow:0 10px 30px rgba(0,0,0,0.22);touch-action:none;overflow:hidden;}
+  #fill{position:absolute;left:0;right:0;bottom:0;
+        background:linear-gradient(180deg,#bfe487,#7fae4c);opacity:.55;}
+  #sknob{position:absolute;left:50%;width:52px;height:24px;margin-left:-26px;border-radius:14px;
+         background:radial-gradient(circle at 50% 30%,#fbfff4,#cfe6a6 70%,#9cc266);
+         border:1px solid rgba(255,255,255,0.7);box-shadow:0 4px 12px rgba(0,0,0,0.3);}
+  #spdVal{font-size:11px;opacity:.85;font-variant-numeric:tabular-nums;letter-spacing:.05em;
+          text-shadow:0 1px 4px rgba(0,0,0,.5);}
+
+  #hint{left:50%;top:max(18px,env(safe-area-inset-top));transform:translateX(-50%);
+        text-align:center;background:var(--glass);border:1px solid var(--glass-brd);
+        padding:9px 16px;border-radius:14px;font-size:13px;line-height:1.5;direction:rtl;
+        backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);max-width:88vw;
+        transition:opacity .8s ease;text-shadow:0 1px 3px rgba(0,0,0,.35);}
+  #brand{left:max(16px,env(safe-area-inset-left));top:max(16px,env(safe-area-inset-top));
+         font-size:12px;letter-spacing:.22em;opacity:.55;direction:rtl;
+         text-shadow:0 1px 4px rgba(0,0,0,.5);}
+  @media (max-height:520px){ #speed{height:150px;} }
+</style>
+
+<canvas id="stage"></canvas>
+<div id="brand" class="ui">קפריסין · שיטוט</div>
+<div id="hint" class="ui">גררו על המסך כדי להביט &nbsp;·&nbsp; ג׳ויסטיק לתנועה &nbsp;·&nbsp; הסרגל שמימין קובע מהירות</div>
+<div id="joy" class="ui"><div class="ring"></div><div id="knob"></div></div>
+<div id="speedWrap" class="ui">
+  <div id="speedLbl">מהירות</div>
+  <div id="speed"><div id="fill"></div><div id="sknob"></div></div>
+  <div id="spdVal">1.2</div>
+</div>
+
+<script>
+(function(){
+"use strict";
+try{var mv=document.createElement('meta');mv.name='viewport';
+  mv.content='width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover';
+  document.head.appendChild(mv);}catch(e){}
+
+// ---------- math ----------
+function add(a,b){return [a[0]+b[0],a[1]+b[1],a[2]+b[2]];}
+function sub(a,b){return [a[0]-b[0],a[1]-b[1],a[2]-b[2]];}
+function scl(a,s){return [a[0]*s,a[1]*s,a[2]*s];}
+function dot(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
+function cross(a,b){return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
+function len(a){return Math.hypot(a[0],a[1],a[2]);}
+function norm(a){var l=len(a)||1;return [a[0]/l,a[1]/l,a[2]/l];}
+function perspective(f,a,n,fa){var t=1/Math.tan(f/2),nf=1/(n-fa);
+  return [t/a,0,0,0, 0,t,0,0, 0,0,(fa+n)*nf,-1, 0,0,2*fa*n*nf,0];}
+function ortho(l,r,b,t,n,f){var lr=1/(l-r),bt=1/(b-t),nf=1/(n-f);
+  return [-2*lr,0,0,0, 0,-2*bt,0,0, 0,0,2*nf,0, (l+r)*lr,(b+t)*bt,(f+n)*nf,1];}
+function lookAt(e,c,u){var z=norm(sub(e,c)),x=norm(cross(u,z)),y=cross(z,x);
+  return [x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0, -dot(x,e),-dot(y,e),-dot(z,e),1];}
+function mul(a,b){var o=new Array(16);for(var c=0;c<4;c++)for(var r=0;r<4;r++)
+  o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];return o;}
+function invert(m){var a00=m[0],a01=m[1],a02=m[2],a03=m[3],a10=m[4],a11=m[5],a12=m[6],a13=m[7],
+  a20=m[8],a21=m[9],a22=m[10],a23=m[11],a30=m[12],a31=m[13],a32=m[14],a33=m[15];
+  var b00=a00*a11-a01*a10,b01=a00*a12-a02*a10,b02=a00*a13-a03*a10,b03=a01*a12-a02*a11,
+  b04=a01*a13-a03*a11,b05=a02*a13-a03*a12,b06=a20*a31-a21*a30,b07=a20*a32-a22*a30,
+  b08=a20*a33-a23*a30,b09=a21*a32-a22*a31,b10=a21*a33-a23*a31,b11=a22*a33-a23*a32;
+  var d=b00*b11-b01*b10+b02*b09+b03*b08-b04*b07+b05*b06;if(!d)return null;d=1/d;
+  return [(a11*b11-a12*b10+a13*b09)*d,(a02*b10-a01*b11-a03*b09)*d,(a31*b05-a32*b04+a33*b03)*d,(a22*b04-a21*b05-a23*b03)*d,
+  (a12*b08-a10*b11-a13*b07)*d,(a00*b11-a02*b08+a03*b07)*d,(a32*b02-a30*b05-a33*b01)*d,(a20*b05-a22*b02+a23*b01)*d,
+  (a10*b10-a11*b08+a13*b06)*d,(a01*b08-a00*b10-a03*b06)*d,(a30*b04-a31*b02+a33*b00)*d,(a21*b02-a20*b04-a23*b00)*d,
+  (a11*b07-a10*b09-a12*b06)*d,(a00*b09-a01*b07+a02*b06)*d,(a31*b01-a30*b03-a32*b00)*d,(a20*b03-a21*b01+a22*b00)*d];}
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+
+// ---------- gl ----------
+var canvas=document.getElementById('stage');
+var gl=canvas.getContext('webgl',{antialias:true,alpha:false})||canvas.getContext('experimental-webgl',{antialias:true});
+if(!gl){document.body.innerHTML='<p style="padding:20px;font-family:sans-serif">הדפדפן לא תומך ב-WebGL.</p>';return;}
+// 32-bit indices so a whole grove fits in one buffer
+var uintExt=gl.getExtension('OES_element_index_uint');
+var IDX=uintExt?Uint32Array:Uint16Array, ITYPE=uintExt?gl.UNSIGNED_INT:gl.UNSIGNED_SHORT, MAXV=uintExt?4000000:60000;
+var derivExt=gl.getExtension('OES_standard_derivatives');   // for bark relief (bump)
+// shared GLSL: sample the shadow map (packed-depth, 3x3 PCF)
+var shadowGLSL=[
+ 'varying vec4 vLP;',
+ 'float shadow(float bias){return 1.0;}'   // dynamic shadow map disabled (kept plumbing inert)
+].join('\n');
+function compile(t,s){var sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);
+  if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(sh);return sh;}
+function prog(v,f){var p=gl.createProgram();gl.attachShader(p,compile(gl.VERTEX_SHADER,v));
+  gl.attachShader(p,compile(gl.FRAGMENT_SHADER,f));gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw gl.getProgramInfoLog(p);return p;}
+
+// scene program (floor / leaves / shadow) — interleaved pos,nrm,col
+var sp=prog(
+ 'attribute vec3 aPos;attribute vec3 aNrm;attribute vec3 aCol;uniform mat4 uProj,uView,uLightVP;'+
+ 'varying vec3 vN,vC,vW;varying vec4 vLP;'+
+ 'void main(){vW=aPos;vN=aNrm;vC=aCol;vLP=uLightVP*vec4(aPos,1.0);gl_Position=uProj*uView*vec4(aPos,1.0);}',
+ ['precision highp float;varying vec3 vN,vC,vW;',
+  'uniform vec3 uCam,uSun,uHorizon,uSky;uniform int uMode;uniform float uOpacity;',
+  shadowGLSL,
+  // same "vertical strand + blotch + fine grain" language as the branch bark, so
+  // rocks read as belonging to the same world -- just keyed by world position
+  // instead of a UV attribute, since rocks share this program with the floor/leaves.
+  'float hashS(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
+  'float vnoiseS(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);',
+  ' float a=hashS(i),b=hashS(i+vec2(1.,0.)),c=hashS(i+vec2(0.,1.)),d=hashS(i+vec2(1.,1.));',
+  ' return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);}',
+  'void main(){',
+  ' if(uMode==2){gl_FragColor=vec4(0.02,0.03,0.02,vC.x*uOpacity);return;}',
+  ' vec3 N=normalize(vN);if(!gl_FrontFacing)N=-N;',
+  ' vec3 vcol=vC;',
+  ' if(uMode==3){',
+  '   vec2 ruv=vec2(atan(vW.z,vW.x)*3.0, vW.y*2.6);',
+  '   float strand=abs(fract(ruv.x*1.3+vnoiseS(vec2(ruv.x*0.4,ruv.y*0.3))*2.6)-0.5)*2.0;',
+  '   float groove=smoothstep(0.10,0.92,strand);',
+  '   float n1=vnoiseS(ruv*1.1),n2=vnoiseS(ruv*4.5);',
+  '   float h=groove*0.36+n1*0.40+n2*0.24;',
+  '   vcol*=0.58+0.84*h;',
+  ' }',
+  ' float ndl=max(dot(N,uSun),0.0);',
+  ' float hemi=0.5+0.5*N.y;',
+  ' vec3 ambient=mix(vec3(0.30,0.31,0.25),uSky,hemi);',
+  ' vec3 col=vcol*(ambient+vec3(1.0,0.95,0.84)*ndl*0.95);',
+  ' if(uMode==1){vec2 g=abs(fract(vW.xz*0.5)-0.5);',
+  '   col*=mix(0.90,1.0,smoothstep(0.0,0.035,min(g.x,g.y)));}',
+  ' float fog=1.0-exp(-length(vW-uCam)*0.0065);',
+  ' col=mix(col,uHorizon,clamp(fog,0.0,0.82));',
+  ' gl_FragColor=vec4(col,1.0);}'].join('\n'));
+var sA={pos:gl.getAttribLocation(sp,'aPos'),nrm:gl.getAttribLocation(sp,'aNrm'),col:gl.getAttribLocation(sp,'aCol')};
+var sU={proj:gl.getUniformLocation(sp,'uProj'),view:gl.getUniformLocation(sp,'uView'),cam:gl.getUniformLocation(sp,'uCam'),
+  sun:gl.getUniformLocation(sp,'uSun'),horizon:gl.getUniformLocation(sp,'uHorizon'),sky:gl.getUniformLocation(sp,'uSky'),
+  mode:gl.getUniformLocation(sp,'uMode'),opacity:gl.getUniformLocation(sp,'uOpacity'),
+  lightVP:gl.getUniformLocation(sp,'uLightVP'),shadow:gl.getUniformLocation(sp,'uShadow'),texel:gl.getUniformLocation(sp,'uTexel')};
+
+// bark program — procedural bark that ages along the tree (young reddish -> old grey & cracking)
+var barkBump=derivExt?[
+  ' float hx=dFdx(hRelief),hy=dFdy(hRelief);',
+  ' vec3 dpx=dFdx(vW),dpy=dFdy(vW);',
+  ' vec3 T=normalize(dpx-N*dot(N,dpx)),Bt=normalize(cross(N,T));',
+  ' N=normalize(N-(T*hx+Bt*hy)*1.6);'                            // perturb normal -> real plate shading
+].join('\n'):'';
+var bp=prog(
+ 'attribute vec3 aPos;attribute vec3 aNrm;attribute vec2 aUV;attribute float aAge;uniform mat4 uProj,uView,uLightVP;uniform float uTime;'+
+ 'varying vec3 vN,vW;varying vec2 vUV;varying float vAge;varying vec4 vLP;'+
+ 'void main(){'+
+ ' vec3 p=aPos;'+
+ // wind: a smooth (never quantised) function of position, so a continuous tube surface
+ // never tears at a phase boundary -- only its AMPLITUDE depends on age, so the trunk
+ // stays planted while thin twigs whip around, same as a real tree in a breeze
+ ' float amt=1.0-aAge; amt*=amt;'+
+ ' float sway=(sin(uTime*1.4+p.y*0.6+p.x*0.3)*0.07+sin(uTime*2.6+p.y*1.1)*0.03)*amt;'+
+ ' p.x+=sway; p.z+=cos(uTime*1.1+p.y*0.7)*amt*0.05;'+
+ ' vW=p;vN=aNrm;vUV=aUV;vAge=aAge;vLP=uLightVP*vec4(p,1.0);gl_Position=uProj*uView*vec4(p,1.0);}',
+ (derivExt?'#extension GL_OES_standard_derivatives : enable\n':'')+
+ ['precision highp float;varying vec3 vN,vW;varying vec2 vUV;varying float vAge;',
+  'uniform vec3 uCam,uSun,uHorizon,uSky;',
+  shadowGLSL,
+  'float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
+  'float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);',
+  ' float a=hash(i),b=hash(i+vec2(1.,0.)),c=hash(i+vec2(0.,1.)),d=hash(i+vec2(1.,1.));',
+  ' return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);}',
+  // ---- CHEAP bark: a colour map plus a little height, nothing more. ----
+  // The full plate/terrace/fissure algorithm lives in log-slice.html; it costs
+  // ~20 fbm evaluations per pixel, which is fine for one hero object but far too
+  // heavy to repeat across a forest. This version uses 3 noise lookups.
+  'void main(){',
+  ' vec3 N=normalize(vN);if(!gl_FrontFacing)N=-N;',              // solid on any facing (no see-through)
+  ' float age=clamp(vAge,0.0,1.0);',
+  ' vec2 uv=vec2(vUV.x*40.0, vUV.y*13.0);',                      // around the trunk / up it
+  // vertical strands: pure arithmetic, no noise, and it reads as bark grain
+  ' float strand=abs(fract(uv.x*1.15+vnoise(vec2(uv.x*0.45,uv.y*0.10))*3.4)-0.5)*2.0;',
+  ' float groove=smoothstep(0.05,0.95,strand);',
+  ' float n1=vnoise(uv*1.3);',                                   // broad blotches
+  ' float n2=vnoise(uv*5.5);',                                   // fine grain
+  ' float h=(groove*0.38+n1*0.42+n2*0.20);',                     // noise leads, strands only hint
+  // relief now matches the trunk almost everywhere (age only softens the very
+  // finest twigs a little, since those have too few radial facets for a full
+  // bump to read as anything but noise)
+  ' float hRelief=h*0.55*(0.55+0.45*age);',
+  barkBump,
+  ' vec3 youngD=vec3(0.30,0.135,0.085), youngL=vec3(0.72,0.42,0.28);',
+  ' vec3 oldD  =vec3(0.235,0.205,0.205), oldL  =vec3(0.665,0.630,0.625);',
+  ' vec3 young=mix(youngD,youngL,h);',
+  ' vec3 old  =mix(oldD,oldL,h);',
+  ' old=mix(old,vec3(0.60,0.38,0.26),smoothstep(0.62,0.95,n1)*0.45);',   // a few warm patches
+  ' vec3 base=mix(young,old,smoothstep(0.05,0.30,age));',   // almost every branch reads as trunk bark now
+  ' float ndl=max(dot(N,uSun),0.0);float hemi=0.5+0.5*N.y;',
+  ' vec3 ambient=mix(vec3(0.42,0.43,0.40),uSky*0.9,hemi);',
+  ' vec3 col=base*(ambient+vec3(1.0,0.95,0.84)*ndl*0.80)+base*0.12;',
+  ' float fog=1.0-exp(-length(vW-uCam)*0.0065);',
+  ' col=mix(col,uHorizon,clamp(fog,0.0,0.82));',
+  ' gl_FragColor=vec4(col,1.0);}'].join('\n'));
+var bA={pos:gl.getAttribLocation(bp,'aPos'),nrm:gl.getAttribLocation(bp,'aNrm'),uv:gl.getAttribLocation(bp,'aUV'),age:gl.getAttribLocation(bp,'aAge')};
+var bU={proj:gl.getUniformLocation(bp,'uProj'),view:gl.getUniformLocation(bp,'uView'),cam:gl.getUniformLocation(bp,'uCam'),
+  sun:gl.getUniformLocation(bp,'uSun'),horizon:gl.getUniformLocation(bp,'uHorizon'),sky:gl.getUniformLocation(bp,'uSky'),
+  lightVP:gl.getUniformLocation(bp,'uLightVP'),shadow:gl.getUniformLocation(bp,'uShadow'),texel:gl.getUniformLocation(bp,'uTexel'),
+  time:gl.getUniformLocation(bp,'uTime')};
+
+// ---------- leaf texture: a real leaf silhouette, drawn once on a 2D canvas ----------
+// No external image files -- the whole atlas (two variants, so not every leaf is a
+// carbon copy) is painted procedurally, then handed to WebGL as a normal texture.
+function makeLeafTexture(){
+  var res=128,c=document.createElement('canvas');c.width=res*2;c.height=res;
+  var ctx=c.getContext('2d');
+  function drawLeaf(ox,tone,veins){
+    ctx.save();ctx.translate(ox+res/2,res/2);
+    ctx.beginPath();
+    ctx.moveTo(0,-res*0.46);
+    ctx.quadraticCurveTo(res*0.34,-res*0.16,res*0.30,0);
+    ctx.quadraticCurveTo(res*0.34,res*0.16,0,res*0.46);
+    ctx.quadraticCurveTo(-res*0.34,res*0.16,-res*0.30,0);
+    ctx.quadraticCurveTo(-res*0.34,-res*0.16,0,-res*0.46);
+    ctx.closePath();
+    var grad=ctx.createLinearGradient(0,-res*0.46,0,res*0.46);
+    grad.addColorStop(0,'rgba('+(155+tone)+',215,'+(110+tone)+',1)');
+    grad.addColorStop(0.55,'rgba('+(100+tone)+',162,'+(64+tone)+',1)');
+    grad.addColorStop(1,'rgba('+(64+tone)+',112,'+(42+tone)+',1)');
+    ctx.fillStyle=grad;ctx.fill();
+    ctx.save();ctx.clip();
+    ctx.strokeStyle='rgba(35,70,26,0.5)';ctx.lineWidth=res*0.013;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(0,-res*0.42);ctx.lineTo(0,res*0.42);ctx.stroke();
+    for(var i=1;i<=veins;i++){
+      var t=i/(veins+1),y=-res*0.40+t*res*0.80,xw=res*0.24*Math.sin(Math.PI*t);
+      ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(xw,y+res*0.11);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(-xw,y+res*0.11);ctx.stroke();
+    }
+    var hg=ctx.createRadialGradient(-res*0.08,-res*0.20,2,-res*0.08,-res*0.20,res*0.32);
+    hg.addColorStop(0,'rgba(255,255,255,0.24)');hg.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=hg;ctx.fillRect(-res,-res,res*2,res*2);
+    ctx.restore();ctx.restore();
+  }
+  drawLeaf(0,0,3);drawLeaf(res,14,4);
+  return c;
+}
+var leafTex=gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D,leafTex);
+gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,makeLeafTexture());
+gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+gl.generateMipmap(gl.TEXTURE_2D);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+
+// leaf program — real leaf silhouette (alpha-cutout) + per-leaf wind flutter
+var lp=prog(
+ 'attribute vec3 aPos;attribute vec3 aNrm;attribute vec3 aCol;attribute vec2 aUV;'+
+ 'uniform mat4 uProj,uView;uniform float uTime;'+
+ 'varying vec3 vN,vC,vW;varying vec2 vUV;'+
+ 'void main(){'+
+ ' vec3 p=aPos;'+
+ // each leaf is its own small disconnected quad, so unlike the bark a per-leaf
+ // (quantised) phase is safe here -- and it is what keeps neighbouring leaves from
+ // all swaying in creepy unison
+ ' vec3 q=floor(p*2.0)/2.0;'+
+ ' float ph=fract(sin(dot(q,vec3(12.9898,78.233,37.719)))*43758.5453)*6.2831853;'+
+ ' float amt=0.045+0.03*fract(ph*1.7);'+
+ ' float sway=sin(uTime*1.6+ph)*amt+sin(uTime*3.1+ph*2.1)*amt*0.35;'+
+ ' p.x+=sway; p.z+=cos(uTime*1.3+ph*1.4)*amt*0.8;'+
+ ' vW=p;vN=aNrm;vC=aCol;vUV=aUV;gl_Position=uProj*uView*vec4(p,1.0);}',
+ ['precision highp float;varying vec3 vN,vC,vW;varying vec2 vUV;',
+  'uniform sampler2D uTex;uniform vec3 uCam,uSun,uHorizon,uSky;',
+  'void main(){',
+  ' vec4 tex=texture2D(uTex,vUV);',
+  ' if(tex.a<0.35)discard;',                                   // real leaf silhouette, not a diamond
+  ' vec3 N=normalize(vN);if(!gl_FrontFacing)N=-N;',
+  ' float ndl=max(dot(N,uSun),0.0);',
+  ' float hemi=0.5+0.5*N.y;',
+  ' vec3 ambient=mix(vec3(0.30,0.31,0.25),uSky,hemi);',
+  ' vec3 base=vC*tex.rgb*1.30;',
+  ' vec3 col=base*(ambient+vec3(1.0,0.95,0.84)*ndl*0.95);',
+  ' col+=base*max(dot(N,-uSun),0.0)*vec3(0.14,0.18,0.08);',     // backlit/SSS feel through thin leaves
+  ' float fres=pow(1.0-max(dot(N,normalize(uCam-vW)),0.0),2.5);',
+  ' col+=fres*0.09*vec3(0.9,1.0,0.7);',                         // faint rim sheen
+  ' float fog=1.0-exp(-length(vW-uCam)*0.0065);',
+  ' col=mix(col,uHorizon,clamp(fog,0.0,0.82));',
+  ' gl_FragColor=vec4(col,1.0);}'].join('\n'));
+var lA={pos:gl.getAttribLocation(lp,'aPos'),nrm:gl.getAttribLocation(lp,'aNrm'),
+  col:gl.getAttribLocation(lp,'aCol'),uv:gl.getAttribLocation(lp,'aUV')};
+var lU={proj:gl.getUniformLocation(lp,'uProj'),view:gl.getUniformLocation(lp,'uView'),
+  time:gl.getUniformLocation(lp,'uTime'),tex:gl.getUniformLocation(lp,'uTex'),
+  cam:gl.getUniformLocation(lp,'uCam'),sun:gl.getUniformLocation(lp,'uSun'),
+  horizon:gl.getUniformLocation(lp,'uHorizon'),sky:gl.getUniformLocation(lp,'uSky')};
+
+// ---------- depth (shadow) program: pack depth into RGBA ----------
+var dp=prog(
+ 'attribute vec3 aPos;uniform mat4 uLightVP;void main(){gl_Position=uLightVP*vec4(aPos,1.0);}',
+ ['precision highp float;',
+  'vec4 packD(float d){vec4 c=fract(d*vec4(16777216.0,65536.0,256.0,1.0));',
+  ' c-=c.xxyz*vec4(0.0,1.0/256.0,1.0/256.0,1.0/256.0);return c;}',
+  'void main(){gl_FragColor=packD(gl_FragCoord.z);}'].join('\n'));
+var dA=gl.getAttribLocation(dp,'aPos'), dU=gl.getUniformLocation(dp,'uLightVP');
+
+// shadow framebuffer
+var SHADOW_RES=2048;
+var shadowTex=gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D,shadowTex);
+gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,SHADOW_RES,SHADOW_RES,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+var shadowFBO=gl.createFramebuffer();
+gl.bindFramebuffer(gl.FRAMEBUFFER,shadowFBO);
+gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,shadowTex,0);
+var shadowDepth=gl.createRenderbuffer();
+gl.bindRenderbuffer(gl.RENDERBUFFER,shadowDepth);
+gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT16,SHADOW_RES,SHADOW_RES);
+gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,shadowDepth);
+try{console.log('shadow FBO status:',gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE?'COMPLETE':gl.checkFramebufferStatus(gl.FRAMEBUFFER));}catch(e){}
+gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+// light view-projection covering the tree
+var lightVP=(function(){
+  var center=[-3,7,-3], eye=add(center,scl(norm([0.35,0.82,0.42]),36));
+  return mul(ortho(-20,20,-20,20,1,80), lookAt(eye,center,[0,1,0]));
+})();
+
+// sky program
+var skp=prog('attribute vec2 aP;varying vec2 vN;void main(){vN=aP;gl_Position=vec4(aP,1.0,1.0);}',
+ ['precision highp float;varying vec2 vN;uniform mat4 uInvVP;uniform vec3 uCam,uSun;',
+  'void main(){vec4 p=uInvVP*vec4(vN,1.0,1.0);vec3 dir=normalize(p.xyz/p.w-uCam);',
+  ' vec3 zen=vec3(0.16,0.40,0.78),hor=vec3(0.82,0.89,0.96);',
+  ' vec3 sky=mix(hor,zen,pow(clamp(dir.y,0.0,1.0),0.55));',
+  ' sky=mix(sky,vec3(0.74,0.77,0.74),smoothstep(0.0,-0.18,dir.y));',
+  ' float sd=max(dot(dir,uSun),0.0);',
+  ' sky+=vec3(1.0,0.96,0.82)*pow(sd,180.0)*1.3+vec3(1.0,0.92,0.74)*pow(sd,7.0)*0.12;',
+  ' gl_FragColor=vec4(sky,1.0);}'].join('\n'));
+var skA=gl.getAttribLocation(skp,'aP');
+var skU={invvp:gl.getUniformLocation(skp,'uInvVP'),cam:gl.getUniformLocation(skp,'uCam'),sun:gl.getUniformLocation(skp,'uSun')};
+var skyBuf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,skyBuf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+
+// ---------- meshes ----------
+function ColMesh(){this.v=[];this.i=[];this.n=0;}
+ColMesh.prototype.vert=function(p,nr,c){this.v.push(p[0],p[1],p[2],nr[0],nr[1],nr[2],c[0],c[1],c[2]);return this.n++;};
+ColMesh.prototype.tri=function(a,b,c){this.i.push(a,b,c);};
+ColMesh.prototype.upload=function(){this.vbo=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,this.vbo);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(this.v),gl.STATIC_DRAW);this.ibo=gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.ibo);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new IDX(this.i),gl.STATIC_DRAW);
+  this.count=this.i.length;this.v=this.i=null;};
+ColMesh.prototype.bind=function(){gl.bindBuffer(gl.ARRAY_BUFFER,this.vbo);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.ibo);
+  gl.enableVertexAttribArray(sA.pos);gl.vertexAttribPointer(sA.pos,3,gl.FLOAT,false,36,0);
+  gl.enableVertexAttribArray(sA.nrm);gl.vertexAttribPointer(sA.nrm,3,gl.FLOAT,false,36,12);
+  gl.enableVertexAttribArray(sA.col);gl.vertexAttribPointer(sA.col,3,gl.FLOAT,false,36,24);};
+
+function BarkMesh(){this.v=[];this.i=[];this.n=0;}
+BarkMesh.prototype.vert=function(p,nr,uv,age){this.v.push(p[0],p[1],p[2],nr[0],nr[1],nr[2],uv[0],uv[1],age);return this.n++;};
+BarkMesh.prototype.tri=function(a,b,c){this.i.push(a,b,c);};
+BarkMesh.prototype.upload=ColMesh.prototype.upload;
+BarkMesh.prototype.bind=function(){gl.bindBuffer(gl.ARRAY_BUFFER,this.vbo);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.ibo);
+  gl.enableVertexAttribArray(bA.pos);gl.vertexAttribPointer(bA.pos,3,gl.FLOAT,false,36,0);
+  gl.enableVertexAttribArray(bA.nrm);gl.vertexAttribPointer(bA.nrm,3,gl.FLOAT,false,36,12);
+  gl.enableVertexAttribArray(bA.uv);gl.vertexAttribPointer(bA.uv,2,gl.FLOAT,false,36,24);
+  gl.enableVertexAttribArray(bA.age);gl.vertexAttribPointer(bA.age,1,gl.FLOAT,false,36,32);};
+
+// leaves: pos, normal, tint colour, and a UV into the leaf-shape texture atlas
+function LeafMesh(){this.v=[];this.i=[];this.n=0;}
+LeafMesh.prototype.vert=function(p,nr,c,uv){this.v.push(p[0],p[1],p[2],nr[0],nr[1],nr[2],c[0],c[1],c[2],uv[0],uv[1]);return this.n++;};
+LeafMesh.prototype.tri=function(a,b,c){this.i.push(a,b,c);};
+LeafMesh.prototype.upload=ColMesh.prototype.upload;
+LeafMesh.prototype.bind=function(){gl.bindBuffer(gl.ARRAY_BUFFER,this.vbo);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.ibo);
+  gl.enableVertexAttribArray(lA.pos);gl.vertexAttribPointer(lA.pos,3,gl.FLOAT,false,44,0);
+  gl.enableVertexAttribArray(lA.nrm);gl.vertexAttribPointer(lA.nrm,3,gl.FLOAT,false,44,12);
+  gl.enableVertexAttribArray(lA.col);gl.vertexAttribPointer(lA.col,3,gl.FLOAT,false,44,24);
+  gl.enableVertexAttribArray(lA.uv);gl.vertexAttribPointer(lA.uv,2,gl.FLOAT,false,44,36);};
+
+var bark=new BarkMesh(),leaves=new LeafMesh(),floorM=new ColMesh(),shadowM=new ColMesh(),rocks=new ColMesh();
+var rng=mulberry32(20240811);
+function rr(a,b){return a+(b-a)*rng();}
+// age 0 (youngest, thin twigs) .. 1 (oldest bark, plated like the trunk) from branch radius.
+// The trunk itself always sits at r>=0.30, so it is always age=1. This curve is deliberately
+// steep so mid-thickness branches age into full trunk-like bark quickly too -- only the very
+// last, thinnest twigs stay in the young reddish colour.
+function ageOf(r){var a=(r-0.02)/(0.20-0.02);return a<0?0:(a>1?1:Math.pow(a,0.50));}
+// per-tree placement transform (local tree space -> world): scale, yaw about Y, translate
+var TF={ox:0,oz:0,yaw:0,s:1,c:1,sn:0};
+function tfPos(p){var x=p[0]*TF.s,y=p[1]*TF.s,z=p[2]*TF.s;return [TF.c*x+TF.sn*z+TF.ox, y, -TF.sn*x+TF.c*z+TF.oz];}
+function tfNrm(n){return [TF.c*n[0]+TF.sn*n[2], n[1], -TF.sn*n[0]+TF.c*n[2]];}
+
+// ---------- floor (white block) ----------
+(function(){var S=140,y=0,c=[0.925,0.925,0.895],up=[0,1,0];
+  var a=floorM.vert([-S,y,-S],up,c),b=floorM.vert([S,y,-S],up,c),d=floorM.vert([S,y,S],up,c),e=floorM.vert([-S,y,S],up,c);
+  floorM.tri(a,b,d);floorM.tri(a,d,e);
+  var h=-1.2,cc=[0.80,0.80,0.77];
+  function wall(x0,z0,x1,z1,nx,nz){var n=[nx,0,nz];
+    var p0=floorM.vert([x0,y,z0],n,cc),p1=floorM.vert([x1,y,z1],n,cc),p2=floorM.vert([x1,h,z1],n,cc),p3=floorM.vert([x0,h,z0],n,cc);
+    floorM.tri(p0,p1,p2);floorM.tri(p0,p2,p3);}
+  wall(-S,-S,S,-S,0,-1);wall(S,S,-S,S,0,1);wall(S,-S,S,S,1,0);wall(-S,S,-S,-S,-1,0);})();
+
+function orthoBasis(dir){var up=Math.abs(dir[1])>0.95?[1,0,0]:[0,1,0];var x=norm(cross(dir,up));return [x,cross(dir,x)];}
+
+// ---------- aged trunk (curved, root-flared, noisy silhouette) ----------
+var TREE_H=15;
+function buildTrunk(){
+  var levels=44,segs=30,baseR=0.62,topH=5.6;
+  var rings=[],uvBase=[];
+  var prevCenter=[0,0,0];
+  for(var l=0;l<=levels;l++){
+    var t=l/levels;
+    var y=t*topH;
+    // gentle curve/lean of the spine
+    var cx=Math.sin(t*1.6+0.3)*0.28*t + Math.sin(t*4.0)*0.06;
+    var cz=Math.cos(t*1.3)*0.20*t - 0.10*t;
+    var center=[cx,y,cz];
+    var r=baseR*(1-t*0.55) + 0.02;
+    var ringAge=ageOf(r);
+    var ring=[];
+    for(var s=0;s<=segs;s++){
+      var a=s/segs*Math.PI*2;
+      // root flare with buttress lobes near the base
+      var flare=0;
+      if(t<0.28){var k=(1-t/0.28);flare=baseR*(0.9*k*k)*(0.35+0.65*Math.pow(0.5+0.5*Math.sin(a*3.0+0.7),2.0));}
+      // irregular, non-round silhouette
+      var wob=1 + 0.07*Math.sin(a*5.0+l*0.6) + 0.05*Math.sin(a*11.0+l*0.9) + (rng()-0.5)*0.05;
+      var rr2=r*wob+flare;
+      var radial=[Math.cos(a),0,Math.sin(a)];
+      var pos=[center[0]+radial[0]*rr2, y, center[2]+radial[2]*rr2];
+      // normal approx radial (slightly outward-up)
+      var nrm=norm([radial[0],0.12,radial[2]]);
+      ring.push(bark.vert(tfPos(pos),tfNrm(nrm),[s/segs, y], ringAge));
+    }
+    rings.push(ring);
+    prevCenter=center;
+  }
+  for(var l2=0;l2<levels;l2++)for(var s2=0;s2<segs;s2++){
+    var a0=rings[l2][s2],a1=rings[l2][s2+1],b0=rings[l2+1][s2],b1=rings[l2+1][s2+1];
+    bark.tri(a0,b0,b1);bark.tri(a0,b1,a1);
+  }
+  // top center for branch attachment
+  return {top:[Math.sin(1.6*1+0.3)*0.28*1+Math.sin(4.0)*0.06, topH, Math.cos(1.3)*0.20-0.10], r:baseR*0.45};
+}
+
+// bark branch segment
+function barkCyl(A,B,r0,r1,segs){
+  var axis=sub(B,A),L=len(axis);if(L<1e-5)return;if(bark.n+(segs+1)*2>MAXV)return;axis=scl(axis,1/L);
+  var b=orthoBasis(axis),bx=b[0],by=b[1],r0v=[],r1v=[];
+  var age0=ageOf(r0),age1=ageOf(r1);
+  for(var s=0;s<=segs;s++){var a=s/segs*Math.PI*2,ca=Math.cos(a),sa=Math.sin(a);
+    var rad=norm([bx[0]*ca+by[0]*sa,bx[1]*ca+by[1]*sa,bx[2]*ca+by[2]*sa]);
+    r0v.push(bark.vert(tfPos(add(A,scl(rad,r0))),tfNrm(rad),[s/segs,A[1]],age0));
+    r1v.push(bark.vert(tfPos(add(B,scl(rad,r1))),tfNrm(rad),[s/segs,B[1]],age1));}
+  for(var s2=0;s2<segs;s2++){bark.tri(r0v[s2],r1v[s2],r1v[s2+1]);bark.tri(r0v[s2],r1v[s2+1],r0v[s2+1]);}
+}
+
+// ---------- individual leaves (leaf-cards grouped into clusters) ----------
+function leafGroup(center,scale,count){
+  for(var i=0;i<count;i++){
+    if(leaves.n>MAXV)return;
+    var dir=norm([rr(-1,1),rr(-1,1),rr(-1,1)]);dir=norm([dir[0],dir[1]+0.25,dir[2]]);
+    var off=scl(norm([rr(-1,1),rr(-0.6,1),rr(-1,1)]),rr(0,0.95)*scale);
+    var b=add(center,off);
+    var L=rr(0.24,0.44), W=L*rr(0.42,0.58);   // a touch wider now that a real leaf shape will show
+    var rv=[rr(-1,1),rr(-1,1),rr(-1,1)];
+    var perp=norm(cross(dir,rv));if(len(perp)<0.2)perp=norm(cross(dir,[0.3,1,0.7]));
+    var n=norm(cross(dir,perp));
+    var g=rng();
+    // one flat tint per leaf -- the texture itself now carries the light-to-dark
+    // gradient and veins, so JS only needs to pick the hue (a bit more yellow-green
+    // to deep green) instead of building the whole gradient by hand
+    var tint=[0.64+g*0.28, 0.80+g*0.16, 0.44+g*0.30];
+    var atlasHalf=rng()<0.5?0:0.5;            // which of the two painted leaf variants
+    // slight cup: raise the mid-rib along the leaf normal, tilt side normals outward
+    var cup=L*0.12;
+    var tip=add(add(b,scl(dir,L)),scl(n,cup*0.5));
+    var s1=add(add(b,scl(dir,L*0.45)),scl(perp,W));
+    var s2=add(add(b,scl(dir,L*0.45)),scl(perp,-W));
+    var nb=tfNrm(n);
+    var n1=tfNrm(norm(add(n,scl(perp,0.5)))), n2=tfNrm(norm(sub(n,scl(perp,0.5))));
+    // the mesh is a diamond (base->left->tip->right); the texture paints a leaf
+    // silhouette across that same diamond, tip-to-tip and side-to-side
+    var vb=leaves.vert(tfPos(b),nb,tint,[atlasHalf+0.25,0.05]),
+        v1=leaves.vert(tfPos(s1),n1,tint,[atlasHalf+0.04,0.5]),
+        v2=leaves.vert(tfPos(s2),n2,tint,[atlasHalf+0.46,0.5]),
+        vt=leaves.vert(tfPos(tip),nb,tint,[atlasHalf+0.25,0.95]);
+    leaves.tri(vb,v1,vt);leaves.tri(vb,vt,v2);
+  }
+}
+
+// ---------- grow the canopy ----------
+function branch(base,dir,length,radius,depth){
+  // curved, multi-segment limb (organic, smooth) instead of one straight tube
+  var nseg=radius>0.12?3:2, p=base, d=norm(dir), end=base, r=radius;
+  var segRad=radius>0.18?8:(radius>0.09?6:4);   // thin twigs need very few sides
+  for(var i=0;i<nseg;i++){
+    var r2=radius*(1-(i+1)/nseg*0.28);
+    var np=add(p,scl(d,length/nseg));
+    barkCyl(p,np,r,r2,segRad);
+    d=norm([d[0]+rr(-0.07,0.07), d[1]-0.045, d[2]+rr(-0.07,0.07)]); // gentle droop + wander
+    p=np; r=r2; end=np;
+  }
+  dir=d;
+  // fewer leaves per cluster now that there are far more branches carrying them
+  if(depth<=0||radius<0.05){leafGroup(end,Math.max(0.8,radius*8+0.6),Math.round(rr(14,20)));return;}
+  if(depth<=2){leafGroup(add(base,scl(dir,length*0.55)),Math.max(0.7,radius*6),Math.round(rr(7,11)));}
+  // denser, wilder branching
+  var kids=depth>4?3:(rng()<0.35?3:4);
+  var bb=orthoBasis(dir),p1=bb[0],p2=bb[1],baseAz=rng()*Math.PI*2;
+  for(var k=0;k<kids;k++){
+    var az=baseAz+k/kids*Math.PI*2+rr(-0.5,0.5),spread=rr(0.35,0.72);
+    var ov=add(scl(p1,Math.cos(az)),scl(p2,Math.sin(az)));
+    var nd=norm(add(scl(dir,Math.cos(spread)),scl(ov,Math.sin(spread))));
+    nd=norm([nd[0],nd[1]+0.10,nd[2]]);
+    branch(end,nd,length*rr(0.72,0.84),radius*rr(0.60,0.72),depth-1);
+  }
+  // extra side twigs, and a second one now and then -> a much wilder crown
+  if(depth>1&&rng()<0.85){var az2=rng()*Math.PI*2,sp2=rr(0.5,0.95);
+    var ov2=add(scl(p1,Math.cos(az2)),scl(p2,Math.sin(az2)));
+    var nd2=norm(add(scl(dir,Math.cos(sp2)),scl(ov2,Math.sin(sp2))));nd2=norm([nd2[0],nd2[1]+0.08,nd2[2]]);
+    branch(end,nd2,length*rr(0.55,0.7),radius*rr(0.5,0.62),depth-2);}
+  if(depth>2&&rng()<0.55){var az3=rng()*Math.PI*2,sp3=rr(0.6,1.05);
+    var ov3=add(scl(p1,Math.cos(az3)),scl(p2,Math.sin(az3)));
+    var nd3=norm(add(scl(dir,Math.cos(sp3)),scl(ov3,Math.sin(sp3))));nd3=norm([nd3[0],nd3[1]+0.05,nd3[2]]);
+    branch(add(base,scl(dir,length*0.5)),nd3,length*rr(0.42,0.58),radius*rr(0.40,0.52),depth-2);}
+}
+function addShadow(){var R=8.5,seg=40,y=0.02;
+  var c=shadowM.vert(tfPos([0,y,0]),[0,1,0],[1,0,0]),rim=[];
+  for(var s=0;s<=seg;s++){var a=s/seg*Math.PI*2;rim.push(shadowM.vert(tfPos([Math.cos(a)*R,y,Math.sin(a)*R*0.9]),[0,1,0],[0,0,0]));}
+  for(var s2=0;s2<seg;s2++)shadowM.tri(c,rim[s2],rim[s2+1]);}
+// a small ground-contact shadow under a rock, so it still reads as grounded once
+// distance fog fades the floor toward the same pale tone as the sky
+function addRockShadow(cx,cz,radius){var R=radius*1.25,seg=10,y=0.02;
+  var c=shadowM.vert([cx,y,cz],[0,1,0],[0.85,0,0]),rim=[];
+  for(var s=0;s<=seg;s++){var a=s/seg*Math.PI*2;rim.push(shadowM.vert([cx+Math.cos(a)*R,y,cz+Math.sin(a)*R],[0,1,0],[0,0,0]));}
+  for(var s2=0;s2<seg;s2++)shadowM.tri(c,rim[s2],rim[s2+1]);}
+
+// ---------- rocks: angular, faceted low-poly stones scattered like Cyprus scree ----------
+// Cheap on purpose (flat-shaded, a handful of triangles each) so a whole field of them
+// costs less than the tree's leaves. Built once at load, independent of the tree's own
+// random seed/scale, so the rocks stay put even though the tree changes every time.
+var ICO_V=[[-1,1.618,0],[1,1.618,0],[-1,-1.618,0],[1,-1.618,0],[0,-1,1.618],[0,1,1.618],
+  [0,-1,-1.618],[0,1,-1.618],[1.618,0,-1],[1.618,0,1],[-1.618,0,-1],[-1.618,0,1]].map(norm);
+var ICO_F=[[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],
+  [3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
+function subdivIco(verts,faces){
+  var nv=verts.slice(),nf=[],cache={};
+  function mid(a,b){var k=a<b?a+'_'+b:b+'_'+a;if(cache[k]!=null)return cache[k];
+    var va=nv[a],vb=nv[b];
+    nv.push(norm([(va[0]+vb[0])/2,(va[1]+vb[1])/2,(va[2]+vb[2])/2]));
+    var idx=nv.length-1;cache[k]=idx;return idx;}
+  for(var f=0;f<faces.length;f++){var a=faces[f][0],b=faces[f][1],c=faces[f][2];
+    var ab=mid(a,b),bc=mid(b,c),ca=mid(c,a);
+    nf.push([a,ab,ca],[ab,b,bc],[ca,bc,c],[ab,bc,ca]);}
+  return {v:nv,f:nf};
+}
+var ICO_SUB=subdivIco(ICO_V,ICO_F);   // one extra facet level, used for the bigger boulders
+
+function buildRock(mesh,center,radius,seed){
+  var rrng=mulberry32(seed);
+  function rn(a,b){return a+(b-a)*rrng();}
+  var big=radius>0.9, verts=(big?ICO_SUB:{v:ICO_V,f:ICO_F}).v, faces=(big?ICO_SUB:{v:ICO_V,f:ICO_F}).f;
+  var sx=rn(0.75,1.30), sy=rn(0.42,0.82), sz=rn(0.75,1.30);       // flattened, slab-like
+  var tiltA=rn(-0.55,0.55), tiltB=rn(0,Math.PI*2);
+  var jitter=verts.map(function(){return rn(0.70,1.30);});        // per-vertex -> angular, shattered look
+  function localVert(idx){
+    var v=verts[idx],j=jitter[idx];
+    var p=[v[0]*sx*j, v[1]*sy*j, v[2]*sz*j];
+    var ca=Math.cos(tiltA),sa=Math.sin(tiltA);
+    var py=[p[0], p[1]*ca-p[2]*sa, p[1]*sa+p[2]*ca];
+    var cb=Math.cos(tiltB),sb=Math.sin(tiltB);
+    return [py[0]*cb-py[2]*sb, py[1], py[0]*sb+py[2]*cb];
+  }
+  var local=verts.map(function(_,i){return localVert(i);});
+  // An icosahedron rests on a single vertex tip, which reads as a rock precariously
+  // balanced with daylight under its belly. Flatten the lowest slice toward one plane
+  // so several vertices share the ground contact instead of just one point.
+  var minY0=Math.min.apply(null,local.map(function(p){return p[1];}));
+  var maxY0=Math.max.apply(null,local.map(function(p){return p[1];}));
+  var band=minY0+(maxY0-minY0||1)*0.16;
+  local=local.map(function(p){
+    if(p[1]>=band)return p;
+    var t=(p[1]-minY0)/(band-minY0||1);
+    return [p[0], minY0+(p[1]-minY0)*(0.15+0.55*t), p[2]];
+  });
+  var minY=Math.min.apply(null,local.map(function(p){return p[1];}));
+  function worldVert(p){return [p[0]*radius+center[0], (p[1]-minY)*radius+center[1], p[2]*radius+center[2]];}
+  // rock tone: pick one family per rock, then vary a little per face
+  var fam=rn(0,1);
+  var base= fam<0.32?[0.565,0.550,0.530]        // grey
+           :fam<0.58?[0.455,0.355,0.270]        // warm brown
+           :fam<0.80?[0.465,0.495,0.520]        // cool blue-grey schist
+                     :[0.435,0.275,0.200];      // rust-brown
+  for(var f=0;f<faces.length;f++){
+    var fa=faces[f],pa=worldVert(local[fa[0]]),pb=worldVert(local[fa[1]]),pc=worldVert(local[fa[2]]);
+    var nrm=norm(cross(sub(pb,pa),sub(pc,pa)));
+    var tone=0.90+rn(0,0.20);                     // gentler per-face jitter -> reads as stone, not a gem
+    var col=[base[0]*tone,base[1]*tone,base[2]*tone];
+    var patch=rn(0,1);
+    if(patch<0.08){col=[col[0]*0.72+0.62*0.28*rn(0.8,1.05),col[1]*0.72+0.63*0.28*rn(0.8,1.05),col[2]*0.72+0.24*0.28*rn(0.8,1.05)];}   // sparse lichen (yellow-green), lightly blended
+    else if(patch<0.14){col=[col[0]*0.65+0.76*0.35,col[1]*0.65+0.74*0.35,col[2]*0.65+0.68*0.35];}    // pale crustose lichen, subtler
+    // faint ambient occlusion near the ground contact -- faces whose average height is low get darkened a touch
+    var avgY=(pa[1]+pb[1]+pc[1])/3-center[1];
+    var ao=1.0-0.16*Math.exp(-avgY/(radius*0.4+0.05));
+    col=[col[0]*ao,col[1]*ao,col[2]*ao];
+    var ia=mesh.vert(pa,nrm,col),ib=mesh.vert(pb,nrm,col),ic=mesh.vert(pc,nrm,col);
+    mesh.tri(ia,ib,ic);
+  }
+}
+// three named size classes instead of one smooth blur of sizes -- each rock is
+// clearly "small", "medium" or "large", with some natural spread inside each class
+var ROCK_CLASSES=[
+  {name:'small',  rMin:0.08, rMax:0.30, weight:0.52},
+  {name:'medium', rMin:0.35, rMax:0.90, weight:0.32},
+  {name:'large',  rMin:1.00, rMax:3.80, weight:0.16}
+];
+function pickRockClass(t){var acc=0;for(var i=0;i<ROCK_CLASSES.length;i++){acc+=ROCK_CLASSES[i].weight;
+  if(t<=acc||i===ROCK_CLASSES.length-1)return ROCK_CLASSES[i];}}
+function buildRockField(){
+  var place=mulberry32(918273);
+  function pr(a,b){return a+(b-a)*place();}
+  var count=70;
+  for(var i=0;i<count;i++){
+    var cls=pickRockClass(pr(0,1));
+    var radius=pr(cls.rMin,cls.rMax);
+    var ang=pr(0,Math.PI*2);
+    var dist=2.0+radius*1.3+pr(0,55);                 // bigger rocks tend to sit further from the trunk
+    var cx=Math.cos(ang)*dist,cz=Math.sin(ang)*dist;
+    buildRock(rocks,[cx,0,cz],radius,Math.floor(pr(1,2e9)));
+    if(radius>0.22)addRockShadow(cx,cz,radius);        // skip tiny pebbles, not worth the blend cost
+  }
+}
+
+// build one whole tree (trunk + limbs + leaves + shadow) at a placement
+function buildTree(ox,oz,yaw,scale,seed){
+  rng=mulberry32(seed);
+  TF={ox:ox,oz:oz,yaw:yaw,s:scale,c:Math.cos(yaw),sn:Math.sin(yaw)};
+  var top=buildTrunk().top;
+  var n=6;                                     // more primary limbs off the crown
+  for(var i=0;i<n;i++){
+    var a=i/n*Math.PI*2+rr(-0.3,0.3),sp=rr(0.35,0.68);
+    var dir=norm([Math.cos(a)*Math.sin(sp),Math.cos(sp),Math.sin(a)*Math.sin(sp)]);
+    dir=norm([dir[0],dir[1]+0.3,dir[2]]);
+    branch(top,dir,rr(3.2,4.2),rr(0.26,0.36),6);
+  }
+  branch(top,[0.03,1,0.02],4.2,0.30,6);
+  addShadow();
+}
+
+// ---------- one tree, picked from a numbered series (not a fresh dice roll) ----------
+// Every tree "number" is a specific, reproducible slot in an endless series: the same
+// number always builds the exact same tree (seed, size and turn all come from it), so
+// a favourite tree can be pinned with ?tree=123 in the URL instead of being lost the
+// next time the page loads. Leave the number out and one is drawn at random.
+var TREE_SERIES_SIZE=100000;
+function treeParamsForNumber(n){
+  var r=mulberry32(Math.imul(n,2654435761)^0x9e3779b9);
+  return {seed:Math.floor(r()*2147483647), scale:0.85+r()*0.30, yaw:r()*Math.PI*2};
+}
+var urlTreeN=parseInt(new URLSearchParams(location.search).get('tree'),10);
+var TREE_NUMBER=(urlTreeN>=0&&urlTreeN<TREE_SERIES_SIZE)?urlTreeN:Math.floor(Math.random()*TREE_SERIES_SIZE);
+var TP=treeParamsForNumber(TREE_NUMBER);
+buildTree(0,0,TP.yaw,TP.scale,TP.seed);
+buildRockField();
+try{
+  var brandEl=document.getElementById('brand');
+  if(brandEl)brandEl.textContent=brandEl.textContent+'  ·  עץ #'+TREE_NUMBER;
+}catch(e){}
+
+bark.upload();leaves.upload();floorM.upload();shadowM.upload();rocks.upload();
+try{console.log('verts — bark:',bark.count,'leaf idx:',leaves.count,'uint:',!!uintExt);}catch(e){}
+
+// ---------- camera & controls ----------
+var cam={pos:[0,1.75,20],yaw:0,pitch:0.10};
+(function(){var h=location.hash.replace('#','');if(h){var p=h.split(',').map(Number);
+  if(p.length>=5&&p.every(function(x){return!isNaN(x);})){cam.pos=[p[0],p[1],p[2]];cam.yaw=p[3];cam.pitch=p[4];}}})();
+function forward(){var cp=Math.cos(cam.pitch);return [Math.sin(cam.yaw)*cp,Math.sin(cam.pitch),-Math.cos(cam.yaw)*cp];}
+function rightVec(){return [Math.cos(cam.yaw),0,Math.sin(cam.yaw)];}
+var joyX=0,joyY=0,speedT=0.28;
+function speedFromT(t){return 0.15+(14-0.15)*t*t;}
+
+var joyEl=document.getElementById('joy'),knob=document.getElementById('knob'),joyId=null,joyCx=0,joyCy=0,joyR=48;
+function joyStart(e){var r=joyEl.getBoundingClientRect();joyCx=r.left+r.width/2;joyCy=r.top+r.height/2;
+  joyId=e.pointerId;joyEl.setPointerCapture(joyId);joyMove(e);e.preventDefault();}
+function joyMove(e){if(e.pointerId!==joyId)return;var dx=e.clientX-joyCx,dy=e.clientY-joyCy,d=Math.hypot(dx,dy);
+  if(d>joyR){dx=dx/d*joyR;dy=dy/d*joyR;}knob.style.transform='translate('+dx+'px,'+dy+'px)';
+  joyX=dx/joyR;joyY=-dy/joyR;e.preventDefault();}
+function joyEnd(e){if(e.pointerId!==joyId)return;joyId=null;joyX=joyY=0;knob.style.transform='translate(0,0)';}
+joyEl.addEventListener('pointerdown',joyStart);joyEl.addEventListener('pointermove',joyMove);
+joyEl.addEventListener('pointerup',joyEnd);joyEl.addEventListener('pointercancel',joyEnd);
+
+var spdEl=document.getElementById('speed'),sknob=document.getElementById('sknob'),fill=document.getElementById('fill'),
+    spdVal=document.getElementById('spdVal'),spdId=null;
+function spdApply(cy){var r=spdEl.getBoundingClientRect();var t=1-(cy-r.top)/r.height;speedT=Math.min(1,Math.max(0,t));drawSpeed();}
+function drawSpeed(){var r=spdEl.getBoundingClientRect(),pad=14,us=r.height-pad*2,yy=pad+(1-speedT)*us;
+  sknob.style.top=(yy-12)+'px';fill.style.height=(r.height-yy)+'px';spdVal.textContent=speedFromT(speedT).toFixed(1);}
+function spdStart(e){spdId=e.pointerId;spdEl.setPointerCapture(spdId);spdApply(e.clientY);e.preventDefault();}
+function spdMove(e){if(e.pointerId!==spdId)return;spdApply(e.clientY);e.preventDefault();}
+function spdEnd(e){if(e.pointerId!==spdId)return;spdId=null;}
+spdEl.addEventListener('pointerdown',spdStart);spdEl.addEventListener('pointermove',spdMove);
+spdEl.addEventListener('pointerup',spdEnd);spdEl.addEventListener('pointercancel',spdEnd);
+
+var lookId=null,lastX=0,lastY=0,SENS=0.0034;
+canvas.addEventListener('pointerdown',function(e){lookId=e.pointerId;lastX=e.clientX;lastY=e.clientY;
+  canvas.setPointerCapture(lookId);hideHint();e.preventDefault();});
+canvas.addEventListener('pointermove',function(e){if(e.pointerId!==lookId)return;
+  cam.yaw+=(e.clientX-lastX)*SENS;cam.pitch-=(e.clientY-lastY)*SENS;lastX=e.clientX;lastY=e.clientY;
+  cam.pitch=Math.max(-1.45,Math.min(1.45,cam.pitch));e.preventDefault();});
+function lookEnd(e){if(e.pointerId===lookId)lookId=null;}
+canvas.addEventListener('pointerup',lookEnd);canvas.addEventListener('pointercancel',lookEnd);
+window.addEventListener('contextmenu',function(e){e.preventDefault();});
+var hintEl=document.getElementById('hint'),hintGone=false;
+function hideHint(){if(hintGone)return;hintGone=true;hintEl.style.opacity='0';setTimeout(function(){hintEl.style.display='none';},900);}
+setTimeout(hideHint,6500);
+
+// ---------- render ----------
+var W=1,H=1,DPR=1;
+function resize(){DPR=Math.min(window.devicePixelRatio||1,2.5);
+  W=Math.round(canvas.clientWidth*DPR);H=Math.round(canvas.clientHeight*DPR);
+  canvas.width=W;canvas.height=H;drawSpeed();}
+window.addEventListener('resize',resize);
+var SUN=norm([0.35,0.82,0.42]),SKY_AMB=[0.52,0.66,0.90],HORIZON=[0.82,0.89,0.96];
+var flightVP=new Float32Array(lightVP), TEXEL=1/SHADOW_RES;
+function drawDepth(mesh){gl.bindBuffer(gl.ARRAY_BUFFER,mesh.vbo);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,mesh.ibo);
+  gl.enableVertexAttribArray(dA);gl.vertexAttribPointer(dA,3,gl.FLOAT,false,36,0);
+  gl.drawElements(gl.TRIANGLES,mesh.count,ITYPE,0);}
+gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;
+  var spd=speedFromT(speedT);
+  if(joyX||joyY){var f=forward(),r=rightVec();cam.pos=add(cam.pos,scl(add(scl(f,joyY),scl(r,joyX)),spd*dt));}
+  if(cam.pos[1]<0.25)cam.pos[1]=0.25;
+  if(W!==Math.round(canvas.clientWidth*DPR)||H!==Math.round(canvas.clientHeight*DPR))resize();
+  gl.viewport(0,0,W,H);gl.clearColor(0.82,0.89,0.96,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  var proj=perspective(63*Math.PI/180,W/H,0.05,600);
+  var view=lookAt(cam.pos,add(cam.pos,forward()),[0,1,0]);
+  var invvp=invert(mul(proj,view));
+  var fp=new Float32Array(proj),fv=new Float32Array(view);
+  var uTime=now/1000;
+  // sky
+  gl.disable(gl.DEPTH_TEST);gl.depthMask(false);gl.useProgram(skp);
+  gl.bindBuffer(gl.ARRAY_BUFFER,skyBuf);gl.enableVertexAttribArray(skA);gl.vertexAttribPointer(skA,2,gl.FLOAT,false,0,0);
+  gl.uniformMatrix4fv(skU.invvp,false,new Float32Array(invvp));gl.uniform3fv(skU.cam,cam.pos);gl.uniform3fv(skU.sun,SUN);
+  gl.drawArrays(gl.TRIANGLES,0,3);gl.enable(gl.DEPTH_TEST);gl.depthMask(true);
+  // floor + shadow + leaves (scene program)
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,shadowTex);
+  gl.useProgram(sp);
+  gl.uniformMatrix4fv(sU.proj,false,fp);gl.uniformMatrix4fv(sU.view,false,fv);
+  gl.uniform3fv(sU.cam,cam.pos);gl.uniform3fv(sU.sun,SUN);gl.uniform3fv(sU.sky,SKY_AMB);gl.uniform3fv(sU.horizon,HORIZON);
+  gl.uniformMatrix4fv(sU.lightVP,false,flightVP);gl.uniform1i(sU.shadow,0);gl.uniform1f(sU.texel,TEXEL);
+  gl.uniform1f(sU.opacity,1.0);
+  gl.uniform1i(sU.mode,1);floorM.bind();gl.drawElements(gl.TRIANGLES,floorM.count,ITYPE,0);
+  // rocks (same program, flat-shaded, no floor tiling / no leaf backlight)
+  gl.uniform1i(sU.mode,3);rocks.bind();gl.drawElements(gl.TRIANGLES,rocks.count,ITYPE,0);
+  // soft contact shadow under the tree
+  gl.uniform1i(sU.mode,2);gl.uniform1f(sU.opacity,0.36);gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);gl.disable(gl.CULL_FACE);
+  shadowM.bind();gl.drawElements(gl.TRIANGLES,shadowM.count,ITYPE,0);
+  gl.depthMask(true);gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);
+  // bark (bark program) — double-sided so a wrong-facing triangle never shows the back wall
+  gl.disable(gl.CULL_FACE);gl.useProgram(bp);
+  gl.uniformMatrix4fv(bU.proj,false,fp);gl.uniformMatrix4fv(bU.view,false,fv);
+  gl.uniform3fv(bU.cam,cam.pos);gl.uniform3fv(bU.sun,SUN);gl.uniform3fv(bU.sky,SKY_AMB);gl.uniform3fv(bU.horizon,HORIZON);
+  gl.uniformMatrix4fv(bU.lightVP,false,flightVP);gl.uniform1i(bU.shadow,0);gl.uniform1f(bU.texel,TEXEL);
+  gl.uniform1f(bU.time,uTime);
+  bark.bind();gl.drawElements(gl.TRIANGLES,bark.count,ITYPE,0);
+  // leaves — real leaf-shaped alpha cutout + per-leaf flutter (own program+texture)
+  gl.useProgram(lp);gl.disable(gl.CULL_FACE);
+  gl.uniformMatrix4fv(lU.proj,false,fp);gl.uniformMatrix4fv(lU.view,false,fv);
+  gl.uniform3fv(lU.cam,cam.pos);gl.uniform3fv(lU.sun,SUN);gl.uniform3fv(lU.sky,SKY_AMB);gl.uniform3fv(lU.horizon,HORIZON);
+  gl.uniform1f(lU.time,uTime);
+  gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,leafTex);gl.uniform1i(lU.tex,1);
+  leaves.bind();gl.drawElements(gl.TRIANGLES,leaves.count,ITYPE,0);gl.enable(gl.CULL_FACE);
+  requestAnimationFrame(frame);
+}
+resize();drawSpeed();requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
