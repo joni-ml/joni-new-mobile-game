@@ -3134,6 +3134,10 @@ function drawResourceShape(t, sx, sy, tileObj){
 // Animal artwork at the current origin — shared by the top-down view and the 3D billboards.
 function drawAnimalArt(a){ let hop = Math.abs(Math.sin(performance.now() * 0.008)) * 3.5; ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.beginPath(); ctx.ellipse(0, 6, 6, 2.5, 0, 0, 6.3); ctx.fill(); ctx.fillStyle = '#f5f5f5'; ctx.beginPath(); ctx.arc(0, -2 - hop, 6, 0, 6.3); ctx.fill(); ctx.beginPath(); ctx.arc(4, -6 - hop, 4.5, 0, 6.3); ctx.fill(); ctx.fillRect(1, -14 - hop, 1.8, 6); ctx.fillRect(4, -14 - hop, 1.8, 6); if (gfxLevel >= 5) { ctx.fillStyle = '#ffb3b3'; ctx.fillRect(1.5, -12 - hop, 0.8, 4); ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(-6, -2 - hop, 2.2, 0, 6.3); ctx.fill(); } ctx.fillStyle = '#ff9999'; ctx.fillRect(6, -6 - hop, 1.5, 1.5); if (a.isSpider && getNightFactor() > 0.4){ ctx.fillStyle='#ff2b2b'; ctx.shadowColor='#ff2b2b'; ctx.shadowBlur=6; ctx.fillRect(2.5, -7 - hop, 1.8, 1.8); ctx.fillRect(5.5, -7 - hop, 1.8, 1.8); ctx.shadowBlur=0; } }
 // Enemy artwork drawn at the current origin, so both the top-down view and the 3D billboards use the SAME art.
+// Wolf coats. This lived as a `const` inside draw(), so drawEnemyArt — which is where it's actually
+// read — never saw it: drawing a wolf threw ReferenceError. In first person the sprite builder swallows
+// the throw and you get an invisible wolf, which is why this had gone unnoticed.
+const enemyColor = {zombie:'#3c7a4b', scorpion:'#b5743b', wolf:'#3a3a3a', siberian_wolf:'#d5e2eb'};
 function drawEnemyArt(e, withHpBar){
     let bob = Math.sin(performance.now() * 0.008 + e.x) * 2.5; let isRight = (e.facing === 'right');
     ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(0, 7, 8, 3, 0, 0, 6.3); ctx.fill();
@@ -3170,107 +3174,429 @@ const WALL3D = {};                // tile type -> base wall color
 const SPRITE3D = new Set([T.TREE,T.PINE,T.TRUNK,T.SAPLING,T.CACTUS,T.BUSH,T.CROP,T.WHEAT,T.SKULL,
   T.PLACED_TORCH,T.CAMPFIRE,T.CRAFTING_TABLE,T.UPGRADED_TABLE,T.BEEHIVE,T.GARDEN_TABLE,T.CAVE_IN,T.CAVE_UP,
   T.ROCK,T.COAL,T.IRONROCK,T.CRYSTAL_ORE,T.CAVE_CRYSTAL]);
-const SPRITE3D_H = { }; SPRITE3D_H[T.TREE]=2.3; SPRITE3D_H[T.PINE]=2.5; SPRITE3D_H[T.TRUNK]=0.9; SPRITE3D_H[T.CACTUS]=1.5;
+const SPRITE3D_H = { }; SPRITE3D_H[T.TREE]=1.88; SPRITE3D_H[T.PINE]=2.14; SPRITE3D_H[T.TRUNK]=0.86; SPRITE3D_H[T.CACTUS]=1.46;
 SPRITE3D_H[T.CRAFTING_TABLE]=0.9; SPRITE3D_H[T.UPGRADED_TABLE]=0.9; SPRITE3D_H[T.GARDEN_TABLE]=0.9;
 SPRITE3D_H[T.BUSH]=0.8; SPRITE3D_H[T.CROP]=0.8; SPRITE3D_H[T.WHEAT]=0.8; SPRITE3D_H[T.SKULL]=0.6;
 SPRITE3D_H[T.CAVE_IN]=0.5; SPRITE3D_H[T.CAVE_UP]=0.5; SPRITE3D_H[T.PLACED_TORCH]=1.2;
-SPRITE3D_H[T.ROCK]=0.95; SPRITE3D_H[T.COAL]=0.95; SPRITE3D_H[T.IRONROCK]=1.0;
-SPRITE3D_H[T.CRYSTAL_ORE]=1.15; SPRITE3D_H[T.CAVE_CRYSTAL]=1.15;
+// ore heights match the voxel models exactly, so the far-away billboard and the close-up geometry
+// are the same size and you never see a rock "pop" as you approach it
+SPRITE3D_H[T.ROCK]=0.70; SPRITE3D_H[T.COAL]=0.70; SPRITE3D_H[T.IRONROCK]=0.70;
+SPRITE3D_H[T.CRYSTAL_ORE]=0.84; SPRITE3D_H[T.CAVE_CRYSTAL]=0.84;
 
 const tileSprCache = {};
 // Trees get real volume in first person: a trunk column plus a cloud of leaves (or stacked conifer tiers).
 function treeSprite(kind){
   const key = 'tree3d:'+kind;
   if (tileSprCache[key]) return tileSprCache[key];
+  // Cut to the same stepped silhouette as the voxel model, with the same face shading, so a tree
+  // crossing the geometry/billboard threshold in the haze doesn't visibly change shape.
   const c = renderToCanvas(64, 96, ()=>{
-    ctx.fillStyle='#6b4423'; ctx.fillRect(27, 44, 10, 52);          // trunk
-    ctx.fillStyle='#54331a'; ctx.fillRect(27, 44, 3.5, 52);         // shaded side
-    if (kind==='trunk') return;
+    const box = (x0,x1,y0,y1,side,top)=>{
+      ctx.fillStyle=side; ctx.fillRect(x0, y0, x1-x0, y1-y0);
+      ctx.fillStyle=top;  ctx.fillRect(x0, y0, x1-x0, Math.min(4, y1-y0));           // lit top face
+      ctx.fillStyle='rgba(0,0,0,0.20)'; ctx.fillRect(x0, y0, Math.min(4, x1-x0), y1-y0);  // shaded west
+    };
+    const BARK='#6b4a26', BARK_T='#8a6236';
+    if (kind==='trunk'){ box(19,45,10,96,BARK,BARK_T); return; }
     if (kind==='pine'){
-      const tiers=[{y:58,w:24},{y:42,w:19},{y:27,w:14}];
-      for (const t of tiers){
-        ctx.fillStyle='#1c5233'; ctx.beginPath(); ctx.moveTo(32,t.y-26); ctx.lineTo(32-t.w,t.y); ctx.lineTo(32+t.w,t.y); ctx.closePath(); ctx.fill();
-        ctx.fillStyle='#eef4f8'; ctx.beginPath(); ctx.moveTo(32,t.y-26); ctx.lineTo(32-t.w*0.4,t.y-14); ctx.lineTo(32+t.w*0.4,t.y-14); ctx.closePath(); ctx.fill();
-      }
+      box(28,36,71,96,'#5a4020','#74532a');
+      box( 4,60,49,74,'#1f5c38','#2b7a4a');
+      box(11,53,26,49,'#1f5c38','#2b7a4a');
+      box(18,46, 7,26,'#1f5c38','#2b7a4a');
+      box(23,41, 0, 7,'#dfeef0','#ffffff');
     } else {
-      const g = ctx.createRadialGradient(24,22,3, 32,32,30);
-      g.addColorStop(0,'#6cbf5e'); g.addColorStop(1,'#1f5225');
-      ctx.fillStyle = g; ctx.beginPath();
-      ctx.arc(19,38,14,0,6.3); ctx.arc(45,38,14,0,6.3); ctx.arc(32,20,17,0,6.3); ctx.arc(32,34,19,0,6.3);
-      ctx.fill();
+      box(27,37,55,96,BARK,BARK_T);
+      box( 3,61,25,59,'#2f7a34','#3f9440');
+      box(10,54, 8,25,'#2f7a34','#3f9440');
+      box(20,44, 0, 8,'#4da046','#5cb552');
     }
   });
   tileSprCache[key]=c; return c;
 }
-// Ore / stone as 3D voxel cubes that look different from different angles
+/* ---------- Rocks & ore as REAL geometry, not billboards ----------------------------------
+   Every ore tile is a little voxel model: a list of axis-aligned boxes in tile-local space
+   (x/y run 0..1 across the tile, z is height in tiles). Each visible face is projected
+   corner-by-corner through the very same camera the walls use, so orbiting a boulder really
+   does show you different sides of it. The models deliberately fill most of their tile, so the
+   shape you see is the shape that blocks you — that's what was confusing before. */
+// Materials. `mat` picks which grain gets baked into the face texture; `glow` lights a role from within.
+const VOX_LOOK = {};
+VOX_LOOK[T.ROCK]        = { mat:'stone', base:'#7c7c74', dark:'#4a4a45', hi:'#a8a89e', accent:'#63635c' };
+VOX_LOOK[T.COAL]        = { mat:'stone', base:'#3e3e3e', dark:'#1a1a1a', hi:'#5e5e5e', accent:'#0d0d0d' };
+VOX_LOOK[T.IRONROCK]    = { mat:'stone', base:'#7e7871', dark:'#4a4640', hi:'#a49d92', accent:'#e08a20' };
+VOX_LOOK[T.CRYSTAL_ORE] = { mat:'stone', base:'#6d6d76', dark:'#42424a', hi:'#8f8f98', accent:'#4fc8ff', glow:0.60, glowRole:'accent' };
+VOX_LOOK[T.CAVE_CRYSTAL]= { mat:'stone', base:'#5f5f69', dark:'#393940', hi:'#82828c', accent:'#86dff2', glow:0.55, glowRole:'accent' };
+VOX_LOOK[T.TREE]        = { mat:'wood',  bark:'#6b4a26', dark:'#4a3118', leaf:'#2f7a34', leafHi:'#4da046' };
+VOX_LOOK[T.PINE]        = { mat:'wood',  bark:'#5a4020', dark:'#3d2b14', leaf:'#1f5c38', leafHi:'#dfeef0' };
+VOX_LOOK[T.TRUNK]       = { mat:'wood',  bark:'#6b4a26', dark:'#4a3118', leaf:'#6b4a26', leafHi:'#8a6236' };
+VOX_LOOK[T.CACTUS]      = { mat:'plant', base:'#2f7a3f', dark:'#1c5227', hi:'#49a256', accent:'#d8e6a0' };
+// ORE_LOOK stays the palette the far-distance billboard is cut from, and marks which tiles are ore.
 const ORE_LOOK = {};
-ORE_LOOK[T.ROCK]        = { a:'#9a9a92', b:'#6e6e68', c:'#c2c2ba' };
-ORE_LOOK[T.COAL]        = { a:'#3c3c3c', b:'#1c1c1c', c:'#5c5c5c' };
-ORE_LOOK[T.IRONROCK]    = { a:'#d9903f', b:'#8c5416', c:'#ffc172' };
-ORE_LOOK[T.CRYSTAL_ORE] = { a:'#67d9ff', b:'#2a86b8', c:'#c8f4ff' };
-ORE_LOOK[T.CAVE_CRYSTAL]= { a:'#8fd0e0', b:'#3a7f96', c:'#d6f6ff' };
-function oreSprite(t, angle){
-  // angle is the camera angle relative to the ore; if not provided, use a default 2D sprite
-  if (angle === undefined){
-    const key='ore3d:'+t; if (tileSprCache[key]) return tileSprCache[key];
-    const L = ORE_LOOK[t] || ORE_LOOK[T.ROCK];
-    const c = renderToCanvas(72, 72, ()=>{
-      ctx.fillStyle='rgba(0,0,0,0.30)'; ctx.beginPath(); ctx.ellipse(36,66,26,7,0,0,6.3); ctx.fill();   // ground contact
-      // three prisms: left small, middle tall, right medium
-      const shards=[{x:16,w:24,h:26},{x:37,w:30,h:40},{x:57,w:22,h:22}];
-      for (const s of shards){
-        const baseY=66, topY=baseY-s.h, hw=s.w/2;
-        ctx.fillStyle=L.b; ctx.beginPath(); ctx.moveTo(s.x-hw,baseY); ctx.lineTo(s.x-hw*0.55,topY+4); ctx.lineTo(s.x,topY); ctx.lineTo(s.x,baseY); ctx.closePath(); ctx.fill();
-        ctx.fillStyle=L.a; ctx.beginPath(); ctx.moveTo(s.x+hw,baseY); ctx.lineTo(s.x+hw*0.55,topY+4); ctx.lineTo(s.x,topY); ctx.lineTo(s.x,baseY); ctx.closePath(); ctx.fill();
-        ctx.fillStyle=L.c; ctx.beginPath(); ctx.moveTo(s.x,topY); ctx.lineTo(s.x-hw*0.55,topY+4); ctx.lineTo(s.x,topY+11); ctx.closePath(); ctx.fill();
-      }
-      ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=1.2;
-      for (const s of shards){ const baseY=66, topY=baseY-s.h; ctx.beginPath(); ctx.moveTo(s.x,topY); ctx.lineTo(s.x,baseY); ctx.stroke(); }
-    });
-    tileSprCache[key]=c; return c;
+ORE_LOOK[T.ROCK]=VOX_LOOK[T.ROCK]; ORE_LOOK[T.COAL]=VOX_LOOK[T.COAL]; ORE_LOOK[T.IRONROCK]=VOX_LOOK[T.IRONROCK];
+ORE_LOOK[T.CRYSTAL_ORE]=VOX_LOOK[T.CRYSTAL_ORE]; ORE_LOOK[T.CAVE_CRYSTAL]=VOX_LOOK[T.CAVE_CRYSTAL];
+
+function _b(x0,y0,z0,x1,y1,z1,c){ return {x0,y0,z0,x1,y1,z1,c,_d:0}; }
+// A boulder that steps inward as it rises, so the silhouette reads as a rounded rock while the base
+// still fills the tile — the shape you see is the shape that stops you.
+function _boulder(){
+  return [ _b(0.05,0.07,0.00, 0.95,0.93,0.21,'base'),
+           _b(0.12,0.15,0.21, 0.86,0.84,0.40,'base'),
+           _b(0.23,0.26,0.40, 0.72,0.73,0.56,'base'),
+           _b(0.35,0.39,0.56, 0.61,0.63,0.67,'hi') ];
+}
+// Crystals: a low rock foot with prisms growing out of it — still sitting ON the floor.
+function _crystalRock(){
+  return [ _b(0.10,0.12,0.00, 0.90,0.88,0.19,'base'),
+           _b(0.36,0.38,0.19, 0.54,0.56,0.84,'accent'),
+           _b(0.17,0.48,0.15, 0.33,0.66,0.58,'accent'),
+           _b(0.57,0.25,0.17, 0.73,0.43,0.50,'accent'),
+           _b(0.58,0.60,0.19, 0.72,0.75,0.34,'accent') ];
+}
+const VOX_MODEL = {};
+VOX_MODEL[T.ROCK]     = _boulder();
+// The veins have to break the boulder's OUTLINE to be worth anything. Sat on the top ledges they were
+// geometrically present but only visible from above — and at eye level you never look down on a rock,
+// so every ore just read as plain stone. One nugget bulging out of each side fixes that from any angle.
+function _veins(){
+  return [ _b(0.28,0.90,0.03, 0.48,0.99,0.17,'accent'),   // bulging south
+           _b(0.52,0.01,0.05, 0.70,0.10,0.19,'accent'),   // bulging north
+           _b(0.90,0.30,0.04, 0.99,0.48,0.18,'accent'),   // bulging east
+           _b(0.01,0.52,0.05, 0.10,0.70,0.19,'accent'),   // bulging west
+           _b(0.37,0.41,0.67, 0.59,0.61,0.77,'accent') ]; // and a crown, for when you do look down
+}
+VOX_MODEL[T.COAL]     = _boulder().concat(_veins());
+VOX_MODEL[T.IRONROCK] = _boulder().concat(_veins());
+VOX_MODEL[T.CRYSTAL_ORE]  = _crystalRock();
+VOX_MODEL[T.CAVE_CRYSTAL] = _crystalRock();
+// Trees stop being flat cut-outs: a real trunk column with a blocky canopy stacked on top. Up close
+// that's the difference between a painted backdrop and something you're actually walking around.
+// Kept deliberately squat. One tree lives in one tile, so a tall model just reads as a green tower —
+// letting the canopy dominate a short trunk is what makes it read as a tree.
+VOX_MODEL[T.TREE] = [ _b(0.42,0.42,0.00, 0.58,0.58,0.82,'bark'),
+                      _b(0.05,0.05,0.72, 0.95,0.95,1.40,'leaf'),
+                      _b(0.16,0.16,1.40, 0.84,0.84,1.72,'leaf'),
+                      _b(0.32,0.32,1.72, 0.68,0.68,1.88,'leafHi') ];
+VOX_MODEL[T.PINE] = [ _b(0.44,0.44,0.00, 0.56,0.56,0.55,'bark'),
+                      _b(0.06,0.06,0.50, 0.94,0.94,1.05,'leaf'),
+                      _b(0.17,0.17,1.05, 0.83,0.83,1.55,'leaf'),
+                      _b(0.28,0.28,1.55, 0.72,0.72,1.98,'leaf'),
+                      _b(0.36,0.36,1.98, 0.64,0.64,2.14,'leafHi') ];  // snow cap, not a mast
+VOX_MODEL[T.TRUNK] = [ _b(0.30,0.30,0.00, 0.70,0.70,0.78,'bark'),
+                       _b(0.26,0.26,0.78, 0.74,0.74,0.86,'leafHi') ];
+VOX_MODEL[T.CACTUS] = [ _b(0.38,0.38,0.00, 0.62,0.62,1.46,'base'),
+                        _b(0.14,0.44,0.52, 0.38,0.56,0.68,'base'),
+                        _b(0.14,0.44,0.68, 0.26,0.56,1.10,'base'),
+                        _b(0.62,0.44,0.74, 0.86,0.56,0.90,'base'),
+                        _b(0.74,0.44,0.90, 0.86,0.56,1.22,'base') ];
+// A fixed world-space sun. Each facing gets its own brightness, and that — far more than the outline —
+// is what makes a block read as solid and change as you walk around it.
+// Spread wide enough that the sides read as clearly different planes, but with the darkest facing
+// still lit — push it further and a shaded face turns into a black hole punched in the rock.
+const FACE_LIGHT = { top:1.16, north:1.00, east:0.84, west:0.70, south:0.57, bottom:0.36 };
+// Eye height in tiles. Has to agree with v3sy's (0.5 - h): a point at h = 0.5 lands on the horizon
+// at any depth, which is the definition of eye level.
+const V3_EYE = 0.5;
+const VOX_RGB = {};
+function voxRGB(type){
+  let v = VOX_RGB[type];
+  if (!v){
+    const p = VOX_LOOK[type] || VOX_LOOK[T.ROCK];
+    v = VOX_RGB[type] = { mat:p.mat||'stone', glow:p.glow||0, glowRole:p.glowRole||'' };
+    for (const k in p) if (typeof p[k]==='string' && p[k][0]==='#') v[k] = hexRGB(p[k]);
   }
-  // Dynamic 3D ore: draw voxels from the viewer's angle
-  const L = ORE_LOOK[t] || ORE_LOOK[T.ROCK];
-  const c = renderToCanvas(72, 72, ()=>{
-    ctx.fillStyle='rgba(0,0,0,0.30)'; ctx.beginPath(); ctx.ellipse(36,66,26,7,0,0,6.3); ctx.fill();   // ground contact
-    // Draw three cube voxels in a cluster; show different faces based on angle
-    // angle is in radians; normalize to 0-2π
-    const a = ((angle % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
-    const n = Math.sin(a), c = Math.cos(a);  // normal vector for which face is visible
-    // Three cube positions forming a cluster
-    const cubes = [{ox:-8,oy:0,oz:2},{ox:0,oy:-2,oz:6},{ox:8,oy:0,oz:0}];
-    const faces = [];
-    for (const cube of cubes){
-      const dist = cube.ox*n - cube.oy*c;  // determine which faces are visible
-      // front face
-      if (dist > 0){
-        faces.push({z:cube.oz-10, draw:()=>{
-          ctx.fillStyle=L.a; ctx.fillRect(36+cube.ox-8, 66-cube.oz, 16, 20);
-          ctx.strokeStyle='rgba(0,0,0,0.3)'; ctx.lineWidth=1; ctx.strokeRect(36+cube.ox-8, 66-cube.oz, 16, 20);
-        }});
-      }
-      // side face (right)
-      if (dist > -4){
-        faces.push({z:cube.oz-8, draw:()=>{
-          ctx.fillStyle=L.b;
-          ctx.beginPath(); ctx.moveTo(36+cube.ox+8, 66-cube.oz); ctx.lineTo(36+cube.ox+12, 66-cube.oz+3);
-          ctx.lineTo(36+cube.ox+12, 66-cube.oz+23); ctx.lineTo(36+cube.ox+8, 66-cube.oz+20); ctx.closePath(); ctx.fill();
-          ctx.strokeStyle='rgba(0,0,0,0.3)'; ctx.lineWidth=1; ctx.stroke();
-        }});
-      }
-      // top face
-      faces.push({z:cube.oz+10, draw:()=>{
-        ctx.fillStyle=L.c;
-        ctx.beginPath(); ctx.moveTo(36+cube.ox-8, 66-cube.oz); ctx.lineTo(36+cube.ox+8, 66-cube.oz-8);
-        ctx.lineTo(36+cube.ox+12, 66-cube.oz-5); ctx.lineTo(36+cube.ox-4, 66-cube.oz+5); ctx.closePath(); ctx.fill();
-        ctx.strokeStyle='rgba(0,0,0,0.3)'; ctx.lineWidth=1; ctx.stroke();
-      }});
+  return v;
+}
+
+/* --- camera shared by the 3D projector; draw3D refreshes it once per frame --- */
+const V3 = { posX:0, posY:0, dirX:1, dirY:0, planeX:0, planeY:1, invDet:1, horizon:0 };
+// Near plane, in tiles. Kept well off zero on purpose: clipping at a hair's breadth lets a face that
+// passes beside your head project to coordinates in the tens of thousands, which paints as a black
+// wedge across the screen. Collision never lets you closer than this anyway.
+const V3_NEAR = 0.16;
+function v3cam(wx, wy, h){
+  const rx = wx-V3.posX, ry = wy-V3.posY;
+  return { x: V3.invDet*(V3.dirY*rx - V3.dirX*ry), y: V3.invDet*(-V3.planeY*rx + V3.planeX*ry), h:h };
+}
+// Sutherland–Hodgman against the single near plane, so standing right on top of a rock doesn't
+// tear the geometry apart the way an unclipped projection would.
+function v3clipNear(cam){
+  let need=false; for (let i=0;i<cam.length;i++) if (cam[i].y < V3_NEAR){ need=true; break; }
+  if (!need) return cam;
+  const out=[];
+  for (let i=0;i<cam.length;i++){
+    const a=cam[i], b=cam[(i+1)%cam.length];
+    const ain = a.y>=V3_NEAR, bin = b.y>=V3_NEAR;
+    if (ain) out.push(a);
+    if (ain!==bin){ const t=(V3_NEAR-a.y)/(b.y-a.y); out.push({ x:a.x+(b.x-a.x)*t, y:V3_NEAR, h:a.h+(b.h-a.h)*t }); }
+  }
+  return out;
+}
+// Haze that stays out of the way up close and only takes over near the edge of sight. Fading linearly
+// with distance washes the colour out of everything from a couple of tiles onward.
+function v3fog(d, maxD){ const t = d/maxD; return t<=0 ? 0 : t>=1 ? 1 : t*t; }
+function v3sx(p){ return (W*0.5)*(1 + p.x/p.y); }
+function v3sy(p){ return V3.horizon + (H/p.y)*(0.5 - p.h); }
+function v3trace(cam){
+  ctx.beginPath(); ctx.moveTo(v3sx(cam[0]), v3sy(cam[0]));
+  for (let i=1;i<cam.length;i++) ctx.lineTo(v3sx(cam[i]), v3sy(cam[i]));
+  ctx.closePath();
+}
+// Restrict an object to the screen columns the walls leave visible, using the raycaster's own depth
+// buffer. 0 = fully hidden (skip it entirely), 1 = fully visible (no clip needed, the fast path),
+// 2 = partly hidden and a clip path has been built for the caller.
+function v3clipCols(xa, xb, depth, step, zBuf){
+  const c0 = Math.max(0, Math.floor(xa/step)), c1 = Math.min(zBuf.length-1, Math.ceil(xb/step));
+  if (c1 < c0) return 0;
+  let hidden=0;
+  for (let c=c0;c<=c1;c++) if (depth >= zBuf[c]) hidden++;
+  if (hidden===0) return 1;
+  if (hidden===c1-c0+1) return 0;
+  ctx.beginPath();
+  let run=-1;
+  for (let c=c0;c<=c1+1;c++){
+    const vis = c<=c1 && depth < zBuf[c];
+    if (vis && run<0) run=c;
+    else if (!vis && run>=0){ ctx.rect(run*step, 0, (c-run)*step+1, H); run=-1; }
+  }
+  return 2;
+}
+function v3hash(a,b,c){
+  let h = (Math.imul(a,374761393) + Math.imul(b,668265263) + Math.imul(c,1442695041)) | 0;
+  h = Math.imul(h ^ (h>>>13), 1274126177);
+  return ((h ^ (h>>>16)) >>> 0) / 4294967296;
+}
+function v3shade(rgb, light, fog, fogCol){
+  const inv = 1-fog;
+  const r = Math.min(255, rgb[0]*light)*inv + fogCol[0]*fog;
+  const g = Math.min(255, rgb[1]*light)*inv + fogCol[1]*fog;
+  const b = Math.min(255, rgb[2]*light)*inv + fogCol[2]*fog;
+  return 'rgb('+(r|0)+','+(g|0)+','+(b|0)+')';
+}
+/* One baked 32×32 texture per (tile type, colour role, facing). Baking the face's lighting straight
+   into the pixels means drawing a textured face costs a single drawImage instead of a pile of little
+   rectangles — which is what made the first attempt look like blotches and run slowly. */
+const voxTexCache = {};
+const VOX_TS = 32;
+function voxFaceTex(type, role, face){
+  const key = type+'|'+role+'|'+face;
+  let c = voxTexCache[key]; if (c) return c;
+  const pal = voxRGB(type);
+  const rgb = pal[role] || pal.base || pal.bark || [128,128,128];
+  let light = FACE_LIGHT[face];
+  if (pal.glow && role===pal.glowRole) light = Math.min(1.55, light + pal.glow);
+  const S = VOX_TS;
+  c = document.createElement('canvas'); c.width=S; c.height=S;
+  const g = c.getContext('2d');
+  const put = (x,y,w,h,m)=>{ g.fillStyle='rgb('+Math.min(255,(rgb[0]*light*m)|0)+','+Math.min(255,(rgb[1]*light*m)|0)+','+Math.min(255,(rgb[2]*light*m)|0)+')'; g.fillRect(x,y,w,h); };
+  const seed = type*31 + role.charCodeAt(0)*7 + face.charCodeAt(0);
+  put(0,0,S,S,1);
+  const mat = pal.mat;
+  if (role==='bark' || (mat==='wood' && role!=='leaf' && role!=='leafHi')){
+    for (let i=0;i<7;i++){ const x=(v3hash(seed,i,1)*S)|0, w=1+((v3hash(seed,i,2)*3)|0);
+      put(x,0,w,S, 0.74 + v3hash(seed,i,3)*0.46); }
+    for (let i=0;i<9;i++){ const x=(v3hash(seed,i,4)*S)|0, y=(v3hash(seed,i,5)*S)|0;
+      put(x,y,2,3+((v3hash(seed,i,6)*5)|0), 0.66); }
+  } else if (role==='leaf' || role==='leafHi'){
+    for (let i=0;i<40;i++){ const x=(v3hash(seed,i,1)*S)|0, y=(v3hash(seed,i,2)*S)|0, w=2+((v3hash(seed,i,3)*4)|0);
+      put(x,y,w,w, 0.70 + v3hash(seed,i,4)*0.62); }
+    for (let i=0;i<7;i++){ const x=(v3hash(seed,i,5)*S)|0, y=(v3hash(seed,i,6)*S)|0; put(x,y,1,1,1.45); }
+  } else if (mat==='plant'){
+    for (let i=0;i<6;i++){ const x=(v3hash(seed,i,1)*S)|0; put(x,0,2,S, 0.78 + v3hash(seed,i,2)*0.34); }
+    for (let i=0;i<12;i++){ const x=(v3hash(seed,i,3)*S)|0, y=(v3hash(seed,i,4)*S)|0; put(x,y,1,3,1.5); }
+  } else {
+    // stone: chunky mineral grain plus a couple of fissures, so it reads as rock and not as noise
+    for (let i=0;i<30;i++){
+      const x=(v3hash(seed,i,1)*S)|0, y=(v3hash(seed,i,2)*S)|0;
+      put(x, y, 2+((v3hash(seed,i,3)*5)|0), 2+((v3hash(seed,i,4)*5)|0), 0.80 + v3hash(seed,i,5)*0.40);
     }
-    // Sort faces by depth and draw far to near
-    faces.sort((a,b)=>a.z-b.z);
-    for (const f of faces) f.draw();
+    for (let i=0;i<3;i++){
+      const x=(v3hash(seed,i,7)*S)|0, y=(v3hash(seed,i,8)*S)|0, len=6+((v3hash(seed,i,9)*13)|0);
+      if (v3hash(seed,i,10)<0.5) put(x,y,len,1,0.58); else put(x,y,1,len,0.58);
+    }
+    if (pal.glow && role===pal.glowRole)
+      for (let i=0;i<6;i++){ const x=(v3hash(seed,i,11)*S)|0, y=(v3hash(seed,i,12)*S)|0; put(x,y,2,2,1.5); }
+  }
+  voxTexCache[key]=c; return c;
+}
+// Paste a baked face texture onto the projected quad. The mapping is affine (built from three of the
+// four projected corners) rather than fully perspective — across a single block face the difference
+// isn't visible, and it keeps the whole face down to one drawImage.
+function v3texFace(type, role, face, p0, p1, p3){
+  const ax = (p1.x-p0.x)/VOX_TS, ay = (p1.y-p0.y)/VOX_TS;
+  const bx = (p3.x-p0.x)/VOX_TS, by = (p3.y-p0.y)/VOX_TS;
+  if (Math.abs(ax*by - ay*bx) < 1e-7) return;            // degenerate, edge-on
+  ctx.save(); ctx.clip();
+  ctx.transform(ax, ay, bx, by, p0.x, p0.y);
+  ctx.drawImage(voxFaceTex(type, role, face), 0, 0);
+  ctx.restore();
+}
+// The exact tile a solid object occupies, painted flat on the ground. This is what tells you where
+// you can and can't walk — the old floating cut-outs never made the blocked square readable.
+function v3footprint(tx, ty, fog){
+  const foot = v3clipNear([ v3cam(tx+0.03,ty+0.03,0), v3cam(tx+0.97,ty+0.03,0),
+                            v3cam(tx+0.97,ty+0.97,0), v3cam(tx+0.03,ty+0.97,0) ]);
+  if (foot.length < 3) return;
+  const a = 1-fog;
+  v3trace(foot);
+  ctx.fillStyle = 'rgba(0,0,0,'+(0.34*a).toFixed(3)+')'; ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,'+(0.30*a).toFixed(3)+')'; ctx.lineWidth = 1; ctx.stroke();
+}
+// Draw one tile as real geometry. Caller has already clipped to the columns the walls leave visible.
+function drawVoxelTile(type, tile, tx, ty, depth, fog, fogCol, q){
+  const C = voxRGB(type), model = VOX_MODEL[type] || VOX_MODEL[T.ROCK];
+  const camX = V3.posX, camY = V3.posY;
+  const canTex = q>=3 && depth < 11;
+  const frac = (tile && tile.maxHp) ? Math.max(0, tile.hp)/tile.maxHp : 1;
+  const wear = 0.60 + 0.40*frac;                         // a rock you're mining goes dull and dark
+  const worn = frac < 0.995;
+  const edge = 'rgba(0,0,0,'+(0.30*(1-fog)).toFixed(3)+')';
+
+  v3footprint(tx, ty, fog);
+
+  for (let i=0;i<model.length;i++){
+    const bx = model[i];
+    const cx = tx+(bx.x0+bx.x1)*0.5, cy = ty+(bx.y0+bx.y1)*0.5;
+    bx._d = (cx-camX)*(cx-camX) + (cy-camY)*(cy-camY);
+  }
+  model.sort((a,b)=>b._d-a._d);                          // far boxes first, painter's algorithm
+
+  const P = [0,0,0,0];
+  for (let i=0;i<model.length;i++){
+    const bx = model[i];
+    const X0=tx+bx.x0, X1=tx+bx.x1, Y0=ty+bx.y0, Y1=ty+bx.y1, Z0=bx.z0, Z1=bx.z1;
+    const rgb = C[bx.c] || C.base || C.bark;
+    const faces = [];
+    if (camX < X0) faces.push(['west',  [[X0,Y0,Z1],[X0,Y1,Z1],[X0,Y1,Z0],[X0,Y0,Z0]]]);
+    if (camX > X1) faces.push(['east',  [[X1,Y1,Z1],[X1,Y0,Z1],[X1,Y0,Z0],[X1,Y1,Z0]]]);
+    if (camY < Y0) faces.push(['north', [[X1,Y0,Z1],[X0,Y0,Z1],[X0,Y0,Z0],[X1,Y0,Z0]]]);
+    if (camY > Y1) faces.push(['south', [[X0,Y1,Z1],[X1,Y1,Z1],[X1,Y1,Z0],[X0,Y1,Z0]]]);
+    // The horizontal faces need culling exactly like the vertical ones. Pushing 'top' unconditionally
+    // drew it even when it faced away from you — above eye level it projects with its winding reversed,
+    // which mirrors the texture on it AND paints over whatever is in front, so a boulder went
+    // see-through and a canopy overhead was hollow. You see a top OR a bottom, never both, and neither
+    // when you are level with the box.
+    if (V3_EYE > Z1)      faces.push(['top',    [[X0,Y0,Z1],[X1,Y0,Z1],[X1,Y1,Z1],[X0,Y1,Z1]]]);
+    else if (V3_EYE < Z0) faces.push(['bottom', [[X0,Y1,Z0],[X1,Y1,Z0],[X1,Y0,Z0],[X0,Y0,Z0]]]);
+    for (let f=0;f<faces.length;f++){
+      const name = faces[f][0], quad = faces[f][1];
+      let allFront = true;
+      for (let k=0;k<4;k++){ const c = v3cam(quad[k][0],quad[k][1],quad[k][2]); P[k]=c; if (c.y < V3_NEAR) allFront=false; }
+      const cam = allFront ? P.slice() : v3clipNear(P.slice());
+      if (cam.length < 3) continue;
+      let light = FACE_LIGHT[name];
+      if (C.glow && bx.c===C.glowRole) light = Math.min(1.55, light + C.glow);
+      light *= wear;
+      v3trace(cam);
+      ctx.fillStyle = v3shade(rgb, light, fog, fogCol); ctx.fill();
+      if (canTex && allFront){
+        // only bother texturing a face that's actually big enough on screen to show its grain
+        const s0={x:v3sx(P[0]),y:v3sy(P[0])}, s1={x:v3sx(P[1]),y:v3sy(P[1])}, s3={x:v3sx(P[3]),y:v3sy(P[3])};
+        const area = Math.abs((s1.x-s0.x)*(s3.y-s0.y) - (s1.y-s0.y)*(s3.x-s0.x));
+        if (area > 620){
+          v3texFace(type, bx.c, name, s0, s1, s3);
+          if (fog > 0.02){ ctx.fillStyle='rgba('+fogCol[0]+','+fogCol[1]+','+fogCol[2]+','+(fog*0.9).toFixed(3)+')'; ctx.fill(); }
+          if (worn){ ctx.fillStyle='rgba(0,0,0,'+(0.45*(1-frac)).toFixed(3)+')'; ctx.fill(); }
+        }
+      }
+      ctx.strokeStyle = edge; ctx.lineWidth = 1; ctx.stroke();
+    }
+  }
+}
+// Cheap stand-in used past the voxel draw distance: a chunky 3/4 boulder cut from the same palette,
+// so the switch from geometry to billboard in the far haze isn't something you can spot.
+function oreSprite(t){
+  const key='ore-lod:'+t; if (tileSprCache[key]) return tileSprCache[key];
+  const P = ORE_LOOK[t] || ORE_LOOK[T.ROCK];
+  const c = renderToCanvas(48, 44, ()=>{
+    ctx.fillStyle='rgba(0,0,0,0.34)'; ctx.beginPath(); ctx.ellipse(24,41,20,4,0,0,6.3); ctx.fill();
+    if (P.glow){
+      ctx.fillStyle=P.base; ctx.fillRect(9,32,30,10);
+      ctx.fillStyle=P.hi;   ctx.beginPath(); ctx.moveTo(9,32); ctx.lineTo(15,27); ctx.lineTo(43,27); ctx.lineTo(39,32); ctx.closePath(); ctx.fill();
+      ctx.fillStyle=P.accent; ctx.fillRect(20,4,9,29); ctx.fillRect(11,16,6,17); ctx.fillRect(32,12,6,21);
+      ctx.fillStyle='rgba(255,255,255,0.42)'; ctx.fillRect(20,4,3,29); ctx.fillRect(11,16,2,17); ctx.fillRect(32,12,2,21);
+    } else {
+      ctx.fillStyle=P.dark; ctx.fillRect(6,26,36,15);
+      ctx.fillStyle=P.base; ctx.fillRect(6,19,36,8);
+      ctx.fillStyle=P.hi;   ctx.beginPath(); ctx.moveTo(6,19); ctx.lineTo(13,13); ctx.lineTo(42,13); ctx.lineTo(42,19); ctx.closePath(); ctx.fill();
+      ctx.fillStyle=P.base; ctx.fillRect(14,7,20,7);
+      ctx.fillStyle=P.hi;   ctx.beginPath(); ctx.moveTo(14,7); ctx.lineTo(19,3); ctx.lineTo(36,3); ctx.lineTo(34,7); ctx.closePath(); ctx.fill();
+      ctx.fillStyle=P.accent; ctx.fillRect(10,29,6,5); ctx.fillRect(30,22,5,5); ctx.fillRect(21,15,5,4);
+    }
   });
-  return c;
+  tileSprCache[key]=c; return c;
+}
+
+/* ---------- wall textures: real texture mapping, the way DOOM/Wolfenstein did it ----------
+   One 64×64 pixel-art texture per wall type, generated once. The raycaster then samples a single
+   texture COLUMN per screen column, which costs the same as the flat fillRect it replaces but gives
+   proper perspective foreshortening — the texture slides across the wall correctly as you move. */
+const wallTexCache = {};
+function wallTexture(type){
+  if (wallTexCache[type]) return wallTexCache[type];
+  const base = hexRGB(WALL3D[type] || '#888888');
+  const S = 64;
+  const c = document.createElement('canvas'); c.width=S; c.height=S;
+  const g = c.getContext('2d');
+  const px = (x,y,w,h,l)=>{ g.fillStyle='rgb('+Math.min(255,(base[0]*l)|0)+','+Math.min(255,(base[1]*l)|0)+','+Math.min(255,(base[2]*l)|0)+')'; g.fillRect(x,y,w,h); };
+  px(0,0,S,S,1);
+  if (type===T.BONE_WALL){
+    px(0,0,S,S,0.42);
+    for (let i=0;i<4;i++){ const x=i*16;
+      px(x+2,0,12,S,0.80); px(x+4,0,8,S,1.08);
+      px(x+2,1,12,5,0.70); px(x+2,S-6,12,5,0.70);
+      for(let k=0;k<3;k++) px(x+4,15+k*15,8,3,0.62); }
+  } else if (type===T.WALL_THORN){
+    px(0,0,S,S,0.55);
+    for (let i=0;i<30;i++){ const hx=(v3hash(i,7,1)*S)|0, hy=(v3hash(i,9,2)*S)|0; px(hx,hy,8,8,0.62+v3hash(i,3,3)*0.62); }
+    for (let i=0;i<16;i++){ const hx=(v3hash(i,21,4)*S)|0, hy=(v3hash(i,23,5)*S)|0; px(hx,hy,2,8,1.55); px(hx-1,hy+6,4,2,1.30); }
+  } else if (type===T.FURNACE){
+    px(0,0,S,S,0.92);
+    for(let r=0;r<4;r++) px(0,r*16+14,S,2,0.55);
+    for(let r=0;r<4;r++) px((r%2)?16:40,r*16,2,16,0.55);
+    px(15,20,34,28,0.34);
+    g.fillStyle='rgba(255,138,38,0.9)';  g.fillRect(18,36,28,11);
+    g.fillStyle='rgba(255,214,96,0.85)'; g.fillRect(23,39,18,6);
+  } else if (type===T.CRYSTAL_DEVICE){
+    for (let i=0;i<8;i++) px(i*8,0,8,S, 0.55 + (i%3)*0.26);
+    g.fillStyle='rgba(255,255,255,0.34)'; for (let i=0;i<5;i++) g.fillRect(0, i*13+3, S, 2);
+    g.fillStyle='rgba(255,255,255,0.20)'; g.fillRect(26,0,5,S);
+  } else if (type===T.TABLET){
+    px(0,0,S,S,0.96);
+    px(6,6,52,3,0.60); px(6,55,52,3,0.60); px(6,6,3,52,0.60); px(55,6,3,52,0.60);
+    for(let i=0;i<4;i++) px(14, 15+i*10, 36, 3, 0.62);
+    px(14,15,3,33,0.62); px(47,15,3,33,0.62);
+  } else if (type===T.LUCKY){
+    px(0,0,S,S,0.40);
+    for (let ry=0;ry<4;ry++) for (let rx=0;rx<4;rx++){
+      const l = 0.85 + ((rx+ry)%2)*0.30;
+      px(rx*16+1, ry*16+1, 14, 14, l);
+      px(rx*16+1, ry*16+1, 14, 2, l*1.25); px(rx*16+1, ry*16+13, 14, 2, l*0.68);
+      px(rx*16+6, ry*16+6, 4, 4, 1.55);
+    }
+  } else if (type===T.CAVE_WALL){
+    for (let i=0;i<44;i++){ const hx=(v3hash(i,2,1)*S)|0, hy=(v3hash(i,4,2)*S)|0, w=4+((v3hash(i,6,3)*10)|0);
+      px(hx,hy,w,w, 0.60 + v3hash(i,8,4)*0.66); }
+    for (let i=0;i<7;i++){ const hy=(v3hash(i,11,5)*S)|0; px(0,hy,S,1,0.46); }
+  } else {
+    // default: stone brickwork — four staggered courses, deep mortar, per-brick tone and grit
+    px(0,0,S,S,0.30);                                   // mortar showing through the joints
+    const rows=4, rh=S/rows;
+    for (let r=0;r<rows;r++){
+      const off = (r%2) ? -S/4 : 0;
+      for (let bc=-1;bc<3;bc++){
+        const x = off + bc*(S/2);
+        const l = 0.72 + v3hash(r, bc, 1)*0.56;         // each brick its own tone
+        px(x+2, r*rh+2, S/2-4, rh-4, l);
+        px(x+2, r*rh+2, S/2-4, 2, l*1.30);              // catches the light along the top edge
+        px(x+2, r*rh+rh-4, S/2-4, 2, l*0.60);           // and falls away underneath
+        for (let s=0;s<4;s++){
+          const sx = x+4+v3hash(r,bc,s+5)*(S/2-10), sy = r*rh+4+v3hash(r,bc,s+9)*(rh-10);
+          px(sx|0, sy|0, 2, 2, l*(v3hash(r,bc,s+13)<0.5 ? 0.64 : 1.34));
+        }
+      }
+    }
+  }
+  wallTexCache[type]=c; return c;
 }
 // Cheap hex -> [r,g,b] cache for the floor renderer
 const _rgbCache = {};
@@ -3302,7 +3628,7 @@ function drawFloor3D(posX,posY,dirX,dirY,planeX,planeY,horizon,maxD,fogCol,q){
   for (let by=0; by<bh; by++){
     const sy = by*scale + 1;                              // screen row below the horizon
     const rowDist = halfH / Math.max(0.5, sy);
-    const fog = Math.min(1, rowDist/maxD);
+    const fog = v3fog(rowDist, maxD);
     const inv = 1-fog;
     const rowStepX = (planeX*2*rowDist)/bw, rowStepY = (planeY*2*rowDist)/bw;
     let wx = posX + (dirX - planeX)*rowDist, wy = posY + (dirY - planeY)*rowDist;
@@ -3316,9 +3642,21 @@ function drawFloor3D(posX,posY,dirX,dirY,planeX,planeY,horizon,maxD,fogCol,q){
           const c = inCave ? ((tl.type===T.CAVE_FLOOR||tl.type===T.ALTAR_FLOOR) ? CAVE_RGB_FLOOR : CAVE_RGB_WALL)
                            : floorRGB(tl.type, biomeIdx(tx,ty));
           let cr=c[0], cg=c[1], cb=c[2];
-          // faint seam at tile edges so the ground reads as real blocks you can line yourself up with
+          // Grain, keyed off the WORLD position rather than the screen, so it's welded to the ground
+          // and stays put while you walk instead of boiling under your feet.
+          if (q>=3){
+            let n = (Math.imul((wx*7)|0, 92837111) ^ Math.imul((wy*7)|0, 689287499)) | 0;
+            n = Math.imul(n ^ (n>>>13), 1274126177);
+            const j = 1 + (((n>>>17) & 15) * 0.0075 - 0.056);   // ±5.6% speckle
+            cr*=j; cg*=j; cb*=j;
+          }
+          // tile seams: a dark groove with a lighter inner lip, so the ground reads as laid blocks
+          // and you can line yourself up with the grid you're actually building on
           const fx = wx-tx, fy = wy-ty;
-          if (fx<0.035||fx>0.965||fy<0.035||fy>0.965){ cr*=0.82; cg*=0.82; cb*=0.82; }
+          const onEdge = fx<0.030||fx>0.970||fy<0.030||fy>0.970;
+          const nearEdge = !onEdge && (fx<0.060||fx>0.940||fy<0.060||fy>0.940);
+          if (onEdge){ cr*=0.74; cg*=0.74; cb*=0.74; }
+          else if (nearEdge){ cr*=1.09; cg*=1.09; cb*=1.09; }
           r = cr*inv + fogCol[0]*fog; g = cg*inv + fogCol[1]*fog; b = cb*inv + fogCol[2]*fog;
         }
       }
@@ -3385,6 +3723,9 @@ function draw3D(){
   const fov = 0.72;                                   // ~72% plane -> comfortable field of view
   const planeX = -dirY*fov, planeY = dirX*fov;
   const horizon = H*0.5 + camPitch*H*0.35;             // pitch shifts horizon up/down
+  // publish the camera for the geometry projector (rocks, ore, footprints)
+  V3.posX=posX; V3.posY=posY; V3.dirX=dirX; V3.dirY=dirY; V3.planeX=planeX; V3.planeY=planeY;
+  V3.invDet = 1/(planeX*dirY - dirX*planeY); V3.horizon = horizon;
   ctx.imageSmoothingEnabled = false;   // keep the pixel art crisp instead of blurry when scaled up
 
   // ---- sky / ceiling ----
@@ -3427,31 +3768,49 @@ function draw3D(){
     zBuf[col] = hit ? Math.max(0.0001, dist) : 1e9;
     if (!hit) continue;
     const lineH = H / dist;
-    let y0 = horizon - lineH/2, y1 = horizon + lineH/2;
-    const base = WALL3D[hit.type] || '#888';
-    const fog = Math.min(1, dist/maxD);
-    ctx.fillStyle = shade(base, (side===1 ? 0.72 : 1) * (1-0.45*fog));
-    ctx.fillRect(x, y0, step+1, y1-y0);
-    // damage darkening so a wall you're mining visibly cracks apart
+    const y0 = horizon - lineH/2, y1 = horizon + lineH/2;
+    const fog = v3fog(dist, maxD);
     const frac = hit.maxHp ? Math.max(0, hit.hp)/hit.maxHp : 1;
-    if (frac < 0.99){ ctx.fillStyle='rgba(0,0,0,'+(0.45*(1-frac))+')'; ctx.fillRect(x,y0,step+1,y1-y0); }
+    // overlays only ever need the on-screen slice, no point filling thousands of off-screen pixels
+    const oy0 = Math.max(-2, y0), oh = Math.min(H+2, y1) - oy0;
+    if (q >= 3){
+      // Where along the wall face did the ray land? That is the texture coordinate, and sampling one
+      // texture column per screen column is what gives the wall real perspective instead of flat paint.
+      let wallX = (side===0) ? posY + dist*rdy : posX + dist*rdx;
+      wallX -= Math.floor(wallX);
+      if ((side===0 && rdx>0) || (side===1 && rdy<0)) wallX = 1-wallX;   // stop the texture mirroring
+      const tex = wallTexture(hit.type);
+      let tsy=0, tsh=64, dy=y0, dh=lineH;
+      if (dy < -H){ const cut=(-H-dy)/dh; tsy=cut*64; tsh-=cut*64; dh-=(-H-dy); dy=-H; }
+      if (dy+dh > 2*H){ const keep=(2*H-dy)/dh; tsh*=keep; dh=2*H-dy; }
+      if (tsh > 0.01 && dh > 0.01) ctx.drawImage(tex, (wallX*64)|0, tsy, 1, tsh, x, dy, step+1, dh);
+      if (side===1 && oh>0){ ctx.fillStyle='rgba(0,0,0,0.30)'; ctx.fillRect(x,oy0,step+1,oh); }
+      if (fog > 0.01 && oh>0){ ctx.fillStyle='rgba('+fogCol[0]+','+fogCol[1]+','+fogCol[2]+','+(fog*0.88).toFixed(3)+')'; ctx.fillRect(x,oy0,step+1,oh); }
+    } else {
+      ctx.fillStyle = shade(WALL3D[hit.type] || '#888', (side===1 ? 0.72 : 1) * (1-0.45*fog));
+      if (oh>0) ctx.fillRect(x, oy0, step+1, oh);
+    }
+    // damage darkening so a wall you're mining visibly cracks apart
+    if (frac < 0.99 && oh>0){ ctx.fillStyle='rgba(0,0,0,'+(0.45*(1-frac))+')'; ctx.fillRect(x,oy0,step+1,oh); }
   }
 
-  // ---- billboards: props, monsters, animals, teammates, dropped items ----
+  // ---- world objects: voxel rocks, then billboards for props, monsters, animals, teammates, items ----
   const sprites = [];
+  const voxRange = q<=2 ? 7 : q<=4 ? 11 : 15;      // how far out rocks stay real geometry
+  const voxDist2 = voxRange*voxRange;
+  let voxBudget = q<=2 ? 14 : q<=4 ? 28 : 44;      // hard cap per frame so a stone field can't tank the fps
   const r = Math.ceil(maxD)+1;
   const px = Math.floor(posX), py = Math.floor(posY);
   for (let ty=Math.max(0,py-r); ty<=Math.min(MAPH-1,py+r); ty++)
     for (let tx=Math.max(0,px-r); tx<=Math.min(MAPW-1,px+r); tx++){
       const tl = world[ty][tx]; if (!tl || !SPRITE3D.has(tl.type)) continue;
-      // For ore objects, pass the angle from player to ore so sprite shows 3D depth
-      let img = tileSprite(tl.type, tl);
-      if (ORE_LOOK[tl.type]){
-        const dx = tx+0.5-posX, dy = ty+0.5-posY;
-        const relAngle = Math.atan2(dy, dx) - camAngle;
-        img = oreSprite(tl.type, relAngle);
+      // Rock and ore inside the geometry range are drawn as real voxels; past it they fall back to the
+      // matching billboard, so a whole hillside of stone in the haze stays cheap.
+      if (VOX_MODEL[tl.type]){
+        const ddx=tx+0.5-posX, ddy=ty+0.5-posY;
+        if (ddx*ddx+ddy*ddy < voxDist2){ sprites.push({ x:tx+0.5, y:ty+0.5, kind:'voxel', tx:tx, ty:ty, tile:tl }); continue; }
       }
-      sprites.push({ x:tx+0.5, y:ty+0.5, img:img, h:(SPRITE3D_H[tl.type]||1.2), solid:isSolid(tl) });
+      sprites.push({ x:tx+0.5, y:ty+0.5, img:tileSprite(tl.type, tl), h:(SPRITE3D_H[tl.type]||1.2), solid:isSolid(tl) });
     }
   for (const e of enemies) sprites.push({ x:e.x/TILE, y:e.y/TILE, ent:e, kind:'enemy', h:(e.kind==='boss'?2.4:1.05) });
   for (const a of animals) sprites.push({ x:a.x/TILE, y:a.y/TILE, ent:a, kind:'animal', h:0.6 });
@@ -3466,6 +3825,19 @@ function draw3D(){
     const tX = invDet*(dirY*rx - dirX*ry);
     const tY = invDet*(-planeY*rx + planeX*ry);     // depth along the view direction
     if (tY <= 0.15 || tY > maxD) continue;
+    // ---- rocks & ore: real geometry, projected face by face ----
+    if (s.kind==='voxel'){
+      if (voxBudget <= 0 || tY < 0.45) continue;   // 0.45: closer than collision can ever put you
+      const cx = (W/2)*(1 + tX/tY);
+      const half = (W*0.5)*(0.78/tY) + 10;           // covers a 1-tile object at any yaw, plus slack
+      const vis = v3clipCols(cx-half, cx+half, tY, step, zBuf);
+      if (!vis) continue;
+      voxBudget--;
+      if (vis===2){ ctx.save(); ctx.clip(); }
+      drawVoxelTile(s.tile.type, s.tile, s.tx, s.ty, tY, v3fog(tY, maxD), fogCol, q);
+      if (vis===2) ctx.restore();
+      continue;
+    }
     let img = s.img;
     if (!img){
       if (s.kind==='enemy') img = entitySprite(()=>drawEnemyArt(s.ent, false));
@@ -3479,26 +3851,18 @@ function draw3D(){
     const sw = sh * (img.width/img.height);
     const floorY = horizon + lineH/2;             // where the ground is at this distance
     const scrX = (W/2)*(1 + tX/tY);
-    const x0 = Math.floor(scrX - sw/2), y0 = Math.floor(floorY - sh);
-    const fog = Math.min(1, tY/maxD);
-    // Solid objects get a shadow patch on the ground so their footprint — and where you'd bump into
-    // them — is obvious before you walk in.
-    const centreCol = Math.floor(scrX/step);
-    if (s.solid && (zBuf[centreCol]===undefined || tY < zBuf[centreCol])){
-      const fw = lineH*0.92, fh = lineH*0.22;
-      ctx.save(); ctx.globalAlpha = 0.30*(1-fog); ctx.fillStyle='#000';
-      ctx.beginPath(); ctx.ellipse(scrX, floorY, Math.max(2,fw/2), Math.max(1,fh/2), 0, 0, 6.3); ctx.fill();
-      ctx.restore();
-    }
-    img = tintedSprite(img, fog*0.85, fogCol);      // distance haze, applied to the artwork only
-    // draw in vertical stripes so walls correctly hide sprites behind them
-    const sStep = Math.max(2, step);
-    for (let sx = Math.max(0,x0); sx < Math.min(W, x0+sw); sx += sStep){
-      const col = Math.floor(sx/step);
-      if (zBuf[col] !== undefined && tY >= zBuf[col]) continue;
-      const u = (sx-x0)/sw * img.width, uw = Math.max(1, (sStep/sw)*img.width);
-      ctx.drawImage(img, u, 0, uw, img.height, sx, y0, sStep+1, sh);
-    }
+    const x0 = scrX - sw/2, y0 = floorY - sh;
+    const fog = v3fog(tY, maxD);
+    const halfFoot = s.solid ? (W*0.5)*(0.78/tY) + 6 : 0;
+    const vis = v3clipCols(Math.min(x0, scrX-halfFoot), Math.max(x0+sw, scrX+halfFoot), tY, step, zBuf);
+    if (!vis) continue;                            // entirely behind a wall
+    if (vis===2){ ctx.save(); ctx.clip(); }        // partly behind one: let the walls cut into it
+    // Solid tiles get their true square footprint painted on the ground. The old screen-space ellipse
+    // ballooned into a grey saucer as you got close, which read as fog rather than as a blocked square.
+    if (s.solid) v3footprint(s.x-0.5, s.y-0.5, fog);
+    img = tintedSprite(img, fog*0.85, fogCol);     // distance haze, applied to the artwork only
+    ctx.drawImage(img, x0, y0, sw, sh);            // one clean blit — the old strip loop left seams
+    if (vis===2) ctx.restore();
   }
 
   // ---- soft haze band right at the horizon (walls/sprites/floor already fade individually) ----
@@ -3567,7 +3931,6 @@ function draw(){
   for (const p of projectiles){ ctx.fillStyle='#fff'; ctx.fillRect(p.x-2, p.y-2, 4, 4); }
   for (const p of enemyProjectiles){ if(p.bone){ ctx.fillStyle='#e8e0d0'; ctx.fillRect(p.x-2, p.y-3, 4, 6); } else { ctx.fillStyle='#8a2f1a'; ctx.fillRect(p.x-2, p.y-2, 4, 4); } }
   for (const a of animals){ ctx.save(); ctx.translate(a.x, a.y); drawAnimalArt(a); ctx.restore(); }
-  const enemyColor = {zombie:'#3c7a4b', scorpion:'#b5743b', wolf:'#3a3a3a', siberian_wolf:'#d5e2eb'};
   for (const e of enemies){ ctx.save(); ctx.translate(e.x, e.y); drawEnemyArt(e, true); ctx.restore(); }
 
   if (net.active) drawRemotePlayers();
