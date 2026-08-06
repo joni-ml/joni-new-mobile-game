@@ -151,7 +151,6 @@ var sp=prog(
   ' float hemi=0.5+0.5*N.y;',
   ' vec3 ambient=mix(vec3(0.30,0.31,0.25),uSky,hemi);',
   ' vec3 col=vcol*(ambient+vec3(1.0,0.95,0.84)*ndl*0.95);',
-  ' if(uMode==0)col+=vcol*max(dot(N,-uSun),0.0)*vec3(0.12,0.16,0.07);',   // leaf backlight only
   ' if(uMode==1){vec2 g=abs(fract(vW.xz*0.5)-0.5);',
   '   col*=mix(0.90,1.0,smoothstep(0.0,0.035,min(g.x,g.y)));}',
   ' float fog=1.0-exp(-length(vW-uCam)*0.0065);',
@@ -171,9 +170,17 @@ var barkBump=derivExt?[
   ' N=normalize(N-(T*hx+Bt*hy)*1.6);'                            // perturb normal -> real plate shading
 ].join('\n'):'';
 var bp=prog(
- 'attribute vec3 aPos;attribute vec3 aNrm;attribute vec2 aUV;attribute float aAge;uniform mat4 uProj,uView,uLightVP;'+
+ 'attribute vec3 aPos;attribute vec3 aNrm;attribute vec2 aUV;attribute float aAge;uniform mat4 uProj,uView,uLightVP;uniform float uTime;'+
  'varying vec3 vN,vW;varying vec2 vUV;varying float vAge;varying vec4 vLP;'+
- 'void main(){vW=aPos;vN=aNrm;vUV=aUV;vAge=aAge;vLP=uLightVP*vec4(aPos,1.0);gl_Position=uProj*uView*vec4(aPos,1.0);}',
+ 'void main(){'+
+ ' vec3 p=aPos;'+
+ // wind: a smooth (never quantised) function of position, so a continuous tube surface
+ // never tears at a phase boundary -- only its AMPLITUDE depends on age, so the trunk
+ // stays planted while thin twigs whip around, same as a real tree in a breeze
+ ' float amt=1.0-aAge; amt*=amt;'+
+ ' float sway=(sin(uTime*1.4+p.y*0.6+p.x*0.3)*0.07+sin(uTime*2.6+p.y*1.1)*0.03)*amt;'+
+ ' p.x+=sway; p.z+=cos(uTime*1.1+p.y*0.7)*amt*0.05;'+
+ ' vW=p;vN=aNrm;vUV=aUV;vAge=aAge;vLP=uLightVP*vec4(p,1.0);gl_Position=uProj*uView*vec4(p,1.0);}',
  (derivExt?'#extension GL_OES_standard_derivatives : enable\n':'')+
  ['precision highp float;varying vec3 vN,vW;varying vec2 vUV;varying float vAge;',
   'uniform vec3 uCam,uSun,uHorizon,uSky;',
@@ -216,7 +223,95 @@ var bp=prog(
 var bA={pos:gl.getAttribLocation(bp,'aPos'),nrm:gl.getAttribLocation(bp,'aNrm'),uv:gl.getAttribLocation(bp,'aUV'),age:gl.getAttribLocation(bp,'aAge')};
 var bU={proj:gl.getUniformLocation(bp,'uProj'),view:gl.getUniformLocation(bp,'uView'),cam:gl.getUniformLocation(bp,'uCam'),
   sun:gl.getUniformLocation(bp,'uSun'),horizon:gl.getUniformLocation(bp,'uHorizon'),sky:gl.getUniformLocation(bp,'uSky'),
-  lightVP:gl.getUniformLocation(bp,'uLightVP'),shadow:gl.getUniformLocation(bp,'uShadow'),texel:gl.getUniformLocation(bp,'uTexel')};
+  lightVP:gl.getUniformLocation(bp,'uLightVP'),shadow:gl.getUniformLocation(bp,'uShadow'),texel:gl.getUniformLocation(bp,'uTexel'),
+  time:gl.getUniformLocation(bp,'uTime')};
+
+// ---------- leaf texture: a real leaf silhouette, drawn once on a 2D canvas ----------
+// No external image files -- the whole atlas (two variants, so not every leaf is a
+// carbon copy) is painted procedurally, then handed to WebGL as a normal texture.
+function makeLeafTexture(){
+  var res=128,c=document.createElement('canvas');c.width=res*2;c.height=res;
+  var ctx=c.getContext('2d');
+  function drawLeaf(ox,tone,veins){
+    ctx.save();ctx.translate(ox+res/2,res/2);
+    ctx.beginPath();
+    ctx.moveTo(0,-res*0.46);
+    ctx.quadraticCurveTo(res*0.34,-res*0.16,res*0.30,0);
+    ctx.quadraticCurveTo(res*0.34,res*0.16,0,res*0.46);
+    ctx.quadraticCurveTo(-res*0.34,res*0.16,-res*0.30,0);
+    ctx.quadraticCurveTo(-res*0.34,-res*0.16,0,-res*0.46);
+    ctx.closePath();
+    var grad=ctx.createLinearGradient(0,-res*0.46,0,res*0.46);
+    grad.addColorStop(0,'rgba('+(155+tone)+',215,'+(110+tone)+',1)');
+    grad.addColorStop(0.55,'rgba('+(100+tone)+',162,'+(64+tone)+',1)');
+    grad.addColorStop(1,'rgba('+(64+tone)+',112,'+(42+tone)+',1)');
+    ctx.fillStyle=grad;ctx.fill();
+    ctx.save();ctx.clip();
+    ctx.strokeStyle='rgba(35,70,26,0.5)';ctx.lineWidth=res*0.013;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(0,-res*0.42);ctx.lineTo(0,res*0.42);ctx.stroke();
+    for(var i=1;i<=veins;i++){
+      var t=i/(veins+1),y=-res*0.40+t*res*0.80,xw=res*0.24*Math.sin(Math.PI*t);
+      ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(xw,y+res*0.11);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(-xw,y+res*0.11);ctx.stroke();
+    }
+    var hg=ctx.createRadialGradient(-res*0.08,-res*0.20,2,-res*0.08,-res*0.20,res*0.32);
+    hg.addColorStop(0,'rgba(255,255,255,0.24)');hg.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=hg;ctx.fillRect(-res,-res,res*2,res*2);
+    ctx.restore();ctx.restore();
+  }
+  drawLeaf(0,0,3);drawLeaf(res,14,4);
+  return c;
+}
+var leafTex=gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D,leafTex);
+gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,makeLeafTexture());
+gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+gl.generateMipmap(gl.TEXTURE_2D);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+
+// leaf program — real leaf silhouette (alpha-cutout) + per-leaf wind flutter
+var lp=prog(
+ 'attribute vec3 aPos;attribute vec3 aNrm;attribute vec3 aCol;attribute vec2 aUV;'+
+ 'uniform mat4 uProj,uView;uniform float uTime;'+
+ 'varying vec3 vN,vC,vW;varying vec2 vUV;'+
+ 'void main(){'+
+ ' vec3 p=aPos;'+
+ // each leaf is its own small disconnected quad, so unlike the bark a per-leaf
+ // (quantised) phase is safe here -- and it is what keeps neighbouring leaves from
+ // all swaying in creepy unison
+ ' vec3 q=floor(p*2.0)/2.0;'+
+ ' float ph=fract(sin(dot(q,vec3(12.9898,78.233,37.719)))*43758.5453)*6.2831853;'+
+ ' float amt=0.045+0.03*fract(ph*1.7);'+
+ ' float sway=sin(uTime*1.6+ph)*amt+sin(uTime*3.1+ph*2.1)*amt*0.35;'+
+ ' p.x+=sway; p.z+=cos(uTime*1.3+ph*1.4)*amt*0.8;'+
+ ' vW=p;vN=aNrm;vC=aCol;vUV=aUV;gl_Position=uProj*uView*vec4(p,1.0);}',
+ ['precision highp float;varying vec3 vN,vC,vW;varying vec2 vUV;',
+  'uniform sampler2D uTex;uniform vec3 uCam,uSun,uHorizon,uSky;',
+  'void main(){',
+  ' vec4 tex=texture2D(uTex,vUV);',
+  ' if(tex.a<0.35)discard;',                                   // real leaf silhouette, not a diamond
+  ' vec3 N=normalize(vN);if(!gl_FrontFacing)N=-N;',
+  ' float ndl=max(dot(N,uSun),0.0);',
+  ' float hemi=0.5+0.5*N.y;',
+  ' vec3 ambient=mix(vec3(0.30,0.31,0.25),uSky,hemi);',
+  ' vec3 base=vC*tex.rgb*1.30;',
+  ' vec3 col=base*(ambient+vec3(1.0,0.95,0.84)*ndl*0.95);',
+  ' col+=base*max(dot(N,-uSun),0.0)*vec3(0.14,0.18,0.08);',     // backlit/SSS feel through thin leaves
+  ' float fres=pow(1.0-max(dot(N,normalize(uCam-vW)),0.0),2.5);',
+  ' col+=fres*0.09*vec3(0.9,1.0,0.7);',                         // faint rim sheen
+  ' float fog=1.0-exp(-length(vW-uCam)*0.0065);',
+  ' col=mix(col,uHorizon,clamp(fog,0.0,0.82));',
+  ' gl_FragColor=vec4(col,1.0);}'].join('\n'));
+var lA={pos:gl.getAttribLocation(lp,'aPos'),nrm:gl.getAttribLocation(lp,'aNrm'),
+  col:gl.getAttribLocation(lp,'aCol'),uv:gl.getAttribLocation(lp,'aUV')};
+var lU={proj:gl.getUniformLocation(lp,'uProj'),view:gl.getUniformLocation(lp,'uView'),
+  time:gl.getUniformLocation(lp,'uTime'),tex:gl.getUniformLocation(lp,'uTex'),
+  cam:gl.getUniformLocation(lp,'uCam'),sun:gl.getUniformLocation(lp,'uSun'),
+  horizon:gl.getUniformLocation(lp,'uHorizon'),sky:gl.getUniformLocation(lp,'uSky')};
 
 // ---------- depth (shadow) program: pack depth into RGBA ----------
 var dp=prog(
@@ -289,7 +384,18 @@ BarkMesh.prototype.bind=function(){gl.bindBuffer(gl.ARRAY_BUFFER,this.vbo);gl.bi
   gl.enableVertexAttribArray(bA.uv);gl.vertexAttribPointer(bA.uv,2,gl.FLOAT,false,36,24);
   gl.enableVertexAttribArray(bA.age);gl.vertexAttribPointer(bA.age,1,gl.FLOAT,false,36,32);};
 
-var bark=new BarkMesh(),leaves=new ColMesh(),floorM=new ColMesh(),shadowM=new ColMesh(),rocks=new ColMesh();
+// leaves: pos, normal, tint colour, and a UV into the leaf-shape texture atlas
+function LeafMesh(){this.v=[];this.i=[];this.n=0;}
+LeafMesh.prototype.vert=function(p,nr,c,uv){this.v.push(p[0],p[1],p[2],nr[0],nr[1],nr[2],c[0],c[1],c[2],uv[0],uv[1]);return this.n++;};
+LeafMesh.prototype.tri=function(a,b,c){this.i.push(a,b,c);};
+LeafMesh.prototype.upload=ColMesh.prototype.upload;
+LeafMesh.prototype.bind=function(){gl.bindBuffer(gl.ARRAY_BUFFER,this.vbo);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.ibo);
+  gl.enableVertexAttribArray(lA.pos);gl.vertexAttribPointer(lA.pos,3,gl.FLOAT,false,44,0);
+  gl.enableVertexAttribArray(lA.nrm);gl.vertexAttribPointer(lA.nrm,3,gl.FLOAT,false,44,12);
+  gl.enableVertexAttribArray(lA.col);gl.vertexAttribPointer(lA.col,3,gl.FLOAT,false,44,24);
+  gl.enableVertexAttribArray(lA.uv);gl.vertexAttribPointer(lA.uv,2,gl.FLOAT,false,44,36);};
+
+var bark=new BarkMesh(),leaves=new LeafMesh(),floorM=new ColMesh(),shadowM=new ColMesh(),rocks=new ColMesh();
 var rng=mulberry32(20240811);
 function rr(a,b){return a+(b-a)*rng();}
 // age 0 (youngest, thin twigs) .. 1 (oldest bark, plated like the trunk) from branch radius.
@@ -374,14 +480,16 @@ function leafGroup(center,scale,count){
     var dir=norm([rr(-1,1),rr(-1,1),rr(-1,1)]);dir=norm([dir[0],dir[1]+0.25,dir[2]]);
     var off=scl(norm([rr(-1,1),rr(-0.6,1),rr(-1,1)]),rr(0,0.95)*scale);
     var b=add(center,off);
-    var L=rr(0.20,0.40), W=L*rr(0.34,0.50);   // small leaves; cluster "scale" only spreads them out
+    var L=rr(0.24,0.44), W=L*rr(0.42,0.58);   // a touch wider now that a real leaf shape will show
     var rv=[rr(-1,1),rr(-1,1),rr(-1,1)];
     var perp=norm(cross(dir,rv));if(len(perp)<0.2)perp=norm(cross(dir,[0.3,1,0.7]));
     var n=norm(cross(dir,perp));
     var g=rng();
-    var mid=[0.17+g*0.34, 0.33+g*0.36, 0.09+g*0.16];
-    var baseC=[mid[0]*0.72,mid[1]*0.72,mid[2]*0.72];
-    var tipC=[Math.min(1,mid[0]*1.25+0.04),Math.min(1,mid[1]*1.22+0.05),Math.min(1,mid[2]*1.2)];
+    // one flat tint per leaf -- the texture itself now carries the light-to-dark
+    // gradient and veins, so JS only needs to pick the hue (a bit more yellow-green
+    // to deep green) instead of building the whole gradient by hand
+    var tint=[0.64+g*0.28, 0.80+g*0.16, 0.44+g*0.30];
+    var atlasHalf=rng()<0.5?0:0.5;            // which of the two painted leaf variants
     // slight cup: raise the mid-rib along the leaf normal, tilt side normals outward
     var cup=L*0.12;
     var tip=add(add(b,scl(dir,L)),scl(n,cup*0.5));
@@ -389,7 +497,12 @@ function leafGroup(center,scale,count){
     var s2=add(add(b,scl(dir,L*0.45)),scl(perp,-W));
     var nb=tfNrm(n);
     var n1=tfNrm(norm(add(n,scl(perp,0.5)))), n2=tfNrm(norm(sub(n,scl(perp,0.5))));
-    var vb=leaves.vert(tfPos(b),nb,baseC), v1=leaves.vert(tfPos(s1),n1,mid), v2=leaves.vert(tfPos(s2),n2,mid), vt=leaves.vert(tfPos(tip),nb,tipC);
+    // the mesh is a diamond (base->left->tip->right); the texture paints a leaf
+    // silhouette across that same diamond, tip-to-tip and side-to-side
+    var vb=leaves.vert(tfPos(b),nb,tint,[atlasHalf+0.25,0.05]),
+        v1=leaves.vert(tfPos(s1),n1,tint,[atlasHalf+0.04,0.5]),
+        v2=leaves.vert(tfPos(s2),n2,tint,[atlasHalf+0.46,0.5]),
+        vt=leaves.vert(tfPos(tip),nb,tint,[atlasHalf+0.25,0.95]);
     leaves.tri(vb,v1,vt);leaves.tri(vb,vt,v2);
   }
 }
@@ -643,6 +756,7 @@ function frame(now){
   var view=lookAt(cam.pos,add(cam.pos,forward()),[0,1,0]);
   var invvp=invert(mul(proj,view));
   var fp=new Float32Array(proj),fv=new Float32Array(view);
+  var uTime=now/1000;
   // sky
   gl.disable(gl.DEPTH_TEST);gl.depthMask(false);gl.useProgram(skp);
   gl.bindBuffer(gl.ARRAY_BUFFER,skyBuf);gl.enableVertexAttribArray(skA);gl.vertexAttribPointer(skA,2,gl.FLOAT,false,0,0);
@@ -668,9 +782,14 @@ function frame(now){
   gl.uniformMatrix4fv(bU.proj,false,fp);gl.uniformMatrix4fv(bU.view,false,fv);
   gl.uniform3fv(bU.cam,cam.pos);gl.uniform3fv(bU.sun,SUN);gl.uniform3fv(bU.sky,SKY_AMB);gl.uniform3fv(bU.horizon,HORIZON);
   gl.uniformMatrix4fv(bU.lightVP,false,flightVP);gl.uniform1i(bU.shadow,0);gl.uniform1f(bU.texel,TEXEL);
+  gl.uniform1f(bU.time,uTime);
   bark.bind();gl.drawElements(gl.TRIANGLES,bark.count,ITYPE,0);
-  // leaves (double-sided)
-  gl.useProgram(sp);gl.disable(gl.CULL_FACE);gl.uniform1i(sU.mode,0);
+  // leaves — real leaf-shaped alpha cutout + per-leaf flutter (own program+texture)
+  gl.useProgram(lp);gl.disable(gl.CULL_FACE);
+  gl.uniformMatrix4fv(lU.proj,false,fp);gl.uniformMatrix4fv(lU.view,false,fv);
+  gl.uniform3fv(lU.cam,cam.pos);gl.uniform3fv(lU.sun,SUN);gl.uniform3fv(lU.sky,SKY_AMB);gl.uniform3fv(lU.horizon,HORIZON);
+  gl.uniform1f(lU.time,uTime);
+  gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,leafTex);gl.uniform1i(lU.tex,1);
   leaves.bind();gl.drawElements(gl.TRIANGLES,leaves.count,ITYPE,0);gl.enable(gl.CULL_FACE);
   requestAnimationFrame(frame);
 }
