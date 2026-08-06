@@ -568,12 +568,14 @@ function changeAppBrightness(val) { document.getElementById('game').style.filter
 function changeJoySize(val) { const zone = document.getElementById('joyZone'); zone.style.width = val + 'px'; zone.style.height = val + 'px'; JOY_R = parseInt(val) * 0.4; }
 function changeActionSize(val) { const btn = document.getElementById('actionBtn'); btn.style.width = val + 'px'; btn.style.height = val + 'px'; btn.style.fontSize = (parseInt(val) * 0.33) + 'px'; const ibtn = document.getElementById('interactBtn'); ibtn.style.width = (parseInt(val) * 0.7) + 'px'; ibtn.style.height = (parseInt(val) * 0.7) + 'px'; ibtn.style.fontSize = (parseInt(val) * 0.25) + 'px'; }
 let controlJoyPos = 'left', controlActionPos = 'right';  // control layout positions
-function changeJoyPosition(pos) { controlJoyPos = pos; applyControlLayout(); localStorage.setItem('controlJoyPos', pos); }
-function changeActionPosition(pos) { controlActionPos = pos; applyControlLayout(); localStorage.setItem('controlActionPos', pos); }
+// Always go through lsGet/lsSet. Opened from the Shortcut the page runs on a data: URL, where the
+// origin is opaque and touching localStorage directly throws — which is enough to kill whatever ran it.
+function changeJoyPosition(pos) { controlJoyPos = pos; applyControlLayout(); lsSet('controlJoyPos', pos); }
+function changeActionPosition(pos) { controlActionPos = pos; applyControlLayout(); lsSet('controlActionPos', pos); }
 function loadControlLayout() {
-  const saved = localStorage.getItem('controlJoyPos');
+  const saved = lsGet('controlJoyPos');
   if (saved) { controlJoyPos = saved; document.getElementById('joyPos').value = saved; }
-  const saved2 = localStorage.getItem('controlActionPos');
+  const saved2 = lsGet('controlActionPos');
   if (saved2) { controlActionPos = saved2; document.getElementById('actionPos').value = saved2; }
   applyControlLayout();
 }
@@ -4154,7 +4156,15 @@ function loop(now){
 (function(){ const sw=document.querySelectorAll('.skinSwatch'); if(sw.length){ const i=Math.floor(Math.random()*sw.length); setSkin(sw[i].style.backgroundColor, sw[i]); } })();
 // restore the saved name into the start-screen field
 (function(){ const inp=document.getElementById('playerNameInput'); if(inp && playerName) inp.value = playerName; })();
-gameMode = 'crystal'; initGame(); gameStarted = false; refreshSavesUI(); loadControlLayout(); requestAnimationFrame(loop);
+// Start the render loop no matter what. Every step here is optional next to "the game draws at all",
+// so a single failing initialiser must never be able to stop requestAnimationFrame from being reached
+// — when that happened the canvas simply stayed on its CSS background and the game looked plain green.
+gameMode = 'crystal';
+try { initGame(); } catch(e){ console.error('initGame failed', e); }
+gameStarted = false;
+try { refreshSavesUI(); } catch(e){ console.error('refreshSavesUI failed', e); }
+try { loadControlLayout(); } catch(e){ console.error('loadControlLayout failed', e); }
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
