@@ -3174,7 +3174,7 @@ const WALL3D = {};                // tile type -> base wall color
 const SPRITE3D = new Set([T.TREE,T.PINE,T.TRUNK,T.SAPLING,T.CACTUS,T.BUSH,T.CROP,T.WHEAT,T.SKULL,
   T.PLACED_TORCH,T.CAMPFIRE,T.CRAFTING_TABLE,T.UPGRADED_TABLE,T.BEEHIVE,T.GARDEN_TABLE,T.CAVE_IN,T.CAVE_UP,
   T.ROCK,T.COAL,T.IRONROCK,T.CRYSTAL_ORE,T.CAVE_CRYSTAL]);
-const SPRITE3D_H = { }; SPRITE3D_H[T.TREE]=1.88; SPRITE3D_H[T.PINE]=2.14; SPRITE3D_H[T.TRUNK]=0.86; SPRITE3D_H[T.CACTUS]=1.46;
+const SPRITE3D_H = { }; SPRITE3D_H[T.TREE]=2.02; SPRITE3D_H[T.PINE]=2.33; SPRITE3D_H[T.TRUNK]=0.40; SPRITE3D_H[T.CACTUS]=1.46;
 SPRITE3D_H[T.CRAFTING_TABLE]=0.9; SPRITE3D_H[T.UPGRADED_TABLE]=0.9; SPRITE3D_H[T.GARDEN_TABLE]=0.9;
 SPRITE3D_H[T.BUSH]=0.8; SPRITE3D_H[T.CROP]=0.8; SPRITE3D_H[T.WHEAT]=0.8; SPRITE3D_H[T.SKULL]=0.6;
 SPRITE3D_H[T.CAVE_IN]=0.5; SPRITE3D_H[T.CAVE_UP]=0.5; SPRITE3D_H[T.PLACED_TORCH]=1.2;
@@ -3197,18 +3197,18 @@ function treeSprite(kind){
       ctx.fillStyle='rgba(0,0,0,0.20)'; ctx.fillRect(x0, y0, Math.min(4, x1-x0), y1-y0);  // shaded west
     };
     const BARK='#6b4a26', BARK_T='#8a6236';
-    if (kind==='trunk'){ box(19,45,10,96,BARK,BARK_T); return; }
+    if (kind==='trunk'){ box(14,50,26,96,BARK,'#8a6236'); return; }
     if (kind==='pine'){
-      box(28,36,71,96,'#5a4020','#74532a');
-      box( 4,60,49,74,'#1f5c38','#2b7a4a');
-      box(11,53,26,49,'#1f5c38','#2b7a4a');
-      box(18,46, 7,26,'#1f5c38','#2b7a4a');
-      box(23,41, 0, 7,'#dfeef0','#ffffff');
+      box(28,36,57,96,'#5a4020','#74532a');
+      box( 6,58,38,60,'#1f5c38','#2b7a4a');
+      box(12,52,21,38,'#1f5c38','#2b7a4a');
+      box(19,45, 6,21,'#1f5c38','#2b7a4a');
+      box(24,40, 0, 6,'#dfeef0','#ffffff');
     } else {
-      box(27,37,55,96,BARK,BARK_T);
-      box( 3,61,25,59,'#2f7a34','#3f9440');
-      box(10,54, 8,25,'#2f7a34','#3f9440');
-      box(20,44, 0, 8,'#4da046','#5cb552');
+      box(27,37,43,96,BARK,BARK_T);
+      box( 5,59,22,48,'#2f7a34','#3f9440');
+      box(12,52, 7,22,'#2f7a34','#3f9440');
+      box(22,42, 0, 7,'#4da046','#5cb552');
     }
   });
   tileSprCache[key]=c; return c;
@@ -3226,8 +3226,9 @@ VOX_LOOK[T.COAL]        = { mat:'stone', base:'#3e3e3e', dark:'#1a1a1a', hi:'#5e
 VOX_LOOK[T.IRONROCK]    = { mat:'stone', base:'#7e7871', dark:'#4a4640', hi:'#a49d92', accent:'#e08a20' };
 VOX_LOOK[T.CRYSTAL_ORE] = { mat:'stone', base:'#6d6d76', dark:'#42424a', hi:'#8f8f98', accent:'#4fc8ff', glow:0.60, glowRole:'accent' };
 VOX_LOOK[T.CAVE_CRYSTAL]= { mat:'stone', base:'#5f5f69', dark:'#393940', hi:'#82828c', accent:'#86dff2', glow:0.55, glowRole:'accent' };
-VOX_LOOK[T.TREE]        = { mat:'wood',  bark:'#6b4a26', dark:'#4a3118', leaf:'#2f7a34', leafHi:'#4da046' };
-VOX_LOOK[T.PINE]        = { mat:'wood',  bark:'#5a4020', dark:'#3d2b14', leaf:'#1f5c38', leafHi:'#dfeef0' };
+// `jitter` varies a model's height per tile, so a stand of trees doesn't form one flat green roof.
+VOX_LOOK[T.TREE]        = { mat:'wood',  bark:'#6b4a26', dark:'#4a3118', leaf:'#2f7a34', leafHi:'#4da046', jitter:0.20 };
+VOX_LOOK[T.PINE]        = { mat:'wood',  bark:'#5a4020', dark:'#3d2b14', leaf:'#1f5c38', leafHi:'#dfeef0', jitter:0.20 };
 VOX_LOOK[T.TRUNK]       = { mat:'wood',  bark:'#6b4a26', dark:'#4a3118', leaf:'#6b4a26', leafHi:'#8a6236' };
 VOX_LOOK[T.CACTUS]      = { mat:'plant', base:'#2f7a3f', dark:'#1c5227', hi:'#49a256', accent:'#d8e6a0' };
 // ORE_LOOK stays the palette the far-distance billboard is cut from, and marks which tiles are ore.
@@ -3270,19 +3271,22 @@ VOX_MODEL[T.CRYSTAL_ORE]  = _crystalRock();
 VOX_MODEL[T.CAVE_CRYSTAL] = _crystalRock();
 // Trees stop being flat cut-outs: a real trunk column with a blocky canopy stacked on top. Up close
 // that's the difference between a painted backdrop and something you're actually walking around.
-// Kept deliberately squat. One tree lives in one tile, so a tall model just reads as a green tower —
-// letting the canopy dominate a short trunk is what makes it read as a tree.
-VOX_MODEL[T.TREE] = [ _b(0.42,0.42,0.00, 0.58,0.58,0.82,'bark'),
-                      _b(0.05,0.05,0.72, 0.95,0.95,1.40,'leaf'),
-                      _b(0.16,0.16,1.40, 0.84,0.84,1.72,'leaf'),
-                      _b(0.32,0.32,1.72, 0.68,0.68,1.88,'leafHi') ];
-VOX_MODEL[T.PINE] = [ _b(0.44,0.44,0.00, 0.56,0.56,0.55,'bark'),
-                      _b(0.06,0.06,0.50, 0.94,0.94,1.05,'leaf'),
-                      _b(0.17,0.17,1.05, 0.83,0.83,1.55,'leaf'),
-                      _b(0.28,0.28,1.55, 0.72,0.72,1.98,'leaf'),
-                      _b(0.36,0.36,1.98, 0.64,0.64,2.14,'leafHi') ];  // snow cap, not a mast
-VOX_MODEL[T.TRUNK] = [ _b(0.30,0.30,0.00, 0.70,0.70,0.78,'bark'),
-                       _b(0.26,0.26,0.78, 0.74,0.74,0.86,'leafHi') ];
+// The canopy has to clear your head properly. Sitting it just above eye level means you see its
+// underside at a grazing angle, where it stretches from the horizon to the top of the screen — and
+// with every tree's canopy at the same height they tile into one unbroken green ceiling. A tall trunk
+// plus the per-tile height jitter below keeps the sky visible between the trees.
+VOX_MODEL[T.TREE] = [ _b(0.42,0.42,0.00, 0.58,0.58,1.12,'bark'),
+                      _b(0.08,0.08,1.02, 0.92,0.92,1.55,'leaf'),
+                      _b(0.19,0.19,1.55, 0.81,0.81,1.87,'leaf'),
+                      _b(0.34,0.34,1.87, 0.66,0.66,2.02,'leafHi') ];
+VOX_MODEL[T.PINE] = [ _b(0.44,0.44,0.00, 0.56,0.56,0.95,'bark'),
+                      _b(0.09,0.09,0.88, 0.91,0.91,1.40,'leaf'),
+                      _b(0.19,0.19,1.40, 0.81,0.81,1.82,'leaf'),
+                      _b(0.29,0.29,1.82, 0.71,0.71,2.18,'leaf'),
+                      _b(0.37,0.37,2.18, 0.63,0.63,2.33,'leafHi') ];  // snow cap, not a mast
+// A stump is below eye level, so you look down onto its cut face.
+VOX_MODEL[T.TRUNK] = [ _b(0.30,0.30,0.00, 0.70,0.70,0.34,'bark'),
+                       _b(0.26,0.26,0.34, 0.74,0.74,0.40,'leafHi') ];
 VOX_MODEL[T.CACTUS] = [ _b(0.38,0.38,0.00, 0.62,0.62,1.46,'base'),
                         _b(0.14,0.44,0.52, 0.38,0.56,0.68,'base'),
                         _b(0.14,0.44,0.68, 0.26,0.56,1.10,'base'),
@@ -3301,7 +3305,7 @@ function voxRGB(type){
   let v = VOX_RGB[type];
   if (!v){
     const p = VOX_LOOK[type] || VOX_LOOK[T.ROCK];
-    v = VOX_RGB[type] = { mat:p.mat||'stone', glow:p.glow||0, glowRole:p.glowRole||'' };
+    v = VOX_RGB[type] = { mat:p.mat||'stone', glow:p.glow||0, glowRole:p.glowRole||'', jitter:p.jitter||0 };
     for (const k in p) if (typeof p[k]==='string' && p[k][0]==='#') v[k] = hexRGB(p[k]);
   }
   return v;
@@ -3450,6 +3454,8 @@ function drawVoxelTile(type, tile, tx, ty, depth, fog, fogCol, q){
   const wear = 0.60 + 0.40*frac;                         // a rock you're mining goes dull and dark
   const worn = frac < 0.995;
   const edge = 'rgba(0,0,0,'+(0.30*(1-fog)).toFixed(3)+')';
+  // per-tile height variation, stable for a given tile so nothing grows or shrinks as you walk
+  const zScale = C.jitter ? (1 - C.jitter + v3hash(tx, ty, 91)*C.jitter*2) : 1;
 
   v3footprint(tx, ty, fog);
 
@@ -3463,7 +3469,7 @@ function drawVoxelTile(type, tile, tx, ty, depth, fog, fogCol, q){
   const P = [0,0,0,0];
   for (let i=0;i<model.length;i++){
     const bx = model[i];
-    const X0=tx+bx.x0, X1=tx+bx.x1, Y0=ty+bx.y0, Y1=ty+bx.y1, Z0=bx.z0, Z1=bx.z1;
+    const X0=tx+bx.x0, X1=tx+bx.x1, Y0=ty+bx.y0, Y1=ty+bx.y1, Z0=bx.z0*zScale, Z1=bx.z1*zScale;
     const rgb = C[bx.c] || C.base || C.bark;
     const faces = [];
     if (camX < X0) faces.push(['west',  [[X0,Y0,Z1],[X0,Y1,Z1],[X0,Y1,Z0],[X0,Y0,Z0]]]);
