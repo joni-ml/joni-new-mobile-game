@@ -1,17 +1,6 @@
 {
   "name": "argaz-chol",
   "version": "1.0.0",
-  "description": "ארגז חול — משחק פיזיקה תרמית",
-  "private": true,
-  "scripts": {
-    "build": "node build.js"
-  },
-  "devDependencies": {
-    "playwright": "^1.61.1",
-    "terser": "^5.49.2"
-  },
-  "dependencies": {
-    "gifenc": "^1.0.3",
-    "pngjs": "^7.0.0"
-  }
+  "description": "ארגז חול — משחק פיזיקה תרמית. הקוד המוגן (מעורפל ומינימיזד) נמצא ישירות ב-index.html",
+  "private": true
 }
