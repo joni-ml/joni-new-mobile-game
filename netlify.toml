@@ -1,0 +1,9 @@
+# הגדרות אירוח (Netlify) — בונה את הגרסה המוגנת/מעורפלת ומגיש אותה.
+# בכל דחיפה לגיט, Netlify מריץ את הבנייה מחדש → תמיד הגרסה הכי חדשה.
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  # מונע מ-playwright להוריד דפדפן בזמן ההתקנה (לא צריך אותו בבנייה)
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1"
