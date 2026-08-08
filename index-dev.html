@@ -2561,3 +2561,60 @@ boot();
 </script>
 </body>
 </html>
+
+/* ===== UNIFIED MATERIAL STATE UI ===== */
+
+// Enhanced material palette showing auto-state
+function buildUnifiedPalette() {
+  const palette = document.getElementById('materials');
+  if (!palette) return;
+  
+  palette.innerHTML = '';
+  
+  // Group materials by base element (same element, different states)
+  const baseMaterials = {};
+  MAT.forEach((mat, id) => {
+    if (!mat.base) return;  // Skip non-displayable materials
+    
+    // Determine "base" name (remove "liquid", "gas" suffixes)
+    const baseName = mat.name.replace(/ \(liquid\)| \(gas\)| \(solid\)/i, '');
+    
+    if (!baseMaterials[baseName]) {
+      baseMaterials[baseName] = {
+        solid: null,
+        liquid: null,
+        gas: null,
+        name: baseName,
+        id: id
+      };
+    }
+  });
+  
+  // Create buttons for each base material
+  Object.values(baseMaterials).forEach(group => {
+    const btn = document.createElement('div');
+    btn.className = 'mat' + (current === group.id ? ' active' : '');
+    btn.id = 'mat' + group.id;
+    btn.title = group.name;
+    
+    const dot = document.createElement('div');
+    dot.className = 'dot';
+    dot.style.background = MAT[group.id].color;
+    
+    const label = document.createElement('div');
+    label.textContent = group.name;
+    label.style.fontSize = '10px';
+    
+    btn.appendChild(dot);
+    btn.appendChild(label);
+    
+    btn.onclick = () => {
+      current = group.id;
+      refreshActive();
+      showMission();
+    };
+    
+    palette.appendChild(btn);
+  });
+}
+
