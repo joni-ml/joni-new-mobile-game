@@ -387,6 +387,15 @@
    מתקררת לבזלת, עץ נדלק. הכל מתחיל מ-3 חומרי יסוד ומתגלה תוך כדי משחק.
    ========================================================================= */
 
+/* ---------- גישה בטוחה לאחסון ----------
+   ב-Safari באייפון עצם הגישה ל-localStorage *זורקת* שגיאה כשהדף נפתח מקובץ (file://)
+   או מכתובת data: — לא מחזירה null, אלא מפילה את הסקריפט. בלי העטיפה הזו כל המשחק
+   מת עוד לפני שהוא מתחיל, והמסך נשאר ריק. כאן כל גישה עטופה, והמשחק פשוט ממשיך בלי שמירה. */
+const store = {
+  get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
+  set(k,v){ try { localStorage.setItem(k,v); return true; } catch(e){ return false; } }
+};
+
 /* ---------- טבלת החומרים ----------
    type: empty|static|solid|powder|liquid|gas
    solid = נופל ישר (כובד) אבל לא מתפזר — אבן/קרח.  density: כבד יותר שוקע.
@@ -2787,8 +2796,8 @@ document.getElementById('setGameSpeed').oninput=e=>{
 const KEY='sandbox_v3';
 function save(msg){
   try{
-    localStorage.setItem(KEY, JSON.stringify({ W,H, grid:Array.from(grid), found:Array.from(found), score, mi }));
-    if(msg) toast('💾 נשמר');
+    const ok = store.set(KEY, JSON.stringify({ W,H, grid:Array.from(grid), found:Array.from(found), score, mi }));
+    if(msg) toast(ok ? '💾 נשמר' : '⚠️ אי אפשר לשמור בדפדפן הזה');
   }catch(e){ if(msg) toast('שגיאה בשמירה'); }
 }
 
@@ -2798,7 +2807,7 @@ function save(msg){
    יבשות/איים, הרים, מערות, ים וסלע-יסוד. אין צורך במחולל נפרד.
    ======================================================================== */
 
-let isFirstTime = localStorage.getItem('firstRunDone') === null;
+let isFirstTime = store.get('firstRunDone') === null;
 let needsWorldGen = false;
 
 const tutorialSteps = [
@@ -2817,7 +2826,7 @@ function initTutorial(){
 function showTutorialStep(step){
   const mission = document.getElementById('missionText');
   if (step >= tutorialSteps.length){
-    localStorage.setItem('firstRunDone','1');
+    store.set('firstRunDone','1');
     isFirstTime = false;
     if (mission) showMission();
     return;
@@ -2832,8 +2841,8 @@ document.getElementById('mission').addEventListener('click', ()=>{
 
 function load(){
   try{
-    const raw=localStorage.getItem(KEY);
-    if(!raw){ needsWorldGen = true; return; }   // אין שמירה → נבנה עולם טבעי חדש
+    const raw=store.get(KEY);
+    if(!raw){ needsWorldGen = true; return; }   // אין שמירה (או שאין אחסון בכלל) → עולם חדש   // אין שמירה → נבנה עולם טבעי חדש
     const d=JSON.parse(raw);
     if(d.W===W && d.H===H && d.grid) grid.set(d.grid);
     if(d.found) d.found.forEach((v,ix)=>{ if(v) found[ix]=1; });
