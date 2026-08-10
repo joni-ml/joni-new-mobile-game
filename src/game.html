@@ -515,6 +515,13 @@ const MAT = [
   { key:'wetsand',name:'חול רטוב',   color:[168,140,84],  type:'powder', density:5, pedia:'🏖️ חול שספג מים. המים ממשיכים לחלחל דרכו למטה ולצדדים — אלה מי תהום — וכשהם מגיעים למערה הם נוטפים החוצה כמעיין' },
 ];
 const ID = {}; MAT.forEach((m,i)=>{ m.id=i; ID[m.key]=i; });
+/* חומרים שהם רק מצב צבירה של חומר אחר. הם לא מקבלים כפתור משלהם בפלטה —
+   מקבלים אותם ע"י חימום או קירור של החומר עצמו, בדיוק כמו במציאות.
+   (לבה, אש, קרח, אדים וענן כן נשארים כפתורים — הם מוכרים בפני עצמם.) */
+const PHASE_OF = { ironmelt:'iron', irongas:'iron', moltenmetal:'copper', rockgas:'stone',
+  sulfurL:'sulfur', sulfurG:'sulfur', oxyliq:'oxygen', chlliq:'chlorine', hydliq:'hydrogen',
+  nitliq:'nitrogen', moltensalt:'nacl', saltgas:'nacl' };
+MAT.forEach(m=>{ const p=PHASE_OF[m.key]; if (p!==undefined) m.phaseOf = ID[p]; });
 const AIR=ID.air, STONE=ID.stone, WATER=ID.water, EARTH=ID.earth, MUD=ID.mud,
       SAND=ID.sand, WOOD=ID.wood, SPROUT=ID.sprout, LEAF=ID.leaf, FLOWER=ID.flower,
       SEEDT=ID.seedT, SEEDF=ID.seedF, FIRE=ID.fire, STEAM=ID.steam, ICE=ID.ice,
@@ -570,6 +577,19 @@ const STATE   = {empty:'—',powder:'אבקה',liquid:'נוזל',solid:'מוצק
 // נקודות מעבר מצב אמיתיות (°C): נמס=הופך לנוזל, רותח=הופך לגז
 const meltC = MAT.map(m=>({water:0,ice:0,steam:0,stone:1200,basalt:1200,lava:1200,sand:1700,glass:1700,hydrogen:-259,saltwater:-5,iron:1538,ironmelt:1538,rockgas:1200,irongas:1538,oxygen:-219,gold:1064,copper:1085,aluminum:660,mercury:-39,lithium:180,sodium:98,potassium:63,rubidium:39,cesium:28,cloud:0,chlorine:-101,nacl:801,licl:605,rust:1565,oxyliq:-219,chlliq:-101,hydliq:-259,carbon:3550,sulfur:115,sulfurL:115,sulfurG:115,magnesium:650,calcium:842,fes:1194,nitrogen:-210,nitliq:-210,silicon:1414,phosphorus:44,zinc:420,tin:232,co2:-57,limestone:825,quicklime:2613,mgo:2852,so2:-72,brass:930,bronze:950,cuo:1326,naoh:318,soap:60,ammonia:-78,nh4cl:338,no2:-11,co:-205,methane:-182,hcl:-114,hclaq:-30,cuso4:110,alumina:2072,nitricacid:-42,aquaregia:-42,amalgam:-39,kno3:334,baking:50,bleach:-20,h2s:-82,ozone:-193,nh4no3:170}[m.key] ?? null));
 const boilC = MAT.map(m=>({water:100,ice:100,steam:100,stone:2900,basalt:2900,lava:2900,sand:2950,glass:2950,hydrogen:-253,saltwater:101,iron:2861,ironmelt:2861,rockgas:2900,irongas:2861,oxygen:-183,gold:2700,copper:2562,aluminum:2470,mercury:357,lithium:1342,sodium:883,potassium:759,rubidium:688,cesium:671,cloud:100,chlorine:-34,nacl:1465,licl:1382,rust:2861,oxyliq:-183,chlliq:-34,hydliq:-253,carbon:4027,sulfur:445,sulfurL:445,sulfurG:445,magnesium:1090,calcium:1484,fes:2861,nitrogen:-196,nitliq:-196,silicon:3265,phosphorus:280,zinc:907,tin:2602,co2:-78,quicklime:2850,mgo:3600,so2:-10,brass:1100,bronze:1200,cuo:2000,naoh:1388,ammonia:-33,no2:21,co:-192,methane:-162,hcl:-85,hclaq:110,alumina:2977,nitricacid:83,aquaregia:90,amalgam:357,bleach:101,h2s:-60,ozone:-112}[m.key] ?? null));
+// עבור מצב צבירה — האם מגיעים אליו בחימום או בקירור, ובאיזו טמפרטורה
+function phaseHint(id){
+  const src=MAT[id].phaseOf, t=MAT[id].type, nm=MAT[src].name;
+  // חלק מהמצבים (מתכת מותכת / מלח מותך) לא נושאים נקודת מעבר משלהם —
+  // הנקודה הרלוונטית היא של החומר שממנו הם באים.
+  const mp = meltC[id] ?? meltC[src], bp = boilC[id] ?? boilC[src];
+  if (t==='gas')    return 'חממו ' + nm + (bp!=null ? ' עד ' + bp + '°' : ' עד רתיחה');
+  if (t==='liquid'){
+    if (mp!=null && mp<0) return 'קררו ' + nm + ' עד ' + (bp!=null?bp:mp) + '°';
+    return 'חממו ' + nm + (mp!=null ? ' עד ' + mp + '°' : ' עד היתוך');
+  }
+  return 'שנו את הטמפרטורה של ' + nm;
+}
 function phaseStr(id){
   if (MAT[id].flam) return 'נשרף ב-~300° (לא נמס)';
   const mel=meltC[id], boi=boilC[id];
@@ -2753,7 +2773,9 @@ function inspectAt(gx,gy,cx,cy){
       <div><span>⚡ מוליך חשמל:</span> <b>${conduct[id]?'כן':'לא'}</b></div>
       <div><span>🧬 מבנה:</span> <b>${molec[id]}</b></div>
     </div>
-    <div style="margin-top:5px"><span style="opacity:.65">🌡️ מעברי מצב:</span> <b>${phaseStr(id)}</b></div>`;
+    <div style="margin-top:5px"><span style="opacity:.65">🌡️ מעברי מצב:</span> <b>${phaseStr(id)}</b></div>
+    ${MAT[id].phaseOf!==undefined
+      ? `<div style="margin-top:3px;color:#7fb4e8">🧊 זהו ${MAT[id].name} — מצב צבירה של <b>${MAT[MAT[id].phaseOf].name}</b></div>` : ''}`;
   inspEl.style.display='block';
   const mc=document.getElementById('molcv'); drawMol(mc, id);
   mc.title='לחץ לצפייה באטום';
@@ -2765,6 +2787,7 @@ function buildPalette(justFound){
   matsEl.innerHTML='';
   MAT.forEach(m=>{
     if (m.id===AIR || !found[m.id]) return;
+    if (m.phaseOf!==undefined) return;   // מצב צבירה של חומר אחר — מגיעים אליו בחימום/קירור
     const b=document.createElement('button');
     b.className='mat'+(m.id===current?' active':'')+(m.id===justFound?' pop':'');
     b.dataset.id=m.id;
@@ -2787,8 +2810,10 @@ function buildPedia(){
     const card=document.createElement('div');
     if (found[m.id]){
       card.className='pcard';
+      const how = m.phaseOf!==undefined
+        ? `<div class="rc" style="color:#7fb4e8">🌡️ מצב צבירה של ${MAT[m.phaseOf].name} — ${phaseHint(m.id)}</div>` : '';
       card.innerHTML=`<span class="dot" style="background:rgb(${m.color.join(',')})"></span>
-        <div><div class="nm">${m.name}</div><div class="rc">${m.pedia||''}</div></div>`;
+        <div><div class="nm">${m.name}</div>${how}<div class="rc">${m.pedia||''}</div></div>`;
     } else {
       card.className='pcard locked';
       card.innerHTML=`<span class="dot">❓</span>
