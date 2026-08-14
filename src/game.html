@@ -3582,7 +3582,42 @@ async function boot(){
   if (needsWorldGen){ needsWorldGen=false; await generateWorld(); }   // ריצה ראשונה → עולם טבעי
   initTutorial();
 }
-window.addEventListener('resize', ()=>{ save(false); setup(); load(); needsWorldGen=false; buildPalette(); });
+/* סיבוב הטלפון משנה את מידות הרשת. קודם זה בנה רשת חדשה וריקה וניסה לטעון מהשמירה —
+   אבל הטעינה מחזירה עולם רק אם המידות יצאו בדיוק אותן מידות, ואחרי סיבוב הן לעולם לא.
+   וכשאין אחסון בכלל (אייפון שפותח את המשחק מקובץ) אין בכלל מה לטעון. התוצאה: כל העולם נמחק.
+   עכשיו העולם הקיים ממופה לרשת החדשה ישירות בזיכרון, בלי שום תלות בשמירה. */
+let resizeT=null;
+function handleResize(){
+  const stage=document.getElementById('stage');
+  const nW=Math.max(40, Math.floor(stage.clientWidth  / SCALE));
+  const nH=Math.max(40, Math.floor(stage.clientHeight / SCALE));
+  if (nW===W && nH===H) return;        // לא השתנה כלום ממשי (למשל סרגל הכתובת נעלם) — לא נוגעים בעולם
+
+  const oW=W, oH=H, oGrid=grid, oTemp=temp, oLife=life, oAux=aux;
+  let had=0; for (let i=0;i<oGrid.length;i++) if (oGrid[i]!==AIR) had++;
+
+  setup();                              // בונה רשת חדשה במידות החדשות (מאפס אותה)
+
+  if (had>0){
+    // מיפוי פרופורציוני: כל תא חדש לוקח את מה שהיה באותו מקום יחסי בעולם הישן.
+    // העולם נמתח מעט לפי היחס החדש של המסך, אבל שום דבר ממה שבנית לא הולך לאיבוד.
+    for (let y=0;y<H;y++){
+      const sy=Math.min(oH-1, (y*oH/H)|0);
+      for (let x=0;x<W;x++){
+        const sx=Math.min(oW-1, (x*oW/W)|0);
+        const src=sy*oW+sx, dst=y*W+x;
+        grid[dst]=oGrid[src]; temp[dst]=oTemp[src]; life[dst]=oLife[src]; aux[dst]=oAux[src];
+      }
+    }
+    if (borderWalls) applyBorder();
+    save(false);                        // מעדכנים את השמירה למידות החדשות
+  } else {
+    load();                             // לא היה עולם — ננסה מהשמירה, ואם אין בכלל ניצור עולם חדש
+    if (needsWorldGen){ needsWorldGen=false; generateWorld(); }
+  }
+  buildPalette();
+}
+window.addEventListener('resize', ()=>{ clearTimeout(resizeT); resizeT=setTimeout(handleResize, 250); });
 boot();
 </script>
 </body>
