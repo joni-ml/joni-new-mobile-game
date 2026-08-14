@@ -695,7 +695,7 @@ function phaseHint(id){
 /* אילו חומרים באמת משנים מצב במשחק. לשאר יש נקודות היתוך/רתיחה אמיתיות
    שמוצגות לצורך לימוד, אבל הסימולציה לא מדמה אותן — ועדיף לכתוב את זה
    מאשר להבטיח לשחקן משהו שלא יקרה כשהוא יחמם. */
-let PHASE_SIM=null;
+let PHASE_SIM=null, NO_SOLID_SIM=null;
 function buildPhaseSim(){
   PHASE_SIM=new Set([WATER,SALTWATER,STEAM,CLOUD,ICE,STONE,BASALT,LAVA,ROCKGAS,SAND,GLASS,
     IRON,IRONMELT,IRONGAS,GOLD,COPPER,ALUMINUM,MOLTENMETAL,LITHIUM,SODIUM,POTASSIUM,RUBIDIUM,CESIUM,
@@ -703,12 +703,17 @@ function buildPhaseSim(){
     NACL,LICL,MOLTENSALT,SALTGAS,RUST,SULFUR,SULFURL,SULFURG,
     MAGNESIUM,CALCIUM,FES,MUD,ZINC,TIN,SILICON,BRASS,BRONZE,
     LIMESTONE,PHOSPHORUS,BAKING,NH4NO3,AMALGAM]);
+  // הגזים האלה מדמים גז⇄נוזל (בקירור קיצוני), אבל אין להם בכלל מוצק מדומה במשחק —
+  // אז נקודת ה"היתוך" שמוצגת (של המוצק במציאות) אף פעם לא קורית בפועל, גם שהם ברשימה למעלה.
+  NO_SOLID_SIM=new Set([CHLORINE,CHLLIQ,OXYGEN,OXYLIQ,HYDRO,HYDLIQ,NITROGEN,NITLIQ]);
 }
 function phaseStr(id){
   if (MAT[id].flam) return 'נשרף ב-~300° (לא נמס)';
   const mel=meltC[id], boi=boilC[id];
   if (mel==null && boi==null) return 'תערובת — אין נקודה אחת';
-  const p=[]; if(mel!=null)p.push('💧 נוזל: '+mel+'°'); if(boi!=null)p.push('💨 גז: '+boi+'°');
+  const p=[];
+  if(mel!=null){ let s='💧 נוזל: '+mel+'°'; if (NO_SOLID_SIM && NO_SOLID_SIM.has(id)) s+=' (אין מוצק מדומה במשחק)'; p.push(s); }
+  if(boi!=null)p.push('💨 גז: '+boi+'°');
   if (PHASE_SIM && !PHASE_SIM.has(id)) p.push('(במציאות — במשחק לא משתנה)');
   return p.join(' · ');
 }
