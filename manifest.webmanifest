@@ -1,0 +1,16 @@
+{
+  "name": "ארגז חול",
+  "short_name": "ארגז חול",
+  "description": "משחק ארגז חול לפיזיקה — חול, מים, חומצה, אש ועוד",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d0f14",
+  "theme_color": "#0d0f14",
+  "icons": [
+    { "src": "icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
