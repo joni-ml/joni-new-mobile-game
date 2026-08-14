@@ -189,6 +189,47 @@
   #atomTabs .atab.on { background:#2b6cff; border-color:#2b6cff; color:#fff; }
   #molcv { cursor:pointer; }
 
+  /* --- פלטת החומרים החדשה --- */
+  .mat canvas { width:30px; height:30px; display:block; border-radius:6px; }
+  #materials .mat { width:62px; height:60px; gap:2px; font-size:10.5px; }
+  #matPicker { position:absolute; inset:0; z-index:43; background:rgba(8,10,16,.97);
+    display:none; flex-direction:column; padding:12px; padding-top:calc(12px + env(safe-area-inset-top)); }
+  #matPicker.open { display:flex; }
+  #matPicker h2 { font-size:18px; margin-bottom:8px; }
+  #matTabs { display:flex; gap:6px; overflow-x:auto; padding-bottom:8px; scrollbar-width:none; }
+  #matTabs::-webkit-scrollbar { display:none; }
+  #matTabs button { flex:0 0 auto; height:34px; padding:0 13px; border-radius:17px;
+    border:1px solid #2a3444; background:#141a24; color:#cfe0f5; font-size:13.5px; font-weight:700; cursor:pointer; }
+  #matTabs button.on { background:#2b6cff; border-color:#2b6cff; color:#fff; }
+  #matGrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(80px,1fr));
+    grid-auto-rows:max-content; align-content:start; gap:8px; overflow-y:auto; padding:4px 0; flex:1; }
+  .mcard { background:#161b25; border:1px solid #2a2f3a; border-radius:12px; padding:8px 4px;
+    display:flex; flex-direction:column; align-items:center; gap:5px; cursor:pointer; }
+  .mcard.on { border-color:#e8e0c8; background:#262b36; }
+  .mcard canvas { width:42px; height:42px; border-radius:8px; }
+  .mcard .nm { font-size:11.5px; font-weight:600; text-align:center; line-height:1.2; }
+  #matClose { margin-top:10px; align-self:center; height:44px; padding:0 26px; border-radius:12px;
+    border:1px solid #33608a; background:#1b2634; color:#e8e0c8; font-size:15px; font-weight:700; cursor:pointer; }
+  /* --- חלון המברשת --- */
+  #brushPop { position:absolute; inset:0; z-index:44; background:rgba(8,10,16,.9);
+    display:none; align-items:center; justify-content:center; }
+  #brushPop.open { display:flex; }
+  #brushBox { background:#141a24; border:1px solid #33608a; border-radius:16px; padding:16px;
+    width:min(92vw,420px); max-height:86vh; overflow-y:auto; }
+  #brushBox h3 { font-size:15px; margin:2px 0 8px; }
+  #sizeRow { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:14px; }
+  .szb { width:52px; height:52px; border-radius:12px; border:1px solid #2a3444; background:#101620;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; cursor:pointer; }
+  .szb.on { border-color:#2b6cff; background:#16233a; }
+  .szb i { display:block; background:#e8e0c8; border-radius:50%; }
+  .szb span { font-size:9.5px; opacity:.7; }
+  #shapeRow { display:flex; gap:8px; flex-wrap:wrap; }
+  .shb { flex:1 1 44%; height:44px; border-radius:11px; border:1px solid #2a3444; background:#101620;
+    color:#cfe0f5; font-size:13.5px; font-weight:700; cursor:pointer; }
+  .shb.on { background:#2b6cff; border-color:#2b6cff; color:#fff; }
+  #brushClose { margin-top:14px; width:100%; height:44px; border-radius:12px; border:1px solid #33608a;
+    background:#1b2634; color:#e8e0c8; font-size:15px; font-weight:700; cursor:pointer; }
+
   #toast {
     position:absolute; top:52%; left:50%; transform:translate(-50%,-50%);
     background:#000d; padding:10px 18px; border-radius:12px; font-size:15px; font-weight:700;
@@ -262,6 +303,10 @@
       <label class="stog"><input type="checkbox" id="setBorder"> 🔲 קירות מסביב למסך (חומרים וחום לא בורחים)</label>
       <label class="stog"><input type="checkbox" id="setGrav" checked> 🍃 צמחים נופלים כשאין תמיכה</label>
       <label class="stog"><input type="checkbox" id="setNoLoss"> 🌡️ חומרים לא מאבדים חום לסביבה (רק מוליכים אותו)</label>
+      <div class="stog" style="flex-direction:column; align-items:stretch; gap:8px">
+        <div>🖼️ רקע</div>
+        <div id="bgBtns" style="display:flex; gap:6px; flex-wrap:wrap"></div>
+      </div>
       <div class="stog" style="flex-direction:column; align-items:stretch; gap:8px">
         <div>🌍 גודל העולם</div>
         <div id="resBtns" style="display:flex; gap:6px; flex-wrap:wrap">
@@ -346,6 +391,21 @@
       <button id="compClose">סגור</button>
     </div>
 
+    <div id="matPicker">
+      <h2>🧪 חומרים</h2>
+      <div id="matTabs"></div>
+      <div id="matGrid"></div>
+      <button id="matClose">סגור</button>
+    </div>
+
+    <div id="brushPop"><div id="brushBox">
+      <h3>✏️ גודל המברשת</h3>
+      <div id="sizeRow"></div>
+      <h3>🖌️ צורת המברשת</h3>
+      <div id="shapeRow"></div>
+      <button id="brushClose">סגור</button>
+    </div></div>
+
     <div id="pedia">
       <h2>📖 פדיית החומרים</h2>
       <div class="sub">מה שגילית — ואיך מכינים את מה שעוד לא. הכל דרך ניסוי, בלי כסף.</div>
@@ -357,6 +417,9 @@
   <div id="toolbar">
     <div id="materials"></div>
     <div id="controls">
+      <button id="btnMats">🧪 חומרים</button>
+      <button id="btnBrush">✏️ מברשת</button>
+      <button id="btnErase">🧽 מחק</button>
       <button id="btnHeat">🔥 חום</button>
       <button id="btnCool">❄️ קור</button>
       <button id="btnInspect">🔍 בדיקה</button>
@@ -374,9 +437,7 @@
       <button id="btnFlask">⚗️ בקבוקון</button>
       <button id="btnTube">🥼 מבחנה</button>
     </div>
-    <div id="sliders">
-      <label>גודל <input id="brush" type="range" min="1" max="12" value="3"></label>
-    </div>
+
   </div>
 
 <script>
@@ -857,6 +918,7 @@ function setup() {
   W = Math.max(40, Math.floor(cssW / SCALE));
   H = Math.max(40, Math.floor(cssH / SCALE));
   buf.width = W; buf.height = H;
+  bgRow=null;
   img = bctx.createImageData(W, H);
   canvas.width  = Math.floor(cssW * dpr);
   canvas.height = Math.floor(cssH * dpr);
@@ -988,7 +1050,7 @@ function electricity(){
 const inB = (x,y) => x>=0 && x<W && y>=0 && y<H;
 
 /* ---------- מצב משחק ---------- */
-let current = WATER, brush = 3, paused = false, speed = 1, maxSteps = 3;
+let current = WATER, paused = false, speed = 1, maxSteps = 3;   // גודל המברשת עבר ל-brushStep/brushRadius()
 let buildOnAir = true, borderWalls = false, noHeatLoss = false;   // הגדרות
 let painting = false, ptx=0, pty=0;
 let held = null, holdX = 0, holdY = 0;   // כלי היד — גוש חומר שהורם
@@ -998,17 +1060,43 @@ const found = new Uint8Array(MAT.length);
 MAT.forEach(m => { if (m.base) found[m.id] = 1; });
 let foundCount = 3;
 
+/* ---------- רקעים ----------
+   האוויר היה שחור אחיד. עכשיו יש כמה רקעים להחליף ביניהם, והם מחושבים פעם אחת
+   לכל שורה (הצבע תלוי רק בגובה) ולא לכל תא — כדי שזה לא יעלה כלום בביצועים. */
+const BGS=[['🌌 חלל'],['☀️ שמיים'],['🌙 לילה'],['🕯️ מערה']];
+let bgMode=1, bgRow=null, bgStar=null;
+function buildBG(){
+  bgRow=new Uint8Array(H*3);
+  for (let y=0;y<H;y++){
+    const f=H>1?y/(H-1):0; let r,g,b;
+    if (bgMode===0){ r=6+f*4;   g=8+f*5;    b=14+f*10; }
+    else if (bgMode===1){ r=58+f*96;  g=118+f*82;  b=196+f*40; }
+    else if (bgMode===2){ r=8+f*20;   g=10+f*22;   b=28+f*34; }
+    else { r=30-f*16;  g=23-f*13;   b=18-f*10; }
+    bgRow[y*3]=r; bgRow[y*3+1]=g; bgRow[y*3+2]=b;
+  }
+  bgStar=null;
+  if (bgMode===0 || bgMode===2){                    // כוכבים קבועים, לא מרצדים
+    bgStar=new Uint8Array(W*H);
+    let sd=1234567;
+    const n=Math.round(W*H*0.006);
+    for (let k=0;k<n;k++){ sd=(sd*1103515245+12345)&0x7fffffff;
+      const i=sd%(W*H); if (((i/W)|0) < H*0.75) bgStar[i]=1; }
+  }
+}
+
 /* ---------- ציור (כולל זוהר לפי טמפרטורה) ---------- */
 const meshCells = [];
 function render() {
   const d = img.data;
+  if (!bgRow || bgRow.length!==H*3) buildBG();
   meshCells.length = 0;
   for (let i=0; i<grid.length; i++) {
     const id = grid[i]; const c = MAT[id].color, c1 = c;
     if (id===MESH) meshCells.push(i);
     let r,g,b;
     if (viewMode===1) {                    // מפת חום — צבע לפי טמפרטורה בלבד
-      if (id===AIR){ r=11;g=15;b=24; }
+      if (id===AIR){ const yy=(i/W)|0; r=bgRow[yy*3]; g=bgRow[yy*3+1]; b=bgRow[yy*3+2]; }
       else { const hc=heatColorRGB(temp[i]); r=hc[0]; g=hc[1]; b=hc[2]; }
       d[i*4]=r; d[i*4+1]=g; d[i*4+2]=b; d[i*4+3]=255; continue;
     }
@@ -1023,6 +1111,10 @@ function render() {
       else if (id===FIRE && aux[i]===8){ r=Math.min(255,80*f); g=Math.min(255,140*f); b=Math.min(255,250*f+10); }  // גופרית — להבה כחולה
       else if (id===MOLTENMETAL){ const sc=MAT[aux[i]||IRON].color; r=Math.min(255,sc[0]*f+90); g=Math.min(255,sc[1]*f+55); b=Math.min(255,sc[2]*f+10); }  // מתכת מותכת זוהרת בגוון המתכת שלה
       else { r=Math.min(255,c[0]*f+30); g=c[1]*f; b=c[2]*f*0.6; }
+    } else if (id===AIR) {                 // רקע נבחר, ולא שחור אחיד
+      const yy=(i/W)|0;
+      if (bgStar && bgStar[i]){ r=200; g=210; b=235; }
+      else { r=bgRow[yy*3]; g=bgRow[yy*3+1]; b=bgRow[yy*3+2]; }
     } else if (id===TOGGLE) {              // סגור = בהיר ומחובר, פתוח = כהה ומנותק
       if (aux[i]===1){ r=150; g=210; b=140; }
       else { r=58; g=60; b=66; }
@@ -2704,17 +2796,49 @@ function checkMissions(id){
   }
 }
 
+/* ===== המברשת =====
+   גודל המברשת נשמר כאחוז מרוחב העולם ולא כמספר תאים קבוע. ככה מברשת "בינונית"
+   מרגישה אותו דבר בעולם קטן ובעולם ענק — קודם היא היתה ענקית בקטן וזעירה בגדול. */
+const BRUSH_STEPS=[0.4,0.8,1.6,3,5,8,12,18];      // באחוזים מרוחב העולם
+let brushStep=2, brushShape='circle';
+function brushRadius(){ return brushRadiusAt(brushStep); }
+// max(ix, ...) מבטיח שכל דרגה באמת גדולה מהקודמת גם בעולם קטן, שם האחוזים
+// היו מתעגלים כולם לאותו מספר ושלוש הדרגות הראשונות יצאו זהות.
+function brushRadiusAt(ix){ return Math.max(ix, Math.round(BRUSH_STEPS[ix]*W/100)); }
+const BRUSH_SHAPES=[['circle','● עיגול'],['square','■ ריבוע'],['scatter','✦ פיזור'],['wick','〰️ פתיל']];
+
+// כל הנקודות שמברשת אחת צובעת סביב (gx,gy)
+function brushCells(gx,gy,out){
+  out.length=0;
+  const r=brushRadius();
+  if (brushShape==='wick'){                        // פתיל: חוט דק אחד, מתפתל קצת
+    const w=Math.round(Math.sin(gx*0.7+gy*0.4)*Math.min(2,r*0.4));
+    out.push([gx+w,gy]);
+    if (r>=3) out.push([gx+w,gy-1]);
+    return out;
+  }
+  for (let dy=-r; dy<=r; dy++) for (let dx=-r; dx<=r; dx++){
+    if (brushShape==='circle' && dx*dx+dy*dy>r*r) continue;
+    if (brushShape==='scatter'){
+      if (dx*dx+dy*dy>r*r) continue;
+      if (Math.random()>0.3) continue;             // מפזר גרגרים במקום גוש מלא
+    }
+    out.push([gx+dx,gy+dy]);
+  }
+  return out;
+}
+
 /* ===== קלט (כולל מברשות חום/קור) ===== */
 const toggledThisStroke = new Set();   // הקשה אחת = היפוך אחד, לא בכל פריים
+const _bcells=[];
 function paintAt(cx,cy){
   const [gx,gy]=toGrid(cx,cy);
   if (current==='inspect'){ inspectAt(gx,gy,cx,cy); return; }   // זכוכית מגדלת
   if (current==='hand'){ holdX=gx; holdY=gy; return; }          // היד רק עוקבת — תפיסה/שחרור ב-down/up
   if (current==='beaker'||current==='flask'||current==='tube'){ stampVessel(gx,gy,current); painting=false; return; }
-  const rad=brush;
-  for (let dy=-rad; dy<=rad; dy++) for (let dx=-rad; dx<=rad; dx++){
-    if (dx*dx+dy*dy>rad*rad) continue;
-    const x=gx+dx, y=gy+dy; if(!inB(x,y)) continue;
+  brushCells(gx,gy,_bcells);
+  for (const [x,y] of _bcells){
+    if(!inB(x,y)) continue;
     const i=idx(x,y);
     if (current==='heat'){ if(grid[i]!==WALL) temp[i]=Math.min(4000, temp[i]+30); continue; }
     if (current==='cool'){ if(grid[i]!==WALL) temp[i]=Math.max(-260,  temp[i]-30); continue; }   // עד -260° — קר מספיק לנזל חמצן/מימן/כלור (קריוגניקה)
@@ -2737,6 +2861,7 @@ function toGrid(cx,cy){ const [fx,fy]=toGridF(cx,cy); return [Math.floor(fx), Ma
 function stampVessel(gx,gy,kind){
   if (!found[GLASS]){ toast('קודם גלה 🔮 זכוכית! (חמם חול)'); return; }
   let w,h,neck=0;
+  const brush=Math.max(2,brushRadius());
   if (kind==='beaker'){ w=Math.max(6,brush*2+2); h=Math.max(7,brush*2+3); }
   else if (kind==='flask'){ w=Math.max(7,brush*2+3); h=Math.max(9,brush*2+5); neck=Math.max(2,(w>>2)); } // ארלנמאייר
   else { w=Math.max(4,brush+2); h=Math.max(10,brush*3+4); }  // מבחנה — צר וגבוה
@@ -2759,7 +2884,7 @@ function stampVessel(gx,gy,kind){
 }
 // כלי היד — מרים את כל החומרים ברדיוס לתוך held, ומניח אותם במקום אחר
 function grabHand(gx,gy){
-  const cells=[], rad=brush;
+  const cells=[], rad=Math.max(1,brushRadius());
   for (let dy=-rad; dy<=rad; dy++) for (let dx=-rad; dx<=rad; dx++){
     if (dx*dx+dy*dy>rad*rad) continue;
     const x=gx+dx, y=gy+dy; if(!inB(x,y)) continue;
@@ -2851,15 +2976,39 @@ document.getElementById('zview').onclick = ()=>{ viewMode=(viewMode+1)%3;
 
 /* ===== לוח החומרים + בחירה ===== */
 const matsEl = document.getElementById('materials');
-function setCurrent(v){ if(held && v!=='hand') dropHand(); current=v; refreshActive(); }
+function setCurrent(v){ if(held && v!=='hand') dropHand(); current=v;
+  if (typeof v==='number') pushRecent(v);
+  buildPalette(); refreshActive(); }
 function refreshActive(){
   [...matsEl.children].forEach(c=> c.classList.toggle('active', c.dataset.id!==''&&+c.dataset.id===current));
   const sel=(id,v)=>document.getElementById(id).classList.toggle('selbtn', current===v);
   sel('btnHeat','heat'); sel('btnCool','cool'); sel('btnInspect','inspect');
   sel('btnHand','hand'); sel('btnBeaker','beaker'); sel('btnFlask','flask'); sel('btnTube','tube');
+  sel('btnErase',AIR);
   if (current!=='inspect'){ document.getElementById('mag').style.display='none'; document.getElementById('inspect').style.display='none'; }
 }
 document.getElementById('btnHand').onclick=()=>setCurrent('hand');
+document.getElementById('btnMats').onclick=openMatPicker;
+document.getElementById('matClose').onclick=closeMatPicker;
+document.getElementById('btnErase').onclick=()=>setCurrent(AIR);
+function buildBrushPop(){
+  const sr=document.getElementById('sizeRow'); sr.innerHTML='';
+  BRUSH_STEPS.forEach((pc,ix)=>{
+    const b=document.createElement('div'); b.className='szb'+(ix===brushStep?' on':'');
+    const r=brushRadiusAt(ix), px=Math.max(4,Math.min(30,r*2+3));
+    b.innerHTML='<i style="width:'+px+'px;height:'+px+'px"></i><span>'+(r*2+1)+'</span>';
+    b.onclick=()=>{ brushStep=ix; buildBrushPop(); };
+    sr.appendChild(b);
+  });
+  const hr=document.getElementById('shapeRow'); hr.innerHTML='';
+  BRUSH_SHAPES.forEach(([k,nm])=>{
+    const b=document.createElement('button'); b.className='shb'+(k===brushShape?' on':'');
+    b.textContent=nm; b.onclick=()=>{ brushShape=k; buildBrushPop(); };
+    hr.appendChild(b);
+  });
+}
+document.getElementById('btnBrush').onclick=()=>{ buildBrushPop(); document.getElementById('brushPop').classList.add('open'); };
+document.getElementById('brushClose').onclick=()=>document.getElementById('brushPop').classList.remove('open');
 document.getElementById('btnBeaker').onclick=()=>setCurrent('beaker');
 document.getElementById('btnFlask').onclick=()=>setCurrent('flask');
 document.getElementById('btnTube').onclick=()=>setCurrent('tube');
@@ -2914,24 +3063,168 @@ function inspectAt(gx,gy,cx,cy){
     if(syms.length){ syms.sort((a,b)=>ELEMENT_HE[b][1]-ELEMENT_HE[a][1]); showAtom(syms[0], syms); } };
   document.getElementById('inspX').onclick=()=>inspEl.style.display='none';
 }
-function buildPalette(justFound){
-  matsEl.innerHTML='';
-  MAT.forEach(m=>{
-    if (m.id===AIR || !found[m.id]) return;
-    if (m.phaseOf!==undefined) return;   // מצב צבירה של חומר אחר — מגיעים אליו בחימום/קירור
-    const b=document.createElement('button');
-    b.className='mat'+(m.id===current?' active':'')+(m.id===justFound?' pop':'');
-    b.dataset.id=m.id;
-    b.innerHTML=`<span class="dot" style="background:rgb(${m.color.join(',')})"></span>${m.name}`;
-    b.onclick=()=>setCurrent(m.id);
-    matsEl.appendChild(b);
-  });
-  const e=document.createElement('button');
-  e.className='mat'+(current===AIR?' active':''); e.dataset.id=AIR;
-  e.innerHTML=`<span class="dot" style="background:#222;border-style:dashed"></span>מחק`;
-  e.onclick=()=>setCurrent(AIR);
-  matsEl.appendChild(e);
+/* ===== איך כל חומר נראה =====
+   במקום ריבוע צבע אחד, כל חומר מצויר לפי מה שהוא באמת: אבקה נערמת בגרגרים,
+   נוזל יושב בשלולית עם גל ונצנוץ, גז מרחף בענני עשן, מתכת מבריקה באלכסון,
+   וכמה חומרים מקבלים ציור משלהם לגמרי (אש, עץ, עלה, נורה, חוט...). */
+function mixC(c,f){ return 'rgb('+Math.min(255,c[0]*f|0)+','+Math.min(255,c[1]*f|0)+','+Math.min(255,c[2]*f|0)+')'; }
+function drawMatIcon(cv,id){
+  const x=cv.getContext('2d'), S=cv.width, m=MAT[id], c=m.color;
+  x.clearRect(0,0,S,S);
+  let sd=id*7919+13;                                  // אקראיות קבועה לכל חומר — האייקון תמיד זהה
+  const rnd=()=>{ sd=(sd*1103515245+12345)&0x7fffffff; return (sd>>>8)/8388608%1; };
+  const base=mixC(c,1), dark=mixC(c,.62), light=mixC(c,1.35);
+  const round=(rx,ry,rw,rh,r)=>{ x.beginPath();
+    x.moveTo(rx+r,ry); x.arcTo(rx+rw,ry,rx+rw,ry+rh,r); x.arcTo(rx+rw,ry+rh,rx,ry+rh,r);
+    x.arcTo(rx,ry+rh,rx,ry,r); x.arcTo(rx,ry,rx+rw,ry,r); x.closePath(); };
+
+  if (id===AIR){ x.strokeStyle='#5a6270'; x.lineWidth=2; x.setLineDash([4,3]);
+    round(S*.14,S*.14,S*.72,S*.72,6); x.stroke(); x.setLineDash([]); return; }
+
+  const k=m.key;
+  // --- חומרים עם ציור משלהם ---
+  if (k==='fire'||k==='lava'||k==='ironmelt'||k==='moltenmetal'){
+    for (let n=0;n<3;n++){ const w=S*(.5-n*.11);
+      x.fillStyle=[dark,base,light][n];
+      x.beginPath(); x.moveTo(S/2,S*(.16+n*.12));
+      x.quadraticCurveTo(S/2+w/2,S*.6,S/2,S*.88);
+      x.quadraticCurveTo(S/2-w/2,S*.6,S/2,S*(.16+n*.12)); x.fill(); }
+    return; }
+  if (k==='wood'){ x.fillStyle=base; round(S*.24,S*.08,S*.52,S*.84,4); x.fill();
+    x.strokeStyle=dark; x.lineWidth=1.4;
+    for(let n=0;n<3;n++){ x.beginPath(); x.moveTo(S*(.32+n*.14),S*.1); x.lineTo(S*(.3+n*.14),S*.9); x.stroke(); } return; }
+  if (k==='leaf'||k==='sprout'){ x.fillStyle=base;
+    x.beginPath(); x.moveTo(S*.5,S*.9); x.quadraticCurveTo(S*.05,S*.55,S*.5,S*.1);
+    x.quadraticCurveTo(S*.95,S*.55,S*.5,S*.9); x.fill();
+    x.strokeStyle=dark; x.lineWidth=1.4; x.beginPath(); x.moveTo(S*.5,S*.88); x.lineTo(S*.5,S*.16); x.stroke(); return; }
+  if (k==='flower'){ x.fillStyle=base;
+    for(let n=0;n<5;n++){ const a=n/5*6.283-1.57; x.beginPath();
+      x.ellipse(S/2+Math.cos(a)*S*.22, S*.45+Math.sin(a)*S*.22, S*.14,S*.14,0,0,6.3); x.fill(); }
+    x.fillStyle='#f5d36a'; x.beginPath(); x.arc(S/2,S*.45,S*.12,0,6.3); x.fill();
+    x.strokeStyle='#4a9e3a'; x.lineWidth=2; x.beginPath(); x.moveTo(S/2,S*.6); x.lineTo(S/2,S*.94); x.stroke(); return; }
+  if (k==='bulb'){ x.fillStyle=light; x.beginPath(); x.arc(S/2,S*.42,S*.26,0,6.3); x.fill();
+    x.fillStyle=dark; round(S*.38,S*.64,S*.24,S*.24,3); x.fill();
+    x.strokeStyle='#ffe08a'; x.lineWidth=1.6; x.beginPath();
+    x.moveTo(S*.42,S*.5); x.lineTo(S*.5,S*.36); x.lineTo(S*.58,S*.5); x.stroke(); return; }
+  if (k==='wire'){ x.strokeStyle=base; x.lineWidth=S*.13; x.lineCap='round'; x.beginPath();
+    x.moveTo(S*.1,S*.5);
+    for(let n=0;n<4;n++) x.quadraticCurveTo(S*(.2+n*.2),S*(n%2?.82:.18),S*(.3+n*.2),S*.5);
+    x.stroke(); x.lineCap='butt'; return; }
+  if (k==='toggle'){ x.fillStyle=dark; round(S*.12,S*.34,S*.76,S*.32,S*.16); x.fill();
+    x.fillStyle='#96d28c'; x.beginPath(); x.arc(S*.68,S*.5,S*.15,0,6.3); x.fill(); return; }
+  if (k==='ice'){ x.fillStyle=base; round(S*.16,S*.16,S*.68,S*.68,5); x.fill();
+    x.strokeStyle='#ffffff88'; x.lineWidth=2;
+    x.beginPath(); x.moveTo(S*.5,S*.2); x.lineTo(S*.5,S*.8); x.moveTo(S*.24,S*.35); x.lineTo(S*.76,S*.65);
+    x.moveTo(S*.76,S*.35); x.lineTo(S*.24,S*.65); x.stroke(); return; }
+  if (k==='glass'){ x.fillStyle='rgba(172,212,226,.35)'; round(S*.16,S*.14,S*.68,S*.72,5); x.fill();
+    x.strokeStyle=base; x.lineWidth=2; round(S*.16,S*.14,S*.68,S*.72,5); x.stroke();
+    x.fillStyle='#ffffff55'; x.beginPath(); x.moveTo(S*.26,S*.8); x.lineTo(S*.5,S*.2);
+    x.lineTo(S*.6,S*.2); x.lineTo(S*.36,S*.8); x.fill(); return; }
+
+  const t=m.type;
+  if (t==='gas'){                                     // ענני גז מרחפים
+    for(let n=0;n<5;n++){ const r=S*(.12+rnd()*.1);
+      x.fillStyle=n%2?base:light; x.globalAlpha=.45+rnd()*.4;
+      x.beginPath(); x.arc(S*(.2+rnd()*.6),S*(.2+rnd()*.6),r,0,6.3); x.fill(); }
+    x.globalAlpha=1; return; }
+  if (t==='liquid'){                                  // שלולית עם גל ונצנוץ
+    x.fillStyle=base; x.beginPath();
+    x.moveTo(S*.1,S*.42);
+    x.quadraticCurveTo(S*.28,S*.3,S*.5,S*.42); x.quadraticCurveTo(S*.72,S*.54,S*.9,S*.42);
+    x.lineTo(S*.9,S*.86); x.quadraticCurveTo(S*.5,S*.98,S*.1,S*.86); x.closePath(); x.fill();
+    x.fillStyle='#ffffff55'; x.beginPath(); x.ellipse(S*.34,S*.58,S*.11,S*.05,-.4,0,6.3); x.fill(); return; }
+  if (t==='powder'){                                  // ערימת גרגרים
+    x.fillStyle=dark; x.beginPath(); x.moveTo(S*.08,S*.9); x.lineTo(S*.5,S*.3); x.lineTo(S*.92,S*.9); x.closePath(); x.fill();
+    for(let n=0;n<22;n++){ const px=S*(.12+rnd()*.76), py=S*(.34+rnd()*.56);
+      if (Math.abs(px-S*.5) > (py-S*.3)*.72) continue;
+      x.fillStyle=rnd()<.5?base:light; x.fillRect(px,py,S*.075,S*.075); }
+    return; }
+  if (t==='static'){                                  // לבנים
+    x.fillStyle=base; round(S*.1,S*.12,S*.8,S*.76,4); x.fill();
+    x.strokeStyle=dark; x.lineWidth=1.5;
+    for(let r=0;r<3;r++){ const yy=S*(.12+ (r+1)*.76/3);
+      x.beginPath(); x.moveTo(S*.1,yy); x.lineTo(S*.9,yy); x.stroke();
+      const off=r%2?S*.3:S*.55; x.beginPath(); x.moveTo(off,yy-S*.76/3); x.lineTo(off,yy); x.stroke(); }
+    return; }
+  // מוצק: מתכת מבריקה או סלע מחוספס
+  x.fillStyle=base; round(S*.12,S*.14,S*.76,S*.72,5); x.fill();
+  if (conduct[id]){ x.fillStyle='#ffffff66'; x.beginPath();
+    x.moveTo(S*.2,S*.78); x.lineTo(S*.56,S*.16); x.lineTo(S*.72,S*.16); x.lineTo(S*.36,S*.78); x.fill(); }
+  else { for(let n=0;n<9;n++){ x.fillStyle=rnd()<.5?dark:light;
+    x.fillRect(S*(.18+rnd()*.62),S*(.2+rnd()*.58),S*.1,S*.1); } }
 }
+
+/* ===== קטגוריות ===== */
+const MCATS=[['fav','⭐ אחרונים'],['nature','🌍 טבע'],['plants','🌱 צמחים'],['heat','🔥 אש וחום'],
+             ['elements','⚗️ יסודות'],['chem','🧪 כימיה'],['power','⚡ חשמל'],['build','🧱 בנייה']];
+function matCat(m){
+  const k=m.key;
+  if (['wire','bulb','toggle'].includes(k)) return 'power';
+  if (['wall','mesh','glass','bedrock'].includes(k)) return 'build';
+  if (['wood','leaf','flower','sprout','seedT','seedF'].includes(k)) return 'plants';
+  if (['fire','lava','basalt','ash','steam','cloud','ice','rockgas'].includes(k)) return 'heat';
+  if (m.shop) return 'elements';
+  if (['water','sand','earth','mud','stone','wetsand','saltwater','nacl','licl'].includes(k)) return 'nature';
+  return 'chem';
+}
+let recentMats=[WATER,STONE,EARTH,SAND];
+function pushRecent(id){
+  if (id===AIR || MAT[id].phaseOf!==undefined) return;
+  recentMats = [id, ...recentMats.filter(v=>v!==id)].slice(0,7);
+}
+
+// הרצועה התחתונה מציגה רק את מה שהשתמשת בו לאחרונה — כל השאר בתפריט 🧪 חומרים
+function buildPalette(justFound){
+  if (justFound!==undefined && found[justFound]) pushRecent(justFound);
+  matsEl.innerHTML='';
+  const list = recentMats.filter(id=>found[id] && MAT[id].phaseOf===undefined);
+  list.forEach(id=>{
+    const m=MAT[id];
+    const b=document.createElement('button');
+    b.className='mat'+(id===current?' active':'')+(id===justFound?' pop':'');
+    b.dataset.id=id;
+    const cv=document.createElement('canvas'); cv.width=cv.height=30;
+    b.appendChild(cv);
+    const lb=document.createElement('span'); lb.textContent=m.name; b.appendChild(lb);
+    b.onclick=()=>setCurrent(id);
+    matsEl.appendChild(b);
+    drawMatIcon(cv,id);
+  });
+  if (matPickerOpen) buildMatPicker();
+}
+
+/* ===== תפריט החומרים המלא ===== */
+let matCatCur='fav', matPickerOpen=false;
+function buildMatPicker(){
+  const tabs=document.getElementById('matTabs'), gridEl=document.getElementById('matGrid');
+  tabs.innerHTML='';
+  MCATS.forEach(([cid,nm])=>{
+    const b=document.createElement('button');
+    b.textContent=nm; b.className=(cid===matCatCur?'on':'');
+    b.onclick=()=>{ matCatCur=cid; buildMatPicker(); };
+    tabs.appendChild(b);
+  });
+  gridEl.innerHTML='';
+  const ids = matCatCur==='fav'
+    ? recentMats.filter(id=>found[id])
+    : MAT.filter(m=>found[m.id] && m.id!==AIR && m.phaseOf===undefined && matCat(m)===matCatCur).map(m=>m.id);
+  if (!ids.length){
+    gridEl.innerHTML='<div style="opacity:.55;font-size:13px;padding:10px">עדיין לא גילית כאן כלום</div>';
+    return;
+  }
+  ids.forEach(id=>{
+    const card=document.createElement('div');
+    card.className='mcard'+(id===current?' on':'');
+    const cv=document.createElement('canvas'); cv.width=cv.height=42;
+    const nm=document.createElement('div'); nm.className='nm'; nm.textContent=MAT[id].name;
+    card.appendChild(cv); card.appendChild(nm);
+    card.onclick=()=>{ setCurrent(id); closeMatPicker(); };
+    gridEl.appendChild(card);
+    drawMatIcon(cv,id);
+  });
+}
+function openMatPicker(){ matPickerOpen=true; buildMatPicker(); document.getElementById('matPicker').classList.add('open'); }
+function closeMatPicker(){ matPickerOpen=false; document.getElementById('matPicker').classList.remove('open'); }
 
 /* ===== פדיה ===== */
 function buildPedia(){
@@ -3258,6 +3551,15 @@ function clearBorder(){
   for(let x=0;x<W;x++){ if(grid[idx(x,0)]===WALL)grid[idx(x,0)]=AIR; if(grid[idx(x,H-1)]===WALL)grid[idx(x,H-1)]=AIR; }
   for(let y=0;y<H;y++){ if(grid[idx(0,y)]===WALL)grid[idx(0,y)]=AIR; if(grid[idx(W-1,y)]===WALL)grid[idx(W-1,y)]=AIR; }
 }
+function buildBgBtns(){
+  const w=document.getElementById('bgBtns'); w.innerHTML='';
+  BGS.forEach(([nm],ix)=>{
+    const b=document.createElement('button'); b.className='resbtn'+(ix===bgMode?' on':'');
+    b.textContent=nm; b.onclick=()=>{ bgMode=ix; buildBG(); buildBgBtns(); if(paused) render(); };
+    w.appendChild(b);
+  });
+}
+buildBgBtns();
 document.getElementById('btnSettings').onclick=()=>document.getElementById('settings').classList.add('open');
 document.getElementById('setClose').onclick=()=>document.getElementById('settings').classList.remove('open');
 document.getElementById('setBuild').onchange=e=>buildOnAir=e.target.checked;
@@ -3601,7 +3903,7 @@ document.getElementById('btnClear').onclick=()=>{ grid.fill(0); life.fill(0); au
 const pauseBtn=document.getElementById('btnPause');
 pauseBtn.onclick=()=>{ paused=!paused; pauseBtn.textContent=paused?'▶️':'⏸️'; };
 document.getElementById('btnSave').onclick=()=>save(true);
-document.getElementById('brush').oninput=e=>brush=+e.target.value;
+
 // מהירות המשחק: 1x באמצע, עם "היתפסות" לאמצע כדי שקל יהיה לחזור לרגיל.
 document.getElementById('setGameSpeed').oninput=e=>{
   let v=+e.target.value;
