@@ -988,7 +988,7 @@ const REACT_SERIES = MAT.map(m=>({
 }[m.key] ?? null));
 // נוזל שמעביר יונים בין שתי המתכות. בלעדיו אין מעגל ואין בטריה.
 let ELECTROLYTE = null, ALKALI = null, alkaliWarned=false;
-function buildElectrolytes(){ ELECTROLYTE = new Set([SALTWATER, ACID, HCLAQ, NITRICACID, NAOH, BLEACH, AQUAREGIA]);
+function buildElectrolytes(){ buildCoreRock(); ELECTROLYTE = new Set([SALTWATER, ACID, HCLAQ, NITRICACID, NAOH, BLEACH, AQUAREGIA]);
   ALKALI = new Set([SODIUM, POTASSIUM, LITHIUM, RUBIDIUM, CESIUM, CALCIUM]); }
 let charge, charge2, poolSeen, netId, bulbSeen;
 const VSCALE = 20;   // יחידות מתח לכל וולט. 255/20 = עד 12.75V נכנסים בבית אחד
@@ -1351,21 +1351,32 @@ function erosion(){
 /* ===== שמש + ליבת כדור הארץ ===== */
 // עוצמת שמש: 0 בחצות, 1 בצהריים (מחזור סינוסי אמיתי). מחממת רק את פני השטח החשופים לשמיים.
 // בלילה — קרינה לחלל מקררת את פני השטח. הליבה: חום קבוע שעולה מהתחתית ונחלש עם הגובה.
-const SUN_POWER=0.07, NIGHT_COOL=0.018, CORE_POWER=0.0012;
+// השמש והליבה *מושכות לכיוון* טמפרטורה, לא מוסיפות בלי סוף.
+// קודם הן פשוט הוסיפו וחיסרו כל צעד, אז מספיק היה להשאיר את המשחק רץ כדי
+// שהתחתית תגיע להיתוך והפסגה תרד למאות מעלות מתחת לאפס — במיוחד עם נחושת,
+// שמוליכה חום הכי טוב במשחק ומפזרת את זה על כל הגוש.
+const SUN_RATE=0.02, CORE_RATE=0.004, CORE_TARGET=850;
+// חום כדור הארץ עולה דרך *הסלע* של כוכב הלכת, לא דרך כל דבר שמניחים על הרצפה.
+// בלי ההגבלה הזו כל בטריה או גוש נחושת שהונחו על הקרקע התבשלו לבד — וזה בדיוק
+// מה שנראה כמו תקלה. ככה מעמקי הסלע עדיין נמסים ללבה, אבל מה שבנית נשאר קר.
+let CORE_ROCK=null;
+function buildCoreRock(){ CORE_ROCK=new Set([STONE,BASALT,LAVA]); }   // סלע קשה בלבד
 const CORE_BAND = ()=> Math.max(3, Math.floor(H*0.05));
 function applySunAndCore(){
   if (!climateOn) return;   // כבוי כברירת מחדל — משחק רגיל בלי שינויי טמפ' מבחוץ
   const sun = Math.max(0, Math.sin((timeOfDay/1440)*Math.PI*2 - Math.PI/2));
+  const skyTarget = -6 + sun*52;          // לילה קר · צהריים חמים · ושום דבר לא בורח
   for (let x=0; x<W; x++){
     let y=0; while(y<H && grid[idx(x,y)]===AIR) y++;   // התא העליון החשוף לשמיים בטור הזה
-    if (y<H){ const i=idx(x,y); if (grid[i]!==WALL) temp[i] += sun*SUN_POWER - (1-sun)*NIGHT_COOL; }
+    if (y<H){ const i=idx(x,y); if (grid[i]!==WALL) temp[i] += (skyTarget-temp[i])*SUN_RATE; }
   }
   const band=CORE_BAND();
   for (let y=H-band; y<H; y++){
     const depthF = 1 - (H-1-y)/band;
+    const tgt = AMB + depthF*(CORE_TARGET-AMB);        // מדרג גיאותרמי: עמוק = חם
     for (let x=0; x<W; x++){
       const i=idx(x,y), id=grid[i];
-      if (id!==AIR && id!==WALL) temp[i] += CORE_POWER*depthF;
+      if (CORE_ROCK.has(id) && temp[i]<tgt) temp[i] += (tgt-temp[i])*CORE_RATE*depthF*depthF;
     }
   }
 }
@@ -1390,9 +1401,11 @@ function thermal(){
     if (id===WALL){ temp2[i]=0; continue; }   // קיר: תמיד 0°, חום לא נכנס/עובר
     // "בלי איבוד חום": אוויר = מבודד מושלם. רשת חוסמת ~5% מהחום שעובר דרכה (מצטבר עם כמה שכבות).
     let acc=0, airN=0;
+    let cfSum=0;
     const flow=(j)=>{ const g=grid[j]; if(g===AIR)airN++;
       let cf=(noHeatLoss && g===AIR)?0:Math.min(ci,cond[g]);
       if(g===MESH) cf*=0.95;
+      cfSum+=cf;
       return cf*(temp[j]-t); };
     if (heatNB){                              // רדיוס מורחב — לולאה על כל השכנים במשקל
       for(const nb of heatNB){ const nx=x+nb.dx, ny=y+nb.dy; if(!inB(nx,ny)) continue;
@@ -1405,7 +1418,12 @@ function thermal(){
     }
     // קיבול חום סגולי: אותה כמות אנרגיה משנה טמפרטורה פחות בחומר עם קיבול גבוה (מים) ויותר בנמוך (מתכת).
     // clamp ל-0.7 לשמירה על יציבות נומרית של סכמת ההולכה המפורשת.
-    const hf = Math.min(0.7, 0.5/heatCap[id]);
+    // יציבות נומרית: בסכמה מפורשת כזו, אם המקדם הכולל עובר 0.5 החישוב מתנדנד
+    // ומתפוצץ. נחושת (המוליכה הכי טובה, קיבול חום הכי נמוך) הגיעה ל-1.12 — ולכן
+    // גוש נחושת יצר טמפרטורות של אלפי מעלות פלוס ומינוס משום מקום. עכשיו המקדם
+    // נחסם לפי המוליכות בפועל של השכנים, אז כל חומר יציב.
+    let hf = Math.min(0.7, 0.5/heatCap[id]);
+    if (cfSum>0) hf = Math.min(hf, 0.5/cfSum);
     let nt = t + hf*acc;
     // איבוד חום קורה רק ממשטחים חשופים לאוויר. חומר סגור בקירות (0 שכני אוויר) לא מתקרר!
     if (!noHeatLoss && airN>0) nt += (AMB - nt) * radi[id] * Math.min(airN,4) * 0.25;
