@@ -512,6 +512,8 @@ const MAT = [
   { key:'h2s',    name:'מימן גופרתי', color:[196,200,140], type:'gas', life:520, flam:true, pedia:'H₂S — גופרת ברזל + חומצה. ריח של ביצים רקובות, רעיל, ובוער בלהבה כחולה ל💨 SO₂' },
   { key:'ozone',  name:'אוזון',       color:[150,200,240], type:'gas', life:300, pedia:'O₃ — חמצן שעבר ברק או חום אדיר. הוא זה שחוסם את הקרינה מהשמש בשכבה הגבוהה, ומתפרק חזרה לחמצן רגיל' },
   { key:'nh4no3',name:'חנקת אמון',   color:[244,242,236], type:'powder', density:4, pedia:'NH₄NO₃ — אמוניה + חומצה חנקתית. הדשן הנפוץ בעולם, אבל בחום חזק הוא מתפוצץ בעוצמה' },
+  { key:'wire',   name:'חוט חשמל',  color:[196,132,66],  type:'static', pedia:'🔌 חוט נחושת מבודד — לא נופל, ומעביר זרם. חברו איתו בין שני צדי הבטריה ל💡 נורה כדי לסגור מעגל' },
+  { key:'bulb',   name:'נורה',      color:[120,116,96],  type:'static', pedia:'💡 נורה. חברו אותה בחוט מתכת לשני צדי בטריה והיא תידלק — ככל שהמתח גבוה יותר, כך היא זוהרת חזק יותר' },
   { key:'wetsand',name:'חול רטוב',   color:[168,140,84],  type:'powder', density:5, pedia:'🏖️ חול שספג מים. המים ממשיכים לחלחל דרכו למטה ולצדדים — אלה מי תהום — וכשהם מגיעים למערה הם נוטפים החוצה כמעיין' },
 ];
 const ID = {}; MAT.forEach((m,i)=>{ m.id=i; ID[m.key]=i; });
@@ -543,7 +545,7 @@ const AIR=ID.air, STONE=ID.stone, WATER=ID.water, EARTH=ID.earth, MUD=ID.mud,
       CO=ID.co, METHANE=ID.methane, HCL=ID.hcl, HCLAQ=ID.hclaq, CUSO4=ID.cuso4, ALUMINA=ID.alumina,
       NITRICACID=ID.nitricacid, AQUAREGIA=ID.aquaregia, AMALGAM=ID.amalgam, KNO3=ID.kno3,
       GUNPOWDER=ID.gunpowder, BAKING=ID.baking, BLEACH=ID.bleach, H2S=ID.h2s, OZONE=ID.ozone, NH4NO3=ID.nh4no3,
-      WETSAND=ID.wetsand;
+      WETSAND=ID.wetsand, BULB=ID.bulb, WIRE=ID.wire;
 const TOTAL = MAT.filter(m => !m.shop && !m.sys && !m.compound && m.id!==AIR).length;   // ספירת גילויים (בלי חנות/תרכובות/מערכת)
 
 /* ---------- תכונות תרמיות ----------
@@ -551,7 +553,7 @@ const TOTAL = MAT.filter(m => !m.shop && !m.sys && !m.compound && m.id!==AIR).le
    temp0 = טמפ' התחלתית של חומר כשמניחים אותו. */
 const AMB = 24;
 // אוויר מוליך חום גרוע (מבודד) — כדי שהחום לא "יברח" מהחומרים לחלל הריק.
-const cond  = MAT.map(m => ({air:0.003,water:0.10,ice:0.08,stone:0.045,glass:0.06,sand:0.05,steam:0.006,wall:0,lava:0.16,fire:0.22,mesh:0.12,bedrock:0.05,cloud:0.006,lithium:0.20,chlorine:0.006,licl:0.05,saltwater:0.11,sodium:0.22,nacl:0.05,iron:0.30,ironmelt:0.30,rust:0.05,rockgas:0.01,irongas:0.012,oxygen:0.005,gold:0.35,copper:0.40,aluminum:0.34,mercury:0.10,moltenmetal:0.30,potassium:0.20,rubidium:0.18,cesium:0.16,etp:0.10,foam:0.02,acid:0.11,motoroil:0.08,thermite:0.12,oxyliq:0.02,chlliq:0.02,hydliq:0.02,moltensalt:0.10,saltgas:0.02,carbon:0.15,sulfur:0.02,sulfurL:0.03,sulfurG:0.006,magnesium:0.28,calcium:0.30,fes:0.06,lime:0.04,nitrogen:0.005,nitliq:0.02,silicon:0.20,phosphorus:0.02,zinc:0.28,tin:0.25,co2:0.005,limestone:0.05,quicklime:0.04,mgo:0.05,so2:0.005,brass:0.30,bronze:0.25,cuo:0.06,naoh:0.11,soap:0.03,ammonia:0.006,nh4cl:0.04,no2:0.005,co:0.006,methane:0.006,hcl:0.005,hclaq:0.11,cuso4:0.05,alumina:0.10,nitricacid:0.11,aquaregia:0.11,amalgam:0.12,kno3:0.05,gunpowder:0.06,baking:0.05,bleach:0.11,h2s:0.006,ozone:0.005,nh4no3:0.05,wetsand:0.07}[m.key] ?? 0.04));
+const cond  = MAT.map(m => ({air:0.003,water:0.10,ice:0.08,stone:0.045,glass:0.06,sand:0.05,steam:0.006,wall:0,lava:0.16,fire:0.22,mesh:0.12,bedrock:0.05,cloud:0.006,lithium:0.20,chlorine:0.006,licl:0.05,saltwater:0.11,sodium:0.22,nacl:0.05,iron:0.30,ironmelt:0.30,rust:0.05,rockgas:0.01,irongas:0.012,oxygen:0.005,gold:0.35,copper:0.40,aluminum:0.34,mercury:0.10,moltenmetal:0.30,potassium:0.20,rubidium:0.18,cesium:0.16,etp:0.10,foam:0.02,acid:0.11,motoroil:0.08,thermite:0.12,oxyliq:0.02,chlliq:0.02,hydliq:0.02,moltensalt:0.10,saltgas:0.02,carbon:0.15,sulfur:0.02,sulfurL:0.03,sulfurG:0.006,magnesium:0.28,calcium:0.30,fes:0.06,lime:0.04,nitrogen:0.005,nitliq:0.02,silicon:0.20,phosphorus:0.02,zinc:0.28,tin:0.25,co2:0.005,limestone:0.05,quicklime:0.04,mgo:0.05,so2:0.005,brass:0.30,bronze:0.25,cuo:0.06,naoh:0.11,soap:0.03,ammonia:0.006,nh4cl:0.04,no2:0.005,co:0.006,methane:0.006,hcl:0.005,hclaq:0.11,cuso4:0.05,alumina:0.10,nitricacid:0.11,aquaregia:0.11,amalgam:0.12,kno3:0.05,gunpowder:0.06,baking:0.05,bleach:0.11,h2s:0.006,ozone:0.005,nh4no3:0.05,wetsand:0.07,bulb:0.05,wire:0.40}[m.key] ?? 0.04));
 // radi = קצב איבוד חום לסביבה (רק ממשטחים חשופים לאוויר). נמוך = החום נשמר. קיר=0.
 const radi  = MAT.map(m => ({lava:0.00003,fire:0.02,steam:0.004,wall:0,cloud:0.002,chlorine:0.003,ironmelt:0.00004,oxyliq:0.001,chlliq:0.001,hydliq:0.001,moltensalt:0.00004,saltgas:0.004,nitrogen:0.003,nitliq:0.001,co2:0.003,so2:0.003,ammonia:0.003,no2:0.003,co:0.003,methane:0.003,hcl:0.003,h2s:0.003,ozone:0.003}[m.key] ?? 0.00005));
 const temp0 = MAT.map(m => ({lava:1200,fire:900,ice:-14,wall:0,ironmelt:1560,moltenmetal:1150,oxyliq:-200,chlliq:-60,hydliq:-258,moltensalt:850,saltgas:1500,sulfurL:130,sulfurG:460,nitliq:-196,nitrogen:-190}[m.key] ?? null));
@@ -569,10 +571,10 @@ const heatCap = MAT.map(m=>({
 
 /* ---------- תכונות פיזיקליות (למשקל/כלי הבדיקה) ----------
    mass = צפיפות יחסית (g/cm³). formula/molecule = מבנה מולקולרי. conduct = מוליך חשמל. */
-const mass    = MAT.map(m=>({air:0.001,water:1.0,ice:0.92,steam:0.0006,stone:2.7,basalt:3.0,sand:1.6,earth:1.5,mud:1.8,wood:0.7,leaf:0.4,flower:0.3,sprout:0.5,seedT:0.6,seedF:0.6,ash:0.5,glass:2.5,lava:2.8,fire:0.0003,hydrogen:0.00009,wall:2,bedrock:3.2,cloud:0.0005,lithium:0.534,chlorine:0.0032,licl:2.07,saltwater:1.03,sodium:0.97,nacl:2.17,iron:7.87,ironmelt:7.0,rust:5.24,rockgas:0.005,irongas:0.006,oxygen:0.0014,gold:19.3,copper:8.96,aluminum:2.70,mercury:13.53,moltenmetal:8.0,potassium:0.86,rubidium:1.53,cesium:1.93,etp:1.11,foam:0.05,acid:1.84,motoroil:0.88,thermite:4.5,oxyliq:1.14,chlliq:1.56,hydliq:0.07,moltensalt:1.55,saltgas:0.005,carbon:2.27,sulfur:2.07,sulfurL:1.8,sulfurG:0.006,magnesium:1.74,calcium:1.55,fes:4.84,lime:2.21,nitrogen:0.00125,nitliq:0.81,silicon:2.33,phosphorus:1.82,zinc:7.14,tin:7.31,co2:0.00198,limestone:2.71,quicklime:3.34,mgo:3.58,so2:0.0029,brass:8.5,bronze:8.8,cuo:6.31,naoh:1.52,soap:0.9,ammonia:0.00073,nh4cl:1.53,no2:0.0019,co:0.00125,methane:0.00066,hcl:0.0015,hclaq:1.05,cuso4:3.6,alumina:3.95,nitricacid:1.51,aquaregia:1.3,amalgam:15.5,kno3:2.11,gunpowder:1.7,baking:2.2,bleach:1.11,h2s:0.0015,ozone:0.0021,nh4no3:1.72,wetsand:1.9}[m.key] ?? 1));
-const formula = MAT.map(m=>({air:'N₂+O₂',water:'H₂O',ice:'H₂O',steam:'H₂O',stone:'SiO₂',basalt:'SiO₂·Mg·Fe',sand:'SiO₂',earth:'SiO₂+C',mud:'SiO₂·H₂O',wood:'C₆H₁₀O₅',leaf:'C₆H₁₀O₅',flower:'C₆H₁₀O₅',sprout:'C₆H₁₀O₅',seedT:'C₆H₁₀O₅',seedF:'C₆H₁₀O₅',ash:'CaCO₃',glass:'SiO₂',lava:'SiO₂',fire:'CO₂+חום',hydrogen:'H₂',wall:'CaO·SiO₂·H₂O',mesh:'Fe+C',bedrock:'(Mg,Fe)₂SiO₄',cloud:'H₂O',lithium:'Li',chlorine:'Cl₂',licl:'LiCl',saltwater:'H₂O+מלח',sodium:'Na',nacl:'NaCl',iron:'Fe',ironmelt:'Fe',rust:'Fe₂O₃',rockgas:'SiO₂(גז)',irongas:'Fe(גז)',oxygen:'O₂',gold:'Au',copper:'Cu',aluminum:'Al',mercury:'Hg',moltenmetal:'metal',potassium:'K',rubidium:'Rb',cesium:'Cs',etp:'H₂O₂',foam:'O₂+H₂O',acid:'H₂SO₄',motoroil:'C₁₆H₃₄',thermite:'Fe₂O₃+Al',oxyliq:'O₂(נוזל)',chlliq:'Cl₂(נוזל)',hydliq:'H₂(נוזל)',moltensalt:'מלח מותך',saltgas:'אדי מלח',carbon:'C',sulfur:'S₈',sulfurL:'S(נוזל)',sulfurG:'S(גז)',magnesium:'Mg',calcium:'Ca',fes:'FeS',lime:'Ca(OH)₂',nitrogen:'N₂',nitliq:'N₂(נוזל)',silicon:'Si',phosphorus:'P₄',zinc:'Zn',tin:'Sn',co2:'CO₂',limestone:'CaCO₃',quicklime:'CaO',mgo:'MgO',so2:'SO₂',brass:'Cu+Zn',bronze:'Cu+Sn',cuo:'CuO',naoh:'NaOH',soap:'C₁₇H₃₅COONa',ammonia:'NH₃',nh4cl:'NH₄Cl',no2:'NO₂',co:'CO',methane:'CH₄',hcl:'HCl',hclaq:'HCl(aq)',cuso4:'CuSO₄',alumina:'Al₂O₃',nitricacid:'HNO₃',aquaregia:'HNO₃+3HCl',amalgam:'Au·Hg',kno3:'KNO₃',gunpowder:'KNO₃+S+C',baking:'NaHCO₃',bleach:'NaClO',h2s:'H₂S',ozone:'O₃',nh4no3:'NH₄NO₃',wetsand:'SiO₂·H₂O'}[m.key] ?? '—'));
-const conduct = MAT.map(m=>({water:true,lava:true,fire:true,lithium:true,saltwater:true,sodium:true,iron:true,ironmelt:true,gold:true,copper:true,aluminum:true,mercury:true,moltenmetal:true,potassium:true,rubidium:true,cesium:true,acid:true,moltensalt:true,carbon:true,magnesium:true,calcium:true,fes:true,silicon:true,zinc:true,tin:true,brass:true,bronze:true,naoh:true,hclaq:true,cuso4:true,nitricacid:true,aquaregia:true,amalgam:true,bleach:true}[m.key] ?? false));
-const molec   = MAT.map(m=>({air:'תערובת גזים',water:'מולקולה קוטבית',ice:'סריג גבישי',steam:'אדי מים',stone:'סריג סיליקט',basalt:'סלע וולקני צפוף',sand:'גרגרי קוורץ',earth:'תערובת אורגנית',mud:'אדמה רוויה',wood:'סיבי תאית',leaf:'תאית + כלורופיל',flower:'רקמה צמחית',sprout:'רקמה צמחית',seedT:'עובר זרע',seedF:'עובר זרע',ash:'שאריות מינרליות',glass:'מוצק אמורפי',lava:'סלע מותך',fire:'פלזמת בעירה',hydrogen:'מולקולה דו-אטומית H₂',wall:'בטון — סריג סיליקט עם סידן ומים',mesh:'פלדה — סריג ברזל עם מעט פחמן',bedrock:'אוליבין — סיליקט עם ברזל ומגנזיום',cloud:'טיפות מים זעירות מרחפות',lithium:'מתכת — סריג אטומים חוזר',chlorine:'מולקולה דו-אטומית Cl₂',licl:'סריג יוני (Li⁺Cl⁻)',saltwater:'תמיסה — יונים מומסים במים',sodium:'מתכת — סריג אטומים חוזר',nacl:'סריג יוני (Na⁺Cl⁻)',iron:'מתכת — סריג אטומים חוזר',ironmelt:'מתכת מותכת',rust:'תחמוצת ברזל Fe₂O₃',rockgas:'אדי סיליקט',irongas:'אדי מתכת',oxygen:'מולקולה דו-אטומית O₂',gold:'מתכת — סריג אטומים חוזר',copper:'מתכת — סריג אטומים חוזר',aluminum:'מתכת — סריג אטומים חוזר',mercury:'מתכת נוזלית',moltenmetal:'מתכת מותכת',potassium:'מתכת — סריג אטומים חוזר',rubidium:'מתכת — סריג אטומים חוזר',cesium:'מתכת — סריג אטומים חוזר',etp:'מי חמצן מרוכז H₂O₂',foam:'בועות חמצן במים',acid:'חומצה גופרתית H₂SO₄',motoroil:'שרשרת פחמימנים ארוכה',thermite:'תערובת Fe₂O₃ + אבקת Al',oxyliq:'חמצן דו-אטומי נוזלי O₂',chlliq:'כלור דו-אטומי נוזלי Cl₂',hydliq:'מימן דו-אטומי נוזלי H₂',moltensalt:'סריג יוני מותך',saltgas:'אדי מלח יוניים',carbon:'סריג פחמן (גרפיט/יהלום)',sulfur:'טבעת גופרית S₈',sulfurL:'גופרית מותכת',sulfurG:'אדי גופרית',magnesium:'מתכת — סריג אטומים חוזר',calcium:'מתכת — סריג אטומים חוזר',fes:'סריג יוני Fe-S',lime:'הידרוקסיד Ca(OH)₂',nitrogen:'מולקולה דו-אטומית N₂',nitliq:'חנקן דו-אטומי נוזלי',silicon:'סריג גבישי כמו יהלום',phosphorus:'מולקולת P₄ טטרהדרלית',zinc:'מתכת — סריג אטומים חוזר',tin:'מתכת — סריג אטומים חוזר',co2:'מולקולה קווית O=C=O',limestone:'סריג יוני Ca²⁺CO₃²⁻',quicklime:'סריג יוני Ca²⁺O²⁻',mgo:'סריג יוני Mg²⁺O²⁻',so2:'מולקולה כפופה',brass:'סגסוגת — אטומי אבץ בתוך סריג נחושת',bronze:'סגסוגת — אטומי בדיל בתוך סריג נחושת',cuo:'סריג יוני Cu²⁺O²⁻',naoh:'בסיס — יוני Na⁺ ו-OH⁻ במים',soap:'מולקולה עם ראש אוהב-מים וזנב אוהב-שומן',ammonia:'פירמידה — חנקן עם שלושה מימנים',nh4cl:'סריג יוני NH₄⁺Cl⁻',no2:'מולקולה כפופה',co:'קשר משולש בין פחמן לחמצן',methane:'טטרהדר — פחמן עם ארבעה מימנים',hcl:'מולקולה דו-אטומית קוטבית',hclaq:'יוני H⁺ ו-Cl⁻ במים',cuso4:'סריג יוני Cu²⁺SO₄²⁻',alumina:'סריג יוני קשה מאוד',nitricacid:'חומצה חזקה — H⁺ ו-NO₃⁻',aquaregia:'תערובת שתי חומצות',amalgam:'זהב מומס בכספית',kno3:'סריג יוני K⁺NO₃⁻',gunpowder:'תערובת — מחמצן + דלק יחד',baking:'סריג יוני Na⁺HCO₃⁻',bleach:'סריג יוני Na⁺ClO⁻',h2s:'מולקולה כפופה כמו מים',ozone:'שלושה אטומי חמצן בשרשרת כפופה',nh4no3:'סריג יוני NH₄⁺NO₃⁻',wetsand:'גרגרי קוורץ עם מים בין החרירים'}[m.key] ?? '—'));
+const mass    = MAT.map(m=>({air:0.001,water:1.0,ice:0.92,steam:0.0006,stone:2.7,basalt:3.0,sand:1.6,earth:1.5,mud:1.8,wood:0.7,leaf:0.4,flower:0.3,sprout:0.5,seedT:0.6,seedF:0.6,ash:0.5,glass:2.5,lava:2.8,fire:0.0003,hydrogen:0.00009,wall:2,bedrock:3.2,cloud:0.0005,lithium:0.534,chlorine:0.0032,licl:2.07,saltwater:1.03,sodium:0.97,nacl:2.17,iron:7.87,ironmelt:7.0,rust:5.24,rockgas:0.005,irongas:0.006,oxygen:0.0014,gold:19.3,copper:8.96,aluminum:2.70,mercury:13.53,moltenmetal:8.0,potassium:0.86,rubidium:1.53,cesium:1.93,etp:1.11,foam:0.05,acid:1.84,motoroil:0.88,thermite:4.5,oxyliq:1.14,chlliq:1.56,hydliq:0.07,moltensalt:1.55,saltgas:0.005,carbon:2.27,sulfur:2.07,sulfurL:1.8,sulfurG:0.006,magnesium:1.74,calcium:1.55,fes:4.84,lime:2.21,nitrogen:0.00125,nitliq:0.81,silicon:2.33,phosphorus:1.82,zinc:7.14,tin:7.31,co2:0.00198,limestone:2.71,quicklime:3.34,mgo:3.58,so2:0.0029,brass:8.5,bronze:8.8,cuo:6.31,naoh:1.52,soap:0.9,ammonia:0.00073,nh4cl:1.53,no2:0.0019,co:0.00125,methane:0.00066,hcl:0.0015,hclaq:1.05,cuso4:3.6,alumina:3.95,nitricacid:1.51,aquaregia:1.3,amalgam:15.5,kno3:2.11,gunpowder:1.7,baking:2.2,bleach:1.11,h2s:0.0015,ozone:0.0021,nh4no3:1.72,wetsand:1.9,bulb:2.3,wire:8.96}[m.key] ?? 1));
+const formula = MAT.map(m=>({air:'N₂+O₂',water:'H₂O',ice:'H₂O',steam:'H₂O',stone:'SiO₂',basalt:'SiO₂·Mg·Fe',sand:'SiO₂',earth:'SiO₂+C',mud:'SiO₂·H₂O',wood:'C₆H₁₀O₅',leaf:'C₆H₁₀O₅',flower:'C₆H₁₀O₅',sprout:'C₆H₁₀O₅',seedT:'C₆H₁₀O₅',seedF:'C₆H₁₀O₅',ash:'CaCO₃',glass:'SiO₂',lava:'SiO₂',fire:'CO₂+חום',hydrogen:'H₂',wall:'CaO·SiO₂·H₂O',mesh:'Fe+C',bedrock:'(Mg,Fe)₂SiO₄',cloud:'H₂O',lithium:'Li',chlorine:'Cl₂',licl:'LiCl',saltwater:'H₂O+מלח',sodium:'Na',nacl:'NaCl',iron:'Fe',ironmelt:'Fe',rust:'Fe₂O₃',rockgas:'SiO₂(גז)',irongas:'Fe(גז)',oxygen:'O₂',gold:'Au',copper:'Cu',aluminum:'Al',mercury:'Hg',moltenmetal:'metal',potassium:'K',rubidium:'Rb',cesium:'Cs',etp:'H₂O₂',foam:'O₂+H₂O',acid:'H₂SO₄',motoroil:'C₁₆H₃₄',thermite:'Fe₂O₃+Al',oxyliq:'O₂(נוזל)',chlliq:'Cl₂(נוזל)',hydliq:'H₂(נוזל)',moltensalt:'מלח מותך',saltgas:'אדי מלח',carbon:'C',sulfur:'S₈',sulfurL:'S(נוזל)',sulfurG:'S(גז)',magnesium:'Mg',calcium:'Ca',fes:'FeS',lime:'Ca(OH)₂',nitrogen:'N₂',nitliq:'N₂(נוזל)',silicon:'Si',phosphorus:'P₄',zinc:'Zn',tin:'Sn',co2:'CO₂',limestone:'CaCO₃',quicklime:'CaO',mgo:'MgO',so2:'SO₂',brass:'Cu+Zn',bronze:'Cu+Sn',cuo:'CuO',naoh:'NaOH',soap:'C₁₇H₃₅COONa',ammonia:'NH₃',nh4cl:'NH₄Cl',no2:'NO₂',co:'CO',methane:'CH₄',hcl:'HCl',hclaq:'HCl(aq)',cuso4:'CuSO₄',alumina:'Al₂O₃',nitricacid:'HNO₃',aquaregia:'HNO₃+3HCl',amalgam:'Au·Hg',kno3:'KNO₃',gunpowder:'KNO₃+S+C',baking:'NaHCO₃',bleach:'NaClO',h2s:'H₂S',ozone:'O₃',nh4no3:'NH₄NO₃',wetsand:'SiO₂·H₂O',bulb:'W+SiO₂',wire:'Cu'}[m.key] ?? '—'));
+const conduct = MAT.map(m=>({water:true,lava:true,fire:true,lithium:true,saltwater:true,sodium:true,iron:true,ironmelt:true,gold:true,copper:true,aluminum:true,mercury:true,moltenmetal:true,potassium:true,rubidium:true,cesium:true,acid:true,moltensalt:true,carbon:true,magnesium:true,calcium:true,fes:true,silicon:true,zinc:true,tin:true,brass:true,bronze:true,naoh:true,hclaq:true,cuso4:true,nitricacid:true,aquaregia:true,amalgam:true,bleach:true,bulb:true,wire:true}[m.key] ?? false));
+const molec   = MAT.map(m=>({air:'תערובת גזים',water:'מולקולה קוטבית',ice:'סריג גבישי',steam:'אדי מים',stone:'סריג סיליקט',basalt:'סלע וולקני צפוף',sand:'גרגרי קוורץ',earth:'תערובת אורגנית',mud:'אדמה רוויה',wood:'סיבי תאית',leaf:'תאית + כלורופיל',flower:'רקמה צמחית',sprout:'רקמה צמחית',seedT:'עובר זרע',seedF:'עובר זרע',ash:'שאריות מינרליות',glass:'מוצק אמורפי',lava:'סלע מותך',fire:'פלזמת בעירה',hydrogen:'מולקולה דו-אטומית H₂',wall:'בטון — סריג סיליקט עם סידן ומים',mesh:'פלדה — סריג ברזל עם מעט פחמן',bedrock:'אוליבין — סיליקט עם ברזל ומגנזיום',cloud:'טיפות מים זעירות מרחפות',lithium:'מתכת — סריג אטומים חוזר',chlorine:'מולקולה דו-אטומית Cl₂',licl:'סריג יוני (Li⁺Cl⁻)',saltwater:'תמיסה — יונים מומסים במים',sodium:'מתכת — סריג אטומים חוזר',nacl:'סריג יוני (Na⁺Cl⁻)',iron:'מתכת — סריג אטומים חוזר',ironmelt:'מתכת מותכת',rust:'תחמוצת ברזל Fe₂O₃',rockgas:'אדי סיליקט',irongas:'אדי מתכת',oxygen:'מולקולה דו-אטומית O₂',gold:'מתכת — סריג אטומים חוזר',copper:'מתכת — סריג אטומים חוזר',aluminum:'מתכת — סריג אטומים חוזר',mercury:'מתכת נוזלית',moltenmetal:'מתכת מותכת',potassium:'מתכת — סריג אטומים חוזר',rubidium:'מתכת — סריג אטומים חוזר',cesium:'מתכת — סריג אטומים חוזר',etp:'מי חמצן מרוכז H₂O₂',foam:'בועות חמצן במים',acid:'חומצה גופרתית H₂SO₄',motoroil:'שרשרת פחמימנים ארוכה',thermite:'תערובת Fe₂O₃ + אבקת Al',oxyliq:'חמצן דו-אטומי נוזלי O₂',chlliq:'כלור דו-אטומי נוזלי Cl₂',hydliq:'מימן דו-אטומי נוזלי H₂',moltensalt:'סריג יוני מותך',saltgas:'אדי מלח יוניים',carbon:'סריג פחמן (גרפיט/יהלום)',sulfur:'טבעת גופרית S₈',sulfurL:'גופרית מותכת',sulfurG:'אדי גופרית',magnesium:'מתכת — סריג אטומים חוזר',calcium:'מתכת — סריג אטומים חוזר',fes:'סריג יוני Fe-S',lime:'הידרוקסיד Ca(OH)₂',nitrogen:'מולקולה דו-אטומית N₂',nitliq:'חנקן דו-אטומי נוזלי',silicon:'סריג גבישי כמו יהלום',phosphorus:'מולקולת P₄ טטרהדרלית',zinc:'מתכת — סריג אטומים חוזר',tin:'מתכת — סריג אטומים חוזר',co2:'מולקולה קווית O=C=O',limestone:'סריג יוני Ca²⁺CO₃²⁻',quicklime:'סריג יוני Ca²⁺O²⁻',mgo:'סריג יוני Mg²⁺O²⁻',so2:'מולקולה כפופה',brass:'סגסוגת — אטומי אבץ בתוך סריג נחושת',bronze:'סגסוגת — אטומי בדיל בתוך סריג נחושת',cuo:'סריג יוני Cu²⁺O²⁻',naoh:'בסיס — יוני Na⁺ ו-OH⁻ במים',soap:'מולקולה עם ראש אוהב-מים וזנב אוהב-שומן',ammonia:'פירמידה — חנקן עם שלושה מימנים',nh4cl:'סריג יוני NH₄⁺Cl⁻',no2:'מולקולה כפופה',co:'קשר משולש בין פחמן לחמצן',methane:'טטרהדר — פחמן עם ארבעה מימנים',hcl:'מולקולה דו-אטומית קוטבית',hclaq:'יוני H⁺ ו-Cl⁻ במים',cuso4:'סריג יוני Cu²⁺SO₄²⁻',alumina:'סריג יוני קשה מאוד',nitricacid:'חומצה חזקה — H⁺ ו-NO₃⁻',aquaregia:'תערובת שתי חומצות',amalgam:'זהב מומס בכספית',kno3:'סריג יוני K⁺NO₃⁻',gunpowder:'תערובת — מחמצן + דלק יחד',baking:'סריג יוני Na⁺HCO₃⁻',bleach:'סריג יוני Na⁺ClO⁻',h2s:'מולקולה כפופה כמו מים',ozone:'שלושה אטומי חמצן בשרשרת כפופה',nh4no3:'סריג יוני NH₄⁺NO₃⁻',wetsand:'גרגרי קוורץ עם מים בין החרירים',bulb:'חוט טונגסטן דק בתוך זכוכית',wire:'סריג נחושת בתוך בידוד'}[m.key] ?? '—'));
 const STATE   = {empty:'—',powder:'אבקה',liquid:'נוזל',solid:'מוצק',gas:'גז',static:'מוצק'};
 // נקודות מעבר מצב אמיתיות (°C): נמס=הופך לנוזל, רותח=הופך לגז
 const meltC = MAT.map(m=>({water:0,ice:0,steam:0,stone:1200,basalt:1200,lava:1200,sand:1700,glass:1700,hydrogen:-259,saltwater:-5,iron:1538,ironmelt:1538,rockgas:1200,irongas:1538,oxygen:-219,gold:1064,copper:1085,aluminum:660,mercury:-39,lithium:180,sodium:98,potassium:63,rubidium:39,cesium:28,cloud:0,chlorine:-101,nacl:801,licl:605,rust:1565,oxyliq:-219,chlliq:-101,hydliq:-259,carbon:3550,sulfur:115,sulfurL:115,sulfurG:115,magnesium:650,calcium:842,fes:1194,nitrogen:-210,nitliq:-210,silicon:1414,phosphorus:44,zinc:420,tin:232,co2:-57,limestone:825,quicklime:2613,mgo:2852,so2:-72,brass:930,bronze:950,cuo:1326,naoh:318,soap:60,ammonia:-78,nh4cl:338,no2:-11,co:-205,methane:-182,hcl:-114,hclaq:-30,cuso4:110,alumina:2072,nitricacid:-42,aquaregia:-42,amalgam:-39,kno3:334,baking:50,bleach:-20,h2s:-82,ozone:-193,nh4no3:170}[m.key] ?? null));
@@ -747,7 +749,7 @@ const G_GUNPOWDER = (()=>{ const atoms=[],bonds=[];
   put({atoms:[['C',0.3,0.5],['C',0.7,0.5]],bonds:[]}, 0.34,0.98, 0.66,0.96);
   return {atoms,bonds}; })();
 const molGeom = MAT.map(m=>({
-  wetsand:sideBySide(G_SIO2, G_WATER),
+  wetsand:sideBySide(G_SIO2, G_WATER), bulb:G_SIO2_LATTICE, wire:G_CU_LATTICE,
   nitricacid:G_HNO3, aquaregia:G_AQUAREGIA, amalgam:G_AMALGAM, kno3:G_KNO3,
   gunpowder:G_GUNPOWDER, baking:G_NAHCO3, bleach:G_NACLO, h2s:G_H2S, ozone:G_O3, nh4no3:G_NH4NO3,
   naoh:G_NAOH, soap:G_SOAP, ammonia:G_NH3, nh4cl:G_NH4CL, no2:G_NO2,
@@ -866,9 +868,97 @@ function setup() {
   velX = new Float32Array(W*H);   // מהירות אופקית (תנע/פגיעות)
   velY = new Float32Array(W*H);   // מהירות אנכית (כובד)
   moved= new Uint8Array(W*H);     // סימון "כבר זז השנה" (למניעת עיבוד כפול של גז)
+  charge = new Uint8Array(W*H);   // מתח/זרם בכל תא
+  charge2= new Uint8Array(W*H);
+  poolSeen= new Uint8Array(W*H);   // סימון לסריקת שלוליות אלקטרוליט
   camZoom=1; camX=0; camY=0; updateZoomLabel();   // מאפסים מצלמה בכל בנייה מחדש של הרשת
 }
 const idx = (x,y) => y*W + x;
+
+/* ===================== חשמל =====================
+   הסדרה האלקטרוכימית: כמה "בשמחה" כל מתכת מוותרת על אלקטרונים.
+   ההפרש בין שתי מתכות הוא בדיוק המתח שהבטריה נותנת — וזו הסיבה שבטריה
+   חייבת שתי מתכות *שונות*. שתי מתכות זהות נותנות הפרש אפס, כלומר כלום. */
+const REACT_SERIES = MAT.map(m=>({
+  potassium:2.93, calcium:2.87, sodium:2.71, lithium:3.04, rubidium:2.98, cesium:3.03,
+  magnesium:2.37, aluminum:1.66, zinc:0.76, iron:0.44, tin:0.14,
+  copper:-0.34, wire:-0.34, mercury:-0.85, gold:-1.50, brass:-0.20, bronze:-0.15, silicon:-0.10
+}[m.key] ?? null));
+// נוזל שמעביר יונים בין שתי המתכות. בלעדיו אין מעגל ואין בטריה.
+let ELECTROLYTE = null;
+function buildElectrolytes(){ ELECTROLYTE = new Set([SALTWATER, ACID, HCLAQ, NITRICACID, NAOH, BLEACH, AQUAREGIA]); }
+let charge, charge2, poolSeen;
+
+function electricity(){
+  charge2.fill(0);
+  poolSeen.fill(0);
+
+  /* --- בטריה --- שתי מתכות *שונות* שטבולות באותה שלולית אלקטרוליט.
+     לא צריך שהן ייגעו זו בזו — הנוזל הוא שסוגר את המעגל, וזה בדיוק העיקרון.
+     לכן סורקים כל שלולית מחוברת ובודקים אילו מתכות נוגעות בה. */
+  for (let i0=0;i0<grid.length;i0++){
+    if (poolSeen[i0] || !ELECTROLYTE.has(grid[i0])) continue;
+    poolSeen[i0]=1;
+    const stack=[i0];
+    let hiR=-99, loR=99, hiId=-1, loId=-1;
+    const hiCells=[], loCells=[];
+    while (stack.length){
+      const c=stack.pop(), x=c%W, y=(c/W)|0;
+      for (const [dx,dy] of NEI4){
+        const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
+        const j=idx(nx,ny), g=grid[j];
+        if (ELECTROLYTE.has(g)){ if(!poolSeen[j]){ poolSeen[j]=1; stack.push(j); } continue; }
+        const r=REACT_SERIES[g]; if (r===null) continue;
+        if (r>hiR){ hiR=r; hiId=g; hiCells.length=0; hiCells.push(j); }
+        else if (g===hiId) hiCells.push(j);
+        if (r<loR){ loR=r; loId=g; loCells.length=0; loCells.push(j); }
+        else if (g===loId) loCells.push(j);
+      }
+    }
+    if (hiId<0 || loId<0 || hiId===loId) continue;       // מתכת אחת בלבד = אין מתח
+    const volts = hiR - loR;                              // ההפרש בסדרה האלקטרוכימית הוא המתח
+    if (volts <= 0.15) continue;
+    const power = Math.min(255, Math.round(volts*80));
+    for (const j of hiCells) if (charge2[j]<power) charge2[j]=power;
+    for (const j of loCells) if (charge2[j]<power) charge2[j]=power;
+    // האלקטרודה הפעילה נאכלת לאט — בדיוק בגלל זה בטריה נגמרת
+    if (hiCells.length && Math.random()<0.0015){
+      const k=hiCells[(Math.random()*hiCells.length)|0];
+      grid[k]=AIR; life[k]=0; aux[k]=0; velX[k]=0; velY[k]=0;
+    }
+  }
+
+  // --- הזרם נע דרך מוליכים ונחלש עם המרחק ---
+  for (let y=0;y<H;y++) for (let x=0;x<W;x++){
+    const i=idx(x,y), id=grid[i];
+    if (id===AIR) continue;
+    if (!(conduct[id] || id===BULB)) continue;
+    let best=0;
+    for (const [dx,dy] of NEI4){ const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
+      const c=charge[idx(nx,ny)]; if (c>best) best=c; }
+    const passed = best>3 ? best-3 : 0;
+    if (charge2[i] < passed) charge2[i] = passed;
+  }
+  const t=charge; charge=charge2; charge2=t;
+
+  // --- מה שהזרם עושה בדרך ---
+  for (let i=0;i<grid.length;i++){
+    const c=charge[i]; if (c<10) continue;
+    const id=grid[i];
+    // חום מזרם נוצר בהתנגדות. חוט עבה ואלקטרודה כמעט לא מתנגדים ולכן כמעט לא מתחממים —
+    // הנורה היא האיבר שמתנגד חזק בכוונה, ולכן היא זו שמתלהטת ומאירה.
+    // (כשחיממנו גם את האלקטרודות, הבטריה הרתיחה את האלקטרוליט של עצמה וכיבתה את עצמה.)
+    if (id===BULB) temp[i] += c*0.06;
+    // אלקטרוליזה: מים שעובר בהם זרם מתפרקים למימן ולחמצן ביחס 2:1 — בדיוק כמו הנוסחה H₂O
+    // פיצול מים דורש לפחות ~1.23V, ומעשית כ-1.5V. תא בודד של אבץ-נחושת נותן 1.10V
+    // ולכן *לא* מצליח לפצל מים — בדיוק כמו במציאות. צריך מתח גבוה יותר (מגנזיום-נחושת,
+    // או כמה תאים בטור). זו גם הסיבה שהבטריה לא הורסת את האלקטרוליט של עצמה.
+    if ((id===WATER || id===SALTWATER) && c>=120 && Math.random()<0.03){
+      const g = Math.random()<0.667 ? HYDRO : OXYGEN;
+      grid[i]=g; life[i]=MAT[g].life; velX[i]=0; velY[i]=0; discover(g);
+    }
+  }
+}
 const inB = (x,y) => x>=0 && x<W && y>=0 && y<H;
 
 /* ---------- מצב משחק ---------- */
@@ -888,7 +978,7 @@ function render() {
   const d = img.data;
   meshCells.length = 0;
   for (let i=0; i<grid.length; i++) {
-    const id = grid[i]; const c = MAT[id].color;
+    const id = grid[i]; const c = MAT[id].color, c1 = c;
     if (id===MESH) meshCells.push(i);
     let r,g,b;
     if (viewMode===1) {                    // מפת חום — צבע לפי טמפרטורה בלבד
@@ -907,6 +997,14 @@ function render() {
       else if (id===FIRE && aux[i]===8){ r=Math.min(255,80*f); g=Math.min(255,140*f); b=Math.min(255,250*f+10); }  // גופרית — להבה כחולה
       else if (id===MOLTENMETAL){ const sc=MAT[aux[i]||IRON].color; r=Math.min(255,sc[0]*f+90); g=Math.min(255,sc[1]*f+55); b=Math.min(255,sc[2]*f+10); }  // מתכת מותכת זוהרת בגוון המתכת שלה
       else { r=Math.min(255,c[0]*f+30); g=c[1]*f; b=c[2]*f*0.6; }
+    } else if (id===BULB) {                 // נורה: כבויה אפורה, ודולקת חזק יותר ככל שהמתח גבוה
+      const c=charge[i]/255;
+      if (c>0.04){ const f=0.25+c*0.75;
+        r=Math.min(255,120+215*f); g=Math.min(255,116+200*f); b=Math.min(255,96+90*f); }
+      else { r=c1[0]; g=c1[1]; b=c1[2]; }
+    } else if (conduct[id] && charge[i]>18) {   // מוליך שעובר בו זרם — נצנוץ כחלחל
+      const f=Math.min(1,charge[i]/255)*0.55;
+      r=Math.min(255,c1[0]+40*f); g=Math.min(255,c1[1]+90*f); b=Math.min(255,c1[2]+180*f);
     } else if (id===EARTH && i>=W && grid[i-W]===AIR) {
       r=64; g=150; b=58;              // דשא — אדמה עם פני שטח חשופים לאוויר מלמעלה
       const t = temp[i];
@@ -1003,6 +1101,7 @@ function step(){
       }
     }
   }
+  electricity();   // בטריות, זרם במוליכים, אלקטרוליזה
   thermal();   // הולכת חום + מעברי פאזה
 }
 
@@ -2771,6 +2870,7 @@ function inspectAt(gx,gy,cx,cy){
       <div><span>⚖️ משקל:</span> <b>${kg} ק"ג</b></div>
       <div><span>🔥 הולכת חום:</span> <b>${condTxt}</b></div>
       <div><span>⚡ מוליך חשמל:</span> <b>${conduct[id]?'כן':'לא'}</b></div>
+      <div><span>🔌 מתח כרגע:</span> <b>${(charge[i]/80).toFixed(2)}V</b></div>
       <div><span>🧬 מבנה:</span> <b>${molec[id]}</b></div>
     </div>
     <div style="margin-top:5px"><span style="opacity:.65">🌡️ מעברי מצב:</span> <b>${phaseStr(id)}</b></div>
@@ -3089,7 +3189,7 @@ document.getElementById('shopClose').onclick=()=>document.getElementById('shop')
 
 /* ===== פאנל התרכובות המיוחדות 🧬 ===== */
 // התרכובות המגניבות שאפשר "לקחת" ולשים על הלוח. תיאור + נוסחה + תצוגת מולקולה חיה (drawMol).
-const COMPOUNDS = [ETP, ACID, MOTOROIL, THERMITE, LIMESTONE, QUICKLIME, CO2, BRASS, BRONZE];
+const COMPOUNDS = [WIRE, BULB, ETP, ACID, MOTOROIL, THERMITE, LIMESTONE, QUICKLIME, CO2, BRASS, BRONZE];
 const cmpGrid=document.getElementById('cmpGrid');
 function buildCompounds(){
   cmpGrid.innerHTML='';
@@ -3576,6 +3676,7 @@ function loop(now){
 
 /* ===== התחלה ===== */
 async function boot(){
+  buildElectrolytes();
   setup(); load();
   buildPalette(); buildPedia(); updateScore(); showMission(); refreshActive();
   requestAnimationFrame(loop);
@@ -3593,7 +3694,7 @@ function handleResize(){
   const nH=Math.max(40, Math.floor(stage.clientHeight / SCALE));
   if (nW===W && nH===H) return;        // לא השתנה כלום ממשי (למשל סרגל הכתובת נעלם) — לא נוגעים בעולם
 
-  const oW=W, oH=H, oGrid=grid, oTemp=temp, oLife=life, oAux=aux;
+  const oW=W, oH=H, oGrid=grid, oTemp=temp, oLife=life, oAux=aux, oChg=charge;
   let had=0; for (let i=0;i<oGrid.length;i++) if (oGrid[i]!==AIR) had++;
 
   setup();                              // בונה רשת חדשה במידות החדשות (מאפס אותה)
@@ -3607,6 +3708,7 @@ function handleResize(){
         const sx=Math.min(oW-1, (x*oW/W)|0);
         const src=sy*oW+sx, dst=y*W+x;
         grid[dst]=oGrid[src]; temp[dst]=oTemp[src]; life[dst]=oLife[src]; aux[dst]=oAux[src];
+        charge[dst]=oChg[src];
       }
     }
     if (borderWalls) applyBorder();
