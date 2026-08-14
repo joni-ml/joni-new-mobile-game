@@ -2384,7 +2384,7 @@ function reactLime(x,y,i){
 function reactZinc(x,y,i){
   for (const [dx,dy] of NEI4){ const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
     const j=idx(nx,ny), g=grid[j];
-    if (g===ACID){
+    if (g===ACID && Math.random()<0.02){    // מגיב בהדרגה, לא נעלם בבת אחת ברגע המגע (וגם כשמשמש כאלקטרוליט בטריה)
       grid[j]=HYDRO; life[j]=MAT[HYDRO].life; temp[j]+=45; discover(HYDRO);
       grid[i]=AIR; life[i]=0; velX[i]=0; velY[i]=0;
       return true;
