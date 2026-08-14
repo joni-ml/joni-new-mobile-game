@@ -321,6 +321,7 @@
       <label class="stog"><input type="checkbox" id="setBorder"> 🔲 קירות מסביב למסך (חומרים וחום לא בורחים)</label>
       <label class="stog"><input type="checkbox" id="setGrav" checked> 🍃 צמחים נופלים כשאין תמיכה</label>
       <label class="stog"><input type="checkbox" id="setNoLoss"> 🌡️ חומרים לא מאבדים חום לסביבה (רק מוליכים אותו)</label>
+      <label class="stog"><input type="checkbox" id="setErosion"> 🪨 מים שוחקים אבן לחול (עלול לפורר מבנים)</label>
       <div class="stog" style="flex-direction:column; align-items:stretch; gap:8px">
         <div>🖼️ רקע</div>
         <div id="bgBtns" style="display:flex; gap:6px; flex-wrap:wrap"></div>
@@ -676,7 +677,7 @@ const conduct = MAT.map(m=>({water:true,lava:true,fire:true,lithium:true,saltwat
 const molec   = MAT.map(m=>({air:'תערובת גזים',water:'מולקולה קוטבית',ice:'סריג גבישי',steam:'אדי מים',stone:'סריג סיליקט',basalt:'סלע וולקני צפוף',sand:'גרגרי קוורץ',earth:'תערובת אורגנית',mud:'אדמה רוויה',wood:'סיבי תאית',leaf:'תאית + כלורופיל',flower:'רקמה צמחית',sprout:'רקמה צמחית',seedT:'עובר זרע',seedF:'עובר זרע',ash:'שאריות מינרליות',glass:'מוצק אמורפי',lava:'סלע מותך',fire:'פלזמת בעירה',hydrogen:'מולקולה דו-אטומית H₂',wall:'בטון — סריג סיליקט עם סידן ומים',mesh:'פלדה — סריג ברזל עם מעט פחמן',bedrock:'אוליבין — סיליקט עם ברזל ומגנזיום',cloud:'טיפות מים זעירות מרחפות',lithium:'מתכת — סריג אטומים חוזר',chlorine:'מולקולה דו-אטומית Cl₂',licl:'סריג יוני (Li⁺Cl⁻)',saltwater:'תמיסה — יונים מומסים במים',sodium:'מתכת — סריג אטומים חוזר',nacl:'סריג יוני (Na⁺Cl⁻)',iron:'מתכת — סריג אטומים חוזר',ironmelt:'מתכת מותכת',rust:'תחמוצת ברזל Fe₂O₃',rockgas:'אדי סיליקט',irongas:'אדי מתכת',oxygen:'מולקולה דו-אטומית O₂',gold:'מתכת — סריג אטומים חוזר',copper:'מתכת — סריג אטומים חוזר',aluminum:'מתכת — סריג אטומים חוזר',mercury:'מתכת נוזלית',moltenmetal:'מתכת מותכת',potassium:'מתכת — סריג אטומים חוזר',rubidium:'מתכת — סריג אטומים חוזר',cesium:'מתכת — סריג אטומים חוזר',etp:'מי חמצן מרוכז H₂O₂',foam:'בועות חמצן במים',acid:'חומצה גופרתית H₂SO₄',motoroil:'שרשרת פחמימנים ארוכה',thermite:'תערובת Fe₂O₃ + אבקת Al',oxyliq:'חמצן דו-אטומי נוזלי O₂',chlliq:'כלור דו-אטומי נוזלי Cl₂',hydliq:'מימן דו-אטומי נוזלי H₂',moltensalt:'סריג יוני מותך',saltgas:'אדי מלח יוניים',carbon:'סריג פחמן (גרפיט/יהלום)',sulfur:'טבעת גופרית S₈',sulfurL:'גופרית מותכת',sulfurG:'אדי גופרית',magnesium:'מתכת — סריג אטומים חוזר',calcium:'מתכת — סריג אטומים חוזר',fes:'סריג יוני Fe-S',lime:'הידרוקסיד Ca(OH)₂',nitrogen:'מולקולה דו-אטומית N₂',nitliq:'חנקן דו-אטומי נוזלי',silicon:'סריג גבישי כמו יהלום',phosphorus:'מולקולת P₄ טטרהדרלית',zinc:'מתכת — סריג אטומים חוזר',tin:'מתכת — סריג אטומים חוזר',co2:'מולקולה קווית O=C=O',limestone:'סריג יוני Ca²⁺CO₃²⁻',quicklime:'סריג יוני Ca²⁺O²⁻',mgo:'סריג יוני Mg²⁺O²⁻',so2:'מולקולה כפופה',brass:'סגסוגת — אטומי אבץ בתוך סריג נחושת',bronze:'סגסוגת — אטומי בדיל בתוך סריג נחושת',cuo:'סריג יוני Cu²⁺O²⁻',naoh:'בסיס — יוני Na⁺ ו-OH⁻ במים',soap:'מולקולה עם ראש אוהב-מים וזנב אוהב-שומן',ammonia:'פירמידה — חנקן עם שלושה מימנים',nh4cl:'סריג יוני NH₄⁺Cl⁻',no2:'מולקולה כפופה',co:'קשר משולש בין פחמן לחמצן',methane:'טטרהדר — פחמן עם ארבעה מימנים',hcl:'מולקולה דו-אטומית קוטבית',hclaq:'יוני H⁺ ו-Cl⁻ במים',cuso4:'סריג יוני Cu²⁺SO₄²⁻',alumina:'סריג יוני קשה מאוד',nitricacid:'חומצה חזקה — H⁺ ו-NO₃⁻',aquaregia:'תערובת שתי חומצות',amalgam:'זהב מומס בכספית',kno3:'סריג יוני K⁺NO₃⁻',gunpowder:'תערובת — מחמצן + דלק יחד',baking:'סריג יוני Na⁺HCO₃⁻',bleach:'סריג יוני Na⁺ClO⁻',h2s:'מולקולה כפופה כמו מים',ozone:'שלושה אטומי חמצן בשרשרת כפופה',nh4no3:'סריג יוני NH₄⁺NO₃⁻',wetsand:'גרגרי קוורץ עם מים בין החרירים',bulb:'טונגסטן — סריג מתכתי צפוף',wire:'סריג נחושת בתוך בידוד',toggle:'מגע נחושת שנפתח ונסגר'}[m.key] ?? '—'));
 const STATE   = {empty:'—',powder:'אבקה',liquid:'נוזל',solid:'מוצק',gas:'גז',static:'מוצק'};
 // נקודות מעבר מצב אמיתיות (°C): נמס=הופך לנוזל, רותח=הופך לגז
-const meltC = MAT.map(m=>({water:0,ice:0,steam:0,stone:1200,basalt:1200,lava:1200,sand:1700,glass:1700,hydrogen:-259,saltwater:-5,iron:1538,ironmelt:1538,rockgas:1200,irongas:1538,oxygen:-219,gold:1064,copper:1085,aluminum:660,mercury:-39,lithium:180,sodium:98,potassium:63,rubidium:39,cesium:28,cloud:0,chlorine:-101,nacl:801,licl:605,rust:1565,oxyliq:-219,chlliq:-101,hydliq:-259,carbon:3550,sulfur:115,sulfurL:115,sulfurG:115,magnesium:650,calcium:842,fes:1194,nitrogen:-210,nitliq:-210,silicon:1414,phosphorus:44,zinc:420,tin:232,co2:-57,limestone:825,quicklime:2613,mgo:2852,so2:-72,brass:930,bronze:950,cuo:1326,naoh:318,soap:60,ammonia:-78,nh4cl:338,no2:-11,co:-205,methane:-182,hcl:-114,hclaq:-30,cuso4:110,alumina:2072,bulb:3422,nitricacid:-42,aquaregia:-42,amalgam:-39,kno3:334,baking:50,bleach:-20,h2s:-82,ozone:-193,nh4no3:170}[m.key] ?? null));
+const meltC = MAT.map(m=>({water:0,ice:0,steam:0,stone:1100,basalt:1100,lava:1100,sand:1400,glass:1700,hydrogen:-259,saltwater:-5,iron:1538,ironmelt:1538,rockgas:1100,irongas:1538,oxygen:-219,gold:1064,copper:1085,aluminum:660,mercury:-39,lithium:180,sodium:98,potassium:63,rubidium:39,cesium:28,cloud:0,chlorine:-101,nacl:801,licl:605,rust:1565,oxyliq:-219,chlliq:-101,hydliq:-259,carbon:3550,sulfur:115,sulfurL:115,sulfurG:115,magnesium:650,calcium:842,fes:1194,nitrogen:-210,nitliq:-210,silicon:1414,phosphorus:44,zinc:420,tin:232,co2:-57,limestone:825,quicklime:2613,mgo:2852,so2:-72,brass:930,bronze:950,cuo:1326,naoh:318,soap:60,ammonia:-78,nh4cl:338,no2:-11,co:-205,methane:-182,hcl:-114,hclaq:-30,cuso4:110,alumina:2072,bulb:3422,nitricacid:-42,aquaregia:-42,amalgam:-39,kno3:334,baking:50,bleach:-20,h2s:-82,ozone:-193,nh4no3:170}[m.key] ?? null));
 const boilC = MAT.map(m=>({water:100,ice:100,steam:100,stone:2900,basalt:2900,lava:2900,sand:2950,glass:2950,hydrogen:-253,saltwater:101,iron:2861,ironmelt:2861,rockgas:2900,irongas:2861,oxygen:-183,gold:2700,copper:2562,aluminum:2470,mercury:357,lithium:1342,sodium:883,potassium:759,rubidium:688,cesium:671,cloud:100,chlorine:-34,nacl:1465,licl:1382,rust:2861,oxyliq:-183,chlliq:-34,hydliq:-253,carbon:4027,sulfur:445,sulfurL:445,sulfurG:445,magnesium:1090,calcium:1484,fes:2861,nitrogen:-196,nitliq:-196,silicon:3265,phosphorus:280,zinc:907,tin:2602,co2:-78,quicklime:2850,mgo:3600,so2:-10,brass:1100,bronze:1200,cuo:2000,naoh:1388,ammonia:-33,no2:21,co:-192,methane:-162,hcl:-85,hclaq:110,alumina:2977,nitricacid:83,aquaregia:90,amalgam:357,bleach:101,h2s:-60,ozone:-112}[m.key] ?? null));
 // עבור מצב צבירה — האם מגיעים אליו בחימום או בקירור, ובאיזו טמפרטורה
 function phaseHint(id){
@@ -691,11 +692,24 @@ function phaseHint(id){
   }
   return 'שנו את הטמפרטורה של ' + nm;
 }
+/* אילו חומרים באמת משנים מצב במשחק. לשאר יש נקודות היתוך/רתיחה אמיתיות
+   שמוצגות לצורך לימוד, אבל הסימולציה לא מדמה אותן — ועדיף לכתוב את זה
+   מאשר להבטיח לשחקן משהו שלא יקרה כשהוא יחמם. */
+let PHASE_SIM=null;
+function buildPhaseSim(){
+  PHASE_SIM=new Set([WATER,SALTWATER,STEAM,CLOUD,ICE,STONE,BASALT,LAVA,ROCKGAS,SAND,GLASS,
+    IRON,IRONMELT,IRONGAS,GOLD,COPPER,ALUMINUM,MOLTENMETAL,LITHIUM,SODIUM,POTASSIUM,RUBIDIUM,CESIUM,
+    CHLORINE,CHLLIQ,OXYGEN,OXYLIQ,HYDRO,HYDLIQ,NITROGEN,NITLIQ,
+    NACL,LICL,MOLTENSALT,SALTGAS,RUST,SULFUR,SULFURL,SULFURG,
+    MAGNESIUM,CALCIUM,FES,MUD,ZINC,TIN,SILICON,BRASS,BRONZE,
+    LIMESTONE,PHOSPHORUS,BAKING,NH4NO3,AMALGAM]);
+}
 function phaseStr(id){
   if (MAT[id].flam) return 'נשרף ב-~300° (לא נמס)';
   const mel=meltC[id], boi=boilC[id];
   if (mel==null && boi==null) return 'תערובת — אין נקודה אחת';
-  const p=[]; if(mel!=null)p.push('💧 נוזל ב-'+mel+'°'); if(boi!=null)p.push('💨 גז ב-'+boi+'°');
+  const p=[]; if(mel!=null)p.push('💧 נוזל: '+mel+'°'); if(boi!=null)p.push('💨 גז: '+boi+'°');
+  if (PHASE_SIM && !PHASE_SIM.has(id)) p.push('(במציאות — במשחק לא משתנה)');
   return p.join(' · ');
 }
 // ---------- מבנה מולקולרי דו-ממדי (אטומים + קשרים) ----------
@@ -988,7 +1002,7 @@ const REACT_SERIES = MAT.map(m=>({
 }[m.key] ?? null));
 // נוזל שמעביר יונים בין שתי המתכות. בלעדיו אין מעגל ואין בטריה.
 let ELECTROLYTE = null, ALKALI = null, alkaliWarned=false;
-function buildElectrolytes(){ buildCoreRock(); ELECTROLYTE = new Set([SALTWATER, ACID, HCLAQ, NITRICACID, NAOH, BLEACH, AQUAREGIA]);
+function buildElectrolytes(){ buildCoreRock(); buildPhaseSim(); ELECTROLYTE = new Set([SALTWATER, ACID, HCLAQ, NITRICACID, NAOH, BLEACH, AQUAREGIA]);
   ALKALI = new Set([SODIUM, POTASSIUM, LITHIUM, RUBIDIUM, CESIUM, CALCIUM]); }
 let charge, charge2, poolSeen, netId, bulbSeen;
 const VSCALE = 20;   // יחידות מתח לכל וולט. 255/20 = עד 12.75V נכנסים בבית אחד
@@ -1331,7 +1345,10 @@ function step(){
 
 /* ===== סחיפה: אבן שנוגעת במים נשחקת לאט לחול =====
    דוגמים מדגם אקראי קטן בכל צעד (במקום לסרוק את כל הרשת) — זול ומרגיש הדרגתי. */
-let erosionOn = true;
+// כבוי כברירת מחדל. כשזה היה דלוק, כל אבן שנגעה במים נשחקה — ולכן קערת אבן
+// עם מים התפוררה מעצמה והמים "נעלמו" לתוך החול שנוצר. מי שרוצה נופים שנשחקים
+// יכול להדליק בהגדרות; מה שבונים לא ייהרס מעצמו.
+let erosionOn = false;
 function erosion(){
   if (!erosionOn) return;
   const samples = Math.max(8, (W*H/300)|0);
@@ -1339,14 +1356,22 @@ function erosion(){
     const x = (Math.random()*W)|0, y = (Math.random()*H)|0;
     const i = idx(x,y);
     if (grid[i]!==STONE) continue;
-    let wet=false;
-    if (x>0   && grid[i-1]===WATER) wet=true;
-    else if (x<W-1 && grid[i+1]===WATER) wet=true;
-    else if (y>0   && grid[i-W]===WATER) wet=true;
-    else if (y<H-1 && grid[i+W]===WATER) wet=true;
-    if (wet && Math.random()<0.06){ grid[i]=SAND; discover(SAND); }
+    // רק מים *זורמים* שוחקים סלע. מים עומדים בתוך כלי לא ממיסים אותו —
+    // קודם הם כן, ולכן קערת אבן עם מים פשוט התפוררה והמים נעלמו לתוך החול.
+    // מים זורמים = יש אוויר מתחתיהם (מפל/נחל), או שהם נעים ממש.
+    // מים "זורמים" = יש להם לאן לזוז: אוויר מתחתיהם או לצידם. מים כלואים בכלי
+    // מלא אין להם לאן לזרום, ולכן הם לא שוחקים אותו — קודם הם כן, וקערת אבן
+    // פשוט התפוררה מעצמה והמים נעלמו לתוך החול שנוצר.
+    let running=false;
+    for (const [dx,dy] of NEI4){
+      const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
+      const j=idx(nx,ny); if (grid[j]!==WATER) continue;
+      if (ny+1<H && grid[idx(nx,ny+1)]===AIR){ running=true; break; }   // מים באמצע נפילה
+    }
+    if (running && Math.random()<0.10){ grid[i]=SAND; discover(SAND); }
   }
 }
+
 
 /* ===== שמש + ליבת כדור הארץ ===== */
 // עוצמת שמש: 0 בחצות, 1 בצהריים (מחזור סינוסי אמיתי). מחממת רק את פני השטח החשופים לשמיים.
@@ -1813,7 +1838,7 @@ function reactIron(x,y,i){
   for (const [dx,dy] of NEI4){
     const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
     const n=grid[idx(nx,ny)];
-    if ((n===WATER||n===SALTWATER) && Math.random()<0.0016){   // חלודה איטית מאוד (לוקח זמן, כמו במציאות)
+    if ((n===WATER||n===SALTWATER) && Math.random()<0.0004){   // חלודה איטית מאוד (לוקח זמן, כמו במציאות)
       grid[i]=RUST; life[i]=0; aux[i]=0; discover(RUST); return true;
     }
   }
@@ -2542,7 +2567,8 @@ function reactWater(x,y,i){
     if (n===EARTH && Math.random()<0.22){ setCell(j,MUD); grid[i]=AIR; life[i]=0; velX[i]=0; velY[i]=0; return true; } // המים נספגים — נצרכים
     // חול סופג מים בדיוק כמו אדמה. בלי זה המים פשוט נעצרו על החול ולא היתה דרך לרדת לתת-הקרקע.
     else if (n===SAND && Math.random()<0.30){ setCell(j,WETSAND); grid[i]=AIR; life[i]=0; velX[i]=0; velY[i]=0; return true; }
-    else if (n===STONE && Math.random()<0.0016){ setCell(j,SAND); }
+    // (שחיקת אבן לחול מטופלת ב-erosion(), שדורשת מים *זורמים*. הכלל הישן כאן שחק
+    //  כל אבן שנגעה במים, ולכן קערת אבן עם מים עומדים התפוררה מעצמה.)
   }
   return false;
 }
@@ -3851,6 +3877,7 @@ buildBgBtns();
 document.getElementById('btnSettings').onclick=()=>document.getElementById('settings').classList.add('open');
 document.getElementById('setClose').onclick=()=>document.getElementById('settings').classList.remove('open');
 document.getElementById('setBuild').onchange=e=>buildOnAir=e.target.checked;
+document.getElementById('setErosion').onchange=e=>erosionOn=e.target.checked;
 document.getElementById('setGrav').onchange=e=>plantGrav=e.target.checked;
 document.getElementById('setBorder').onchange=e=>{ borderWalls=e.target.checked; if(borderWalls)applyBorder(); else clearBorder(); };
 document.getElementById('setNoLoss').onchange=e=>{ noHeatLoss=e.target.checked; };
@@ -4223,7 +4250,7 @@ let needsWorldGen = false;
 const tutorialSteps = [
   'ברוך הבא! זה עולם טבעי — ים, הרים ומערות. נסה לגעת במסך.',
   'בחר 💧 מים וצייר אותם על הקרקע — תראה לאן הם זורמים.',
-  'מים שזורמים על 🪨 אבן שוחקים אותה לאט ל🏖️ חול. חכה ותראה.',
+  '💧 מים על 🏖️ חול נספגים פנימה והופכים לחול רטוב — ככה נוצרים מי תהום.',
   'עכשיו נסה 🔥 חום על מים — הם יהפכו לאדים.',
   'וגם הפוך: ❄️ קור הופך מים לקרח. הטמפרטורה קובעת הכל!'
 ];
