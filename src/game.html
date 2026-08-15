@@ -1561,7 +1561,13 @@ function checkPhase(i){
                } break;
     // זרחן לבן: מתלקח מעצמו כבר ב-44° — לא צריך גפרור בכלל
     case PHOSPHORUS: if (t>=44){ grid[i]=FIRE; temp[i]=780; life[i]=MAT[FIRE].life; discover(FIRE); } break;
-    case MUD:    if (t>=140) { grid[i]=EARTH; } break;         // מתייבש
+    // מתייבש — והמים שבו יוצאים כאדים למעלה במקום פשוט להימחק מהעולם
+    case MUD:    if (t>=140) {
+                   const up=i-W;
+                   if (up>=0 && grid[up]===AIR){ grid[up]=STEAM; life[up]=MAT[STEAM].life;
+                     temp[up]=Math.max(105,t); velX[up]=0; velY[up]=0; discover(STEAM); }
+                   grid[i]=EARTH;
+                 } break;
     case WOOD: case LEAF: case SPROUT: case FLOWER: case SEEDT: case SEEDF:
       if (t>=300){ grid[i]=FIRE; temp[i]=760; life[i]=MAT[FIRE].life; discover(FIRE); } break;
   }
@@ -2580,7 +2586,16 @@ function reactWater(x,y,i){
 // 💧 מי תהום בחול: חזית הרטיבות יורדת דרך החול היבש, זוחלת גם הצידה, וכשהיא מגיעה
 // לחלל מתחת — המים נוטפים החוצה כמעיין. הרטיבות תמיד עוברת (לא מוכפלת), אז אין מים יש מאין.
 function reactWetSand(x,y,i){
-  if (temp[i]>=140){ grid[i]=SAND; return true; }                 // מתייבש בחום
+  // מתייבש בחום — והמים *יוצאים כאדים* במקום להימחק. בלי זה חימום חול רטוב פשוט
+  // העלים את המים מהעולם, וזו היתה דליפה אמיתית במאזן המים.
+  if (temp[i]>=140){
+    const up = y-1>=0 ? idx(x,y-1) : -1;
+    if (up>=0 && grid[up]===AIR){
+      grid[up]=STEAM; life[up]=MAT[STEAM].life; temp[up]=Math.max(105,temp[i]);
+      velX[up]=0; velY[up]=0; discover(STEAM);
+    }
+    grid[i]=SAND; return true;
+  }
   const bi = y+1<H ? idx(x,y+1) : -1;
   const nb = bi>=0 ? grid[bi] : WALL;
   // 1) נוטף לחלל שמתחת
@@ -2592,8 +2607,13 @@ function reactWetSand(x,y,i){
   if (nb===SAND && Math.random()<0.18){
     grid[bi]=WETSAND; temp[bi]=temp[i]; grid[i]=SAND; return true;
   }
+  // 2ב) ...וגם דרך *עפר* יבש שמתחת. קודם החול התייחס לאדמה כאילו היא סלע אטום,
+  // אז מים על חוף חול נעצרו בדיוק בגבול חול/אדמה ומעולם לא הגיעו לקרקע שמתחת.
+  if (nb===EARTH && Math.random()<0.14){
+    grid[bi]=MUD; temp[bi]=temp[i]; grid[i]=SAND; return true;
+  }
   // הגענו לשכבה שהמים לא עוברים דרכה — מכאן זה מפלס מי התהום, והוא מתפשט הצידה מהר.
-  const onBedrock = !(nb===AIR || nb===SAND);
+  const onBedrock = !(nb===AIR || nb===SAND || nb===EARTH);
   // 3) נביעה מדופן חשופה — מעיין בצד הגבעה. רק הצידה, ורק כשיש על מה להישען.
   if (nb!==AIR && Math.random()<(onBedrock?0.18:0.05)){
     const dir=Math.random()<0.5?1:-1;
@@ -2624,7 +2644,11 @@ function reactMud(x,y,i){
   if (below===EARTH && Math.random()<0.07){
     grid[idx(x,y+1)]=MUD; grid[i]=EARTH; return true;
   }
-  const mudOnRock = !(below===AIR || below===EARTH);
+  // ...וגם לחול יבש שמתחת — הרטיבות חוצה את הגבול בין סוגי קרקע לשני הכיוונים.
+  if (below===SAND && Math.random()<0.10){
+    grid[idx(x,y+1)]=WETSAND; grid[i]=EARTH; return true;
+  }
+  const mudOnRock = !(below===AIR || below===EARTH || below===SAND);
   if (mudOnRock && Math.random()<0.22){          // מפלס מי התהום זוחל הצידה מעל שכבה אטומה
     const dir=Math.random()<0.5?1:-1;
     for (const dx of [dir,-dir]){ const nx=x+dx; if(nx<0||nx>=W) continue;
