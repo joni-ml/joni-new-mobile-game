@@ -1908,7 +1908,14 @@ function reactETP(x,y,i){
 // 🫧 קצף — מתנפח, מתפזר ודועך לאט חזרה לאוויר (הבועות מתפוצצות)
 function reactFoam(x,y,i){
   if (life[i] > 0) life[i]--;
-  if (life[i] <= 0 || Math.random() < 0.004){ grid[i]=AIR; life[i]=0; velX[i]=0; velY[i]=0; return true; }
+  if (life[i] <= 0 || Math.random() < 0.004){
+    // קצף הוא בועות גז *בתוך מים* — כשהבועה מתפוצצת הגז בורח אבל הנוזל נשאר ומתנקז.
+    // קודם כל תא קצף פשוט נמחק לאוויר, אז ערימת קצף שלמה נעלמה מהעולם בלי להשאיר כלום.
+    // הקצף מתנפח מאוויר (פי כמה מהנוזל המקורי), ולכן רק חלק ממנו חוזר להיות מים.
+    if (Math.random() < 0.28){ grid[i]=WATER; life[i]=0; aux[i]=0; velX[i]=0; velY[i]=0; }
+    else { grid[i]=AIR; life[i]=0; velX[i]=0; velY[i]=0; }
+    return true;
+  }
   return false;
 }
 // 🧪 חומצה גופרתית חזקה (H₂SO₄) — ממיסה כמעט הכל: מתכות, אבן, עץ, אדמה. משחררת בועות גז.
