@@ -652,6 +652,7 @@ const TOTAL = MAT.filter(m => !m.shop && !m.sys && !m.compound && m.id!==AIR).le
    AMB = טמפ' הסביבה. cond = מוליכות חום. radi = קצב איבוד חום לסביבה.
    temp0 = טמפ' התחלתית של חומר כשמניחים אותו. */
 const AMB = 24;
+const ABS_ZERO = -273.15;   // אפס מוחלט — אין טמפרטורה נמוכה מזו בשום מקום ביקום
 // אוויר מוליך חום גרוע (מבודד) — כדי שהחום לא "יברח" מהחומרים לחלל הריק.
 const cond  = MAT.map(m => ({air:0.003,water:0.10,ice:0.08,stone:0.045,glass:0.06,sand:0.05,steam:0.006,wall:0,lava:0.16,fire:0.22,mesh:0.12,bedrock:0.05,cloud:0.006,lithium:0.20,chlorine:0.006,licl:0.05,saltwater:0.11,sodium:0.22,nacl:0.05,iron:0.30,ironmelt:0.30,rust:0.05,rockgas:0.01,irongas:0.012,oxygen:0.005,gold:0.35,copper:0.40,aluminum:0.34,mercury:0.10,moltenmetal:0.30,potassium:0.20,rubidium:0.18,cesium:0.16,etp:0.10,foam:0.02,acid:0.11,motoroil:0.08,thermite:0.12,oxyliq:0.02,chlliq:0.02,hydliq:0.02,moltensalt:0.10,saltgas:0.02,carbon:0.15,sulfur:0.02,sulfurL:0.03,sulfurG:0.006,magnesium:0.28,calcium:0.30,fes:0.06,lime:0.04,nitrogen:0.005,nitliq:0.02,silicon:0.20,phosphorus:0.02,zinc:0.28,tin:0.25,co2:0.005,limestone:0.05,quicklime:0.04,mgo:0.05,so2:0.005,brass:0.30,bronze:0.25,cuo:0.06,naoh:0.11,soap:0.03,ammonia:0.006,nh4cl:0.04,no2:0.005,co:0.006,methane:0.006,hcl:0.005,hclaq:0.11,cuso4:0.05,alumina:0.10,nitricacid:0.11,aquaregia:0.11,amalgam:0.12,kno3:0.05,gunpowder:0.06,baking:0.05,bleach:0.11,h2s:0.006,ozone:0.005,nh4no3:0.05,wetsand:0.07,bulb:0.05,wire:0.40,toggle:0.30}[m.key] ?? 0.04));
 // radi = קצב איבוד חום לסביבה (רק ממשטחים חשופים לאוויר). נמוך = החום נשמר. קיר=0.
@@ -1486,6 +1487,9 @@ function thermal(){
     let nt = t + hf*acc;
     // איבוד חום קורה רק ממשטחים חשופים לאוויר. חומר סגור בקירות (0 שכני אוויר) לא מתקרר!
     if (!noHeatLoss && airN>0) nt += (AMB - nt) * radi[id] * Math.min(airN,4) * 0.25;
+    // אפס מוחלט הוא הרצפה של היקום — אי אפשר לקרר מתחתיו. בלי החסימה הזו חנקן נוזלי
+    // (שמוריד 45° לשכן בכל תור) הוריד תאים ל-300°- ומטה, טמפרטורה שלא קיימת במציאות.
+    if (nt < ABS_ZERO) nt = ABS_ZERO;
     temp2[i]=nt;
   }
   const s=temp; temp=temp2; temp2=s;
@@ -2377,7 +2381,7 @@ function reactAluminum(x,y,i){
 function reactCO2(x,y,i){
   for (const [dx,dy] of NEI4){ const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
     const j=idx(nx,ny), g=grid[j];
-    if (g===FIRE && Math.random()<0.3){ grid[j]=AIR; life[j]=0; temp[j]-=120; return true; }   // מחניק את האש (צריך להצטבר — בדיוק כמו מטף אמיתי)
+    if (g===FIRE && Math.random()<0.3){ grid[j]=AIR; life[j]=0; temp[j]=Math.max(ABS_ZERO,temp[j]-120); return true; }   // מחניק את האש (צריך להצטבר — בדיוק כמו מטף אמיתי)
     if (g===MAGNESIUM && temp[j]>400){                                          // Mg + CO₂ → MgO + C
       grid[j]=MGO; life[j]=0; aux[j]=0; temp[j]+=260; discover(MGO);
       grid[i]=CARBON; life[i]=0; discover(CARBON);
@@ -2489,7 +2493,7 @@ function reactPhosphorus(x,y,i){
 function reactNitLiq(x,y,i){
   for (const [dx,dy] of NEI4){ const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
     const j=idx(nx,ny); if (grid[j]===AIR) continue;
-    temp[j] -= 45;                                    // שואב חום מהשכן
+    temp[j] = Math.max(ABS_ZERO, temp[j]-45);          // שואב חום מהשכן (לא מתחת לאפס מוחלט)
     if (Math.random()<0.12){                          // ותוך כדי מתאדה
       grid[i]=NITROGEN; life[i]=MAT[NITROGEN].life; temp[i]=-190; discover(NITROGEN);
       return true;
@@ -2605,7 +2609,7 @@ function reactWater(x,y,i){
     // וגוזלים ממנו חום (כך אש נכבית ליד מים, ולבה מתקררת לבזלת). ככה רואים אדים אמיתיים!
     if (n!==AIR && n!==WATER && n!==STEAM && n!==CLOUD && n!==ICE && n!==WALL && temp[j] >= 150){
       grid[i]=STEAM; life[i]=MAT[STEAM].life; temp[i]=110; velX[i]=0; velY[i]=0; discover(STEAM);
-      temp[j] -= 55;                 // המים מקררים את הלוהט
+      temp[j] = Math.max(ABS_ZERO, temp[j]-55);   // המים מקררים את הלוהט
       // אש נכבית במים — אבל להבת מגנזיום (aux=7) ממשיכה לבעור אפילו מתחת למים!
       if (n===FIRE && aux[j]!==7) { grid[j]=aux[j]?STEAM:AIR; temp[j]=Math.min(temp[j],95); life[j]=0; aux[j]=0; }
       return true;
