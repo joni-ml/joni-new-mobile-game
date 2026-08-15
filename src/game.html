@@ -972,7 +972,7 @@ const ctx = canvas.getContext('2d', { alpha:false });
 const buf = document.createElement('canvas');
 const bctx = buf.getContext('2d', { alpha:false });
 let SCALE = 5;   // גודל פיקסל (קטן יותר = רזולוציה גבוהה יותר, כל פיקסל קרוב יותר למולקולה)
-let W, H, grid, life, aux, temp, temp2, velX, velY, moved, img;
+let W, H, grid, life, aux, temp, temp2, velX, velY, moved, img, wet;
 // מצלמה: זום ומיקום. camZoom=1 → כל העולם נראה. camX/camY = פינת שמאל-עליון של החלון הנראה (בקואורדינטות רשת).
 let camZoom=1, camX=0, camY=0;
 const CAM_MAX=12;   // זום מרבי — כל פיקסל ענק, רואים כל תא בנפרד
@@ -1035,6 +1035,7 @@ function setup() {
   grid = new Uint8Array(W*H);
   life = new Uint8Array(W*H);
   aux  = new Uint8Array(W*H);
+  wet  = new Uint8Array(W*H);   // כמה H₂O יושב *בתוך* התא (0..WETMAX) — תכונה, לא חומר נפרד
   temp = new Float32Array(W*H).fill(AMB);
   temp2= new Float32Array(W*H);
   velX = new Float32Array(W*H);   // מהירות אופקית (תנע/פגיעות)
@@ -1059,8 +1060,83 @@ const REACT_SERIES = MAT.map(m=>({
   copper:-0.34, wire:-0.34, toggle:-0.34, mercury:-0.85, gold:-1.50, brass:-0.20, bronze:-0.15, silicon:-0.10
 }[m.key] ?? null));
 // נוזל שמעביר יונים בין שתי המתכות. בלעדיו אין מעגל ואין בטריה.
+/* ============ מים כתכונה, לא כחומר ============
+   במקום להמציא חומר חדש לכל שילוב ("חול רטוב", "אדמה רטובה", "אפר רטוב"...)
+   ולכתוב חוק נפרד לכל זוג — מים פשוט *יושבים בתוך* כל חומר נקבובי.
+   התא נהיה כהה יותר, בנוסחה מופיע ·H₂O, וכשמחממים המים מתאדים החוצה.
+   כל ההתנהגות למטה היא חוקים כלליים שעובדים על *כל* אבקה, גם כאלה שאף פעם
+   לא כתבנו להן שורת קוד — בדיוק בגלל זה מים כן עוברים מחול לאדמה עכשיו. */
+const WETMAX = 3;
+let POROUS = null;
+function buildPorous(){
+  POROUS = new Set();
+  for (let i=0;i<MAT.length;i++){
+    const m=MAT[i]; if(!m.key||m.sys) continue;
+    if (m.type==='powder') POROUS.add(i);
+  }
+  POROUS.add(ASH); POROUS.add(WOOD); POROUS.add(LEAF);
+  // חומרים שכבר *מגיבים* עם מים (נמסים, מתפוצצים, מתחממים) — להם יש כימיה משלהם
+  // ואסור לתת להם פשוט "לספוג" במקום להגיב.
+  for (const id of [SODIUM,POTASSIUM,LITHIUM,RUBIDIUM,CESIUM,CALCIUM,MAGNESIUM,
+                    QUICKLIME,NACL,LICL,NAOH,BAKING,KNO3,NH4NO3,NH4CL,CUSO4,
+                    THERMITE,PHOSPHORUS,GUNPOWDER,LIME])
+    POROUS.delete(id);
+}
+const isPorous = id => POROUS && POROUS.has(id);
+// חול/אדמה שומרים על השם והמראה הישנים שלהם כשהם רטובים, כדי שכל מה שכבר
+// בנוי עליהם (צמחים שצומחים על בוץ, מי תהום) ימשיך לעבוד בדיוק כמו קודם.
+function syncWetLook(i){
+  const g=grid[i], w=wet[i];
+  if (w>0){ if (g===SAND) grid[i]=WETSAND; else if (g===EARTH) grid[i]=MUD; }
+  else     { if (g===WETSAND) grid[i]=SAND; else if (g===MUD) grid[i]=EARTH; }
+}
+function addWater(i, amount){
+  if (!isPorous(grid[i])) return false;
+  if (wet[i]>=WETMAX) return false;
+  wet[i]=Math.min(WETMAX, wet[i]+(amount||1)); syncWetLook(i); return true;
+}
+/* חוק אחד שמחליף עשרות חוקי "מי-עובר-למי": הרטיבות יורדת, מתפשטת, נוטפת ומתאדה. */
+function wetnessStep(x,y,i,id){
+  if (wet[i]<=0) return false;
+  // מתאדה בחום — המים יוצאים כאדים ולא נמחקים מהעולם
+  if (temp[i]>=100){
+    const up = y-1>=0 ? idx(x,y-1) : -1;
+    wet[i]--; syncWetLook(i);
+    if (up>=0 && grid[up]===AIR){
+      grid[up]=STEAM; life[up]=MAT[STEAM].life; temp[up]=Math.max(105,temp[i]);
+      velX[up]=0; velY[up]=0; wet[up]=0; discover(STEAM);
+    }
+    return true;
+  }
+  const bi = y+1<H ? idx(x,y+1) : -1;
+  // נוטף החוצה לחלל שמתחת — ככה נובע מעיין מדופן מערה
+  if (bi>=0 && grid[bi]===AIR && Math.random()<0.12){
+    grid[bi]=WATER; life[bi]=0; aux[bi]=0; wet[bi]=0;
+    temp[bi]=temp[i]; velX[bi]=0; velY[bi]=0;
+    wet[i]--; syncWetLook(i); return true;
+  }
+  // מחלחל למטה לכל חומר נקבובי — לא משנה איזה. זה החוק שהיה חסר.
+  if (bi>=0 && isPorous(grid[bi]) && wet[bi]<wet[i] && Math.random()<0.25){
+    wet[bi]++; wet[i]--; syncWetLook(bi); syncWetLook(i); return true;
+  }
+  // מתפשט הצידה כשאי אפשר לרדת — ככה נוצר מפלס מי תהום מעל שכבה אטומה
+  const blocked = !(bi>=0 && (grid[bi]===AIR || isPorous(grid[bi])));
+  if (Math.random() < (blocked?0.22:0.05)){
+    const dir=Math.random()<0.5?1:-1;
+    for (const dx of [dir,-dir]){ const nx=x+dx; if(nx<0||nx>=W) continue;
+      const sj=idx(nx,y);
+      if (isPorous(grid[sj]) && wet[sj]<wet[i]){
+        wet[sj]++; wet[i]--; syncWetLook(sj); syncWetLook(i); return true; }
+      if (grid[sj]===AIR && blocked && Math.random()<0.5){
+        grid[sj]=WATER; life[sj]=0; aux[sj]=0; wet[sj]=0;
+        temp[sj]=temp[i]; velX[sj]=0; velY[sj]=0;
+        wet[i]--; syncWetLook(i); return true; }
+    }
+  }
+  return false;
+}
 let ELECTROLYTE = null, ALKALI = null, alkaliWarned=false;
-function buildElectrolytes(){ buildCoreRock(); buildPhaseSim(); ELECTROLYTE = new Set([SALTWATER, ACID, HCLAQ, NITRICACID, NAOH, BLEACH, AQUAREGIA]);
+function buildElectrolytes(){ buildCoreRock(); buildPhaseSim(); buildPorous(); ELECTROLYTE = new Set([SALTWATER, ACID, HCLAQ, NITRICACID, NAOH, BLEACH, AQUAREGIA]);
   ALKALI = new Set([SODIUM, POTASSIUM, LITHIUM, RUBIDIUM, CESIUM, CALCIUM]); }
 let charge, charge2, poolSeen, netId, bulbSeen;
 const VSCALE = 20;   // יחידות מתח לכל וולט. 255/20 = עד 12.75V נכנסים בבית אחד
@@ -1304,6 +1380,10 @@ function render() {
       else if (t<6){ const k=Math.min(70,(6-t)*3); b=Math.min(255,b+k); r=Math.max(0,r-k*0.3); g=Math.min(255,g+k*0.25); }
     } else {
       r=c[0]; g=c[1]; b=c[2];
+      if (wet[i]>0){                       // רטוב = כהה יותר, כמו חול רטוב אמיתי
+        const wf=1-0.17*wet[i];
+        r*=wf; g*=wf; b*=wf;
+      }
       if (id!==AIR) {
         const t = temp[i];
         if (t>120){ const gl=hotGlow(r,g,b,t); r=gl[0]; g=gl[1]; b=gl[2]; }
@@ -1386,9 +1466,10 @@ function swap(a,b){ const t=grid[a];grid[a]=grid[b];grid[b]=t;
                     const x=aux[a];aux[a]=aux[b];aux[b]=x;
                     const p=temp[a];temp[a]=temp[b];temp[b]=p;      // החום נוסע עם החומר
                     const vx=velX[a];velX[a]=velX[b];velX[b]=vx;    // גם התנע נוסע
-                    const vy=velY[a];velY[a]=velY[b];velY[b]=vy; }
+                    const vy=velY[a];velY[a]=velY[b];velY[b]=vy;
+                    const w=wet[a];wet[a]=wet[b];wet[b]=w; }   // הרטיבות נוסעת עם החומר
 function density(id){ return MAT[id].density||0; }
-function setCell(i,id){ grid[i]=id; life[i]=0; aux[i]=0; discover(id); }
+function setCell(i,id){ grid[i]=id; life[i]=0; aux[i]=0; wet[i]=0; discover(id); }
 
 /* ---------- לב המנוע ---------- */
 let flip=false;
@@ -1670,13 +1751,7 @@ function checkPhase(i){
                } break;
     // זרחן לבן: מתלקח מעצמו כבר ב-44° — לא צריך גפרור בכלל
     case PHOSPHORUS: if (t>=44){ grid[i]=FIRE; temp[i]=780; life[i]=MAT[FIRE].life; discover(FIRE); } break;
-    // מתייבש — והמים שבו יוצאים כאדים למעלה במקום פשוט להימחק מהעולם
-    case MUD:    if (t>=140) {
-                   const up=i-W;
-                   if (up>=0 && grid[up]===AIR){ grid[up]=STEAM; life[up]=MAT[STEAM].life;
-                     temp[up]=Math.max(105,t); velX[up]=0; velY[up]=0; discover(STEAM); }
-                   grid[i]=EARTH;
-                 } break;
+
     case WOOD: case LEAF: case SPROUT: case FLOWER: case SEEDT: case SEEDF:
       if (t>=300){ grid[i]=FIRE; temp[i]=760; life[i]=MAT[FIRE].life; discover(FIRE); } break;
   }
@@ -1687,10 +1762,21 @@ const NEI4 = [[1,0],[-1,0],[0,1],[0,-1]];
 // 8 שכנים עם משקל: ישר=1, אלכסון=0.55 — כדי שחזית האש תתפשט בעיגול ולא בריבוע
 const NEI8W = [[1,0,1],[-1,0,1],[0,1,1],[0,-1,1],[1,1,0.55],[1,-1,0.55],[-1,1,0.55],[-1,-1,0.55]];
 function react(x,y,i,id){
+  /* שני תיקוני-שפיות לפני הכל, כי הרבה מקומות בקוד כותבים ישר ל-grid:
+     1) מי שהניח "חול רטוב"/"בוץ" ידנית (מחולל העולם, המכחול, עולם שנטען) לא הגדיר
+        כמה מים יש בפנים — בלי זה החומר נראה רטוב אבל מתנהג כמו יבש.
+     2) חומר שהשתנה לחומר אחר (תגובה כימית) לא אמור לגרור איתו רטיבות ישנה. */
+  if ((id===WETSAND||id===MUD) && wet[i]===0) wet[i]=2;
+  else if (wet[i]>0 && !isPorous(id)){
+    const up = y-1>=0 ? idx(x,y-1) : -1;          // משחררים את המים במקום למחוק אותם
+    if (up>=0 && grid[up]===AIR){ grid[up]=WATER; life[up]=0; aux[up]=0; wet[up]=0;
+      temp[up]=temp[i]; velX[up]=0; velY[up]=0; }
+    wet[i]=0;
+  }
+  // אם יש מים בתוך התא, הם זזים לפי החוק הכללי — לפני כל חוק ספציפי לחומר
+  if (wet[i]>0 && isPorous(id) && wetnessStep(x,y,i,id)) return true;
   switch(id){
     case WATER:  return reactWater(x,y,i);
-    case MUD:    return reactMud(x,y,i);
-    case WETSAND: return reactWetSand(x,y,i);
     case SPROUT: return growSprout(x,y,i);
     case SEEDT:  return reactSeed(x,y,i,true);
     case SEEDF:  return reactSeed(x,y,i,false);
@@ -2695,9 +2781,11 @@ function reactWater(x,y,i){
       if (n===FIRE && aux[j]!==7) { grid[j]=aux[j]?STEAM:AIR; temp[j]=Math.min(temp[j],95); life[j]=0; aux[j]=0; }
       return true;
     }
-    if (n===EARTH && Math.random()<0.22){ setCell(j,MUD); grid[i]=AIR; life[i]=0; velX[i]=0; velY[i]=0; return true; } // המים נספגים — נצרכים
-    // חול סופג מים בדיוק כמו אדמה. בלי זה המים פשוט נעצרו על החול ולא היתה דרך לרדת לתת-הקרקע.
-    else if (n===SAND && Math.random()<0.30){ setCell(j,WETSAND); grid[i]=AIR; life[i]=0; velX[i]=0; velY[i]=0; return true; }
+    // חוק אחד: מים נספגים לתוך *כל* חומר נקבובי. קודם היה כאן מקרה נפרד לאדמה
+    // ומקרה נפרד לחול, ולכן כל אבקה אחרת בעולם פשוט התעלמה ממים.
+    if (isPorous(n) && wet[j]<WETMAX && Math.random()<0.26){
+      addWater(j,1); grid[i]=AIR; life[i]=0; wet[i]=0; velX[i]=0; velY[i]=0; return true;
+    }
     // (שחיקת אבן לחול מטופלת ב-erosion(), שדורשת מים *זורמים*. הכלל הישן כאן שחק
     //  כל אבן שנגעה במים, ולכן קערת אבן עם מים עומדים התפוררה מעצמה.)
   }
@@ -2705,103 +2793,8 @@ function reactWater(x,y,i){
 }
 // 💧 מי תהום בחול: חזית הרטיבות יורדת דרך החול היבש, זוחלת גם הצידה, וכשהיא מגיעה
 // לחלל מתחת — המים נוטפים החוצה כמעיין. הרטיבות תמיד עוברת (לא מוכפלת), אז אין מים יש מאין.
-function reactWetSand(x,y,i){
-  // מתייבש בחום — והמים *יוצאים כאדים* במקום להימחק. בלי זה חימום חול רטוב פשוט
-  // העלים את המים מהעולם, וזו היתה דליפה אמיתית במאזן המים.
-  if (temp[i]>=140){
-    const up = y-1>=0 ? idx(x,y-1) : -1;
-    if (up>=0 && grid[up]===AIR){
-      grid[up]=STEAM; life[up]=MAT[STEAM].life; temp[up]=Math.max(105,temp[i]);
-      velX[up]=0; velY[up]=0; discover(STEAM);
-    }
-    grid[i]=SAND; return true;
-  }
-  const bi = y+1<H ? idx(x,y+1) : -1;
-  const nb = bi>=0 ? grid[bi] : WALL;
-  // 1) נוטף לחלל שמתחת
-  if (nb===AIR && Math.random()<0.14){
-    grid[bi]=WATER; life[bi]=0; aux[bi]=0; temp[bi]=temp[i]; velX[bi]=0; velY[bi]=0;
-    grid[i]=SAND; return true;
-  }
-  // 2) חזית הרטיבות ממשיכה לרדת דרך חול יבש
-  if (nb===SAND && Math.random()<0.18){
-    grid[bi]=WETSAND; temp[bi]=temp[i]; grid[i]=SAND; return true;
-  }
-  // 2ב) ...וגם דרך *עפר* יבש שמתחת. קודם החול התייחס לאדמה כאילו היא סלע אטום,
-  // אז מים על חוף חול נעצרו בדיוק בגבול חול/אדמה ומעולם לא הגיעו לקרקע שמתחת.
-  if (nb===EARTH && Math.random()<0.14){
-    grid[bi]=MUD; temp[bi]=temp[i]; grid[i]=SAND; return true;
-  }
-  // הגענו לשכבה שהמים לא עוברים דרכה — מכאן זה מפלס מי התהום, והוא מתפשט הצידה מהר.
-  const onBedrock = !(nb===AIR || nb===SAND || nb===EARTH);
-  // 3) נביעה מדופן חשופה — מעיין בצד הגבעה. רק הצידה, ורק כשיש על מה להישען.
-  if (nb!==AIR && Math.random()<(onBedrock?0.18:0.05)){
-    const dir=Math.random()<0.5?1:-1;
-    for (const dx of [dir,-dir]){ const nx=x+dx; if(nx<0||nx>=W) continue;
-      const sj=idx(nx,y);
-      if (grid[sj]===AIR){
-        grid[sj]=WATER; life[sj]=0; aux[sj]=0; temp[sj]=temp[i]; velX[sj]=0; velY[sj]=0;
-        grid[i]=SAND; return true;
-      }
-    }
-  }
-  // 4) זחילה צידית — מהירה כשזורמים על שכבה אטומה, איטית באמצע החול
-  if (Math.random()<(onBedrock?0.34:0.05)){
-    const dir=Math.random()<0.5?1:-1;
-    for (const dx of [dir,-dir]){ const nx=x+dx; if(nx<0||nx>=W) continue;
-      const sj=idx(nx,y);
-      if (grid[sj]===SAND){ grid[sj]=WETSAND; temp[sj]=temp[i]; grid[i]=SAND; return true; }
-    }
-  }
-  return false;
-}
-
-function reactMud(x,y,i){
-  const below = y+1<H ? grid[idx(x,y+1)] : STONE;
-  const aboveIsAir = y-1>=0 && grid[idx(x,y-1)]===AIR;
-  // חלחול: הרטיבות מועברת לאט לאדמה היבשה שמתחת (כמו מים ששוקעים בקרקע) — התא הזה מתייבש חזרה
-  // לאדמה בזמן שהתא שמתחת נרטב. כך "חזית הרטיבות" יורדת בהדרגה לעומק, לא רק שכבה אחת קבועה.
-  if (below===EARTH && Math.random()<0.07){
-    grid[idx(x,y+1)]=MUD; grid[i]=EARTH; return true;
-  }
-  // ...וגם לחול יבש שמתחת — הרטיבות חוצה את הגבול בין סוגי קרקע לשני הכיוונים.
-  if (below===SAND && Math.random()<0.10){
-    grid[idx(x,y+1)]=WETSAND; grid[i]=EARTH; return true;
-  }
-  const mudOnRock = !(below===AIR || below===EARTH || below===SAND);
-  if (mudOnRock && Math.random()<0.22){          // מפלס מי התהום זוחל הצידה מעל שכבה אטומה
-    const dir=Math.random()<0.5?1:-1;
-    for (const dx of [dir,-dir]){ const nx=x+dx; if(nx<0||nx>=W) continue;
-      const sj=idx(nx,y);
-      if (grid[sj]===EARTH){ grid[sj]=MUD; grid[i]=EARTH; return true; }
-    }
-  }
-  // בוץ שמעל חלל — המים נוטפים החוצה. ככה נובע מעיין מתוך דופן של מערה.
-  if (below===AIR && Math.random()<0.05){
-    const b=idx(x,y+1);
-    grid[b]=WATER; life[b]=0; aux[b]=0; temp[b]=temp[i]; velX[b]=0; velY[b]=0;
-    grid[i]=EARTH; return true;
-  }
-  // נביעה מדופן חשופה של קרקע — מעיין בצד הגבעה
-  if (below!==AIR && Math.random()<(mudOnRock?0.14:0.04)){
-    const dir=Math.random()<0.5?1:-1;
-    for (const dx of [dir,-dir]){ const nx=x+dx; if(nx<0||nx>=W) continue;
-      const sj=idx(nx,y);
-      if (grid[sj]===AIR){
-        grid[sj]=WATER; life[sj]=0; aux[sj]=0; temp[sj]=temp[i]; velX[sj]=0; velY[sj]=0;
-        grid[i]=EARTH; return true;
-      }
-    }
-  }
-  let wet=false;   // בוץ רווי מדי (ליד מים) לא מצמיח
-  for(const [dx,dy] of NEI4){ const nx=x+dx,ny=y+dy; if(inB(nx,ny)&&grid[idx(nx,ny)]===WATER){ wet=true; break; } }
-  if (!wet && below!==AIR && aboveIsAir && Math.random()<0.0022){
-    const a=idx(x,y-1);
-    grid[a]=SPROUT; life[a]=10+Math.floor(Math.random()*12); aux[a]=6;
-    discover(SPROUT);
-  }
-  return false;
-}
+/* reactWetSand ו-reactMud נמחקו. שתיהן היו ~60 שורות של חוקים ידניים שעבדו רק
+   על חול ועל אדמה. עכשיו wetnessStep() עושה את אותו הדבר לכל חומר נקבובי. */
 const GROW_DELAY = 7;
 // צמח שותה כדי לגדול: מחפש מים (נצרכים) או בוץ (יורד לאדמה) ברדיוס קטן. בלי מים — לא גדל.
 function drinkWater(x,y){
@@ -3508,11 +3501,12 @@ function inspectAt(gx,gy,cx,cy){
     <div class="ihead">
       <span class="idot" style="background:rgb(${MAT[id].color.join(',')})"></span>
       <span class="iname">${MAT[id].name}</span>
-      <span class="iform">${formula[id]}</span>
+      <span class="iform">${formula[id]}${wet[i]>0?'·'+(wet[i]>1?wet[i]:'')+'H₂O':''}</span>
       <canvas id="molcv" width="86" height="86" style="margin-inline-start:auto;background:#0a0e16;border-radius:8px;border:1px solid #2a3444"></canvas>
     </div>
     <div class="igrid">
       <div><span>מצב:</span> <b>${st}</b></div>
+      ${wet[i]>0?`<div><span>💧 מים בפנים:</span> <b>${wet[i]}/${WETMAX}</b></div>`:''}
       <div><span>🌡️ חום:</span> <b>${Math.round(temp[i])}°C</b></div>
       <div><span>⚖️ משקל:</span> <b>${kg} ק"ג</b></div>
       <div><span>🔥 הולכת חום:</span> <b>${condTxt}</b></div>
@@ -4049,7 +4043,7 @@ let landAmount=50;   // אחוז — כמה מהמפה יבשה (משפיע על
 document.querySelector('#cplxBtns .resbtn[data-c=normal]').classList.add('on');
 document.getElementById('setLandAmt').oninput=e=>{ landAmount=+e.target.value; document.getElementById('landAmtVal').textContent=landAmount+'%'; };
 // מחיקת הכל (ריק לגמרי)
-function clearAll(){ grid.fill(0); life.fill(0); aux.fill(0); temp.fill(AMB); velX.fill(0); velY.fill(0); held=null;
+function clearAll(){ grid.fill(0); life.fill(0); aux.fill(0); wet.fill(0); temp.fill(AMB); velX.fill(0); velY.fill(0); held=null;
   if(borderWalls) applyBorder(); }
 document.getElementById('setWipe').onclick=()=>{ clearAll(); toast('🗑️ נוקה'); };
 
@@ -4074,18 +4068,18 @@ const REAL_REF = {
 };
 
 let labSaved=null;
-function labSnapshot(){ labSaved={g:grid.slice(),t:temp.slice(),l:life.slice(),a:aux.slice(),
+function labSnapshot(){ labSaved={g:grid.slice(),t:temp.slice(),l:life.slice(),a:aux.slice(),w:wet.slice(),
   vx:velX.slice(),vy:velY.slice(),c:charge.slice(),c2:charge2.slice(),
   cl:climateOn, er:erosionOn, nh:noHeatLoss, pg:plantGrav}; }
 function labRestore(){ if(!labSaved) return;
-  grid.set(labSaved.g); temp.set(labSaved.t); life.set(labSaved.l); aux.set(labSaved.a);
+  grid.set(labSaved.g); temp.set(labSaved.t); life.set(labSaved.l); aux.set(labSaved.a); wet.set(labSaved.w);
   velX.set(labSaved.vx); velY.set(labSaved.vy); charge.set(labSaved.c); charge2.set(labSaved.c2);
   climateOn=labSaved.cl; erosionOn=labSaved.er; noHeatLoss=labSaved.nh; plantGrav=labSaved.pg;
   labSaved=null; }
 
 // תא ניסוי אטום במרכז העולם
 function labArena(){
-  grid.fill(AIR); life.fill(0); aux.fill(0); temp.fill(AMB);
+  grid.fill(AIR); life.fill(0); aux.fill(0); wet.fill(0); temp.fill(AMB);
   velX.fill(0); velY.fill(0); charge.fill(0); charge2.fill(0);
   climateOn=false; erosionOn=false; noHeatLoss=true; plantGrav=true;
   const cx=W>>1, cy=H>>1;
@@ -4100,7 +4094,7 @@ function labPut(b, mat, T, x0f, x1f, y0f, y1f){
   const ya=Math.round(b.y0+(b.y1-b.y0)*y0f), yb=Math.round(b.y0+(b.y1-b.y0)*y1f);
   let n=0;
   for(let y=ya;y<=yb;y++) for(let x=xa;x<=xb;x++){
-    const i=y*W+x; grid[i]=mat; temp[i]=T===undefined?AMB:T;
+    const i=y*W+x; grid[i]=mat; temp[i]=T===undefined?AMB:T; wet[i]=0;
     if(MAT[mat].life) life[i]=MAT[mat].life; n++; }
   return n;
 }
@@ -4236,6 +4230,30 @@ function labBuildTests(){
     run:()=>{ const b=labArena(); labPut(b,WETSAND,300,0.1,0.9,0.4,0.85);
       labHold(b,300,120); const s=labCount(STEAM)+labCount(CLOUD)+labCount(WATER);
       return {ok:s>0, got:'אדים/מים='+s, want:'המים בחול לא אמורים פשוט להימחק'}; }});
+
+  // 4ב) מים כתכונה — החוק הכללי שמחליף עשרות חוקים ידניים
+  T.push({grp:'מים כתכונה', name:'סה"כ המים בעולם נשמר כשהם נספגים בקרקע',
+    run:()=>{ const b=labArena();
+      const tot=()=>{ let n=0; for(let i=0;i<grid.length;i++){ const g=grid[i];
+        if(g===WATER||g===STEAM||g===CLOUD||g===ICE) n++; n+=wet[i]; } return n; };
+      labPut(b,SAND,20,0,1,0.45,1); labPut(b,WATER,20,0.3,0.7,0.1,0.25);
+      const n0=tot(); labHold(b,null,600); const n1=tot();
+      return {ok:Math.abs(n1-n0)<=Math.max(3,n0*0.06), got:'התחלנו '+n0+' וסיימנו '+n1,
+              want:'מים שנספגים לתוך אבקה לא נעלמים ולא מוכפלים'}; }});
+  T.push({grp:'מים כתכונה', name:'אבקה יבשה לבדה נשארת יבשה',
+    run:()=>{ const b=labArena(); labPut(b,SAND,20,0,1,0.3,1);
+      labHold(b,null,300); let w=0; for(let i=0;i<grid.length;i++) w+=wet[i];
+      return {ok:w===0, got:'יחידות מים שנמצאו='+w, want:'בלי מקור מים אסור שתופיע רטיבות'}; }});
+  T.push({grp:'מים כתכונה', name:'אפר סופג מים — בלי שכתבנו חוק במיוחד בשבילו',
+    run:()=>{ const b=labArena(); labPut(b,ASH,20,0,1,0.5,1); labPut(b,WATER,20,0.25,0.75,0.15,0.3);
+      labHold(b,null,300); let w=0; for(let i=0;i<grid.length;i++) w+=wet[i];
+      return {ok:w>0, got:'יחידות מים בתוך האפר='+w,
+              want:'החוק הכללי אמור לעבוד על כל חומר נקבובי, לא רק על חול ואדמה'}; }});
+  T.push({grp:'מים כתכונה', name:'"חול רטוב" שהונח ידנית באמת מכיל מים',
+    run:()=>{ const b=labArena(); labPut(b,WETSAND,20,0,1,0.4,1);
+      labHold(b,null,6); let w=0; for(let i=0;i<grid.length;i++) w+=wet[i];
+      return {ok:w>0, got:'תכולת מים='+w,
+              want:'חומר רטוב שהונח ישירות חייב לקבל תכולת מים, אחרת הוא רק *נראה* רטוב'}; }});
 
   // 5) פיזיקה בסיסית
   T.push({grp:'פיזיקה', name:'גוש פרחים באוויר — נופל',
