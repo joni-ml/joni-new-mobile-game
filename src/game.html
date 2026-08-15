@@ -1324,9 +1324,38 @@ function setCell(i,id){ grid[i]=id; life[i]=0; aux[i]=0; discover(id); }
 
 /* ---------- לב המנוע ---------- */
 let flip=false;
+/* תמיכה בצמחים: תא צמח מחזיק את עצמו רק אם יש *שרשרת* צמח שמחברת אותו לקרקע ממש.
+   קודם כל תא רק שאל "יש לידי עוד תא צמח?" — ולכן כל גוש של שניים ומעלה החזיק את עצמו
+   באוויר לנצח, כי כל תא חשב שהוא תלוי על השכן שלו. פרח שציירת בשמיים פשוט ריחף.
+   כאן מסמנים קודם מי באמת נשען על קרקע, ואז מפיצים את הסימון דרך הצמח עצמו. */
+let plantSup=null;
+const isPlantCell = g => g===WOOD||g===LEAF||g===FLOWER||g===SPROUT;
+function computePlantSupport(){
+  if(!plantSup || plantSup.length!==grid.length) plantSup=new Uint8Array(grid.length);
+  plantSup.fill(0);
+  const st=[];
+  let any=false;
+  for(let y=H-1;y>=0;y--) for(let x=0;x<W;x++){
+    const i=y*W+x, g=grid[i]; if(!isPlantCell(g)) continue;
+    any=true;
+    // נשען על משהו שהוא לא אוויר ולא צמח — כלומר קרקע/סלע/בניין אמיתי
+    if(y+1>=H){ plantSup[i]=1; st.push(i); continue; }
+    const bg=grid[i+W];
+    if(!isPlantCell(bg) && !canSink(g,bg)){ plantSup[i]=1; st.push(i); }
+  }
+  if(!any) return false;
+  while(st.length){
+    const c=st.pop(), x=c%W, y=(c/W)|0;
+    for(const [dx,dy] of NEI4){ const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
+      const j=idx(nx,ny);
+      if(!plantSup[j] && isPlantCell(grid[j])){ plantSup[j]=1; st.push(j); } }
+  }
+  return true;
+}
 function step(){
   flip=!flip;
   moved.fill(0);
+  if(plantGrav) computePlantSupport();
   for (let y=H-1; y>=0; y--){
     for (let k=0; k<W; k++){
       const x = flip ? k : (W-1-k);
@@ -1646,18 +1675,17 @@ function react(x,y,i,id){
   }
   return false;
 }
-// עץ: נופל כשאין תמיכה מתחתיו (אם ההגדרה דלוקה)
+// עץ: נופל רק כשאין שרשרת עץ שמחזיקה אותו לקרקע — כך ענף אופקי על גזע תקין נשאר במקום,
+// אבל קורה שציירת באוויר נופלת.
 function reactWood(x,y,i){
-  if(plantGrav && y+1<H && grid[idx(x,y+1)]===AIR){ swap(i,idx(x,y+1)); return true; }
+  if(plantGrav && plantSup && !plantSup[i] && y+1<H && grid[idx(x,y+1)]===AIR){ swap(i,idx(x,y+1)); return true; }
   return true;
 }
 // עלה/פרח: אם התנתקו מהעץ (אין שכן צמחי) ואין תמיכה — נופלים
 function reactPlantPart(x,y,i,id){
-  if(plantGrav){
-    let att=false;
-    for(const [dx,dy] of NEI4){ const nx=x+dx,ny=y+dy; if(!inB(nx,ny))continue;
-      const n=grid[idx(nx,ny)]; if(n===WOOD||n===LEAF||n===FLOWER||n===SPROUT){ att=true; break; } }
-    if(!att && y+1<H && canSink(id,grid[idx(x,y+1)])){ swap(i,idx(x,y+1)); return true; }
+  // נופל אלא אם שרשרת צמח מחברת אותו לקרקע אמיתית (ראה computePlantSupport)
+  if(plantGrav && plantSup && !plantSup[i] && y+1<H && canSink(id,grid[idx(x,y+1)])){
+    swap(i,idx(x,y+1)); return true;
   }
   // פוטוסינתזה: עלה חשוף לאוויר (אור) הופך מדי פעם אוויר סמוך ל-🫧 חמצן — בדיוק כמו שהחיים
   // מייצרים את החמצן של כדור הארץ. עובד רק אם גילית כבר חמצן (אחרת סתם ישחרר גז לא מוכר).
@@ -2694,6 +2722,10 @@ function drinkWater(x,y){
   return false;
 }
 function growSprout(x,y,i){
+  // נבט שצויר באוויר בלי קרקע מתחתיו נופל, כמו שאר חלקי הצמח
+  if(plantGrav && plantSup && !plantSup[i] && y+1<H && canSink(SPROUT,grid[idx(x,y+1)])){
+    swap(i,idx(x,y+1)); return true;
+  }
   if (aux[i] > 0){ aux[i]--; return true; }
   const a = y-1>=0 ? idx(x,y-1) : -1;
   if (life[i] > 1 && a>=0 && grid[a]===AIR && !drinkWater(x,y)){ aux[i]=GROW_DELAY; return true; }  // אין מים — ממתין
