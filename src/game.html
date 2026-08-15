@@ -379,7 +379,45 @@
       </div>
       <button class="stog" id="setClearAll" style="justify-content:center; color:#ffd479; font-weight:700">🌍 עולם חדש (נוצר מלבה מותכת, כמו כדור הארץ!)</button>
       <button class="stog" id="setWipe" style="justify-content:center; color:#ff9a8a; font-weight:700">🗑️ מחק הכל (נקה למסך ריק)</button>
+      <button class="stog" id="setLab" style="justify-content:center; color:#8fd0ff; font-weight:700">🔬 מעבדת בדיקות (בודקת את כל המשחק)</button>
       <button id="setClose">סגור</button>
+    </div>
+
+    <!-- מעבדת בדיקות אוטומטית -->
+    <div id="labPanel" style="position:absolute;inset:0;z-index:47;background:rgba(8,10,16,.985);
+         display:none;flex-direction:column;padding:14px;padding-top:calc(14px + env(safe-area-inset-top));overflow-y:auto">
+      <h2 style="margin:0 0 8px">🔬 מעבדת בדיקות</h2>
+
+      <div id="labWarn">
+        <div style="background:#3a1c1c;border:1px solid #a05050;border-radius:10px;padding:12px;font-size:14px;line-height:1.6">
+          ⚠️ <b>אזהרה — לא ללחוץ בטעות!</b><br>
+          הבדיקה בונה מאות תאי ניסוי, מחממת, מקררת ומערבבת כל חומר במשחק ובודקת
+          אם באמת קורה מה שאמור לקרות. זה לוקח <b>הרבה זמן</b> והמשחק יהיה תפוס עד שזה נגמר.<br><br>
+          🛟 <b>העולם שלך נשמר ויחזור בדיוק כמו שהיה</b> בסוף הבדיקה.
+        </div>
+        <div style="font-size:12px;opacity:.65;margin-top:10px">
+          בסוף מקבלים רשימה של כל מה שלא תקין — כולל המספר שהמשחק נותן מול המספר שאמור להיות.
+        </div>
+        <button class="stog" id="labStart" style="justify-content:center;color:#8fd0ff;font-weight:700;margin-top:12px">
+          ▶️ אני בטוח — התחל בדיקה מלאה</button>
+        <button id="labClose1" style="margin-top:8px">ביטול</button>
+      </div>
+
+      <div id="labRunning" style="display:none">
+        <div style="background:#131a26;border:1px solid #33608a;border-radius:10px;padding:12px">
+          <div id="labProg" style="font-size:15px;font-weight:700">מתחיל…</div>
+          <div style="background:#0b0e14;border-radius:6px;height:10px;margin-top:8px;overflow:hidden">
+            <div id="labBar" style="height:100%;width:0%;background:#3a8fd0;transition:width .2s"></div>
+          </div>
+          <div id="labNow" style="font-size:11px;opacity:.6;margin-top:6px">&nbsp;</div>
+        </div>
+      </div>
+
+      <div id="labDone" style="display:none">
+        <div id="labSummary" style="border-radius:10px;padding:12px;font-size:15px;font-weight:700"></div>
+        <div id="labResults" style="margin-top:10px"></div>
+        <button id="labClose2" style="margin-top:12px">סגור</button>
+      </div>
     </div>
 
     <!-- אטום (מודל בוהר) -->
@@ -678,8 +716,8 @@ const conduct = MAT.map(m=>({water:true,lava:true,fire:true,lithium:true,saltwat
 const molec   = MAT.map(m=>({air:'תערובת גזים',water:'מולקולה קוטבית',ice:'סריג גבישי',steam:'אדי מים',stone:'סריג סיליקט',basalt:'סלע וולקני צפוף',sand:'גרגרי קוורץ',earth:'תערובת אורגנית',mud:'אדמה רוויה',wood:'סיבי תאית',leaf:'תאית + כלורופיל',flower:'רקמה צמחית',sprout:'רקמה צמחית',seedT:'עובר זרע',seedF:'עובר זרע',ash:'שאריות מינרליות',glass:'מוצק אמורפי',lava:'סלע מותך',fire:'פלזמת בעירה',hydrogen:'מולקולה דו-אטומית H₂',wall:'בטון — סריג סיליקט עם סידן ומים',mesh:'פלדה — סריג ברזל עם מעט פחמן',bedrock:'אוליבין — סיליקט עם ברזל ומגנזיום',cloud:'טיפות מים זעירות מרחפות',lithium:'מתכת — סריג אטומים חוזר',chlorine:'מולקולה דו-אטומית Cl₂',licl:'סריג יוני (Li⁺Cl⁻)',saltwater:'תמיסה — יונים מומסים במים',sodium:'מתכת — סריג אטומים חוזר',nacl:'סריג יוני (Na⁺Cl⁻)',iron:'מתכת — סריג אטומים חוזר',ironmelt:'מתכת מותכת',rust:'תחמוצת ברזל Fe₂O₃',rockgas:'אדי סיליקט',irongas:'אדי מתכת',oxygen:'מולקולה דו-אטומית O₂',gold:'מתכת — סריג אטומים חוזר',copper:'מתכת — סריג אטומים חוזר',aluminum:'מתכת — סריג אטומים חוזר',mercury:'מתכת נוזלית',moltenmetal:'מתכת מותכת',potassium:'מתכת — סריג אטומים חוזר',rubidium:'מתכת — סריג אטומים חוזר',cesium:'מתכת — סריג אטומים חוזר',etp:'מי חמצן מרוכז H₂O₂',foam:'בועות חמצן במים',acid:'חומצה גופרתית H₂SO₄',motoroil:'שרשרת פחמימנים ארוכה',thermite:'תערובת Fe₂O₃ + אבקת Al',oxyliq:'חמצן דו-אטומי נוזלי O₂',chlliq:'כלור דו-אטומי נוזלי Cl₂',hydliq:'מימן דו-אטומי נוזלי H₂',moltensalt:'סריג יוני מותך',saltgas:'אדי מלח יוניים',carbon:'סריג פחמן (גרפיט/יהלום)',sulfur:'טבעת גופרית S₈',sulfurL:'גופרית מותכת',sulfurG:'אדי גופרית',magnesium:'מתכת — סריג אטומים חוזר',calcium:'מתכת — סריג אטומים חוזר',fes:'סריג יוני Fe-S',lime:'הידרוקסיד Ca(OH)₂',nitrogen:'מולקולה דו-אטומית N₂',nitliq:'חנקן דו-אטומי נוזלי',silicon:'סריג גבישי כמו יהלום',phosphorus:'מולקולת P₄ טטרהדרלית',zinc:'מתכת — סריג אטומים חוזר',tin:'מתכת — סריג אטומים חוזר',co2:'מולקולה קווית O=C=O',limestone:'סריג יוני Ca²⁺CO₃²⁻',quicklime:'סריג יוני Ca²⁺O²⁻',mgo:'סריג יוני Mg²⁺O²⁻',so2:'מולקולה כפופה',brass:'סגסוגת — אטומי אבץ בתוך סריג נחושת',bronze:'סגסוגת — אטומי בדיל בתוך סריג נחושת',cuo:'סריג יוני Cu²⁺O²⁻',naoh:'בסיס — יוני Na⁺ ו-OH⁻ במים',soap:'מולקולה עם ראש אוהב-מים וזנב אוהב-שומן',ammonia:'פירמידה — חנקן עם שלושה מימנים',nh4cl:'סריג יוני NH₄⁺Cl⁻',no2:'מולקולה כפופה',co:'קשר משולש בין פחמן לחמצן',methane:'טטרהדר — פחמן עם ארבעה מימנים',hcl:'מולקולה דו-אטומית קוטבית',hclaq:'יוני H⁺ ו-Cl⁻ במים',cuso4:'סריג יוני Cu²⁺SO₄²⁻',alumina:'סריג יוני קשה מאוד',nitricacid:'חומצה חזקה — H⁺ ו-NO₃⁻',aquaregia:'תערובת שתי חומצות',amalgam:'זהב מומס בכספית',kno3:'סריג יוני K⁺NO₃⁻',gunpowder:'תערובת — מחמצן + דלק יחד',baking:'סריג יוני Na⁺HCO₃⁻',bleach:'סריג יוני Na⁺ClO⁻',h2s:'מולקולה כפופה כמו מים',ozone:'שלושה אטומי חמצן בשרשרת כפופה',nh4no3:'סריג יוני NH₄⁺NO₃⁻',wetsand:'גרגרי קוורץ עם מים בין החרירים',bulb:'טונגסטן — סריג מתכתי צפוף',wire:'סריג נחושת בתוך בידוד',toggle:'מגע נחושת שנפתח ונסגר'}[m.key] ?? '—'));
 const STATE   = {empty:'—',powder:'אבקה',liquid:'נוזל',solid:'מוצק',gas:'גז',static:'מוצק'};
 // נקודות מעבר מצב אמיתיות (°C): נמס=הופך לנוזל, רותח=הופך לגז
-const meltC = MAT.map(m=>({water:0,ice:0,steam:0,stone:1100,basalt:1100,lava:1100,sand:1400,glass:1700,hydrogen:-259,saltwater:-5,iron:1538,ironmelt:1538,rockgas:1100,irongas:1538,oxygen:-219,gold:1064,copper:1085,aluminum:660,mercury:-39,lithium:180,sodium:98,potassium:63,rubidium:39,cesium:28,cloud:0,chlorine:-101,nacl:801,licl:605,rust:1565,oxyliq:-219,chlliq:-101,hydliq:-259,carbon:3550,sulfur:115,sulfurL:115,sulfurG:115,magnesium:650,calcium:842,fes:1194,nitrogen:-210,nitliq:-210,silicon:1414,phosphorus:44,zinc:420,tin:232,co2:-57,limestone:825,quicklime:2613,mgo:2852,so2:-72,brass:930,bronze:950,cuo:1326,naoh:318,soap:60,ammonia:-78,nh4cl:338,no2:-11,co:-205,methane:-182,hcl:-114,hclaq:-30,cuso4:110,alumina:2072,bulb:3422,nitricacid:-42,aquaregia:-42,amalgam:-39,kno3:334,baking:50,bleach:-20,h2s:-82,ozone:-193,nh4no3:170}[m.key] ?? null));
-const boilC = MAT.map(m=>({water:100,ice:100,steam:100,stone:2900,basalt:2900,lava:2900,sand:2950,glass:2950,hydrogen:-253,saltwater:101,iron:2861,ironmelt:2861,rockgas:2900,irongas:2861,oxygen:-183,gold:2700,copper:2562,aluminum:2470,mercury:357,lithium:1342,sodium:883,potassium:759,rubidium:688,cesium:671,cloud:100,chlorine:-34,nacl:1465,licl:1382,rust:2861,oxyliq:-183,chlliq:-34,hydliq:-253,carbon:4027,sulfur:445,sulfurL:445,sulfurG:445,magnesium:1090,calcium:1484,fes:2861,nitrogen:-196,nitliq:-196,silicon:3265,phosphorus:280,zinc:907,tin:2602,co2:-78,quicklime:2850,mgo:3600,so2:-10,brass:1100,bronze:1200,cuo:2000,naoh:1388,ammonia:-33,no2:21,co:-192,methane:-162,hcl:-85,hclaq:110,alumina:2977,nitricacid:83,aquaregia:90,amalgam:357,bleach:101,h2s:-60,ozone:-112}[m.key] ?? null));
+const meltC = MAT.map(m=>({water:0,ice:0,steam:0,stone:1100,basalt:1100,lava:1100,sand:1400,glass:1700,hydrogen:-259,saltwater:-5,iron:1538,ironmelt:1538,rockgas:1100,irongas:1538,oxygen:-219,gold:1064,copper:1085,aluminum:660,mercury:-39,lithium:180,sodium:98,potassium:63,rubidium:39,cesium:28,cloud:0,chlorine:-101,nacl:801,licl:605,rust:1565,oxyliq:-219,chlliq:-101,hydliq:-259,carbon:3550,sulfur:115,sulfurL:115,sulfurG:115,magnesium:650,calcium:842,fes:1194,nitrogen:-210,nitliq:-210,silicon:1414,phosphorus:44,zinc:420,tin:232,co2:-57,limestone:825,quicklime:2613,mgo:2852,so2:-72,brass:930,bronze:950,cuo:1326,naoh:318,soap:60,ammonia:-78,nh4cl:338,no2:-11,co:-205,methane:-182,hcl:-114,hclaq:-30,cuso4:110,alumina:2072,bulb:3422,nitricacid:-42,aquaregia:-42,kno3:334,baking:50,bleach:-20,h2s:-82,ozone:-193,nh4no3:170}[m.key] ?? null));
+const boilC = MAT.map(m=>({water:100,ice:100,steam:100,stone:2900,basalt:2900,lava:2900,sand:2950,glass:2950,hydrogen:-253,saltwater:101,iron:2861,ironmelt:2861,rockgas:2900,irongas:2861,oxygen:-183,gold:2856,copper:2562,aluminum:2470,mercury:357,lithium:1342,sodium:883,potassium:759,rubidium:688,cesium:671,cloud:100,chlorine:-34,nacl:1465,licl:1382,rust:2861,oxyliq:-183,chlliq:-34,hydliq:-253,carbon:4027,sulfur:445,sulfurL:445,sulfurG:445,magnesium:1090,calcium:1484,fes:2861,nitrogen:-196,nitliq:-196,silicon:3265,phosphorus:280,zinc:907,tin:2602,co2:-78,quicklime:2850,mgo:3600,so2:-10,brass:1100,bronze:1200,cuo:2000,naoh:1388,bulb:5555,ammonia:-33,no2:21,co:-192,methane:-162,hcl:-85,hclaq:110,alumina:2977,nitricacid:83,aquaregia:90,amalgam:357,bleach:101,h2s:-60,ozone:-112}[m.key] ?? null));
 // עבור מצב צבירה — האם מגיעים אליו בחימום או בקירור, ובאיזו טמפרטורה
 function phaseHint(id){
   const src=MAT[id].phaseOf, t=MAT[id].type, nm=MAT[src].name;
@@ -3971,6 +4009,309 @@ document.getElementById('setLandAmt').oninput=e=>{ landAmount=+e.target.value; d
 function clearAll(){ grid.fill(0); life.fill(0); aux.fill(0); temp.fill(AMB); velX.fill(0); velY.fill(0); held=null;
   if(borderWalls) applyBorder(); }
 document.getElementById('setWipe').onclick=()=>{ clearAll(); toast('🗑️ נוקה'); };
+
+/* ==================== 🔬 מעבדת בדיקות אוטומטית ====================
+   בונה תא ניסוי אטום, שם בו חומרים, עושה להם משהו (מחמם/מקרר/מערבב),
+   ובודק אם באמת קרה מה שאמור לקרות. כל כישלון מדווח עם המספר שהתקבל
+   מול המספר שהיה אמור להתקבל, כדי שאפשר יהיה לתקן בדיוק את מה שצריך.
+   הטבלה REAL_REF מחזיקה ערכים אמיתיים מהעולם (מקורות: CRC/IUPAC), כדי
+   שגם נוכל להשוות את המשחק למציאות ולא רק לעצמו.                    */
+
+// ערכים אמיתיים (°C). melt/boil. מקור: CRC Handbook / IUPAC.
+const REAL_REF = {
+  water:{melt:0,boil:100}, iron:{melt:1538,boil:2861}, gold:{melt:1064,boil:2856},
+  copper:{melt:1085,boil:2562}, aluminum:{melt:660,boil:2470}, zinc:{melt:420,boil:907},
+  tin:{melt:232,boil:2602}, silicon:{melt:1414,boil:3265}, magnesium:{melt:650,boil:1090},
+  calcium:{melt:842,boil:1484}, lithium:{melt:180,boil:1342}, sodium:{melt:98,boil:883},
+  potassium:{melt:63,boil:759}, rubidium:{melt:39,boil:688}, cesium:{melt:28,boil:671},
+  mercury:{melt:-39,boil:357}, sulfur:{melt:115,boil:445}, nacl:{melt:801,boil:1465},
+  oxygen:{melt:-219,boil:-183}, nitrogen:{melt:-210,boil:-196}, hydrogen:{melt:-259,boil:-253},
+  chlorine:{melt:-101,boil:-34}, bulb:{melt:3422,boil:5555}, basalt:{melt:1100},
+  phosphorus:{melt:44,boil:280}, limestone:{melt:825}, brass:{melt:930}, bronze:{melt:950}
+};
+
+let labSaved=null;
+function labSnapshot(){ labSaved={g:grid.slice(),t:temp.slice(),l:life.slice(),a:aux.slice(),
+  vx:velX.slice(),vy:velY.slice(),c:charge.slice(),c2:charge2.slice(),
+  cl:climateOn, er:erosionOn, nh:noHeatLoss, pg:plantGrav}; }
+function labRestore(){ if(!labSaved) return;
+  grid.set(labSaved.g); temp.set(labSaved.t); life.set(labSaved.l); aux.set(labSaved.a);
+  velX.set(labSaved.vx); velY.set(labSaved.vy); charge.set(labSaved.c); charge2.set(labSaved.c2);
+  climateOn=labSaved.cl; erosionOn=labSaved.er; noHeatLoss=labSaved.nh; plantGrav=labSaved.pg;
+  labSaved=null; }
+
+// תא ניסוי אטום במרכז העולם
+function labArena(){
+  grid.fill(AIR); life.fill(0); aux.fill(0); temp.fill(AMB);
+  velX.fill(0); velY.fill(0); charge.fill(0); charge2.fill(0);
+  climateOn=false; erosionOn=false; noHeatLoss=true; plantGrav=true;
+  const cx=W>>1, cy=H>>1;
+  const x0=Math.max(2,cx-13), x1=Math.min(W-3,cx+13);
+  const y0=Math.max(2,cy-10), y1=Math.min(H-3,cy+10);
+  for(let y=y0-1;y<=y1+1;y++){ grid[y*W+(x0-1)]=WALL; grid[y*W+(x1+1)]=WALL; }
+  for(let x=x0-1;x<=x1+1;x++){ grid[(y0-1)*W+x]=WALL; grid[(y1+1)*W+x]=WALL; }
+  return {x0,x1,y0,y1};
+}
+function labPut(b, mat, T, x0f, x1f, y0f, y1f){
+  const xa=Math.round(b.x0+(b.x1-b.x0)*x0f), xb=Math.round(b.x0+(b.x1-b.x0)*x1f);
+  const ya=Math.round(b.y0+(b.y1-b.y0)*y0f), yb=Math.round(b.y0+(b.y1-b.y0)*y1f);
+  let n=0;
+  for(let y=ya;y<=yb;y++) for(let x=xa;x<=xb;x++){
+    const i=y*W+x; grid[i]=mat; temp[i]=T===undefined?AMB:T;
+    if(MAT[mat].life) life[i]=MAT[mat].life; n++; }
+  return n;
+}
+function labHold(b, T, n){
+  for(let k=0;k<n;k++){
+    if(T!==null) for(let y=b.y0;y<=b.y1;y++) for(let x=b.x0;x<=b.x1;x++){
+      const i=y*W+x; if(grid[i]!==AIR&&grid[i]!==WALL) temp[i]=T; }
+    step();
+  }
+}
+function labCount(id){ let n=0; for(let i=0;i<grid.length;i++) if(grid[i]===id) n++; return n; }
+function labAnyOf(ids){ let n=0; for(const id of ids) n+=labCount(id); return n; }
+
+/* --- בניית רשימת הבדיקות --- */
+function labBuildTests(){
+  const T=[];
+  const nm=id=>MAT[id].name;
+
+  /* 1) מעברי פאזה. חשוב: הבדיקה חייבת להתאים למצב הצבירה של החומר עצמו —
+        מוצק *נמס* כשמחממים, נוזל *קופא* כשמקררים, וגז *מתעבה* כשמקררים.
+        אין טעם לבדוק אם לבה "נמסה" (היא כבר נוזל) או אם אדים "נמסים".
+        להתעבות נותנים מרווח נדיב, כי הקוד משתמש בהפרש (היסטרזיס) כדי
+        שהחומר לא יקפוץ הלוך ושוב בדיוק על נקודת המעבר. */
+  for(let id=1; id<MAT.length; id++){
+    const m=MAT[id]; if(!m.key||m.sys||m.flam) continue;
+    if(!PHASE_SIM.has(id)) continue;
+    const mp=meltC[id], bp=boilC[id], ty=m.type;
+    const solidish = (ty==='solid'||ty==='powder'||ty==='static');
+
+    if(solidish && mp!==null && mp!==undefined && !(NO_SOLID_SIM&&NO_SOLID_SIM.has(id))){
+      T.push({grp:'מעברי פאזה', name:nm(id)+' — מוצק אמור להימס מעל '+mp+'°',
+        run:()=>{ const b=labArena(); const n0=labPut(b,id,mp+150,0.15,0.85,0.2,0.8);
+          labHold(b,mp+150,40); const left=labCount(id);
+          return {ok:left<n0*0.5, got:left+' מתוך '+n0+' לא השתנו',
+                  want:'ב-'+(mp+150)+'° (מעל נקודת ההיתוך '+mp+'°) המוצק אמור להימס'}; }});
+      T.push({grp:'מעברי פאזה', name:nm(id)+' — מוצק אמור להישאר יציב מתחת ל-'+mp+'°',
+        run:()=>{ const b=labArena(); const n0=labPut(b,id,mp-60,0.15,0.85,0.2,0.8);
+          labHold(b,mp-60,40); const left=labCount(id);
+          return {ok:left>n0*0.5, got:'רק '+left+' מתוך '+n0+' נשארו',
+                  want:'ב-'+(mp-60)+'° (מתחת לנקודת ההיתוך) החומר לא אמור להימס'}; }});
+    }
+
+    if(ty==='liquid' && mp!==null && mp!==undefined && !(NO_SOLID_SIM&&NO_SOLID_SIM.has(id))){
+      // מרווח נדיב: הקוד מקפיא בטמפ' נמוכה יותר מנקודת ההיתוך בכוונה (היסטרזיס),
+      // כדי שהחומר לא יקפוץ בין מוצק לנוזל בדיוק על הגבול.
+      const tgt=Math.max(ABS_ZERO+1, mp-Math.max(150,Math.abs(mp)*0.55));
+      T.push({grp:'מעברי פאזה', name:nm(id)+' — נוזל אמור לקפוא מתחת ל-'+mp+'°',
+        run:()=>{ const b=labArena(); const n0=labPut(b,id,tgt,0.15,0.85,0.2,0.8);
+          labHold(b,tgt,60); const left=labCount(id);
+          return {ok:left<n0*0.5, got:left+' מתוך '+n0+' עדיין נוזל ב-'+tgt.toFixed(0)+'°',
+                  want:'מתחת ל-'+mp+'° הנוזל אמור להתמצק'}; }});
+    }
+    if(ty==='liquid' && bp!==null && bp!==undefined){
+      T.push({grp:'מעברי פאזה', name:nm(id)+' — נוזל אמור לרתוח מעל '+bp+'°',
+        run:()=>{ const b=labArena(); const n0=labPut(b,id,bp+180,0.15,0.85,0.2,0.8);
+          labHold(b,bp+180,60); const left=labCount(id);
+          return {ok:left<n0*0.5, got:left+' מתוך '+n0+' עדיין נוזל',
+                  want:'מעל '+bp+'° הנוזל אמור להפוך לגז'}; }});
+    }
+    if(ty==='gas' && bp!==null && bp!==undefined){
+      const tgt=Math.max(ABS_ZERO+1, bp-Math.max(150,Math.abs(bp)*0.25));
+      T.push({grp:'מעברי פאזה', name:nm(id)+' — גז אמור להתעבות מתחת ל-'+bp+'°',
+        run:()=>{ const b=labArena(); const n0=labPut(b,id,tgt,0.15,0.85,0.2,0.8);
+          labHold(b,tgt,400); const left=labCount(id);
+          return {ok:left<n0*0.6, got:left+' מתוך '+n0+' עדיין גז ב-'+tgt.toFixed(0)+'°',
+                  want:'מתחת ל-'+bp+'° הגז אמור להתעבות לנוזל'}; }});
+    }
+  }
+
+  // 2) השוואה למציאות — המספר במשחק מול המספר האמיתי
+  for(const key in REAL_REF){
+    const id=MAT.findIndex(m=>m.key===key); if(id<0) continue;
+    const ref=REAL_REF[key];
+    if(ref.melt!==undefined){
+      T.push({grp:'דיוק מול המציאות', name:nm(id)+' — נקודת היתוך מול הערך האמיתי',
+        run:()=>{ const g=meltC[id];
+          return {ok:g!==null&&g!==undefined&&Math.abs(g-ref.melt)<=Math.max(15,Math.abs(ref.melt)*0.03),
+                  got:'המשחק אומר '+g+'°', want:'במציאות '+ref.melt+'° (CRC)'}; }});
+    }
+    if(ref.boil!==undefined){
+      T.push({grp:'דיוק מול המציאות', name:nm(id)+' — נקודת רתיחה מול הערך האמיתי',
+        run:()=>{ const g=boilC[id];
+          return {ok:g!==null&&g!==undefined&&Math.abs(g-ref.boil)<=Math.max(20,Math.abs(ref.boil)*0.03),
+                  got:'המשחק אומר '+g+'°', want:'במציאות '+ref.boil+'° (CRC)'}; }});
+    }
+  }
+
+  // 3) כימיה — תגובות שחייבות לקרות
+  const chem=[
+    ['אבן גיר בחום → סיד חי + CO₂', ()=>{ const b=labArena(); labPut(b,LIMESTONE,900,0.1,0.9,0.3,0.8);
+      labHold(b,900,50); const q=labCount(QUICKLIME);
+      return {ok:q>0, got:'סיד חי='+q, want:'מעל 825° אבן גיר מתפרקת (CaCO₃→CaO+CO₂)'}; }],
+    ['אבץ + חומצה → מימן', ()=>{ const b=labArena(); labPut(b,ZINC,20,0.1,0.45,0.3,0.8);
+      labPut(b,ACID,20,0.55,0.9,0.3,0.8); labHold(b,null,80); const h=labCount(HYDRO);
+      return {ok:h>0, got:'מימן='+h, want:'Zn + H₂SO₄ → ZnSO₄ + H₂'}; }],
+    ['נחושת + אבץ חמים → פליז', ()=>{ const b=labArena(); labPut(b,COPPER,400,0.1,0.45,0.3,0.8);
+      labPut(b,ZINC,400,0.5,0.9,0.3,0.8); labHold(b,400,80); const br=labCount(BRASS);
+      return {ok:br>0, got:'פליז='+br, want:'סגסוגת נחושת-אבץ נוצרת בחום'}; }],
+    ['מימן + חמצן + אש → מים', ()=>{ const b=labArena(); labPut(b,HYDRO,20,0.1,0.45,0.2,0.7);
+      labPut(b,OXYGEN,20,0.5,0.9,0.2,0.7); labPut(b,FIRE,600,0.45,0.55,0.75,0.8);
+      labHold(b,null,90); const w=labCount(WATER)+labCount(STEAM)+labCount(CLOUD);
+      return {ok:w>0, got:'מים/אדים='+w, want:'2H₂ + O₂ → 2H₂O'}; }],
+    ['ברזל + מים → חלודה', ()=>{ const b=labArena(); labPut(b,IRON,20,0.1,0.45,0.3,0.8);
+      labPut(b,WATER,20,0.5,0.9,0.3,0.8); labHold(b,null,400); const r=labCount(RUST);
+      return {ok:r>0, got:'חלודה='+r, want:'ברזל חשוף למים מחליד'}; }],
+    ['נתרן + מים → תגובה אלימה', ()=>{ const b=labArena(); labPut(b,SODIUM,20,0.3,0.5,0.2,0.4);
+      labPut(b,WATER,20,0.1,0.9,0.5,0.85);
+      // הלהבה חיה ~15 תורים בלבד, אז סופרים את השיא תוך כדי ולא רק בסוף
+      let peak=0; for(let k=0;k<60;k++){ step();
+        const f=labCount(FIRE)+labCount(HYDRO); if(f>peak) peak=f; }
+      const naoh=labCount(NAOH);
+      return {ok:peak>0||naoh>0, got:'שיא אש/מימן='+peak+', סודה קאוסטית='+naoh,
+              want:'2Na + 2H₂O → 2NaOH + H₂ — תגובה אלימה עם להבה'}; }],
+    ['סיד חי + מים → סיד כבוי', ()=>{ const b=labArena(); labPut(b,QUICKLIME,20,0.1,0.45,0.3,0.8);
+      labPut(b,WATER,20,0.5,0.9,0.3,0.8); labHold(b,null,80); const l=labCount(LIME);
+      return {ok:l>0, got:'סיד כבוי='+l, want:'CaO + H₂O → Ca(OH)₂'}; }],
+  ];
+  for(const [name,fn] of chem) T.push({grp:'תגובות כימיות', name, run:fn});
+
+  // 4) חוקי שימור — חומר לא נעלם ולא נוצר יש מאין
+  T.push({grp:'שימור חומר', name:'קצף מתפרק — משאיר מים, לא נעלם',
+    run:()=>{ const b=labArena(); const n0=labPut(b,FOAM,20,0.1,0.9,0.2,0.85);
+      for(let i=0;i<grid.length;i++) if(grid[i]===FOAM) life[i]=30;
+      labHold(b,null,400); const w=labCount(WATER);
+      return {ok:w>0, got:'מים שנשארו='+w+' (מתוך '+n0+' תאי קצף)',
+              want:'קצף הוא בועות בתוך מים — כשהוא קורס אמורה להישאר שלולית'}; }});
+  T.push({grp:'שימור חומר', name:'מים בכלי אטום — הכמות לא משתנה',
+    run:()=>{ const b=labArena(); const n0=labPut(b,WATER,20,0.1,0.9,0.4,0.85);
+      labHold(b,null,300); const w=labCount(WATER)+labCount(STEAM)+labCount(ICE)+labCount(CLOUD);
+      return {ok:Math.abs(w-n0)<=n0*0.1, got:'התחלנו '+n0+' וסיימנו '+w,
+              want:'בכלי סגור בלי חום כמות המים אמורה להישאר זהה'}; }});
+  T.push({grp:'שימור חומר', name:'חול רטוב מתייבש — המים יוצאים כאדים',
+    run:()=>{ const b=labArena(); labPut(b,WETSAND,300,0.1,0.9,0.4,0.85);
+      labHold(b,300,120); const s=labCount(STEAM)+labCount(CLOUD)+labCount(WATER);
+      return {ok:s>0, got:'אדים/מים='+s, want:'המים בחול לא אמורים פשוט להימחק'}; }});
+
+  // 5) פיזיקה בסיסית
+  T.push({grp:'פיזיקה', name:'גוש פרחים באוויר — נופל',
+    run:()=>{ const b=labArena(); labPut(b,FLOWER,20,0.4,0.6,0.05,0.2);
+      let top=-1; for(let y=0;y<H;y++) for(let x=0;x<W;x++) if(grid[y*W+x]===FLOWER) top=y;
+      labHold(b,null,200); let bot=-1;
+      for(let y=0;y<H;y++) for(let x=0;x<W;x++) if(grid[y*W+x]===FLOWER) bot=y;
+      return {ok:bot>top, got:'השורה הנמוכה ביותר: '+top+' → '+bot,
+              want:'צמח בלי קרקע מתחתיו אמור ליפול'}; }});
+  T.push({grp:'פיזיקה', name:'עץ מושרש בקרקע — לא קורס',
+    run:()=>{ const b=labArena(); labPut(b,EARTH,20,0,1,0.85,1);
+      const cx=(b.x0+b.x1)>>1;
+      for(let y=b.y0+3;y<Math.round(b.y0+(b.y1-b.y0)*0.85);y++) grid[y*W+cx]=WOOD;
+      for(let x=cx-4;x<=cx+4;x++) grid[(b.y0+3)*W+x]=LEAF;
+      const l0=labCount(LEAF); labHold(b,null,200); const l1=labCount(LEAF);
+      return {ok:l1>=l0*0.9, got:'עלים '+l0+' → '+l1,
+              want:'עץ שעומד על אדמה אמור להישאר במקומו'}; }});
+  T.push({grp:'פיזיקה', name:'מים על חול מעל אדמה — מחלחלים לאדמה',
+    run:()=>{ const b=labArena();
+      const midF=0.45, botF=0.9;
+      labPut(b,SAND,20,0,1,midF,midF+0.2);
+      labPut(b,EARTH,20,0,1,midF+0.22,botF);
+      labPut(b,WATER,20,0.3,0.7,midF-0.25,midF-0.05);
+      labHold(b,null,500); const m=labCount(MUD);
+      return {ok:m>0, got:'בוץ שנוצר='+m,
+              want:'מים אמורים לעבור דרך החול ולהרטיב את האדמה שמתחת'}; }});
+  T.push({grp:'פיזיקה', name:'אין טמפרטורה מתחת לאפס מוחלט',
+    run:()=>{ const b=labArena(); labPut(b,NITLIQ,-200,0.1,0.9,0.2,0.5);
+      labPut(b,WATER,20,0.1,0.9,0.55,0.9); labHold(b,null,200);
+      let worst=0; for(let i=0;i<grid.length;i++) if(temp[i]<worst) worst=temp[i];
+      return {ok:worst>=-273.2, got:'הכי קר שנמדד: '+worst.toFixed(1)+'°',
+              want:'אפס מוחלט הוא -273.15° — אי אפשר לרדת מתחתיו'}; }});
+
+  // 6) חשמל
+  T.push({grp:'חשמל', name:'בטריה אבץ-נחושת נותנת מתח',
+    run:()=>{ const b=labArena();
+      labPut(b,ZINC,20,0.05,0.15,0.3,0.8); labPut(b,SALTWATER,20,0.2,0.8,0.3,0.8);
+      labPut(b,COPPER,20,0.85,0.95,0.3,0.8); labHold(b,null,10);
+      let mx=0; for(let i=0;i<grid.length;i++) if(grid[i]===COPPER&&charge[i]>mx) mx=charge[i];
+      const v=(mx/VSCALE).toFixed(2);
+      return {ok:mx>0, got:'מתח שנמדד='+v+'V', want:'אבץ+נחושת+אלקטרוליט = תא גלווני (~1.1V)'}; }});
+  T.push({grp:'חשמל', name:'בלי אלקטרוליט אין מתח',
+    run:()=>{ const b=labArena();
+      labPut(b,ZINC,20,0.05,0.15,0.3,0.8); labPut(b,GLASS,20,0.2,0.8,0.3,0.8);
+      labPut(b,COPPER,20,0.85,0.95,0.3,0.8); labHold(b,null,10);
+      let mx=0; for(let i=0;i<grid.length;i++) if(charge[i]>mx) mx=charge[i];
+      return {ok:mx===0, got:'מתח='+(mx/VSCALE).toFixed(2)+'V',
+              want:'בלי נוזל מוליך בין המתכות אין מעגל ואין מתח'}; }});
+
+  return T;
+}
+
+/* --- הרצה --- */
+let labBusy=false;
+function labRun(){
+  if(labBusy) return; labBusy=true;
+  const tests=labBuildTests();
+  const results=[]; let i=0;
+  const wasPaused=paused; paused=true;
+  labSnapshot();
+  document.getElementById('labWarn').style.display='none';
+  document.getElementById('labRunning').style.display='block';
+  const prog=document.getElementById('labProg'), bar=document.getElementById('labBar'), now=document.getElementById('labNow');
+
+  function tick(){
+    const t0=performance.now();
+    while(i<tests.length && performance.now()-t0 < 60){
+      const t=tests[i];
+      let r; try { r=t.run(); } catch(e){ r={ok:false,got:'שגיאה: '+e.message,want:'הבדיקה קרסה'}; }
+      results.push({grp:t.grp,name:t.name,...r}); i++;
+    }
+    const pct=Math.round(i/tests.length*100);
+    prog.textContent='בודק… '+i+' מתוך '+tests.length+' ('+pct+'%)';
+    bar.style.width=pct+'%';
+    if(results.length) now.textContent=results[results.length-1].name;
+    if(i<tests.length){ setTimeout(tick,0); return; }
+    labFinish(results, wasPaused);
+  }
+  setTimeout(tick,0);
+}
+function labFinish(results, wasPaused){
+  labRestore(); paused=wasPaused; labBusy=false;
+  document.getElementById('labRunning').style.display='none';
+  document.getElementById('labDone').style.display='block';
+  const bad=results.filter(r=>!r.ok);
+  const sum=document.getElementById('labSummary');
+  sum.style.background = bad.length? '#3a1c1c':'#16311f';
+  sum.style.border = '1px solid '+(bad.length? '#a05050':'#3f8f5f');
+  sum.innerHTML = bad.length
+    ? '❌ נמצאו <b>'+bad.length+'</b> בעיות מתוך '+results.length+' בדיקות'
+    : '✅ כל '+results.length+' הבדיקות עברו — לא נמצאה אף בעיה';
+  const box=document.getElementById('labResults'); box.innerHTML='';
+  const groups={};
+  for(const r of results){ (groups[r.grp]=groups[r.grp]||[]).push(r); }
+  for(const g in groups){
+    const list=groups[g], gbad=list.filter(r=>!r.ok);
+    const h=document.createElement('div');
+    h.style.cssText='margin-top:12px;font-weight:700;font-size:14px';
+    h.textContent=(gbad.length?'❌ ':'✅ ')+g+' — '+(list.length-gbad.length)+'/'+list.length+' עברו';
+    box.appendChild(h);
+    for(const r of gbad){
+      const d=document.createElement('div');
+      d.style.cssText='background:#131a26;border:1px solid #7a3a3a;border-radius:8px;padding:8px;margin-top:6px;font-size:12px;line-height:1.6';
+      d.innerHTML='<b>'+r.name+'</b><br>🔴 מה שקרה: '+r.got+'<br>🟢 מה שהיה אמור: '+r.want;
+      box.appendChild(d);
+    }
+  }
+  document.getElementById('labResults').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+document.getElementById('setLab').onclick=()=>{
+  document.getElementById('settings').classList.remove('open');
+  document.getElementById('labWarn').style.display='block';
+  document.getElementById('labRunning').style.display='none';
+  document.getElementById('labDone').style.display='none';
+  document.getElementById('labPanel').style.display='flex';
+};
+document.getElementById('labStart').onclick=labRun;
+document.getElementById('labClose1').onclick=()=>document.getElementById('labPanel').style.display='none';
+document.getElementById('labClose2').onclick=()=>document.getElementById('labPanel').style.display='none';
 document.getElementById('setClearAll').onclick=()=>{ document.getElementById('settings').classList.remove('open'); generateWorld(); };
 // שינוי רזולוציה (גודל פיקסל) — בונה מחדש את הרשת (מנקה), ומסמן את הכפתור הפעיל
 const SIZE_NAMES={9:'ממש קטן',5:'קטן',3.5:'בינוני',2.5:'גדול',1.6:'ענק'};
