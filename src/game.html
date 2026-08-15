@@ -1113,7 +1113,7 @@ function electricity(){
     }
     if (hiId<0 || loId<0 || hiId===loId) continue;
     const volts = hiR - loR; if (volts<=0.15) continue;
-    cells.push({ volts, body,
+    cells.push({ volts, body, lyte: grid[i0],
       neg: netId[hiCells[0]], pos: netId[loCells[0]], hiCells, loCells });
   }
 
@@ -1144,30 +1144,45 @@ function electricity(){
     if (c.pos<0 || c.pos===c.neg) continue;
     const v=Math.min(255,((c.neg>=0?pot[c.neg]:0)+c.volts)*VSCALE|0);
     for (const j of c.body) if (charge2[j]<v) charge2[j]=v;   // גם בתוך הנוזל עובר זרם
-    if (c.hiCells.length && Math.random()<0.0015){             // האלקטרודה הפעילה נאכלת
-      const k=c.hiCells[(Math.random()*c.hiCells.length)|0];
-      grid[k]=AIR; life[k]=0; aux[k]=0; velX[k]=0; velY[k]=0;
-    }
   }
   /* 5) נורות: הנורה יושבת בין שתי נקודות במעגל, והמתח עליה הוא ההפרש ביניהן.
         בגלל זה נורה מדליקה מעגל במקום לקצר אותו — חוט חשוף מקצר, נורה עובדת. */
   bulbSeen.fill(0);
+  const liveNets = new Set();
   for (let i0=0;i0<grid.length;i0++){
     if (bulbSeen[i0] || grid[i0]!==BULB) continue;
     bulbSeen[i0]=1; const st=[i0], group=[i0];
-    let hiP=-1e9, loP=1e9, touched=0;
+    let hiP=-1e9, loP=1e9, touched=0; const netsHere=[];
     while (st.length){
       const c=st.pop(), x=c%W, y=(c/W)|0;
       for (const [dx,dy] of NEI4){ const nx=x+dx, ny=y+dy; if(!inB(nx,ny)) continue;
         const j=idx(nx,ny);
         if (grid[j]===BULB){ if(!bulbSeen[j]){ bulbSeen[j]=1; st.push(j); group.push(j); } continue; }
         const n=netId[j]; if (n<0 || !driven[n]) continue;   // נקודה צפה לא נחשבת
-        touched++; const pv=pot[n]; if(pv>hiP)hiP=pv; if(pv<loP)loP=pv;
+        touched++; netsHere.push(n); const pv=pot[n]; if(pv>hiP)hiP=pv; if(pv<loP)loP=pv;
       }
     }
     if (touched<2 || hiP<=loP) continue;             // לא מחוברת משני הצדדים — לא נדלקת
     const v=Math.min(255,((hiP-loP)*VSCALE)|0);
     for (const j of group) if (charge2[j]<v) charge2[j]=v;
+    for (const n of netsHere) liveNets.add(n);       // דרך הנורה באמת עובר זרם
+  }
+
+  /* 6) הבטריה נגמרת — אבל רק כשבאמת עובר בה זרם.
+     בטריה שמונחת בלי מעגל סגור לא מתבזבזת (בדיוק כמו בטריה במגירה), ובטריה
+     שמדליקה נורה נאכלת לאט עד שהיא מתה. האבץ לא "נעלם" — הוא נמס לתוך התמיסה,
+     ולכן החומר נשמר במקום להימחק מהעולם. קצר = כל האנרגיה הופכת לחום, והבטריה
+     מתרוקנת מהר — בדיוק מה שקורה כשמקצרים בטריה אמיתית. */
+  for (const c of cells){
+    if (!c.hiCells.length) continue;
+    const shorted = (c.pos>=0 && c.pos===c.neg);
+    const flowing = shorted || (liveNets.has(c.pos) && liveNets.has(c.neg));
+    if (!flowing) continue;
+    if (Math.random() < (shorted?0.05:0.008)){
+      const k=c.hiCells[(Math.random()*c.hiCells.length)|0];
+      grid[k]=c.lyte; life[k]=0; aux[k]=0; velX[k]=0; velY[k]=0;   // נמס לתוך האלקטרוליט
+    }
+    if (shorted) for (const j of c.body) temp[j]+=0.5;             // קצר מחמם
   }
 
   const t=charge; charge=charge2; charge2=t;
@@ -4262,6 +4277,32 @@ function labBuildTests(){
       let mx=0; for(let i=0;i<grid.length;i++) if(grid[i]===COPPER&&charge[i]>mx) mx=charge[i];
       const v=(mx/VSCALE).toFixed(2);
       return {ok:mx>0, got:'מתח שנמדד='+v+'V', want:'אבץ+נחושת+אלקטרוליט = תא גלווני (~1.1V)'}; }});
+  T.push({grp:'חשמל', name:'בטריה בלי מעגל סגור לא מתבזבזת',
+    run:()=>{ const b=labArena();
+      const cx=(b.x0+b.x1)>>1, fl=b.y1-2;
+      for(let x=b.x0;x<=b.x1;x++) grid[fl*W+x]=WALL;
+      for(let y=fl-8;y<fl;y++){
+        for(let x=cx-9;x<cx-6;x++) grid[y*W+x]=ZINC;
+        for(let x=cx-6;x<cx+6;x++) grid[y*W+x]=SALTWATER;
+        for(let x=cx+6;x<cx+8;x++) grid[y*W+x]=COPPER; }
+      const z0=labCount(ZINC); labHold(b,null,600); const z1=labCount(ZINC);
+      return {ok:z1===z0, got:'אבץ '+z0+' → '+z1+' בלי חוטים כלל',
+              want:'בטריה שמונחת בלי מעגל סגור לא אמורה להתבזבז — כמו בטריה במגירה'}; }});
+  T.push({grp:'חשמל', name:'בטריה שמדליקה נורה כן נגמרת',
+    run:()=>{ const b=labArena();
+      const cx=(b.x0+b.x1)>>1, fl=b.y1-2, top=fl-8;
+      for(let x=b.x0;x<=b.x1;x++) grid[fl*W+x]=WALL;
+      for(let y=top;y<fl;y++){
+        for(let x=cx-9;x<cx-6;x++) grid[y*W+x]=ZINC;
+        for(let x=cx-6;x<cx+6;x++) grid[y*W+x]=SALTWATER;
+        for(let x=cx+6;x<cx+8;x++) grid[y*W+x]=COPPER; }
+      for(let y=top-4;y<top;y++){ grid[y*W+(cx-9)]=WIRE; grid[y*W+(cx+7)]=WIRE; }
+      for(let x=cx-9;x<cx-1;x++) grid[(top-4)*W+x]=WIRE;
+      for(let x=cx+1;x<=cx+7;x++) grid[(top-4)*W+x]=WIRE;
+      grid[(top-4)*W+cx]=BULB; grid[(top-4)*W+(cx-1)]=BULB;
+      const z0=labCount(ZINC); labHold(b,null,1500); const z1=labCount(ZINC);
+      return {ok:z1<z0, got:'אבץ '+z0+' → '+z1+' אחרי 1500 תורים עם נורה דולקת',
+              want:'אלקטרודת האבץ אמורה להיאכל כשבאמת עובר זרם'}; }});
   T.push({grp:'חשמל', name:'בלי אלקטרוליט אין מתח',
     run:()=>{ const b=labArena();
       labPut(b,ZINC,20,0.05,0.15,0.3,0.8); labPut(b,GLASS,20,0.2,0.8,0.3,0.8);
