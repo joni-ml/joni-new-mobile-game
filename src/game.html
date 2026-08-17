@@ -1108,15 +1108,23 @@ const flowOdds = id => perm[id]/140;
 /* חוק אחד שמחליף עשרות חוקי "מי-עובר-למי": המים יורדים, מתפשטים, נוטפים ומתאדים. */
 function wetnessStep(x,y,i,id){
   if (!wet[i]) return false;
-  // מתאדים בחום — יוצאים כאדים ולא נמחקים מהעולם
+  /* מתאדים בחום. חשוב: מים יכולים לצאת כאדים רק אם יש *לאן* — כלומר אוויר מעליהם.
+     קודם הרטיבות אופסה תמיד, וגם כשלא היה אוויר מעל, ולכן בגוש חול רטוב רק
+     השורה העליונה באמת התאדתה וכל השאר פשוט נמחק. 200 יחידות מים הפכו ל-20.
+     עכשיו: יש אוויר מעל → אדים. אין, אבל יש קרקע יבשה מעל → המים *נודדים כלפי
+     מעלה* אל פני השטח, בדיוק כמו בקרקע שמתייבשת. אין אף אחד מהם → נשארים. */
   if (temp[i]>=100){
     const up = y-1>=0 ? idx(x,y-1) : -1;
-    wet[i]=0; syncWetLook(i);
     if (up>=0 && grid[up]===AIR){
+      wet[i]=0; syncWetLook(i);
       grid[up]=STEAM; life[up]=MAT[STEAM].life; temp[up]=Math.max(105,temp[i]);
       velX[up]=0; velY[up]=0; wet[up]=0; discover(STEAM);
+      return true;
     }
-    return true;
+    if (up>=0 && isPorous(grid[up]) && !wet[up]){
+      wet[up]=1; wet[i]=0; syncWetLook(up); syncWetLook(i); return true;
+    }
+    return false;                 // אין דרך החוצה — המים נשארים במקום, לא נמחקים
   }
   const bi = y+1<H ? idx(x,y+1) : -1;
   // נוטפים החוצה לחלל שמתחת — ככה נובע מעיין מדופן מערה
@@ -4596,6 +4604,100 @@ function labBuildTests(){
          for(let x=cx-4;x<=cx+4;x+=3){ const i=(Math.round(b.y0+(b.y1-b.y0)*0.58))*W+x;
            grid[i]=SEEDT; life[i]=MAT[SEEDT].life||10; } },
     400, ()=>labCount(SPROUT)+labCount(WOOD), 'זרע באדמה רטובה אמור לנבוט');
+
+  /* 4ז) מים + חום. זה האזור שנבדק הכי פחות, וכאן התגלה שחימום קרקע רטובה
+     מחק 90% מהמים: ההתאדות איפסה את הרטיבות תמיד, אבל שחררה אדים רק אם היה
+     אוויר *מעל* — ובגוש חול רטוב רק לשורה העליונה יש אוויר מעליה. */
+  const hHold=(b,T,n,pred)=>{ for(let k=0;k<n;k++){
+    for(let y=b.y0;y<=b.y1;y++) for(let x=b.x0;x<=b.x1;x++){
+      const i=y*W+x; if(pred(grid[i])) temp[i]=T; }
+    step(); } };
+  const isH2O = g=>g===WATER||g===STEAM||g===CLOUD||g===ICE;
+  const H2Osum=()=>{ let n=0; for(let i=0;i<grid.length;i++){ if(isH2O(grid[i])) n++; n+=wet[i]; } return n; };
+
+  T.push({grp:'מים וחום', name:'רותחים בסיר אטום — שום דבר לא בורח',
+    run:()=>{ const b=labArena();
+      for(let y=b.y0;y<=b.y1;y++){ grid[y*W+b.x0]=WALL; grid[y*W+b.x1]=WALL; }
+      for(let x=b.x0;x<=b.x1;x++){ grid[b.y0*W+x]=WALL; grid[b.y1*W+x]=WALL; }
+      labPut(b,WATER,20,0.1,0.9,0.55,0.9);
+      const n0=H2Osum(); hHold(b,200,500,isH2O);
+      return {ok:Math.abs(H2Osum()-n0)<=Math.max(3,n0*0.06),
+              got:'לפני '+n0+' אחרי '+H2Osum(),
+              want:'בסיר סגור המים חייבים להישאר בפנים, גם כשהם רותחים'}; }});
+  T.push({grp:'מים וחום', name:'קרקע רטובה עמוקה שמתחממת — כל המים יוצאים',
+    run:()=>{ const b=labArena();
+      labPut(b,SAND,20,0.1,0.9,0.3,0.95);
+      for(let y=b.y0;y<=b.y1;y++) for(let x=b.x0;x<=b.x1;x++){ const i=y*W+x;
+        if(grid[i]===SAND){ wet[i]=1; syncWetLook(i); } }
+      const n0=H2Osum();
+      hHold(b,350,400,g=>g===SAND||g===WETSAND);
+      return {ok:H2Osum()>=n0*0.6, got:'מים לפני '+n0+' אחרי '+H2Osum(),
+              want:'גם מים עמוק בתוך הגוש חייבים לנדוד למעלה ולצאת, לא להימחק'}; }});
+  T.push({grp:'מים וחום', name:'ברזל לוהט שמוכנס למים מתקרר',
+    run:()=>{ const b=labArena();
+      labPut(b,WATER,20,0.05,0.95,0.45,0.95);
+      labPut(b,IRON,1400,0.3,0.7,0.05,0.25);
+      const n0=H2Osum();
+      let t0=0,c0=0; for(let i=0;i<grid.length;i++) if(grid[i]===IRON){t0+=temp[i];c0++;}
+      labHold(b,null,400);
+      let t1=0,c1=0; for(let i=0;i<grid.length;i++) if(grid[i]===IRON){t1+=temp[i];c1++;}
+      const a=c0?t0/c0:0, z=c1?t1/c1:0;
+      return {ok:z<a*0.9 && H2Osum()<=n0+2,
+              got:'ברזל '+a.toFixed(0)+'° → '+z.toFixed(0)+'° · מים '+n0+' → '+H2Osum(),
+              want:'הברזל מתקרר במים, והמים לא נוצרים יש מאין'}; }});
+  T.push({grp:'מים וחום', name:'לבה שנופלת למים הופכת לסלע',
+    run:()=>{ const b=labArena();
+      labPut(b,WATER,20,0.05,0.95,0.45,0.95);
+      labPut(b,LAVA,1500,0.3,0.7,0.05,0.25);
+      const n0=H2Osum(); labHold(b,null,500);
+      const rock=labCount(BASALT)+labCount(STONE);
+      return {ok:rock>0 && H2Osum()<=n0+3,
+              got:'סלע שנוצר='+rock+' · מים '+n0+' → '+H2Osum(),
+              want:'לבה במים מתקררת לסלע בלי לשכפל מים'}; }});
+  T.push({grp:'מים וחום', name:'אדים כלואים לא עוברים דרך המכסה',
+    run:()=>{ const b=labArena();
+      for(let y=b.y0;y<=b.y1;y++){ grid[y*W+b.x0]=WALL; grid[y*W+b.x1]=WALL; }
+      for(let x=b.x0;x<=b.x1;x++){ grid[b.y0*W+x]=WALL; grid[b.y1*W+x]=WALL; }
+      labPut(b,STEAM,160,0.15,0.85,0.6,0.9);
+      const n0=H2Osum(); hHold(b,160,600,isH2O);
+      let esc=0;
+      for(let i=0;i<grid.length;i++){ if(!isH2O(grid[i])) continue;
+        const x=i%W, y=(i/W)|0;
+        if(x<b.x0||x>b.x1||y<b.y0||y>b.y1) esc++; }
+      return {ok:esc===0 && H2Osum()>=n0*0.9,
+              got:'אדים שברחו='+esc+' · מים '+n0+' → '+H2Osum(),
+              want:'גז לחוץ לא עובר דרך קיר אטום'}; }});
+  T.push({grp:'מים וחום', name:'מים ב-2000° הופכים לאדים ולא נמחקים',
+    run:()=>{ const b=labArena();
+      labPut(b,WATER,2000,0.15,0.85,0.3,0.85);
+      const n0=H2Osum(); hHold(b,2000,300,isH2O);
+      return {ok:H2Osum()>=n0*0.85, got:'לפני '+n0+' אחרי '+H2Osum(),
+              want:'חום קיצוני מאדה מים — הוא לא מוחק אותם'}; }});
+  T.push({grp:'מים וחום', name:'קרח ישירות על אש',
+    run:()=>{ const b=labArena();
+      labPut(b,ICE,-10,0.15,0.85,0.35,0.75);
+      labPut(b,FIRE,900,0.15,0.85,0.78,0.85);
+      const n0=H2Osum(); labHold(b,null,400);
+      return {ok:H2Osum()>=n0*0.5, got:'מים לפני '+n0+' אחרי '+H2Osum(),
+              want:'קרח נמס ומתאדה בהדרגה, לא נמחק בבת אחת'}; }});
+  T.push({grp:'מים וחום', name:'חימום מלמטה — החום עולה דרך המים',
+    run:()=>{ const b=labArena();
+      for(let y=b.y0;y<=b.y1;y++){ grid[y*W+b.x0]=WALL; grid[y*W+b.x1]=WALL; }
+      for(let x=b.x0;x<=b.x1;x++) grid[b.y1*W+x]=WALL;
+      labPut(b,WATER,20,0.1,0.9,0.3,0.92);
+      const n0=H2Osum();
+      for(let k=0;k<500;k++){
+        for(let x=b.x0+1;x<b.x1;x++){ const i=(b.y1-1)*W+x; if(grid[i]===WATER) temp[i]=95; }
+        step(); }
+      // מודדים את *פני* המים בפועל, ולא שורה קבועה — המים מתיישבים איפה שהם מתיישבים
+      let ty=-1;
+      for(let y=b.y0;y<=b.y1 && ty<0;y++) for(let x=b.x0+1;x<b.x1;x++)
+        if(grid[y*W+x]===WATER){ ty=y; break; }
+      let tt=0,tc=0;
+      if(ty>=0) for(let x=b.x0+1;x<b.x1;x++){ const i=ty*W+x; if(grid[i]===WATER){tt+=temp[i];tc++;} }
+      return {ok:tc>0 && tt/tc>AMB+5 && Math.abs(H2Osum()-n0)<=3,
+              got:'טמפ\' בחלק העליון='+(tc?(tt/tc).toFixed(0):'—')+'° · מים '+n0+' → '+H2Osum(),
+              want:'מים חמים עולים ומחממים את כל הכלי — לא רק את התחתית'}; }});
 
   // 5) פיזיקה בסיסית
   T.push({grp:'פיזיקה', name:'גוש פרחים באוויר — נופל',
