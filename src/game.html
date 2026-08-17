@@ -2216,7 +2216,10 @@ function reactNitricAcid(x,y,i){
                       grid[i]=AIR; life[i]=0; return true; }
     if (g===BAKING || g===NAOH){ grid[j]=WATER; life[j]=0; aux[j]=0; temp[j]+=40;
                                  grid[i]=WATER; life[i]=0; aux[i]=0; return true; }
-    if (!HNO3_PROOF.has(g) && conduct[g] && Math.random()<0.10){   // ממיסה מתכות ומעלה אדים חומים
+    // "ממיסה מתכות" — אבל חומצות הן בעצמן מוליכות, ולכן בלי הסינון הזה חומצה
+    // חנקתית *אכלה את עצמה*: כל תא ראה שכן חומצה, ספר אותו כמתכת, והמיס אותו.
+    // 200 תאים נעלמו תוך 20 תורים. כספית עדיין נמסה, כי היא לא אלקטרוליט.
+    if (!HNO3_PROOF.has(g) && conduct[g] && !ELECTROLYTE.has(g) && Math.random()<0.10){
       grid[j]=NO2; life[j]=MAT[NO2].life; temp[j]+=30; discover(NO2);
       grid[i]=WATER; life[i]=0; aux[i]=0;
       return true;
@@ -3638,8 +3641,9 @@ function drawMatIcon(cv,id){
 }
 
 /* ===== קטגוריות ===== */
-const MCATS=[['fav','⭐ אחרונים'],['nature','🌍 טבע'],['plants','🌱 צמחים'],['heat','🔥 אש וחום'],
-             ['elements','⚗️ יסודות'],['chem','🧪 כימיה'],['power','⚡ חשמל'],['build','🧱 בנייה']];
+const MCATS=[['all','🗂️ הכל'],['fav','⭐ אחרונים'],['nature','🌍 טבע'],['plants','🌱 צמחים'],
+             ['heat','🔥 אש וחום'],['elements','⚗️ יסודות'],['chem','🧪 כימיה'],['power','⚡ חשמל'],
+             ['build','🧱 בנייה']];
 function matCat(m){
   const k=m.key;
   if (['wire','bulb','toggle'].includes(k)) return 'power';
@@ -3677,7 +3681,7 @@ function buildPalette(justFound){
 }
 
 /* ===== תפריט החומרים המלא ===== */
-let matCatCur='fav', matPickerOpen=false;
+let matCatCur='all', matPickerOpen=false;
 function buildMatPicker(){
   const tabs=document.getElementById('matTabs'), gridEl=document.getElementById('matGrid');
   tabs.innerHTML='';
@@ -3690,7 +3694,9 @@ function buildMatPicker(){
   gridEl.innerHTML='';
   const ids = matCatCur==='fav'
     ? recentMats.filter(id=>found[id])
-    : MAT.filter(m=>found[m.id] && m.id!==AIR && m.phaseOf===undefined && matCat(m)===matCatCur).map(m=>m.id);
+    : matCatCur==='all'
+      ? MAT.filter(m=>found[m.id] && m.id!==AIR && !m.sys && m.phaseOf===undefined).map(m=>m.id)
+      : MAT.filter(m=>found[m.id] && m.id!==AIR && m.phaseOf===undefined && matCat(m)===matCatCur).map(m=>m.id);
   if (!ids.length){
     gridEl.innerHTML='<div style="opacity:.55;font-size:13px;padding:10px">עדיין לא גילית כאן כלום</div>';
     return;
@@ -4120,6 +4126,7 @@ function labPut(b, mat, T, x0f, x1f, y0f, y1f){
   let n=0;
   for(let y=ya;y<=yb;y++) for(let x=xa;x<=xb;x++){
     const i=y*W+x; grid[i]=mat; temp[i]=T===undefined?AMB:T; wet[i]=0;
+    if(labTouched) labTouched[mat]=1;
     if(MAT[mat].life) life[i]=MAT[mat].life; n++; }
   return n;
 }
@@ -4187,6 +4194,51 @@ function labBuildTests(){
           return {ok:left<n0*0.6, got:left+' מתוך '+n0+' עדיין גז ב-'+tgt.toFixed(0)+'°',
                   want:'מתחת ל-'+bp+'° הגז אמור להתעבות לנוזל'}; }});
     }
+  }
+
+  /* 1ב) בדיקת שפיות ל*כל* חומר במשחק, נוצרת אוטומטית.
+     בלי זה היו 30 חומרים — אבק שריפה, כספית, תרמיט, מתאן, מי מלך, אקונומיקה,
+     אוזון, מתג — שאף בדיקה לא נגעה בהם בכלל, והמעבדה עדיין הכריזה "הכל תקין".
+     כל חומר חדש שיתווסף למשחק ייכנס לכאן מעצמו. */
+  for(let id=1; id<MAT.length; id++){
+    const m=MAT[id]; if(!m.key||m.sys) continue;
+    /* חשוב: בודקים כל חומר בטמפרטורה שבה הוא *אמור* להיות יציב, ולא תמיד בחדר.
+       קרח בחדר נמס, לבה בחדר מתקררת, חמצן נוזלי בחדר רותח — כל אלה נכונים,
+       ובדיקה שמצפה שהם ישרדו בחדר סתם מכריזה על באג שאינו. */
+    const mp=meltC[id], bp=boilC[id], ty=m.type;
+    let stableT = AMB;
+    if (ty==='gas' && bp!=null) stableT = bp+120;
+    else if (ty==='liquid'){
+      if (mp!=null && bp!=null) stableT = (mp+bp)/2;
+      else if (mp!=null) stableT = mp+90;
+      else if (bp!=null) stableT = bp-90;
+    } else if (mp!=null) stableT = Math.max(ABS_ZERO+5, mp-120);
+    // חומרים שמתפרקים מעצמם בכוונה — אין להם טמפרטורה "יציבה" בכלל
+    // "מתכת מותכת"/"מלח מותך"/"אדי מתכת" הם מעטפת: הזהות האמיתית שמורה ב-aux,
+    // ובלי aux הם מתמצקים חזרה מיד. אין להם טמפרטורה יציבה משל עצמם.
+    const proxy = (id===MOLTENMETAL || id===MOLTENSALT || id===IRONGAS || id===SALTGAS);
+    const selfDecays = (id===FOAM || id===ETP || id===FIRE || proxy);
+    const transient = !!(m.flam || m.life || selfDecays);
+    T.push({grp:'שפיות לכל חומר', name:m.name+' — מתנהג באופן שפוי בטמפ\' היציבה שלו',
+      run:()=>{
+        const b=labArena();
+        const n0=labPut(b,id,stableT,0.2,0.8,0.25,0.7);
+        if(!transient) labHold(b,stableT,200); else labHold(b,null,200);
+        const cellsInBox=(b.x1-b.x0+1)*(b.y1-b.y0+1);
+        let left=0, filled=0;
+        for(let y=b.y0;y<=b.y1;y++) for(let x=b.x0;x<=b.x1;x++){
+          const g=grid[y*W+x]; if(g===id) left++; if(g!==AIR) filled++; }
+        // חוק 1: שום חומר לא אמור להשתלט על כל התא ולהתרבות בלי גבול
+        if (filled > cellsInBox*0.92 && filled > n0*1.8)
+          return {ok:false, got:'מילא '+filled+' מתוך '+cellsInBox+' תאים (התחיל מ-'+n0+')',
+                  want:'חומר לא אמור להתרבות ולמלא את כל התא מעצמו'};
+        // חוק 2: חומר יציב (לא דליק, בלי אורך חיים, לא גז) לא אמור להיעלם לבד
+        if (!transient && left < n0*0.4)
+          return {ok:false, got:'נשארו '+left+' מתוך '+n0+' ב-'+Math.round(stableT)+'° (טמפ\' שבה הוא אמור להיות יציב)',
+                  want:'חומר יציב לא אמור להיעלם מעצמו בלי סיבה'};
+        return {ok:true, got:'נשארו '+left+'/'+n0+' ב-'+Math.round(stableT)+'°',
+                want:'יציב'};
+      }});
   }
 
   // 2) השוואה למציאות — המספר במשחק מול המספר האמיתי
@@ -4428,12 +4480,18 @@ function labBuildTests(){
 }
 
 /* --- הרצה --- */
-let labWatch=true;
+let labWatch=true, labTouched=null;
+// סופר אילו חומרים באמת נגענו בהם במהלך הריצה — כדי שאפשר יהיה לראות שחור על לבן
+// מה *לא* נבדק, במקום להאמין ל"הכל עבר" בלי לדעת על כמה חומרים הוא בכלל רץ.
+function labMarkPresent(){
+  for(let i=0;i<grid.length;i++){ const g=grid[i]; if(g) labTouched[g]=1; }
+}
 function labRun(){
   if(labBusy) return; labBusy=true;
   labWatch = document.getElementById('labLive').checked;
   if(labWatch) document.getElementById('labPanel').classList.add('watching');
   const tests=labBuildTests();
+  labTouched=new Uint8Array(MAT.length);
   const results=[]; let i=0;
   const wasPaused=paused; paused=true;
   labSnapshot();
@@ -4445,6 +4503,7 @@ function labRun(){
     const t=tests[i];
     let r; try { r=t.run(); } catch(e){ r={ok:false,got:'שגיאה: '+e.message,want:'הבדיקה קרסה'}; }
     results.push({grp:t.grp,name:t.name,...r}); i++;
+    labMarkPresent();
     render();                       // מציירים את תא הניסוי בפועל, כדי שרואים מה קורה
     const pct=Math.round(i/tests.length*100);
     const bad=results.filter(x=>!x.ok).length;
@@ -4473,6 +4532,23 @@ function labFinish(results, wasPaused){
     ? '❌ נמצאו <b>'+bad.length+'</b> בעיות מתוך '+results.length+' בדיקות'
     : '✅ כל '+results.length+' הבדיקות עברו — לא נמצאה אף בעיה';
   const box=document.getElementById('labResults'); box.innerHTML='';
+  // --- כמה מהמשחק הבדיקה בכלל נגעה בו ---
+  if (labTouched){
+    const real=[], missed=[];
+    for(let id=1;id<MAT.length;id++){ const m=MAT[id];
+      if(!m.key||m.sys) continue; real.push(id); }
+    for(const id of real) if(!labTouched[id]) missed.push(MAT[id].name);
+    const hit=real.length-missed.length;
+    const pct=Math.round(hit/real.length*100);
+    const cov=document.createElement('div');
+    cov.style.cssText='background:#131a26;border:1px solid '+(missed.length?'#8a7a3a':'#3f8f5f')+
+      ';border-radius:10px;padding:10px;margin-top:10px;font-size:13px;line-height:1.7';
+    cov.innerHTML='<b>📊 כמה מהמשחק נבדק בפועל:</b> '+hit+' מתוך '+real.length+' חומרים ('+pct+'%)'+
+      (missed.length? '<br><span style="opacity:.8">חומרים שהבדיקה לא נגעה בהם בכלל:</span><br>'+
+        '<span style="opacity:.7">'+missed.join(' · ')+'</span>'
+        : '<br><span style="opacity:.8">כל חומר במשחק נכנס לפחות לבדיקה אחת.</span>');
+    box.appendChild(cov);
+  }
   const groups={};
   for(const r of results){ (groups[r.grp]=groups[r.grp]||[]).push(r); }
   for(const g in groups){
