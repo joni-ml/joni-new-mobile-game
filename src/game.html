@@ -3166,16 +3166,17 @@ function captureBuild(x0,y0,x1,y1){
   const cells=[];
   for (let y=minY;y<=maxY;y++) for (let x=minX;x<=maxX;x++){
     const i=idx(x,y), g=grid[i]; if(g===AIR) continue;
-    cells.push([x-minX, y-minY, g, Math.round(temp[i]), aux[i], life[i]]);
+    cells.push([x-minX, y-minY, g, Math.round(temp[i]), aux[i], life[i], wet[i]]);
   }
   return { name:'בנייה '+(buildSeq++), w:maxX-minX+1, h:maxY-minY+1, cells };
 }
 function placeBuild(bd,gx,gy){
   const ox=gx-(bd.w>>1), oy=gy-(bd.h>>1);
-  for (const [dx,dy,g,t,a,l] of bd.cells){
+  for (const [dx,dy,g,t,a,l,w] of bd.cells){
     const x=ox+dx, y=oy+dy; if(!inB(x,y)) continue;
     const i=idx(x,y);
     grid[i]=g; temp[i]=t; aux[i]=a; life[i]=l; velX[i]=0; velY[i]=0;
+    wet[i]=w||0;                 // בניות ישנות נשמרו בלי רטיבות — להן w יוצא undefined
     if(!found[g]) discover(g);
   }
 }
@@ -4402,6 +4403,49 @@ function labBuildTests(){
       return {ok:H2Oall()<=n0, got:'לפני '+n0+' אחרי '+H2Oall(),
               want:'צמח צורך מים, אז ירידה תקינה — אבל עלייה אסורה'}; }});
 
+  /* 4ד) שמירה/טעינה ובניות. תת-מערכות שלא נבדקו מעולם, ולכן שקט בהן לא אמר כלום.
+     כל אחת מהן איבדה מידע: הטעינה איפסה חום/aux/רטיבות במפורש, והבניות
+     שמרו רק חומר+חום+aux+life בלי הרטיבות. */
+  T.push({grp:'שמירה ובניות', name:'שמירה וטעינה שומרות על החום',
+    run:()=>{ const b=labArena();
+      labPut(b,GOLD,700,0.2,0.8,0.4,0.8);
+      let hot0=0; for(let i=0;i<grid.length;i++) if(temp[i]>300) hot0++;
+      const raw=JSON.stringify({W,H,grid:Array.from(grid),sp:sparseSave()});
+      grid.fill(AIR); temp.fill(AMB); wet.fill(0); aux.fill(0); life.fill(0);
+      const d=JSON.parse(raw); grid.set(d.grid);
+      const sp=d.sp;
+      for(let k=0;k<sp.tIdx.length;k++) temp[sp.tIdx[k]]=sp.tVal[k];
+      let hot1=0; for(let i=0;i<grid.length;i++) if(temp[i]>300) hot1++;
+      return {ok:hot1>=hot0*0.9, got:'תאים חמים לפני='+hot0+' אחרי טעינה='+hot1,
+              want:'עולם שנטען לא אמור לחזור קר — לבה נשמרת כלבה'}; }});
+  T.push({grp:'שמירה ובניות', name:'שמירה וטעינה שומרות על המים הספוגים',
+    run:()=>{ const b=labArena();
+      labPut(b,SAND,20,0.2,0.8,0.4,0.8);
+      for(let y=b.y0;y<=b.y1;y++) for(let x=b.x0;x<=b.x1;x++){ const i=y*W+x;
+        if(grid[i]===SAND){ wet[i]=1; syncWetLook(i); } }
+      let w0=0; for(let i=0;i<grid.length;i++) w0+=wet[i];
+      const raw=JSON.stringify({grid:Array.from(grid),sp:sparseSave()});
+      grid.fill(AIR); wet.fill(0);
+      const d=JSON.parse(raw); grid.set(d.grid);
+      for(let k=0;k<d.sp.wIdx.length;k++) wet[d.sp.wIdx[k]]=1;
+      let w1=0; for(let i=0;i<grid.length;i++) w1+=wet[i];
+      return {ok:w1>=w0*0.9, got:'יחידות מים לפני='+w0+' אחרי טעינה='+w1,
+              want:'קרקע רטובה שנשמרה חייבת לחזור רטובה, לא רק להיראות רטובה'}; }});
+  T.push({grp:'שמירה ובניות', name:'בנייה שמורה מחזירה גם את הרטיבות',
+    run:()=>{ const b=labArena();
+      labPut(b,SAND,20,0.15,0.55,0.4,0.8);
+      labPut(b,COPPER,20,0.6,0.9,0.4,0.8);
+      for(let y=b.y0;y<=b.y1;y++) for(let x=b.x0;x<=b.x1;x++){ const i=y*W+x;
+        if(grid[i]===SAND){ wet[i]=1; syncWetLook(i); } }
+      let w0=0; for(let i=0;i<grid.length;i++) w0+=wet[i];
+      const bd=captureBuild(b.x0,b.y0,b.x1,b.y1);
+      if(!bd) return {ok:false, got:'captureBuild החזיר כלום', want:'הבנייה אמורה להילכד'};
+      grid.fill(AIR); wet.fill(0); temp.fill(AMB); life.fill(0); aux.fill(0);
+      placeBuild(bd, (b.x0+b.x1)>>1, (b.y0+b.y1)>>1);
+      let w1=0; for(let i=0;i<grid.length;i++) w1+=wet[i];
+      return {ok:w1>=w0*0.9, got:'יחידות מים בבנייה המקורית='+w0+' אחרי הנחה מחדש='+w1,
+              want:'בנייה עם קרקע רטובה חייבת לחזור רטובה'}; }});
+
   // 5) פיזיקה בסיסית
   T.push({grp:'פיזיקה', name:'גוש פרחים באוויר — נופל',
     run:()=>{ const b=labArena(); labPut(b,FLOWER,20,0.4,0.6,0.05,0.2);
@@ -4908,9 +4952,30 @@ document.getElementById('setGameSpeed').oninput=e=>{
 
 /* ===== שמירה/טעינה ===== */
 const KEY='sandbox_v3';
+/* השמירה החזיקה רק את סוג החומר בכל תא. כל השאר — חום, רטיבות, aux, life —
+   נזרק, ו-load אפילו איפס אותם במפורש. לכן עולם שנטען חזר תמיד קר לגמרי:
+   לבה שנשמרה חזרה כאבן קרה, מתכת מותכת שכחה איזו מתכת היא, ומתג חשמלי
+   שכבית/הדלקת חזר במצב לא ידוע (aux הוא זה שמחזיק פתוח/סגור).
+   שומרים עכשיו גם אותם, אבל *דליל* — רק תאים שבאמת חורגים מברירת המחדל —
+   כדי שהשמירה תישאר קטנה (חשוב, כי באייפון האחסון מוגבל וכבר נתקלנו בזה). */
+function sparseSave(){
+  const tIdx=[], tVal=[], aIdx=[], aVal=[], lIdx=[], lVal=[], wIdx=[];
+  for(let i=0;i<grid.length;i++){
+    // רק חום *משמעותי*. מפל הטמפרטורות הטבעי של האקלים סביב טמפ' החדר לא שווה
+    // מקום בשמירה — מה שחשוב הוא לבה, כור, קרח, חנקן נוזלי.
+    const d=temp[i]-AMB;
+    if(d>25||d<-25){ tIdx.push(i); tVal.push(Math.round(temp[i])); }
+    if(aux[i]){ aIdx.push(i); aVal.push(aux[i]); }
+    if(life[i]){ lIdx.push(i); lVal.push(life[i]); }
+    if(wet[i]) wIdx.push(i);
+  }
+  return {tIdx,tVal,aIdx,aVal,lIdx,lVal,wIdx};
+}
 function save(msg){
   try{
-    const ok = store.set(KEY, JSON.stringify({ W,H, grid:Array.from(grid), found:Array.from(found), score, mi }));
+    const sp=sparseSave();
+    const ok = store.set(KEY, JSON.stringify({ W,H, grid:Array.from(grid),
+      found:Array.from(found), score, mi, sp }));
     if(msg) toast(ok ? '💾 נשמר' : '⚠️ אי אפשר לשמור בדפדפן הזה');
   }catch(e){ if(msg) toast('שגיאה בשמירה'); }
 }
@@ -4962,7 +5027,15 @@ function load(){
     if(d.found) d.found.forEach((v,ix)=>{ if(v) found[ix]=1; });
     foundCount=found.reduce((a,b)=>a+b,0);
     score=d.score||0; mi=d.mi||0;
-    life.fill(0); aux.fill(0); temp.fill(AMB);
+    life.fill(0); aux.fill(0); temp.fill(AMB); wet.fill(0);
+    // מחזירים את מה שנשמר דליל. שמירה ישנה בלי sp פשוט נטענת קרה, כמו קודם.
+    const sp=d.sp;
+    if(sp && d.W===W && d.H===H){
+      if(sp.tIdx) for(let k=0;k<sp.tIdx.length;k++) temp[sp.tIdx[k]]=sp.tVal[k];
+      if(sp.aIdx) for(let k=0;k<sp.aIdx.length;k++) aux[sp.aIdx[k]]=sp.aVal[k];
+      if(sp.lIdx) for(let k=0;k<sp.lIdx.length;k++) life[sp.lIdx[k]]=sp.lVal[k];
+      if(sp.wIdx) for(let k=0;k<sp.wIdx.length;k++) wet[sp.wIdx[k]]=1;
+    }
   }catch(e){}
 }
 setInterval(()=>{ save(false); }, 10000);
