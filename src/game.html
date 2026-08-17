@@ -4446,6 +4446,157 @@ function labBuildTests(){
       return {ok:w1>=w0*0.9, got:'יחידות מים בבנייה המקורית='+w0+' אחרי הנחה מחדש='+w1,
               want:'בנייה עם קרקע רטובה חייבת לחזור רטובה'}; }});
 
+  /* 4ה) תגובות שהמעבדה פספסה לגמרי. נמצאו במדידת כיסוי תגובות: הן ירו אלפי
+     פעמים בסריקה מקיפה, ואפס פעמים בבדיקות — כלומר לא היה שום דבר ששומר עליהן. */
+  const rxCase=(nm,build,steps,check,note)=>{
+    T.push({grp:'תגובות שלא נבדקו', name:nm, run:()=>{
+      const b=labArena(); build(b); labHold(b,null,steps);
+      const v=check(); return {ok:v>0, got:'תוצר שנוצר: '+v, want:note};
+    }});
+  };
+  rxCase('מלחת אשלגן + גופרית + פחמן → אבק שריפה',
+    b=>{ for(let y=b.y0;y<=b.y1;y++) for(let x=b.x0;x<=b.x1;x++){
+      const k=(x+y)%3; grid[y*W+x]= k===0?KNO3 : k===1?SULFUR : CARBON; } },
+    200, ()=>labCount(GUNPOWDER), 'שלושת המרכיבים צמודים אמורים ליצור אבק שריפה');
+  rxCase('תרמיט נדלק ומתיך ברזל',
+    b=>{ labPut(b,THERMITE,20,0.15,0.85,0.35,0.85);
+         labPut(b,FIRE,1400,0.4,0.6,0.28,0.34); },
+    250, ()=>labCount(IRONMELT)+labCount(MOLTENMETAL)+labCount(ALUMINA),
+    'תרמיט בוער בחום עצום ומתיך ברזל');
+  rxCase('מתאן בוער → פחמן דו-חמצני',
+    b=>{ labPut(b,METHANE,20,0.15,0.85,0.35,0.8);
+         labPut(b,OXYGEN,20,0.15,0.85,0.82,0.9);
+         labPut(b,FIRE,900,0.45,0.55,0.28,0.33); },
+    250, ()=>labCount(CO2), 'CH₄ + O₂ → CO₂ + H₂O');
+  rxCase('שמן מנועים בוער',
+    b=>{ labPut(b,MOTOROIL,20,0.15,0.85,0.4,0.85);
+         labPut(b,FIRE,900,0.4,0.6,0.33,0.39); },
+    250, ()=>labCount(FIRE)+labCount(CO2)+labCount(ASH), 'שמן הוא דלק — הוא אמור לבעור');
+  rxCase('חמצן בחום אדיר → אוזון',
+    b=>{ labPut(b,OXYGEN,2800,0.15,0.85,0.25,0.8); },
+    140, ()=>labCount(OZONE), 'מעל ~2500° חמצן הופך לאוזון');
+  rxCase('ברק: חנקן + חמצן → תחמוצת חנקן',
+    b=>{ labPut(b,NITROGEN,2300,0.1,0.5,0.25,0.8);
+         labPut(b,OXYGEN,2300,0.5,0.9,0.25,0.8); },
+    140, ()=>labCount(NO2), 'בחום של ברק האוויר עצמו מגיב');
+  rxCase('בדיל + נחושת → ברונזה',
+    b=>{ labPut(b,TIN,205,0.1,0.5,0.35,0.85);
+         labPut(b,COPPER,205,0.5,0.9,0.35,0.85); },
+    160, ()=>labCount(BRONZE),
+    'ברונזה נוצרת מעל 180°, אבל בדיל נמס ב-232° — חלון צר');
+  rxCase('נוזל נשפך על רשת ועובר דרכה',
+    b=>{ labPut(b,MESH,20,0.1,0.9,0.55,0.75);
+         labPut(b,WATER,20,0.2,0.8,0.2,0.4); },
+    250, ()=>{ let n=0; for(let i=0;i<grid.length;i++) if(grid[i]===MESH&&aux[i]) n++;
+               return n+labCount(WATER); },
+    'מים אמורים להיכנס לחורי הרשת ולעבור דרכה');
+  rxCase('אקונומיקה + חומצה → גז כלור',
+    b=>{ labPut(b,BLEACH,20,0.1,0.5,0.4,0.85);
+         labPut(b,ACID,20,0.5,0.9,0.4,0.85); },
+    200, ()=>labCount(CHLORINE), 'תערובת מסוכנת אמיתית — משחררת כלור');
+  rxCase('סודה קאוסטית + שמן → סבון',
+    b=>{ labPut(b,NAOH,20,0.1,0.5,0.4,0.85);
+         labPut(b,MOTOROIL,20,0.5,0.9,0.4,0.85); },
+    250, ()=>labCount(SOAP), 'ככה מייצרים סבון באמת');
+
+  /* 4ו) שאר התגובות. מדידת הכיסוי הראתה שהמעבדה מפעילה רק חלק מהכימיה,
+     אז כאן משלימים את כולן. peak=נמדד תוך כדי הריצה, כי להבה חיה ~15 תורים
+     ואם סופרים רק בסוף מקבלים אפס גם כשהתגובה עבדה מצוין. */
+  const rxPeak=(nm,build,steps,check,note,holdT)=>{
+    T.push({grp:'תגובות שלא נבדקו', name:nm, run:()=>{
+      const b=labArena(); build(b);
+      let pk=0;
+      for(let k=0;k<steps;k++){
+        // תגובות שדורשות חום צריכות שהחום *יישמר* — אחרת התא מתקרר תוך תורים
+        // בודדים והתגובה לעולם לא מספיקה לקרות.
+        if(holdT!=null) for(let y=b.y0;y<=b.y1;y++) for(let x=b.x0;x<=b.x1;x++){
+          const i=y*W+x; if(grid[i]!==AIR&&grid[i]!==WALL) temp[i]=holdT; }
+        step(); const v=check(); if(v>pk) pk=v;
+      }
+      return {ok:pk>0, got:'שיא תוצר: '+pk, want:note};
+    }});
+  };
+  const alkali=[[LITHIUM,'ליתיום'],[POTASSIUM,'אשלגן'],[RUBIDIUM,'רוּבּידיום'],[CESIUM,'צֶזיום'],[CALCIUM,'סידן']];
+  for(const [id,nm] of alkali){
+    rxPeak(nm+' + מים → תגובה אלימה',
+      b=>{ labPut(b,WATER,20,0,1,0.5,1); labPut(b,id,20,0.4,0.6,0.2,0.35); },
+      140, ()=>labCount(FIRE)+labCount(HYDRO)+labCount(LIME)+labCount(NAOH)+labCount(LICL),
+      'מתכת אלקלית במים משחררת מימן ומתלקחת');
+  }
+  rxPeak('כספית + זהב → אמלגם',
+    b=>{ labPut(b,MERCURY,20,0,0.5,0.4,0.9); labPut(b,GOLD,20,0.5,1,0.4,0.9); },
+    200, ()=>labCount(AMALGAM), 'זהב נמס בכספית — ככה הפיקו זהב פעם');
+  rxPeak('אבק שריפה מתלקח',
+    b=>{ labPut(b,GUNPOWDER,20,0.1,0.9,0.4,0.9); labPut(b,FIRE,900,0.45,0.55,0.33,0.38); },
+    200, ()=>labCount(FIRE), 'אבק שריפה בוער גם בלי אוויר');
+  rxPeak('סודה לשתייה + חומצה → קצף CO₂',
+    b=>{ labPut(b,BAKING,20,0,0.5,0.4,0.9); labPut(b,ACID,20,0.5,1,0.4,0.9); },
+    200, ()=>labCount(CO2), 'הר הגעש הקלאסי');
+  rxPeak('מימן גופרתי בוער → גופרית דו-חמצנית',
+    b=>{ labPut(b,H2S,20,0.1,0.9,0.4,0.8); labPut(b,OXYGEN,20,0.1,0.9,0.82,0.9);
+         labPut(b,FIRE,900,0.45,0.55,0.33,0.38); },
+    220, ()=>labCount(SO2), 'H₂S + O₂ → SO₂');
+  rxPeak('כלור + מימן → מימן כלורי',
+    b=>{ labPut(b,CHLORINE,20,0,0.5,0.3,0.85); labPut(b,HYDRO,20,0.5,1,0.3,0.85); },
+    220, ()=>labCount(HCL), 'התערובת הזו מגיבה מעצם האור');
+  rxPeak('גופרת ברזל + חומצה → ריח ביצים רקובות',
+    b=>{ labPut(b,FES,20,0,0.5,0.4,0.9); labPut(b,ACID,20,0.5,1,0.4,0.9); },
+    200, ()=>labCount(H2S), 'הניסוי הקלאסי במעבדה');
+  rxPeak('אמוניה + מימן כלורי → עשן לבן',
+    b=>{ labPut(b,AMMONIA,20,0,0.5,0.3,0.85); labPut(b,HCL,20,0.5,1,0.3,0.85); },
+    220, ()=>labCount(NH4CL), 'NH₃ + HCl → NH₄Cl');
+  rxPeak('פחמן חד-חמצני בוער → CO₂',
+    b=>{ labPut(b,CO,20,0.1,0.9,0.35,0.8); labPut(b,OXYGEN,20,0.1,0.9,0.82,0.9);
+         labPut(b,FIRE,900,0.45,0.55,0.28,0.33); },
+    220, ()=>labCount(CO2), 'CO + O₂ → CO₂');
+  rxPeak('חומצה מלחית + אבץ → מימן',
+    b=>{ labPut(b,HCLAQ,20,0,0.5,0.4,0.9); labPut(b,ZINC,20,0.5,1,0.4,0.9); },
+    250, ()=>labCount(HYDRO), 'Zn + HCl → ZnCl₂ + H₂');
+  rxPeak('תחמוצת חנקן + מים → חומצה חנקתית',
+    b=>{ labPut(b,NO2,20,0.1,0.9,0.25,0.6); labPut(b,WATER,20,0.1,0.9,0.65,0.95); },
+    250, ()=>labCount(NITRICACID), 'ככה נוצר גשם חומצי');
+  rxPeak('חומצה חנקתית אוכלת ברזל',
+    b=>{ labPut(b,NITRICACID,20,0,0.5,0.4,0.9); labPut(b,IRON,20,0.5,1,0.4,0.9); },
+    250, ()=>labCount(NO2), 'מעלה אדים חומים');
+  rxPeak('מי מלך ממיסים זהב',
+    b=>{ labPut(b,AQUAREGIA,20,0,0.55,0.35,0.9); labPut(b,GOLD,20,0.6,1,0.35,0.9); },
+    300, ()=>{ let g=labCount(GOLD); return g<160?1:0; }, 'רק מי מלך מסוגלים להמיס זהב');
+  rxPeak('גופרת נחושת + ברזל → ציפוי נחושת',
+    b=>{ labPut(b,CUSO4,20,0,0.5,0.4,0.9); labPut(b,IRON,20,0.5,1,0.4,0.9); },
+    250, ()=>labCount(COPPER), 'ברזל דוחק את הנחושת מהתמיסה');
+  rxPeak('סיד כבוי + CO₂ → אבן גיר',
+    b=>{ labPut(b,LIME,20,0.1,0.9,0.5,0.9); labPut(b,CO2,20,0.1,0.9,0.2,0.45); },
+    250, ()=>labCount(LIMESTONE), 'ככה מתקשה טיח אמיתי');
+  rxPeak('גופרית דו-חמצנית + מים → גשם חומצי',
+    b=>{ labPut(b,SO2,20,0.1,0.9,0.2,0.5); labPut(b,WATER,20,0.1,0.9,0.6,0.95); },
+    250, ()=>labCount(ACID), 'SO₂ + H₂O → חומצה');
+  rxPeak('חול + פחמן בחום → צורן',
+    b=>{ labPut(b,SAND,1300,0,0.5,0.4,0.9); labPut(b,CARBON,1300,0.5,1,0.4,0.9); },
+    250, ()=>labCount(SILICON), 'ככה מייצרים שבבים (מ-1200°, אבל מעל 1670° החול נמס לזכוכית)', 1300);
+  rxPeak('פחמן + מימן בחום → מתאן',
+    b=>{ labPut(b,CARBON,500,0,0.5,0.35,0.9); labPut(b,HYDRO,500,0.5,1,0.35,0.9); },
+    250, ()=>labCount(METHANE), 'C + H₂ → CH₄ (מ-420°, אבל מעל ~560° המימן מתלקח)', 500);
+  rxPeak('גופרית בוערת → גופרית דו-חמצנית',
+    b=>{ labPut(b,SULFUR,20,0.1,0.9,0.4,0.85); labPut(b,OXYGEN,20,0.1,0.9,0.87,0.95);
+         labPut(b,FIRE,900,0.45,0.55,0.33,0.38); },
+    250, ()=>labCount(SO2), 'להבה כחולה');
+  rxPeak('מגנזיום בוער בתוך CO₂',
+    b=>{ labPut(b,CO2,20,0.1,0.9,0.2,0.85); labPut(b,MAGNESIUM,20,0.4,0.6,0.4,0.6);
+         labPut(b,FIRE,1200,0.45,0.55,0.32,0.38); },
+    250, ()=>labCount(MGO)+labCount(CARBON), 'מגנזיום בוער גם בלי חמצן', 1200);
+  rxPeak('מלח + מים → מי מלח',
+    b=>{ labPut(b,NACL,20,0.1,0.9,0.25,0.5); labPut(b,WATER,20,0.1,0.9,0.55,0.95); },
+    250, ()=>labCount(SALTWATER), 'מלח נמס במים');
+  rxPeak('זרע על אדמה לחה → נבט',
+    b=>{ labPut(b,EARTH,20,0,1,0.6,1);
+         for(let y=b.y0;y<=b.y1;y++) for(let x=b.x0;x<=b.x1;x++){ const i=y*W+x;
+           if(grid[i]===EARTH){ wet[i]=1; syncWetLook(i); } }
+         labPut(b,WATER,20,0.3,0.7,0.45,0.55);
+         const cx=(b.x0+b.x1)>>1;
+         for(let x=cx-4;x<=cx+4;x+=3){ const i=(Math.round(b.y0+(b.y1-b.y0)*0.58))*W+x;
+           grid[i]=SEEDT; life[i]=MAT[SEEDT].life||10; } },
+    400, ()=>labCount(SPROUT)+labCount(WOOD), 'זרע באדמה רטובה אמור לנבוט');
+
   // 5) פיזיקה בסיסית
   T.push({grp:'פיזיקה', name:'גוש פרחים באוויר — נופל',
     run:()=>{ const b=labArena(); labPut(b,FLOWER,20,0.4,0.6,0.05,0.2);
@@ -4524,7 +4675,20 @@ function labBuildTests(){
 }
 
 /* --- הרצה --- */
-let labWatch=true, labTouched=null;
+let labWatch=true, labTouched=null, labRx=null;
+/* מדידת כיסוי *תגובות*: עוטפים כל פונקציית react ומונים מתי היא באמת ירתה.
+   ככה רואים לא רק "כמה חומרים נבדקו" אלא "כמה מהכימיה עצמה בכלל רצה".
+   בפעם הראשונה שמדדנו: המעבדה הפעילה 25 מתוך 60 תגובות בלבד. */
+function labWrapReactions(){
+  if(labRx) return;
+  labRx={};
+  const names=Object.keys(window).filter(k=>/^react[A-Z]/.test(k) && typeof window[k]==='function');
+  for(const n of names){
+    const orig=window[n]; labRx[n]=0;
+    const wrap=function(){ const r=orig.apply(this,arguments); if(r) labRx[n]++; return r; };
+    wrap.__orig=orig; window[n]=wrap;
+  }
+}
 // סופר אילו חומרים באמת נגענו בהם במהלך הריצה — כדי שאפשר יהיה לראות שחור על לבן
 // מה *לא* נבדק, במקום להאמין ל"הכל עבר" בלי לדעת על כמה חומרים הוא בכלל רץ.
 function labMarkPresent(){
@@ -4534,6 +4698,7 @@ function labRun(){
   if(labBusy) return; labBusy=true;
   labWatch = document.getElementById('labLive').checked;
   if(labWatch) document.getElementById('labPanel').classList.add('watching');
+  labWrapReactions(); for(const k in labRx) labRx[k]=0;
   const tests=labBuildTests();
   labTouched=new Uint8Array(MAT.length);
   const results=[]; let i=0;
@@ -4592,6 +4757,18 @@ function labFinish(results, wasPaused){
         '<span style="opacity:.7">'+missed.join(' · ')+'</span>'
         : '<br><span style="opacity:.8">כל חומר במשחק נכנס לפחות לבדיקה אחת.</span>');
     box.appendChild(cov);
+  }
+  if (labRx){
+    const names=Object.keys(labRx);
+    const cold=names.filter(n=>!labRx[n]);
+    const rc=document.createElement('div');
+    rc.style.cssText='background:#131a26;border:1px solid '+(cold.length?'#8a7a3a':'#3f8f5f')+
+      ';border-radius:10px;padding:10px;margin-top:8px;font-size:13px;line-height:1.7';
+    rc.innerHTML='<b>⚗️ כמה מהכימיה באמת רצה:</b> '+(names.length-cold.length)+' מתוך '+
+      names.length+' תגובות ירו לפחות פעם אחת'+
+      (cold.length? '<br><span style="opacity:.8">תגובות שלא רצו כלל:</span><br><span style="opacity:.65">'+
+        cold.map(n=>n.replace(/^react/,'')).join(' · ')+'</span>' : '');
+    box.appendChild(rc);
   }
   const groups={};
   for(const r of results){ (groups[r.grp]=groups[r.grp]||[]).push(r); }
