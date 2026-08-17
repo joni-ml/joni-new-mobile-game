@@ -49,6 +49,11 @@
   }
   #materials { display:flex; gap:6px; overflow-x:auto; padding:2px; scrollbar-width:none; }
   #materials::-webkit-scrollbar { display:none; }
+  /* מצב צפייה: בזמן שהבדיקות רצות הפאנל מתכווץ לרצועה תחתונה, כדי לראות
+     בעיניים את תא הניסוי עצמו במקום מסך שחור עם אחוזים. */
+  #labPanel.watching { inset:auto 0 0 0 !important; background:rgba(8,10,16,.93) !important;
+    border-top:1px solid #33608a; padding:10px !important; max-height:38vh; }
+  #labPanel.watching h2 { font-size:15px; margin:0 0 6px }
   .mat {
     flex:0 0 auto; width:58px; height:56px; border-radius:12px;
     border:2px solid #2a2f3a; background:#1b1f28; color:#e8e0c8;
@@ -398,6 +403,8 @@
         <div style="font-size:12px;opacity:.65;margin-top:10px">
           בסוף מקבלים רשימה של כל מה שלא תקין — כולל המספר שהמשחק נותן מול המספר שאמור להיות.
         </div>
+        <label class="stog" style="margin-top:10px"><input type="checkbox" id="labLive" checked>
+          👀 להראות לי כל בדיקה על המסך בזמן אמת (איטי יותר, אבל רואים הכל)</label>
         <button class="stog" id="labStart" style="justify-content:center;color:#8fd0ff;font-weight:700;margin-top:12px">
           ▶️ אני בטוח — התחל בדיקה מלאה</button>
         <button id="labClose1" style="margin-top:8px">ביטול</button>
@@ -1035,7 +1042,7 @@ function setup() {
   grid = new Uint8Array(W*H);
   life = new Uint8Array(W*H);
   aux  = new Uint8Array(W*H);
-  wet  = new Uint8Array(W*H);   // כמה H₂O יושב *בתוך* התא (0..WETMAX) — תכונה, לא חומר נפרד
+  wet  = new Uint8Array(W*H);   // האם יש מים בתוך התא (0/1) — לכל היותר אחד, בלי דחיסה
   temp = new Float32Array(W*H).fill(AMB);
   temp2= new Float32Array(W*H);
   velX = new Float32Array(W*H);   // מהירות אופקית (תנע/פגיעות)
@@ -1066,42 +1073,44 @@ const REACT_SERIES = MAT.map(m=>({
    התא נהיה כהה יותר, בנוסחה מופיע ·H₂O, וכשמחממים המים מתאדים החוצה.
    כל ההתנהגות למטה היא חוקים כלליים שעובדים על *כל* אבקה, גם כאלה שאף פעם
    לא כתבנו להן שורת קוד — בדיוק בגלל זה מים כן עוברים מחול לאדמה עכשיו. */
-const WETMAX = 3;
-let POROUS = null;
-function buildPorous(){
-  POROUS = new Set();
-  for (let i=0;i<MAT.length;i++){
-    const m=MAT[i]; if(!m.key||m.sys) continue;
-    if (m.type==='powder') POROUS.add(i);
-  }
-  POROUS.add(ASH); POROUS.add(WOOD); POROUS.add(LEAF);
-  // חומרים שכבר *מגיבים* עם מים (נמסים, מתפוצצים, מתחממים) — להם יש כימיה משלהם
-  // ואסור לתת להם פשוט "לספוג" במקום להגיב.
-  for (const id of [SODIUM,POTASSIUM,LITHIUM,RUBIDIUM,CESIUM,CALCIUM,MAGNESIUM,
-                    QUICKLIME,NACL,LICL,NAOH,BAKING,KNO3,NH4NO3,NH4CL,CUSO4,
-                    THERMITE,PHOSPHORUS,GUNPOWDER,LIME])
-    POROUS.delete(id);
-}
-const isPorous = id => POROUS && POROUS.has(id);
-// חול/אדמה שומרים על השם והמראה הישנים שלהם כשהם רטובים, כדי שכל מה שכבר
-// בנוי עליהם (צמחים שצומחים על בוץ, מי תהום) ימשיך לעבוד בדיוק כמו קודם.
+/* ============ מים כשכבת חדירוּת ============
+   לכל חומר יש מספר "חדירוּת" (perm): 0 = שחור, מים בכלל לא נכנסים (אבן, זכוכית, מתכת).
+   ככל שהמספר גבוה יותר (עד לבן) המים עוברים דרכו מהר יותר.
+   *תא מחזיק לכל היותר מים אחד* — אי אפשר לדחוס שלושה ליטר לתוך מקום של ליטר.
+   לכן תא מים אחד = תא רטוב אחד, תמיד, וכמות המים בעולם נשמרת בדיוק.
+   כל ההתנהגות היא חוק כללי אחד שעובד על כל חומר, גם כזה שלא כתבנו לו שורה. */
+const perm = MAT.map(m=>({
+  // קרקעות — כמה מהר מים מחלחלים דרכן במציאות
+  sand:95, wetsand:95, gravel:95, earth:55, mud:55, ash:80, foam:85,
+  seedT:45, seedF:45, soap:35, sulfur:65, rust:45, limestone:20,
+  mgo:30, cuo:30, alumina:20, silicon:0, carbon:40, quicklime:0,
+  wood:22, leaf:18, sprout:18, flower:18,
+  // אטומים לחלוטין — מים פשוט לא עוברים
+  stone:0, basalt:0, bedrock:0, glass:0, wall:0, mesh:0, iron:0, gold:0,
+  copper:0, aluminum:0, zinc:0, tin:0, brass:0, bronze:0, silicon2:0
+}[m.key] ?? (m.type==='powder' ? 60 : 0)));
+const isPorous = id => perm[id] > 0;
+// חול/אדמה שומרים על השם והמראה הישנים כשהם רטובים, כדי שכל מה שכבר בנוי
+// עליהם (צמחים שצומחים על בוץ, מי תהום) ימשיך לעבוד בדיוק כמו קודם.
 function syncWetLook(i){
   const g=grid[i], w=wet[i];
-  if (w>0){ if (g===SAND) grid[i]=WETSAND; else if (g===EARTH) grid[i]=MUD; }
-  else     { if (g===WETSAND) grid[i]=SAND; else if (g===MUD) grid[i]=EARTH; }
+  if (w){ if (g===SAND) grid[i]=WETSAND; else if (g===EARTH) grid[i]=MUD; }
+  else  { if (g===WETSAND) grid[i]=SAND; else if (g===MUD) grid[i]=EARTH; }
 }
-function addWater(i, amount){
-  if (!isPorous(grid[i])) return false;
-  if (wet[i]>=WETMAX) return false;
-  wet[i]=Math.min(WETMAX, wet[i]+(amount||1)); syncWetLook(i); return true;
+// מכניס מים לתא. נכשל אם החומר אטום או אם כבר יש שם מים — אין דחיסה.
+function addWater(i){
+  if (!isPorous(grid[i]) || wet[i]) return false;
+  wet[i]=1; syncWetLook(i); return true;
 }
-/* חוק אחד שמחליף עשרות חוקי "מי-עובר-למי": הרטיבות יורדת, מתפשטת, נוטפת ומתאדה. */
+// הסיכוי שמים יעברו לתא — לפי החדירוּת של היעד. שחור=אף פעם, לבן=מיד.
+const flowOdds = id => perm[id]/140;
+/* חוק אחד שמחליף עשרות חוקי "מי-עובר-למי": המים יורדים, מתפשטים, נוטפים ומתאדים. */
 function wetnessStep(x,y,i,id){
-  if (wet[i]<=0) return false;
-  // מתאדה בחום — המים יוצאים כאדים ולא נמחקים מהעולם
+  if (!wet[i]) return false;
+  // מתאדים בחום — יוצאים כאדים ולא נמחקים מהעולם
   if (temp[i]>=100){
     const up = y-1>=0 ? idx(x,y-1) : -1;
-    wet[i]--; syncWetLook(i);
+    wet[i]=0; syncWetLook(i);
     if (up>=0 && grid[up]===AIR){
       grid[up]=STEAM; life[up]=MAT[STEAM].life; temp[up]=Math.max(105,temp[i]);
       velX[up]=0; velY[up]=0; wet[up]=0; discover(STEAM);
@@ -1109,34 +1118,34 @@ function wetnessStep(x,y,i,id){
     return true;
   }
   const bi = y+1<H ? idx(x,y+1) : -1;
-  // נוטף החוצה לחלל שמתחת — ככה נובע מעיין מדופן מערה
+  // נוטפים החוצה לחלל שמתחת — ככה נובע מעיין מדופן מערה
   if (bi>=0 && grid[bi]===AIR && Math.random()<0.12){
     grid[bi]=WATER; life[bi]=0; aux[bi]=0; wet[bi]=0;
     temp[bi]=temp[i]; velX[bi]=0; velY[bi]=0;
-    wet[i]--; syncWetLook(i); return true;
+    wet[i]=0; syncWetLook(i); return true;
   }
-  // מחלחל למטה לכל חומר נקבובי — לא משנה איזה. זה החוק שהיה חסר.
-  if (bi>=0 && isPorous(grid[bi]) && wet[bi]<wet[i] && Math.random()<0.25){
-    wet[bi]++; wet[i]--; syncWetLook(bi); syncWetLook(i); return true;
+  // מחלחלים למטה לכל חומר חדיר ויבש — במהירות לפי החדירוּת שלו
+  if (bi>=0 && !wet[bi] && isPorous(grid[bi]) && Math.random()<flowOdds(grid[bi])){
+    wet[bi]=1; wet[i]=0; syncWetLook(bi); syncWetLook(i); return true;
   }
-  // מתפשט הצידה כשאי אפשר לרדת — ככה נוצר מפלס מי תהום מעל שכבה אטומה
-  const blocked = !(bi>=0 && (grid[bi]===AIR || isPorous(grid[bi])));
-  if (Math.random() < (blocked?0.22:0.05)){
+  // אי אפשר לרדת — מתפשטים הצידה, וככה נוצר מפלס מי תהום מעל שכבה אטומה
+  const blocked = !(bi>=0 && (grid[bi]===AIR || (isPorous(grid[bi]) && !wet[bi])));
+  if (blocked){
     const dir=Math.random()<0.5?1:-1;
     for (const dx of [dir,-dir]){ const nx=x+dx; if(nx<0||nx>=W) continue;
       const sj=idx(nx,y);
-      if (isPorous(grid[sj]) && wet[sj]<wet[i]){
-        wet[sj]++; wet[i]--; syncWetLook(sj); syncWetLook(i); return true; }
-      if (grid[sj]===AIR && blocked && Math.random()<0.5){
+      if (!wet[sj] && isPorous(grid[sj]) && Math.random()<flowOdds(grid[sj])*0.7){
+        wet[sj]=1; wet[i]=0; syncWetLook(sj); syncWetLook(i); return true; }
+      if (grid[sj]===AIR && Math.random()<0.10){
         grid[sj]=WATER; life[sj]=0; aux[sj]=0; wet[sj]=0;
         temp[sj]=temp[i]; velX[sj]=0; velY[sj]=0;
-        wet[i]--; syncWetLook(i); return true; }
+        wet[i]=0; syncWetLook(i); return true; }
     }
   }
   return false;
 }
 let ELECTROLYTE = null, ALKALI = null, alkaliWarned=false;
-function buildElectrolytes(){ buildCoreRock(); buildPhaseSim(); buildPorous(); ELECTROLYTE = new Set([SALTWATER, ACID, HCLAQ, NITRICACID, NAOH, BLEACH, AQUAREGIA]);
+function buildElectrolytes(){ buildCoreRock(); buildPhaseSim(); ELECTROLYTE = new Set([SALTWATER, ACID, HCLAQ, NITRICACID, NAOH, BLEACH, AQUAREGIA]);
   ALKALI = new Set([SODIUM, POTASSIUM, LITHIUM, RUBIDIUM, CESIUM, CALCIUM]); }
 let charge, charge2, poolSeen, netId, bulbSeen;
 const VSCALE = 20;   // יחידות מתח לכל וולט. 255/20 = עד 12.75V נכנסים בבית אחד
@@ -1380,10 +1389,7 @@ function render() {
       else if (t<6){ const k=Math.min(70,(6-t)*3); b=Math.min(255,b+k); r=Math.max(0,r-k*0.3); g=Math.min(255,g+k*0.25); }
     } else {
       r=c[0]; g=c[1]; b=c[2];
-      if (wet[i]>0){                       // רטוב = כהה יותר, כמו חול רטוב אמיתי
-        const wf=1-0.17*wet[i];
-        r*=wf; g*=wf; b*=wf;
-      }
+      if (wet[i]){ r*=0.72; g*=0.72; b*=0.74; }   // רטוב = כהה יותר, כמו חול רטוב אמיתי
       if (id!==AIR) {
         const t = temp[i];
         if (t>120){ const gl=hotGlow(r,g,b,t); r=gl[0]; g=gl[1]; b=gl[2]; }
@@ -1766,7 +1772,7 @@ function react(x,y,i,id){
      1) מי שהניח "חול רטוב"/"בוץ" ידנית (מחולל העולם, המכחול, עולם שנטען) לא הגדיר
         כמה מים יש בפנים — בלי זה החומר נראה רטוב אבל מתנהג כמו יבש.
      2) חומר שהשתנה לחומר אחר (תגובה כימית) לא אמור לגרור איתו רטיבות ישנה. */
-  if ((id===WETSAND||id===MUD) && wet[i]===0) wet[i]=2;
+  if ((id===WETSAND||id===MUD) && !wet[i]) wet[i]=1;
   else if (wet[i]>0 && !isPorous(id)){
     const up = y-1>=0 ? idx(x,y-1) : -1;          // משחררים את המים במקום למחוק אותם
     if (up>=0 && grid[up]===AIR){ grid[up]=WATER; life[up]=0; aux[up]=0; wet[up]=0;
@@ -2783,8 +2789,8 @@ function reactWater(x,y,i){
     }
     // חוק אחד: מים נספגים לתוך *כל* חומר נקבובי. קודם היה כאן מקרה נפרד לאדמה
     // ומקרה נפרד לחול, ולכן כל אבקה אחרת בעולם פשוט התעלמה ממים.
-    if (isPorous(n) && wet[j]<WETMAX && Math.random()<0.26){
-      addWater(j,1); grid[i]=AIR; life[i]=0; wet[i]=0; velX[i]=0; velY[i]=0; return true;
+    if (isPorous(n) && !wet[j] && Math.random()<flowOdds(n)){
+      addWater(j); grid[i]=AIR; life[i]=0; wet[i]=0; velX[i]=0; velY[i]=0; return true;
     }
     // (שחיקת אבן לחול מטופלת ב-erosion(), שדורשת מים *זורמים*. הכלל הישן כאן שחק
     //  כל אבן שנגעה במים, ולכן קערת אבן עם מים עומדים התפוררה מעצמה.)
@@ -3174,12 +3180,18 @@ function drawBuildThumb(cv,bd){
 /* ===== המברשת =====
    גודל המברשת נשמר כאחוז מרוחב העולם ולא כמספר תאים קבוע. ככה מברשת "בינונית"
    מרגישה אותו דבר בעולם קטן ובעולם ענק — קודם היא היתה ענקית בקטן וזעירה בגדול. */
-const BRUSH_STEPS=[0.4,0.8,1.6,3,5,8,12,18];      // באחוזים מרוחב העולם
+// 12 דרגות במקום 8: הרבה יותר עדין בקטן (לא קופצים מ-1 ישר ל-5) והרבה יותר גדול בגדול.
+const BRUSH_STEPS=[0,0.35,0.7,1.2,2,3,4.5,6.5,9,12.5,17,23];   // באחוזים מרוחב העולם
 let brushStep=2, brushShape='circle';
 function brushRadius(){ return brushRadiusAt(brushStep); }
+// דרגה 0 היא תמיד *בדיוק פיקסל אחד*, בכל גודל עולם. קודם היא חושבה באחוזים,
+// ולכן בעולם גדול המברשת הקטנה ביותר היתה כבר בקוטר 3 ואי אפשר היה לצייר פיקסל בודד.
 // max(ix, ...) מבטיח שכל דרגה באמת גדולה מהקודמת גם בעולם קטן, שם האחוזים
 // היו מתעגלים כולם לאותו מספר ושלוש הדרגות הראשונות יצאו זהות.
-function brushRadiusAt(ix){ return Math.max(ix, Math.round(BRUSH_STEPS[ix]*W/100)); }
+function brushRadiusAt(ix){
+  if (ix===0) return 0;
+  return Math.max(ix, Math.round(BRUSH_STEPS[ix]*W/100));
+}
 const BRUSH_SHAPES=[['circle','● עיגול'],['square','■ ריבוע'],['scatter','✦ פיזור'],['wick','〰️ פתיל']];
 
 // כל הנקודות שמברשת אחת צובעת סביב (gx,gy)
@@ -3501,12 +3513,12 @@ function inspectAt(gx,gy,cx,cy){
     <div class="ihead">
       <span class="idot" style="background:rgb(${MAT[id].color.join(',')})"></span>
       <span class="iname">${MAT[id].name}</span>
-      <span class="iform">${formula[id]}${wet[i]>0?'·'+(wet[i]>1?wet[i]:'')+'H₂O':''}</span>
+      <span class="iform">${formula[id]}${wet[i]?'·H₂O':''}</span>
       <canvas id="molcv" width="86" height="86" style="margin-inline-start:auto;background:#0a0e16;border-radius:8px;border:1px solid #2a3444"></canvas>
     </div>
     <div class="igrid">
       <div><span>מצב:</span> <b>${st}</b></div>
-      ${wet[i]>0?`<div><span>💧 מים בפנים:</span> <b>${wet[i]}/${WETMAX}</b></div>`:''}
+      <div><span>💧 חדירוּת למים:</span> <b>${perm[id]?perm[id]+'/100'+(wet[i]?' — רטוב':''):'אטום'}</b></div>
       <div><span>🌡️ חום:</span> <b>${Math.round(temp[i])}°C</b></div>
       <div><span>⚖️ משקל:</span> <b>${kg} ק"ג</b></div>
       <div><span>🔥 הולכת חום:</span> <b>${condTxt}</b></div>
@@ -4333,9 +4345,11 @@ function labBuildTests(){
 }
 
 /* --- הרצה --- */
-let labBusy=false;
+let labBusy=false, labWatch=true;
 function labRun(){
   if(labBusy) return; labBusy=true;
+  labWatch = document.getElementById('labLive').checked;
+  if(labWatch) document.getElementById('labPanel').classList.add('watching');
   const tests=labBuildTests();
   const results=[]; let i=0;
   const wasPaused=paused; paused=true;
@@ -4345,23 +4359,27 @@ function labRun(){
   const prog=document.getElementById('labProg'), bar=document.getElementById('labBar'), now=document.getElementById('labNow');
 
   function tick(){
-    const t0=performance.now();
-    while(i<tests.length && performance.now()-t0 < 60){
-      const t=tests[i];
-      let r; try { r=t.run(); } catch(e){ r={ok:false,got:'שגיאה: '+e.message,want:'הבדיקה קרסה'}; }
-      results.push({grp:t.grp,name:t.name,...r}); i++;
-    }
+    const t=tests[i];
+    let r; try { r=t.run(); } catch(e){ r={ok:false,got:'שגיאה: '+e.message,want:'הבדיקה קרסה'}; }
+    results.push({grp:t.grp,name:t.name,...r}); i++;
+    render();                       // מציירים את תא הניסוי בפועל, כדי שרואים מה קורה
     const pct=Math.round(i/tests.length*100);
-    prog.textContent='בודק… '+i+' מתוך '+tests.length+' ('+pct+'%)';
+    const bad=results.filter(x=>!x.ok).length;
+    prog.innerHTML='בודק… '+i+'/'+tests.length+' ('+pct+'%) &nbsp; '+
+      '<span style="color:#7fd493">✔'+(results.length-bad)+'</span> '+
+      '<span style="color:#ff9a8a">✘'+bad+'</span>';
     bar.style.width=pct+'%';
-    if(results.length) now.textContent=results[results.length-1].name;
-    if(i<tests.length){ setTimeout(tick,0); return; }
+    now.innerHTML=(r.ok?'🟢 ':'🔴 ')+t.name+
+      (r.ok?'':'<br><span style="opacity:.75">'+r.got+'</span>');
+    if(i<tests.length){ setTimeout(tick, labWatch?70:0); return; }
     labFinish(results, wasPaused);
   }
-  setTimeout(tick,0);
+  setTimeout(tick, labWatch?70:0);
 }
 function labFinish(results, wasPaused){
   labRestore(); paused=wasPaused; labBusy=false;
+  document.getElementById('labPanel').classList.remove('watching');
+  render();
   document.getElementById('labRunning').style.display='none';
   document.getElementById('labDone').style.display='block';
   const bad=results.filter(r=>!r.ok);
