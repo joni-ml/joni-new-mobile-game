@@ -4723,9 +4723,11 @@ function labBuildTests(){
     b=>{ labPut(b,BAKING,20,0,0.5,0.4,0.9); labPut(b,ACID,20,0.5,1,0.4,0.9); },
     200, ()=>labCount(CO2), 'הר הגעש הקלאסי');
   rxPeak('מימן גופרתי בוער → גופרית דו-חמצנית',
-    b=>{ labPut(b,H2S,20,0.1,0.9,0.4,0.8); labPut(b,OXYGEN,20,0.1,0.9,0.82,0.9);
-         labPut(b,FIRE,900,0.45,0.55,0.33,0.38); },
-    220, ()=>labCount(SO2), 'H₂S + O₂ → SO₂');
+    b=>{ for(let y=b.y0;y<=b.y1;y++) for(let x=b.x0;x<=b.x1;x++){
+           const i=y*W+x; const g=(x%2===0)?H2S:OXYGEN;
+           grid[i]=g; life[i]=MAT[g].life||0; temp[i]=20; }
+         labPut(b,FIRE,900,0.35,0.65,0.45,0.55); },
+    400, ()=>labCount(SO2), 'H₂S + O₂ → SO₂');
   rxPeak('כלור + מימן → מימן כלורי',
     b=>{ labPut(b,CHLORINE,20,0,0.5,0.3,0.85); labPut(b,HYDRO,20,0.5,1,0.3,0.85); },
     220, ()=>labCount(HCL), 'התערובת הזו מגיבה מעצם האור');
@@ -4735,10 +4737,16 @@ function labBuildTests(){
   rxPeak('אמוניה + מימן כלורי → עשן לבן',
     b=>{ labPut(b,AMMONIA,20,0,0.5,0.3,0.85); labPut(b,HCL,20,0.5,1,0.3,0.85); },
     220, ()=>labCount(NH4CL), 'NH₃ + HCl → NH₄Cl');
+  // CO וחמצן הם שני גזים שנודדים, ולכן בסידור של שכבה-מעל-שכבה המגע ביניהם קטן
+  // והתשואה יצאה 1-2 בלבד — כלומר הבדיקה עמדה על גבול האפס ונכשלה מדי פעם על
+  // מזל רע. מערבבים אותם עמודה-עמודה ונותנים יותר זמן, כדי שהיא תמדוד את
+  // התגובה עצמה ולא את המזל.
   rxPeak('פחמן חד-חמצני בוער → CO₂',
-    b=>{ labPut(b,CO,20,0.1,0.9,0.35,0.8); labPut(b,OXYGEN,20,0.1,0.9,0.82,0.9);
-         labPut(b,FIRE,900,0.45,0.55,0.28,0.33); },
-    220, ()=>labCount(CO2), 'CO + O₂ → CO₂');
+    b=>{ for(let y=b.y0;y<=b.y1;y++) for(let x=b.x0;x<=b.x1;x++){
+           const i=y*W+x; const g=(x%2===0)?CO:OXYGEN;
+           grid[i]=g; life[i]=MAT[g].life||0; temp[i]=20; }
+         labPut(b,FIRE,900,0.35,0.65,0.45,0.55); },
+    400, ()=>labCount(CO2), 'CO + O₂ → CO₂');
   rxPeak('חומצה מלחית + אבץ → מימן',
     b=>{ labPut(b,HCLAQ,20,0,0.5,0.4,0.9); labPut(b,ZINC,20,0.5,1,0.4,0.9); },
     250, ()=>labCount(HYDRO), 'Zn + HCl → ZnCl₂ + H₂');
@@ -4766,10 +4774,14 @@ function labBuildTests(){
   rxPeak('פחמן + מימן בחום → מתאן',
     b=>{ labPut(b,CARBON,500,0,0.5,0.35,0.9); labPut(b,HYDRO,500,0.5,1,0.35,0.9); },
     250, ()=>labCount(METHANE), 'C + H₂ → CH₄ (מ-420°, אבל מעל ~560° המימן מתלקח)', 500);
+  // גופרית היא אבקה שנופלת והחמצן גז שעולה — בסידור שכבתי הם כמעט לא נגעו,
+  // והתשואה ירדה עד 0. מערבבים אותם ומקיפים באש כדי שהבדיקה תמדוד את התגובה.
   rxPeak('גופרית בוערת → גופרית דו-חמצנית',
-    b=>{ labPut(b,SULFUR,20,0.1,0.9,0.4,0.85); labPut(b,OXYGEN,20,0.1,0.9,0.87,0.95);
-         labPut(b,FIRE,900,0.45,0.55,0.33,0.38); },
-    250, ()=>labCount(SO2), 'להבה כחולה');
+    b=>{ for(let y=b.y0;y<=b.y1;y++) for(let x=b.x0;x<=b.x1;x++){
+           const i=y*W+x; const g=(x%2===0)?SULFUR:OXYGEN;
+           grid[i]=g; life[i]=MAT[g].life||0; temp[i]=20; }
+         labPut(b,FIRE,950,0.3,0.7,0.4,0.6); },
+    400, ()=>labCount(SO2), 'להבה כחולה');
   rxPeak('מגנזיום בוער בתוך CO₂',
     b=>{ labPut(b,CO2,20,0.1,0.9,0.2,0.85); labPut(b,MAGNESIUM,20,0.4,0.6,0.4,0.6);
          labPut(b,FIRE,1200,0.45,0.55,0.32,0.38); },
