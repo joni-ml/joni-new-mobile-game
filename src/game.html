@@ -515,8 +515,12 @@
         </div>
 
         <div class="vcard" style="margin-top:10px">
-          <div style="font-size:12px;opacity:.75">מה שהמשחק מדד בפועל:</div>
-          <div id="verGot" style="font-size:13px;font-weight:600;margin-top:4px;line-height:1.6">—</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:12px;opacity:.75">מה שהמשחק מדד בפועל:</span>
+            <span id="verSelf" style="margin-inline-start:auto;font-size:12px;font-weight:700;
+              border-radius:99px;padding:3px 10px"></span>
+          </div>
+          <div id="verGot" style="font-size:13px;font-weight:600;margin-top:6px;line-height:1.6">—</div>
         </div>
 
         <div class="vverd">
@@ -4305,12 +4309,12 @@ function labBuildTests(){
       T.push({grp:'מעברי פאזה', name:nm(id)+' — מוצק אמור להימס מעל '+mp+'°',
         run:()=>{ const b=labArena(); const n0=labPut(b,id,mp+150,0.15,0.85,0.2,0.8);
           labHold(b,mp+150,40); const left=labCount(id);
-          return {ok:left<n0*0.5, got:left+' מתוך '+n0+' לא השתנו',
+          return {ok:left<n0*0.5, got:(n0-left)+' מתוך '+n0+' נמסו, '+left+' נשארו מוצקים',
                   want:'ב-'+(mp+150)+'° (מעל נקודת ההיתוך '+mp+'°) המוצק אמור להימס'}; }});
       T.push({grp:'מעברי פאזה', name:nm(id)+' — מוצק אמור להישאר יציב מתחת ל-'+mp+'°',
         run:()=>{ const b=labArena(); const n0=labPut(b,id,mp-60,0.15,0.85,0.2,0.8);
           labHold(b,mp-60,40); const left=labCount(id);
-          return {ok:left>n0*0.5, got:'רק '+left+' מתוך '+n0+' נשארו',
+          return {ok:left>n0*0.5, got:left+' מתוך '+n0+' נשארו מוצקים, '+(n0-left)+' נמסו',
                   want:'ב-'+(mp-60)+'° (מתחת לנקודת ההיתוך) החומר לא אמור להימס'}; }});
     }
 
@@ -4321,14 +4325,14 @@ function labBuildTests(){
       T.push({grp:'מעברי פאזה', name:nm(id)+' — נוזל אמור לקפוא מתחת ל-'+mp+'°',
         run:()=>{ const b=labArena(); const n0=labPut(b,id,tgt,0.15,0.85,0.2,0.8);
           labHold(b,tgt,60); const left=labCount(id);
-          return {ok:left<n0*0.5, got:left+' מתוך '+n0+' עדיין נוזל ב-'+tgt.toFixed(0)+'°',
+          return {ok:left<n0*0.5, got:(n0-left)+' מתוך '+n0+' קפאו ב-'+tgt.toFixed(0)+'°, '+left+' נשארו נוזל',
                   want:'מתחת ל-'+mp+'° הנוזל אמור להתמצק'}; }});
     }
     if(ty==='liquid' && bp!==null && bp!==undefined){
       T.push({grp:'מעברי פאזה', name:nm(id)+' — נוזל אמור לרתוח מעל '+bp+'°',
         run:()=>{ const b=labArena(); const n0=labPut(b,id,bp+180,0.15,0.85,0.2,0.8);
           labHold(b,bp+180,60); const left=labCount(id);
-          return {ok:left<n0*0.5, got:left+' מתוך '+n0+' עדיין נוזל',
+          return {ok:left<n0*0.5, got:(n0-left)+' מתוך '+n0+' רתחו, '+left+' נשארו נוזל',
                   want:'מעל '+bp+'° הנוזל אמור להפוך לגז'}; }});
     }
     if(ty==='gas' && bp!==null && bp!==undefined){
@@ -4336,7 +4340,7 @@ function labBuildTests(){
       T.push({grp:'מעברי פאזה', name:nm(id)+' — גז אמור להתעבות מתחת ל-'+bp+'°',
         run:()=>{ const b=labArena(); const n0=labPut(b,id,tgt,0.15,0.85,0.2,0.8);
           labHold(b,tgt,400); const left=labCount(id);
-          return {ok:left<n0*0.6, got:left+' מתוך '+n0+' עדיין גז ב-'+tgt.toFixed(0)+'°',
+          return {ok:left<n0*0.6, got:(n0-left)+' מתוך '+n0+' התעבו ב-'+tgt.toFixed(0)+'°, '+left+' נשארו גז',
                   want:'מתחת ל-'+bp+'° הגז אמור להתעבות לנוזל'}; }});
     }
   }
@@ -4379,7 +4383,7 @@ function labBuildTests(){
                   want:'חומר לא אמור להתרבות ולמלא את כל התא מעצמו'};
         // חוק 2: חומר יציב (לא דליק, בלי אורך חיים, לא גז) לא אמור להיעלם לבד
         if (!transient && left < n0*0.4)
-          return {ok:false, got:'נשארו '+left+' מתוך '+n0+' ב-'+Math.round(stableT)+'° (טמפ\' שבה הוא אמור להיות יציב)',
+          return {ok:false, got:'רק '+left+' מתוך '+n0+' שרדו ב-'+Math.round(stableT)+'° (טמפ\' שבה הוא אמור להיות יציב)',
                   want:'חומר יציב לא אמור להיעלם מעצמו בלי סיבה'};
         return {ok:true, got:'נשארו '+left+'/'+n0+' ב-'+Math.round(stableT)+'°',
                 want:'יציב'};
@@ -5134,6 +5138,13 @@ function vShow(){
   vShot=vRunOne(t);
   document.getElementById('verExpect').textContent='מה שאמור לקרות: '+(vShot.res.want||'—');
   document.getElementById('verGot').textContent=vShot.res.got||'—';
+  // מה *המשחק* חושב על עצמו. בלי זה אי אפשר לדעת אם הוא בכלל טוען שהוא עבר,
+  // ואז ניסוח מבלבל גורם לסמן "לא נכון" על משהו שדווקא תקין.
+  const sv=document.getElementById('verSelf');
+  if(vShot.res.ok){ sv.textContent='המשחק: עבר ✅'; sv.style.background='#16311f';
+                    sv.style.color='#a8f0c4'; sv.style.border='1px solid #3f8f5f'; }
+  else            { sv.textContent='המשחק: נכשל ❌'; sv.style.background='#331a1a';
+                    sv.style.color='#ffb3a8'; sv.style.border='1px solid #a05050'; }
   vDraw(document.getElementById('verBefore'), vShot.before, vShot.box);
   vDraw(document.getElementById('verAfter'),  vShot.after,  vShot.box);
   const r=vRec[t.name];
@@ -5227,6 +5238,7 @@ function vReport(){
     const tag = r.v==='good' ? 'נכון' : r.v==='bad' ? 'לא נכון' : 'לא יודע — תזכיר לי';
     L.push(n+': '+tag+'  —  '+t.name);
     if(r.v!=='good'){
+      L.push('   המשחק עצמו: '+(r.ok?'טען שעבר ✅':'טען שנכשל ❌'));
       L.push('   המשחק מדד : '+(r.got||'—'));
       L.push('   אמור לקרות: '+(r.want||'—'));
       if(r.paint){
