@@ -49,6 +49,42 @@
   }
   #materials { display:flex; gap:6px; overflow-x:auto; padding:2px; scrollbar-width:none; }
   #materials::-webkit-scrollbar { display:none; }
+  /* ===== מסך אימות הבדיקות ===== */
+  #verPanel{ position:fixed; inset:0; z-index:120; display:none; flex-direction:column;
+    background:linear-gradient(180deg,#0d1219 0%,#0a0e14 100%); color:#e8f0fb;
+    padding:12px; padding-top:calc(12px + env(safe-area-inset-top)); overflow-y:auto; direction:rtl; }
+  #verPanel h2{ margin:0; font-size:17px; letter-spacing:.2px }
+  .vbar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap }
+  .vprog{ flex:1; height:6px; background:#141c28; border-radius:99px; overflow:hidden; min-width:80px }
+  .vprog i{ display:block; height:100%; background:linear-gradient(90deg,#3a8fd0,#63d6a8); width:0 }
+  .vchip{ background:#141c28; border:1px solid #26344a; color:#9fb4cd; border-radius:99px;
+    padding:5px 11px; font-size:12px; white-space:nowrap; cursor:pointer }
+  .vchip.on{ background:#1d3550; border-color:#4a8fd0; color:#cfe6ff }
+  .vcard{ background:#111823; border:1px solid #22303f; border-radius:14px; padding:12px; margin-top:10px }
+  .vname{ font-size:15px; font-weight:700; line-height:1.5 }
+  .vsub{ font-size:12px; opacity:.7; margin-top:4px; line-height:1.6 }
+  .vshots{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px }
+  .vshot{ background:#0a0e15; border:1px solid #22303f; border-radius:10px; overflow:hidden }
+  .vshot h4{ margin:0; padding:6px 8px; font-size:11px; font-weight:700; color:#9fb4cd;
+    background:#131c28; border-bottom:1px solid #22303f }
+  .vshot canvas{ width:100%; display:block; image-rendering:pixelated; background:#070a10 }
+  .vverd{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:12px }
+  .vb{ border:1px solid #2a3a52; background:#141c28; color:#dbe6f5; border-radius:12px;
+    padding:12px 6px; font-size:13px; font-weight:700; cursor:pointer; text-align:center; line-height:1.5 }
+  .vb.good.sel{ background:#16311f; border-color:#4faa72; color:#a8f0c4 }
+  .vb.bad.sel{ background:#331a1a; border-color:#c06060; color:#ffb3a8 }
+  .vb.dunno.sel{ background:#332c16; border-color:#c0a050; color:#ffe0a0 }
+  .vnav{ display:flex; gap:8px; margin-top:10px }
+  .vnav button{ flex:1; padding:11px; border-radius:12px; border:1px solid #2a3a52;
+    background:#141c28; color:#dbe6f5; font-size:14px; font-weight:600 }
+  .vnav button.pri{ background:#1d3550; border-color:#4a8fd0; color:#cfe6ff }
+  #verPaint{ display:none; margin-top:10px }
+  #verPal{ display:flex; gap:6px; overflow-x:auto; padding-bottom:4px; margin-top:8px }
+  #verPal::-webkit-scrollbar{ display:none }
+  .vpm{ flex:0 0 auto; width:38px; height:38px; border-radius:9px; border:2px solid #22303f; cursor:pointer }
+  .vpm.on{ border-color:#63d6a8 }
+  #verReport textarea{ width:100%; height:230px; background:#0a0e15; color:#cfe0f5;
+    border:1px solid #22303f; border-radius:10px; padding:10px; font:12px/1.5 monospace; direction:ltr }
   /* מצב צפייה: בזמן שהבדיקות רצות הפאנל מתכווץ לרצועה תחתונה, כדי לראות
      בעיניים את תא הניסוי עצמו במקום מסך שחור עם אחוזים. */
   #labPanel.watching { inset:auto 0 0 0 !important; background:rgba(8,10,16,.93) !important;
@@ -385,6 +421,7 @@
       <button class="stog" id="setClearAll" style="justify-content:center; color:#ffd479; font-weight:700">🌍 עולם חדש (נוצר מלבה מותכת, כמו כדור הארץ!)</button>
       <button class="stog" id="setWipe" style="justify-content:center; color:#ff9a8a; font-weight:700">🗑️ מחק הכל (נקה למסך ריק)</button>
       <button class="stog" id="setLab" style="justify-content:center; color:#8fd0ff; font-weight:700">🔬 מעבדת בדיקות (בודקת את כל המשחק)</button>
+      <button class="stog" id="setVerify" style="justify-content:center; color:#8fe0b8; font-weight:700">🔎 בדיקת הבדיקות (אתה שופט אם הן נכונות)</button>
       <button id="setClose">סגור</button>
     </div>
 
@@ -424,6 +461,105 @@
         <div id="labSummary" style="border-radius:10px;padding:12px;font-size:15px;font-weight:700"></div>
         <div id="labResults" style="margin-top:10px"></div>
         <button id="labClose2" style="margin-top:12px">סגור</button>
+      </div>
+    </div>
+
+    <!-- ===== אימות בדיקות: הבדיקה של הבדיקות ===== -->
+    <div id="verPanel">
+      <div class="vbar">
+        <h2>🔎 בדיקת הבדיקות</h2>
+        <span style="flex:1"></span>
+        <button class="vchip" id="verClose">סגור</button>
+      </div>
+
+      <div id="verHome">
+        <div class="vcard">
+          <div style="font-size:14px;line-height:1.8">
+            כאן אתה <b>השופט</b>. המשחק מראה לך כל ניסוי — איך הוא נראה בהתחלה,
+            איך הוא נראה בסוף, ומה הוא <b>חושב</b> שאמור לקרות.<br>
+            אתה מחליט אם זה נכון. אפשר גם <b>לצייר בעצמך</b> מה היה אמור לצאת.
+          </div>
+          <div class="vsub">
+            אפשר לעצור מתי שרוצים ולחזור מחר — ההתקדמות נשמרת.
+            בסוף מקבלים רשימה שאפשר להעתיק בלחיצה אחת ולשלוח לי.
+          </div>
+        </div>
+        <div class="vcard">
+          <div style="font-size:13px;font-weight:700;margin-bottom:8px">על מה לעבור?</div>
+          <div class="vbar" id="verTopics"></div>
+        </div>
+        <div class="vcard" id="verStats"></div>
+        <div class="vnav">
+          <button class="pri" id="verStart">▶️ להתחיל</button>
+          <button id="verGoReport">📋 לדוח</button>
+        </div>
+      </div>
+
+      <div id="verMain" style="display:none">
+        <div class="vbar" style="margin-top:8px">
+          <span class="vchip" id="verCount">1 / 1</span>
+          <span class="vprog"><i id="verBar"></i></span>
+          <input id="verJump" type="number" min="1" placeholder="קפוץ"
+            style="width:64px;background:#141c28;border:1px solid #26344a;color:#dbe6f5;
+                   border-radius:99px;padding:5px 10px;font-size:12px;text-align:center">
+        </div>
+
+        <div class="vcard">
+          <div class="vname" id="verName">—</div>
+          <div class="vsub" id="verExpect">—</div>
+        </div>
+
+        <div class="vshots">
+          <div class="vshot"><h4>▶️ ההתחלה</h4><canvas id="verBefore"></canvas></div>
+          <div class="vshot"><h4>⏹️ הסוף</h4><canvas id="verAfter"></canvas></div>
+        </div>
+
+        <div class="vcard" style="margin-top:10px">
+          <div style="font-size:12px;opacity:.75">מה שהמשחק מדד בפועל:</div>
+          <div id="verGot" style="font-size:13px;font-weight:600;margin-top:4px;line-height:1.6">—</div>
+        </div>
+
+        <div class="vverd">
+          <div class="vb good"  id="vbGood">✅<br>נכון</div>
+          <div class="vb bad"   id="vbBad">❌<br>לא נכון</div>
+          <div class="vb dunno" id="vbDunno">🤷<br>לא יודע<br><span style="font-weight:400;opacity:.8">תזכיר לי</span></div>
+        </div>
+
+        <div class="vnav">
+          <button id="verPaintBtn">✏️ לצייר מה שהיה אמור לקרות</button>
+        </div>
+
+        <div id="verPaint">
+          <div class="vcard">
+            <div style="font-size:12px;opacity:.75">צייר על התמונה איך זה היה אמור להיראות בסוף:</div>
+            <canvas id="verEdit" style="width:100%;display:block;image-rendering:pixelated;
+              background:#070a10;border:1px solid #22303f;border-radius:10px;margin-top:8px;touch-action:none"></canvas>
+            <div id="verPal"></div>
+            <div class="vnav">
+              <button id="verPaintSave" class="pri">שמור את הציור</button>
+              <button id="verPaintCancel">ביטול</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="vnav">
+          <button id="verPrev">→ הקודם</button>
+          <button id="verNext" class="pri">הבא ←</button>
+        </div>
+        <div class="vnav">
+          <button id="verFinish">🏁 סיום — לדוח</button>
+        </div>
+      </div>
+
+      <div id="verReport" style="display:none">
+        <div class="vcard" id="verSummary"></div>
+        <div class="vcard">
+          <textarea id="verText" readonly></textarea>
+          <div class="vnav">
+            <button class="pri" id="verCopy">📋 להעתיק הכל</button>
+            <button id="verBack">חזרה</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -4899,6 +5035,279 @@ document.getElementById('setLab').onclick=()=>{
 document.getElementById('labStart').onclick=labRun;
 document.getElementById('labClose1').onclick=()=>document.getElementById('labPanel').style.display='none';
 document.getElementById('labClose2').onclick=()=>document.getElementById('labPanel').style.display='none';
+
+/* ==================== 🔎 בדיקת הבדיקות ====================
+   כאן *אתה* השופט. לכל ניסוי המשחק מראה איך הוא נראה בהתחלה, איך בסוף,
+   ומה הוא חושב שאמור לקרות — ואתה מחליט אם זה נכון, או מצייר את התשובה
+   הנכונה בעצמך. ההתקדמות נשמרת, אפשר לעצור ולחזור מחר, ובסוף יוצא דוח
+   שאפשר להעתיק בלחיצה אחת.                                            */
+const VKEY='verify_v1';
+let vTests=[], vList=[], vIx=0, vTopic='all', vRec={}, vShot=null, vPaintMat=WATER, vEdited=null;
+
+function vLoad(){ try{ const r=store.get(VKEY); if(r) vRec=JSON.parse(r)||{}; }catch(e){ vRec={}; } }
+function vSave(){ try{ store.set(VKEY, JSON.stringify(vRec)); }catch(e){} }
+
+// נושאים — כדי שאפשר יהיה לעבור רק על מה שרלוונטי (למשל: רק מים)
+const V_TOPICS=[['all','הכל'],['water','💧 מים'],['heat','🔥 חום והמסה'],['chem','🧪 כימיה'],
+  ['ground','🏔️ קרקע'],['power','⚡ חשמל'],['save','💾 שמירה ובניות'],['phys','🍃 פיזיקה']];
+function vTopicOf(t){
+  const g=t.grp||'', n=t.name||'';
+  if(/מים|רטוב|לחות|קרח|אדים|ענן/.test(g+n)) return 'water';
+  if(/חום|הימס|לרתוח|לקפוא|מעברי פאזה|יציבה/.test(g+n)) return 'heat';
+  if(/חשמל|בטריה|מתח|נורה/.test(g+n)) return 'power';
+  if(/שמירה|בניות/.test(g+n)) return 'save';
+  if(/פיזיקה|נופל|קורס/.test(g+n)) return 'phys';
+  if(/קרקע|חול|אדמה|בוץ|חלחל/.test(g+n)) return 'ground';
+  return 'chem';
+}
+
+/* מריצים ניסוי אחד ומצלמים אותו: איך נראה אחרי שהחומרים הונחו, ואיך בסוף.
+   הצילום נעשה על ידי חטיפת הקריאה הראשונה ל-step בתוך הניסוי. */
+function vRunOne(t){
+  const wasPaused=paused; paused=true; labSnapshot();
+  let before=null, arena=null;
+  const oStep=window.step, oArena=window.labArena;
+  window.labArena=function(){ const b=oArena.apply(this,arguments); arena=b; return b; };
+  window.step=function(){ if(!before && arena) before=grid.slice(); return oStep.apply(this,arguments); };
+  let res;
+  try{ res=t.run(); }catch(e){ res={ok:false,got:'שגיאה: '+e.message,want:'—'}; }
+  const after=grid.slice();
+  window.step=oStep; window.labArena=oArena;
+  const box = arena || {x0:0,x1:W-1,y0:0,y1:H-1};
+  labRestore(); paused=wasPaused;
+  return {res, before:before||after, after, box};
+}
+
+function vDraw(cv, data, box){
+  const bw=box.x1-box.x0+1, bh=box.y1-box.y0+1;
+  cv.width=bw; cv.height=bh;
+  const x=cv.getContext('2d'), img=x.createImageData(bw,bh), d=img.data;
+  for(let yy=0;yy<bh;yy++) for(let xx=0;xx<bw;xx++){
+    const g=data[(box.y0+yy)*W+(box.x0+xx)], o=(yy*bw+xx)*4;
+    if(g===AIR){ d[o]=10; d[o+1]=14; d[o+2]=20; }
+    else { const c=MAT[g].color; d[o]=c[0]; d[o+1]=c[1]; d[o+2]=c[2]; }
+    d[o+3]=255;
+  }
+  x.putImageData(img,0,0);
+  cv.style.height = Math.min(190, Math.round(bh*(cv.clientWidth/bw)||150))+'px';
+}
+
+function vBuildTopics(){
+  const el=document.getElementById('verTopics'); el.innerHTML='';
+  for(const [k,nm] of V_TOPICS){
+    const n = k==='all' ? vTests.length : vTests.filter(t=>vTopicOf(t)===k).length;
+    if(!n) continue;
+    const c=document.createElement('div');
+    c.className='vchip'+(k===vTopic?' on':''); c.textContent=nm+' ('+n+')';
+    c.onclick=()=>{ vTopic=k; vApplyTopic(); vBuildTopics(); vStats(); };
+    el.appendChild(c);
+  }
+}
+function vApplyTopic(){
+  vList = vTopic==='all' ? vTests.slice() : vTests.filter(t=>vTopicOf(t)===vTopic);
+  vIx=0;
+  // ממשיכים מהמקום שבו עצרת: קופצים לראשון שעדיין לא נשפט
+  for(let i=0;i<vList.length;i++){ if(!vRec[vList[i].name]){ vIx=i; break; } }
+}
+function vStats(){
+  const el=document.getElementById('verStats');
+  let good=0,bad=0,dunno=0;
+  for(const t of vList){ const r=vRec[t.name]; if(!r) continue;
+    if(r.v==='good')good++; else if(r.v==='bad')bad++; else dunno++; }
+  const done=good+bad+dunno;
+  el.innerHTML='<div style="font-size:13px;line-height:1.9">'+
+    '<b>'+done+'</b> מתוך <b>'+vList.length+'</b> נבדקו<br>'+
+    '<span style="color:#7fd493">✅ '+good+' נכון</span> · '+
+    '<span style="color:#ff9a8a">❌ '+bad+' לא נכון</span> · '+
+    '<span style="color:#ffd479">🤷 '+dunno+' לבדוק שוב</span></div>';
+}
+
+function vShow(){
+  if(!vList.length) return;
+  vIx=Math.max(0,Math.min(vList.length-1,vIx));
+  const t=vList[vIx];
+  document.getElementById('verCount').textContent=(vIx+1)+' / '+vList.length;
+  document.getElementById('verBar').style.width=Math.round((vIx+1)/vList.length*100)+'%';
+  document.getElementById('verName').textContent=t.name;
+  document.getElementById('verPaint').style.display='none';
+  vEdited=null;
+  vShot=vRunOne(t);
+  document.getElementById('verExpect').textContent='מה שאמור לקרות: '+(vShot.res.want||'—');
+  document.getElementById('verGot').textContent=vShot.res.got||'—';
+  vDraw(document.getElementById('verBefore'), vShot.before, vShot.box);
+  vDraw(document.getElementById('verAfter'),  vShot.after,  vShot.box);
+  const r=vRec[t.name];
+  for(const [id,v] of [['vbGood','good'],['vbBad','bad'],['vbDunno','dunno']])
+    document.getElementById(id).classList.toggle('sel', !!r && r.v===v);
+}
+function vSet(v){
+  const t=vList[vIx]; if(!t) return;
+  const prev=vRec[t.name]||{};
+  vRec[t.name]={ v, grp:t.grp, got:vShot?vShot.res.got:'', want:vShot?vShot.res.want:'',
+                 ok:vShot?!!vShot.res.ok:false, paint:prev.paint||null };
+  vSave(); vShow(); vStats();
+}
+
+/* --- ציור התשובה הנכונה --- */
+function vOpenPaint(){
+  const p=document.getElementById('verPaint'); p.style.display='block';
+  const cv=document.getElementById('verEdit');
+  vEdited=vShot.after.slice();
+  vDraw(cv, vEdited, vShot.box);
+  const pal=document.getElementById('verPal'); pal.innerHTML='';
+  const opts=[AIR,WATER,ICE,STEAM,SAND,EARTH,STONE,IRON,LAVA,FIRE,GLASS,WOOD];
+  for(const id of opts){
+    const d=document.createElement('div'); d.className='vpm'+(id===vPaintMat?' on':'');
+    d.style.background = id===AIR ? '#0a0e15' : 'rgb('+MAT[id].color.join(',')+')';
+    d.title=MAT[id].name;
+    d.onclick=()=>{ vPaintMat=id; vOpenPaintPal(); };
+    pal.appendChild(d);
+  }
+  const paint=(ev)=>{
+    const r=cv.getBoundingClientRect();
+    const tp=ev.touches?ev.touches[0]:ev;
+    const bw=vShot.box.x1-vShot.box.x0+1, bh=vShot.box.y1-vShot.box.y0+1;
+    const gx=Math.floor((tp.clientX-r.left)/r.width*bw);
+    const gy=Math.floor((tp.clientY-r.top)/r.height*bh);
+    if(gx<0||gy<0||gx>=bw||gy>=bh) return;
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+      const X=gx+dx, Y=gy+dy; if(X<0||Y<0||X>=bw||Y>=bh) continue;
+      vEdited[(vShot.box.y0+Y)*W+(vShot.box.x0+X)]=vPaintMat;
+    }
+    vDraw(cv, vEdited, vShot.box);
+  };
+  cv.onmousedown=e=>{ paint(e); cv.onmousemove=paint; };
+  cv.onmouseup=()=>cv.onmousemove=null;
+  cv.ontouchstart=e=>{ e.preventDefault(); paint(e); };
+  cv.ontouchmove=e=>{ e.preventDefault(); paint(e); };
+}
+function vOpenPaintPal(){
+  const pal=document.getElementById('verPal');
+  [...pal.children].forEach((c,i)=>{
+    const opts=[AIR,WATER,ICE,STEAM,SAND,EARTH,STONE,IRON,LAVA,FIRE,GLASS,WOOD];
+    c.classList.toggle('on', opts[i]===vPaintMat);
+  });
+}
+
+/* --- הדוח --- */
+function vCellDump(data, box){
+  // רק תאים שאינם אוויר, מקובצים לפי שורה, בפורמט x:מספר-חומר
+  // מכווץ רצפים: במקום "4:1 5:1 6:1 ..." כותבים "4-22:1". הרבה יותר קצר וקריא.
+  const lines=[], used=new Set();
+  for(let y=box.y0;y<=box.y1;y++){
+    const parts=[]; let runStart=-1, runMat=-1;
+    const flush=(endX)=>{ if(runStart<0) return;
+      parts.push(runStart===endX ? runStart+':'+runMat : runStart+'-'+endX+':'+runMat);
+      runStart=-1; runMat=-1; };
+    for(let x=box.x0;x<=box.x1;x++){
+      const g=data[y*W+x], rx=x-box.x0;
+      if(g===AIR||g===WALL){ flush(rx-1); continue; }
+      used.add(g);
+      if(g!==runMat){ flush(rx-1); runStart=rx; runMat=g; }
+    }
+    flush(box.x1-box.x0);
+    if(parts.length) lines.push('  y'+(y-box.y0)+'  '+parts.join(' '));
+  }
+  const legend=[...used].map(g=>g+'='+MAT[g].name).join('  ');
+  return {lines, legend};
+}
+function vReport(){
+  const L=[];
+  L.push('=== דוח בדיקת הבדיקות ===');
+  L.push('נושא: '+(V_TOPICS.find(t=>t[0]===vTopic)||['','הכל'])[1]);
+  let good=0,bad=0,dunno=0;
+  for(const t of vList){ const r=vRec[t.name]; if(!r) continue;
+    if(r.v==='good')good++; else if(r.v==='bad')bad++; else dunno++; }
+  L.push('נבדקו '+(good+bad+dunno)+' מתוך '+vList.length+
+         '  |  נכון '+good+'  |  לא נכון '+bad+'  |  לבדוק שוב '+dunno);
+  L.push('');
+  let n=0;
+  for(const t of vList){
+    n++; const r=vRec[t.name]; if(!r) continue;
+    const tag = r.v==='good' ? 'נכון' : r.v==='bad' ? 'לא נכון' : 'לא יודע — תזכיר לי';
+    L.push(n+': '+tag+'  —  '+t.name);
+    if(r.v!=='good'){
+      L.push('   המשחק מדד : '+(r.got||'—'));
+      L.push('   אמור לקרות: '+(r.want||'—'));
+      if(r.paint){
+        L.push('   ✏️ הציור שלי למה שהיה אמור לצאת (מספר = חומר):');
+        L.push('   מקרא: '+r.paint.legend);
+        for(const ln of r.paint.lines) L.push('   '+ln);
+      }
+    }
+  }
+  L.push('');
+  L.push('(תאי אוויר לא נכללים כדי לקצר. כל מספר הוא מזהה החומר לפי המקרא.)');
+  return L.join('\n');
+}
+
+/* --- חיווט --- */
+function vOpen(){
+  vLoad();
+  labWrapReactions(); labTouched=new Uint8Array(MAT.length);
+  vTests=labBuildTests();
+  vApplyTopic(); vBuildTopics(); vStats();
+  document.getElementById('verHome').style.display='block';
+  document.getElementById('verMain').style.display='none';
+  document.getElementById('verReport').style.display='none';
+  document.getElementById('verPanel').style.display='flex';
+}
+document.getElementById('setVerify').onclick=()=>{
+  document.getElementById('settings').classList.remove('open'); vOpen(); };
+document.getElementById('verClose').onclick=()=>document.getElementById('verPanel').style.display='none';
+document.getElementById('verStart').onclick=()=>{
+  document.getElementById('verHome').style.display='none';
+  document.getElementById('verMain').style.display='block';
+  vShow();
+};
+document.getElementById('verPrev').onclick=()=>{ vIx--; vShow(); };
+document.getElementById('verNext').onclick=()=>{ vIx++; vShow(); };
+document.getElementById('verJump').onchange=function(){
+  const v=parseInt(this.value,10); if(v>=1&&v<=vList.length){ vIx=v-1; vShow(); } };
+document.getElementById('vbGood').onclick=()=>{ vSet('good'); setTimeout(()=>{vIx++;vShow();},180); };
+document.getElementById('vbBad').onclick=()=>vSet('bad');
+document.getElementById('vbDunno').onclick=()=>{ vSet('dunno'); setTimeout(()=>{vIx++;vShow();},180); };
+document.getElementById('verPaintBtn').onclick=vOpenPaint;
+document.getElementById('verPaintCancel').onclick=()=>document.getElementById('verPaint').style.display='none';
+document.getElementById('verPaintSave').onclick=()=>{
+  const t=vList[vIx]; if(!t||!vEdited) return;
+  const dump=vCellDump(vEdited, vShot.box);
+  const prev=vRec[t.name]||{};
+  vRec[t.name]={ v:'bad', grp:t.grp, got:vShot.res.got, want:vShot.res.want,
+                 ok:!!vShot.res.ok, paint:dump };
+  vSave(); document.getElementById('verPaint').style.display='none';
+  vShow(); vStats(); toast('✏️ הציור נשמר');
+};
+function vShowReport(){
+  document.getElementById('verHome').style.display='none';
+  document.getElementById('verMain').style.display='none';
+  document.getElementById('verReport').style.display='block';
+  let good=0,bad=0,dunno=0;
+  for(const t of vList){ const r=vRec[t.name]; if(!r) continue;
+    if(r.v==='good')good++; else if(r.v==='bad')bad++; else dunno++; }
+  document.getElementById('verSummary').innerHTML=
+    '<div style="font-size:14px;line-height:1.9"><b>הדוח מוכן.</b><br>'+
+    '<span style="color:#7fd493">✅ '+good+'</span> · '+
+    '<span style="color:#ff9a8a">❌ '+bad+'</span> · '+
+    '<span style="color:#ffd479">🤷 '+dunno+'</span><br>'+
+    '<span style="opacity:.7;font-size:12px">לחץ להעתיק ושלח לי — ככה אני יודע בדיוק מה לתקן.</span></div>';
+  document.getElementById('verText').value=vReport();
+}
+document.getElementById('verFinish').onclick=vShowReport;
+document.getElementById('verGoReport').onclick=vShowReport;
+document.getElementById('verBack').onclick=()=>{
+  document.getElementById('verReport').style.display='none';
+  document.getElementById('verHome').style.display='block'; vStats(); };
+document.getElementById('verCopy').onclick=function(){
+  const ta=document.getElementById('verText');
+  ta.removeAttribute('readonly'); ta.select(); ta.setSelectionRange(0,999999);
+  let ok=false;
+  try{ ok=document.execCommand('copy'); }catch(e){}
+  if(navigator.clipboard) navigator.clipboard.writeText(ta.value).catch(()=>{});
+  ta.setAttribute('readonly','');
+  this.textContent = ok||navigator.clipboard ? '✅ הועתק!' : 'סמן והעתק ידנית';
+  setTimeout(()=>this.textContent='📋 להעתיק הכל', 1800);
+};
 document.getElementById('setClearAll').onclick=()=>{ document.getElementById('settings').classList.remove('open'); generateWorld(); };
 // שינוי רזולוציה (גודל פיקסל) — בונה מחדש את הרשת (מנקה), ומסמן את הכפתור הפעיל
 const SIZE_NAMES={9:'ממש קטן',5:'קטן',3.5:'בינוני',2.5:'גדול',1.6:'ענק'};
