@@ -534,10 +534,16 @@
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <button id="vPlay" class="vchip" style="font-size:14px;padding:7px 14px">▶️ להריץ</button>
             <span style="font-size:12px;opacity:.75">מהירות</span>
-            <input id="vSpeed" type="range" min="1" max="12" value="5" style="flex:1;min-width:90px">
-            <span id="vSpeedLbl" style="font-size:12px;font-weight:700;min-width:34px;text-align:center">×1</span>
+            <input id="vSpeed" type="range" min="1" max="14" value="3" style="flex:1;min-width:80px">
+            <span id="vSpeedLbl" style="font-size:12px;font-weight:700;min-width:38px;text-align:center">איטי</span>
           </div>
-          <div style="font-size:11px;opacity:.6;margin-top:6px">מריץ את הניסוי לאט כדי לראות מה בדיוק קורה באמצע</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+            <span style="font-size:12px;opacity:.75">גרור</span>
+            <input id="vScrub" type="range" min="0" max="0" value="0" style="flex:1">
+            <span id="vScrubLbl" style="font-size:11px;opacity:.7;min-width:52px;text-align:center">—</span>
+          </div>
+          <div style="font-size:11px;opacity:.6;margin-top:6px">
+            גרור את הפס כדי לעבור פריים־פריים בקצב שלך, או לחץ "להריץ" לסרטון רציף</div>
         </div>
 
         <div class="vcard" style="margin-top:10px">
@@ -4334,12 +4340,12 @@ function labBuildTests(){
 
     if(solidish && mp!==null && mp!==undefined && !(NO_SOLID_SIM&&NO_SOLID_SIM.has(id))){
       T.push({grp:'מעברי פאזה', name:nm(id)+' — מוצק אמור להימס מעל '+mp+'°',
-        run:()=>{ const b=labArena(); const n0=labPut(b,id,mp+150,0.15,0.85,0.2,0.8);
+        run:()=>{ const b=labArena(); const n0=labPut(b,id,mp+150,0.15,0.85,0.35,1);
           labHold(b,mp+150,40); const left=labCount(id);
           return {ok:left<n0*0.5, got:(n0-left)+' מתוך '+n0+' נמסו, '+left+' נשארו מוצקים',
                   want:'ב-'+(mp+150)+'° (מעל נקודת ההיתוך '+mp+'°) המוצק אמור להימס'}; }});
       T.push({grp:'מעברי פאזה', name:nm(id)+' — מוצק אמור להישאר יציב מתחת ל-'+mp+'°',
-        run:()=>{ const b=labArena(); const n0=labPut(b,id,mp-60,0.15,0.85,0.2,0.8);
+        run:()=>{ const b=labArena(); const n0=labPut(b,id,mp-60,0.15,0.85,0.35,1);
           labHold(b,mp-60,40); const left=labCount(id);
           return {ok:left>n0*0.5, got:left+' מתוך '+n0+' נשארו מוצקים, '+(n0-left)+' נמסו',
                   want:'ב-'+(mp-60)+'° (מתחת לנקודת ההיתוך) החומר לא אמור להימס'}; }});
@@ -4350,14 +4356,14 @@ function labBuildTests(){
       // כדי שהחומר לא יקפוץ בין מוצק לנוזל בדיוק על הגבול.
       const tgt=Math.max(ABS_ZERO+1, mp-Math.max(150,Math.abs(mp)*0.55));
       T.push({grp:'מעברי פאזה', name:nm(id)+' — נוזל אמור לקפוא מתחת ל-'+mp+'°',
-        run:()=>{ const b=labArena(); const n0=labPut(b,id,tgt,0.15,0.85,0.2,0.8);
+        run:()=>{ const b=labArena(); const n0=labPut(b,id,tgt,0.15,0.85,0.35,1);
           labHold(b,tgt,60); const left=labCount(id);
           return {ok:left<n0*0.5, got:(n0-left)+' מתוך '+n0+' קפאו ב-'+tgt.toFixed(0)+'°, '+left+' נשארו נוזל',
                   want:'מתחת ל-'+mp+'° הנוזל אמור להתמצק'}; }});
     }
     if(ty==='liquid' && bp!==null && bp!==undefined){
       T.push({grp:'מעברי פאזה', name:nm(id)+' — נוזל אמור לרתוח מעל '+bp+'°',
-        run:()=>{ const b=labArena(); const n0=labPut(b,id,bp+180,0.15,0.85,0.2,0.8);
+        run:()=>{ const b=labArena(); const n0=labPut(b,id,bp+180,0.15,0.85,0.35,1);
           labHold(b,bp+180,60); const left=labCount(id);
           return {ok:left<n0*0.5, got:(n0-left)+' מתוך '+n0+' רתחו, '+left+' נשארו נוזל',
                   want:'מעל '+bp+'° הנוזל אמור להפוך לגז'}; }});
@@ -4365,7 +4371,7 @@ function labBuildTests(){
     if(ty==='gas' && bp!==null && bp!==undefined){
       const tgt=Math.max(ABS_ZERO+1, bp-Math.max(150,Math.abs(bp)*0.25));
       T.push({grp:'מעברי פאזה', name:nm(id)+' — גז אמור להתעבות מתחת ל-'+bp+'°',
-        run:()=>{ const b=labArena(); const n0=labPut(b,id,tgt,0.15,0.85,0.2,0.8);
+        run:()=>{ const b=labArena(); const n0=labPut(b,id,tgt,0.15,0.85,0.35,1);
           labHold(b,tgt,400); const left=labCount(id);
           return {ok:left<n0*0.6, got:(n0-left)+' מתוך '+n0+' התעבו ב-'+tgt.toFixed(0)+'°, '+left+' נשארו גז',
                   want:'מתחת ל-'+bp+'° הגז אמור להתעבות לנוזל'}; }});
@@ -4398,7 +4404,7 @@ function labBuildTests(){
     T.push({grp:'שפיות לכל חומר', name:m.name+' — מתנהג באופן שפוי בטמפ\' היציבה שלו',
       run:()=>{
         const b=labArena();
-        const n0=labPut(b,id,stableT,0.2,0.8,0.25,0.7);
+        const n0=labPut(b,id,stableT,0.2,0.8,0.4,1);
         if(!transient) labHold(b,stableT,200); else labHold(b,null,200);
         const cellsInBox=(b.x1-b.x0+1)*(b.y1-b.y0+1);
         let left=0, filled=0;
@@ -5094,7 +5100,7 @@ function vTopicOf(t){
 
 /* מריצים ניסוי אחד ומצלמים אותו: איך נראה אחרי שהחומרים הונחו, ואיך בסוף.
    הצילום נעשה על ידי חטיפת הקריאה הראשונה ל-step בתוך הניסוי. */
-const V_FRAMES=70;                 // כמה תמונות שומרים מהריצה, בשביל ההצגה כסרטון
+const V_FRAMES=160;                 // כמה תמונות שומרים מהריצה, בשביל ההצגה כסרטון
 function vClip(box){               // חותך רק את תא הניסוי — קטן מספיק לשמור עשרות פעמים
   const bw=box.x1-box.x0+1, bh=box.y1-box.y0+1, a=new Uint8Array(bw*bh);
   for(let y=0;y<bh;y++) for(let x=0;x<bw;x++) a[y*bw+x]=grid[(box.y0+y)*W+(box.x0+x)];
@@ -5111,7 +5117,7 @@ function vRunOne(t){
     const r=oStep.apply(this,arguments);
     // דוגמים בקצב משתנה: צפוף בהתחלה (שם קורים הדברים) ודליל אחר כך
     if(arena){ nStep++;
-      const every = nStep<60 ? 2 : nStep<300 ? 8 : 25;
+      const every = nStep<120 ? 1 : nStep<400 ? 4 : 15;
       if(nStep%every===0 && frames.length<V_FRAMES) frames.push(vClip(arena));
     }
     return r;
@@ -5196,7 +5202,7 @@ function vShow(){
   else            { sv.textContent='המשחק: נכשל ❌'; sv.style.background='#331a1a';
                     sv.style.color='#ffb3a8'; sv.style.border='1px solid #a05050'; }
   vDraw(document.getElementById('verBefore'), vShot.before, vShot.box);
-  vStop(); vTab='game'; vPaintTabs();
+  vStop(); vFrame=0; vResetScrub(); vTab='game'; vPaintTabs();
   const r=vRec[t.name];
   for(const [id,v] of [['vbGood','good'],['vbBad','bad'],['vbDunno','dunno']])
     document.getElementById(id).classList.toggle('sel', !!r && r.v===v);
@@ -5300,28 +5306,44 @@ function vPaintTabs(){
 
 /* --- הרצה חוזרת כסרטון --- */
 let vAnim=null, vFrame=0;
+function vDrawFrame(n){
+  if(!vShot||!vShot.frames||!vShot.frames.length) return;
+  n=Math.max(0,Math.min(vShot.frames.length-1,n));
+  vFrame=n;
+  const fr=vShot.frames[n];
+  const cv=document.getElementById('verAfter');
+  const bw=vShot.box.x1-vShot.box.x0+1, bh=vShot.box.y1-vShot.box.y0+1;
+  cv.width=bw; cv.height=bh;
+  const x=cv.getContext('2d'), img=x.createImageData(bw,bh), d=img.data;
+  for(let i=0;i<fr.length;i++){ const g=fr[i], o=i*4;
+    if(g===AIR){ d[o]=10; d[o+1]=14; d[o+2]=20; }
+    else { const c=MAT[g].color; d[o]=c[0]; d[o+1]=c[1]; d[o+2]=c[2]; }
+    d[o+3]=255; }
+  x.putImageData(img,0,0);
+  cv.style.height = Math.min(190, Math.round(bh*(cv.clientWidth/bw)||150))+'px';
+  const sc=document.getElementById('vScrub'); sc.value=n;
+  document.getElementById('vScrubLbl').textContent=(n+1)+' / '+vShot.frames.length;
+}
 function vStop(){ if(vAnim){ clearInterval(vAnim); vAnim=null; }
   document.getElementById('vPlay').textContent='▶️ להריץ'; }
+function vResetScrub(){
+  const sc=document.getElementById('vScrub');
+  const n=vShot&&vShot.frames?vShot.frames.length:0;
+  sc.max=Math.max(0,n-1); sc.value=0;
+  document.getElementById('vScrubLbl').textContent = n?('1 / '+n):'—';
+}
 function vPlay(){
   if(vAnim){ vStop(); return; }
   if(!vShot || !vShot.frames || !vShot.frames.length) return;
-  vFrame=0;
+  // מתחילים מההתחלה, אלא אם עצרת באמצע — אז ממשיכים משם
+  if(vFrame>=vShot.frames.length-1) vFrame=0;
   document.getElementById('vPlay').textContent='⏸️ עצור';
-  const cv=document.getElementById('verAfter');
-  const bw=vShot.box.x1-vShot.box.x0+1, bh=vShot.box.y1-vShot.box.y0+1;
   const tick=()=>{
-    if(vFrame>=vShot.frames.length){ vStop(); vPaintTabs(); return; }
-    const fr=vShot.frames[vFrame++];
-    cv.width=bw; cv.height=bh;
-    const x=cv.getContext('2d'), img=x.createImageData(bw,bh), d=img.data;
-    for(let i=0;i<fr.length;i++){ const g=fr[i], o=i*4;
-      if(g===AIR){ d[o]=10; d[o+1]=14; d[o+2]=20; }
-      else { const c=MAT[g].color; d[o]=c[0]; d[o+1]=c[1]; d[o+2]=c[2]; }
-      d[o+3]=255; }
-    x.putImageData(img,0,0);
+    if(vFrame>=vShot.frames.length-1){ vDrawFrame(vShot.frames.length-1); vStop(); return; }
+    vDrawFrame(vFrame+1);
   };
   const sp=+document.getElementById('vSpeed').value;
-  vAnim=setInterval(tick, Math.round(340/sp));
+  vAnim=setInterval(tick, Math.round(420/sp));
 }
 
 /* --- הדוח --- */
@@ -5410,8 +5432,11 @@ document.getElementById('vTabGame').onclick=()=>{ vStop(); vTab='game'; vPaintTa
 document.getElementById('vTabMine').onclick=()=>{ vStop(); vTab='mine'; vPaintTabs(); };
 document.getElementById('vPlay').onclick=vPlay;
 document.getElementById('vSpeed').oninput=function(){
-  document.getElementById('vSpeedLbl').textContent='×'+(this.value/5).toFixed(1).replace('.0','');
+  const v=+this.value;
+  document.getElementById('vSpeedLbl').textContent =
+    v<=2?'איטי מאוד' : v<=4?'איטי' : v<=7?'רגיל' : v<=10?'מהיר':'מהיר מאוד';
   if(vAnim){ vStop(); vPlay(); } };
+document.getElementById('vScrub').oninput=function(){ vStop(); vDrawFrame(+this.value); };
 document.getElementById('verPaintCancel').onclick=()=>document.getElementById('verPaint').style.display='none';
 document.getElementById('verPaintSave').onclick=()=>{
   const t=vList[vIx]; if(!t||!vEdited) return;
