@@ -519,6 +519,15 @@
           <div class="vsub" id="verExpect">—</div>
         </div>
 
+        <div id="vNoPic" class="vcard" style="display:none;text-align:center;padding:18px">
+          <div style="font-size:30px">🔢</div>
+          <div style="font-size:14px;font-weight:700;margin-top:6px">אין מה להראות בבדיקה הזו</div>
+          <div class="vsub" style="margin-top:6px">
+            הבדיקה הזו לא מריצה ניסוי — היא רק משווה <b>מספר</b>:
+            מה שכתוב במשחק מול הערך האמיתי מהעולם.<br>
+            תשפוט לפי המספרים למטה.
+          </div>
+        </div>
         <div class="vshots">
           <div class="vshot"><h4>▶️ ההתחלה</h4><canvas id="verBefore"></canvas></div>
           <div class="vshot">
@@ -5129,7 +5138,10 @@ function vRunOne(t){
   const box = arena || {x0:0,x1:W-1,y0:0,y1:H-1};
   if(arena) frames.push(vClip(arena));
   labRestore(); paused=wasPaused;
-  return {res, before:before||after, after, box, frames};
+  // 53 בדיקות רק משוות מספרים (הערך במשחק מול הערך האמיתי) ולא בונות תא ניסוי
+  // בכלל. בלי הסימון הזה המסך היה מראה שאריות מהבדיקה הקודמת — תמונה חסרת
+  // משמעות שאי אפשר לשפוט לפיה, וגרוע מזה: נראית כאילו היא כן קשורה.
+  return {res, before:before||after, after, box, frames, noPic:!arena};
 }
 /* דחיסת רצפים — כדי שציור שמור לא ינפח את האחסון בטלפון */
 function vRLE(a){ const o=[]; let run=1;
@@ -5203,6 +5215,12 @@ function vShow(){
                     sv.style.color='#ffb3a8'; sv.style.border='1px solid #a05050'; }
   vDraw(document.getElementById('verBefore'), vShot.before, vShot.box);
   vStop(); vFrame=0; vResetScrub(); vTab='game'; vPaintTabs();
+  // בדיקת-מספרים: מסתירים תמונות, סרטון וציור — אין שם שום דבר לצייר עליו
+  const np=!!vShot.noPic;
+  document.getElementById('vNoPic').style.display = np?'block':'none';
+  document.querySelector('#verMain .vshots').style.display = np?'none':'grid';
+  document.getElementById('vPlay').closest('.vcard').style.display = np?'none':'block';
+  document.getElementById('verPaintBtn').style.display = np?'none':'block';
   const r=vRec[t.name];
   for(const [id,v] of [['vbGood','good'],['vbBad','bad'],['vbDunno','dunno']])
     document.getElementById(id).classList.toggle('sel', !!r && r.v===v);
