@@ -67,6 +67,16 @@
   .vshot{ background:#0a0e15; border:1px solid #22303f; border-radius:10px; overflow:hidden }
   .vshot h4{ margin:0; padding:6px 8px; font-size:11px; font-weight:700; color:#9fb4cd;
     background:#131c28; border-bottom:1px solid #22303f }
+  .vtab{ padding:3px 8px; border-radius:99px; cursor:pointer; border:1px solid transparent }
+  .vtab.on{ background:#1d3550; border-color:#4a8fd0; color:#cfe6ff }
+  .vpm{ position:relative }
+  .vmat{ flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:3px;
+    width:56px; cursor:pointer; }
+  .vmat i{ width:44px; height:34px; border-radius:8px; border:2px solid #22303f; display:block }
+  .vmat.on i{ border-color:#63d6a8 }
+  .vmat span{ font-size:10px; color:#9fb4cd; text-align:center; line-height:1.2;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100% }
+  .vmat.on span{ color:#cfe6ff; font-weight:700 }
   .vshot canvas{ width:100%; display:block; image-rendering:pixelated; background:#070a10 }
   .vverd{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:12px }
   .vb{ border:1px solid #2a3a52; background:#141c28; color:#dbe6f5; border-radius:12px;
@@ -511,7 +521,23 @@
 
         <div class="vshots">
           <div class="vshot"><h4>▶️ ההתחלה</h4><canvas id="verBefore"></canvas></div>
-          <div class="vshot"><h4>⏹️ הסוף</h4><canvas id="verAfter"></canvas></div>
+          <div class="vshot">
+            <h4 style="display:flex;gap:6px;align-items:center">
+              <span id="vTabGame" class="vtab on">⏹️ הסוף</span>
+              <span id="vTabMine" class="vtab" style="display:none">✏️ הציור שלי</span>
+            </h4>
+            <canvas id="verAfter"></canvas>
+          </div>
+        </div>
+
+        <div class="vcard" style="margin-top:10px">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <button id="vPlay" class="vchip" style="font-size:14px;padding:7px 14px">▶️ להריץ</button>
+            <span style="font-size:12px;opacity:.75">מהירות</span>
+            <input id="vSpeed" type="range" min="1" max="12" value="5" style="flex:1;min-width:90px">
+            <span id="vSpeedLbl" style="font-size:12px;font-weight:700;min-width:34px;text-align:center">×1</span>
+          </div>
+          <div style="font-size:11px;opacity:.6;margin-top:6px">מריץ את הניסוי לאט כדי לראות מה בדיוק קורה באמצע</div>
         </div>
 
         <div class="vcard" style="margin-top:10px">
@@ -655,6 +681,7 @@
       <button id="btnClear">🗑️</button>
     </div>
     <div id="controls">
+      <button id="btnVerify" style="color:#8fe0b8">🔎 בדיקות</button>
       <button id="btnHand">✋ יד</button>
       <button id="btnBeaker">🧪 כלי זכוכית</button>
       <button id="btnFlask">⚗️ בקבוקון</button>
@@ -5067,20 +5094,43 @@ function vTopicOf(t){
 
 /* מריצים ניסוי אחד ומצלמים אותו: איך נראה אחרי שהחומרים הונחו, ואיך בסוף.
    הצילום נעשה על ידי חטיפת הקריאה הראשונה ל-step בתוך הניסוי. */
+const V_FRAMES=70;                 // כמה תמונות שומרים מהריצה, בשביל ההצגה כסרטון
+function vClip(box){               // חותך רק את תא הניסוי — קטן מספיק לשמור עשרות פעמים
+  const bw=box.x1-box.x0+1, bh=box.y1-box.y0+1, a=new Uint8Array(bw*bh);
+  for(let y=0;y<bh;y++) for(let x=0;x<bw;x++) a[y*bw+x]=grid[(box.y0+y)*W+(box.x0+x)];
+  return a;
+}
 function vRunOne(t){
   const wasPaused=paused; paused=true; labSnapshot();
-  let before=null, arena=null;
+  let before=null, arena=null, nStep=0;
+  const frames=[];
   const oStep=window.step, oArena=window.labArena;
   window.labArena=function(){ const b=oArena.apply(this,arguments); arena=b; return b; };
-  window.step=function(){ if(!before && arena) before=grid.slice(); return oStep.apply(this,arguments); };
+  window.step=function(){
+    if(arena && !before) before=grid.slice();
+    const r=oStep.apply(this,arguments);
+    // דוגמים בקצב משתנה: צפוף בהתחלה (שם קורים הדברים) ודליל אחר כך
+    if(arena){ nStep++;
+      const every = nStep<60 ? 2 : nStep<300 ? 8 : 25;
+      if(nStep%every===0 && frames.length<V_FRAMES) frames.push(vClip(arena));
+    }
+    return r;
+  };
   let res;
   try{ res=t.run(); }catch(e){ res={ok:false,got:'שגיאה: '+e.message,want:'—'}; }
   const after=grid.slice();
   window.step=oStep; window.labArena=oArena;
   const box = arena || {x0:0,x1:W-1,y0:0,y1:H-1};
+  if(arena) frames.push(vClip(arena));
   labRestore(); paused=wasPaused;
-  return {res, before:before||after, after, box};
+  return {res, before:before||after, after, box, frames};
 }
+/* דחיסת רצפים — כדי שציור שמור לא ינפח את האחסון בטלפון */
+function vRLE(a){ const o=[]; let run=1;
+  for(let i=1;i<=a.length;i++){ if(i<a.length && a[i]===a[i-1]){ run++; continue; }
+    o.push(run, a[i-1]); run=1; } return o; }
+function vUnRLE(o){ const a=[]; for(let i=0;i<o.length;i+=2) for(let k=0;k<o[i];k++) a.push(o[i+1]);
+  return Uint8Array.from(a); }
 
 function vDraw(cv, data, box){
   const bw=box.x1-box.x0+1, bh=box.y1-box.y0+1;
@@ -5146,7 +5196,7 @@ function vShow(){
   else            { sv.textContent='המשחק: נכשל ❌'; sv.style.background='#331a1a';
                     sv.style.color='#ffb3a8'; sv.style.border='1px solid #a05050'; }
   vDraw(document.getElementById('verBefore'), vShot.before, vShot.box);
-  vDraw(document.getElementById('verAfter'),  vShot.after,  vShot.box);
+  vStop(); vTab='game'; vPaintTabs();
   const r=vRec[t.name];
   for(const [id,v] of [['vbGood','good'],['vbBad','bad'],['vbDunno','dunno']])
     document.getElementById(id).classList.toggle('sel', !!r && r.v===v);
@@ -5155,25 +5205,57 @@ function vSet(v){
   const t=vList[vIx]; if(!t) return;
   const prev=vRec[t.name]||{};
   vRec[t.name]={ v, grp:t.grp, got:vShot?vShot.res.got:'', want:vShot?vShot.res.want:'',
-                 ok:vShot?!!vShot.res.ok:false, paint:prev.paint||null };
+                 ok:vShot?!!vShot.res.ok:false, paint:prev.paint||null, art:prev.art||null };
   vSave(); vShow(); vStats();
 }
 
 /* --- ציור התשובה הנכונה --- */
+function vRelevantMats(){
+  // מה שבאמת מופיע בניסוי הזה — זה מה שסביר שתרצה לצייר איתו
+  const seen=new Set([AIR]);
+  for(let i=0;i<vShot.before.length;i++){ const g=vShot.before[i]; if(g&&g!==WALL) seen.add(g); }
+  for(let i=0;i<vShot.after.length;i++){ const g=vShot.after[i]; if(g&&g!==WALL) seen.add(g); }
+  // ועוד כמה שכמעט תמיד רלוונטיים למצבי צבירה
+  for(const g of [WATER,ICE,STEAM]) seen.add(g);
+  return [...seen].filter(g=>MAT[g] && (g===AIR || !MAT[g].sys));
+}
+function vAllMats(){
+  const a=[AIR];
+  for(let id=1;id<MAT.length;id++){ const m=MAT[id];
+    if(m.key && !m.sys && m.phaseOf===undefined) a.push(id); }
+  return a;
+}
+let vPalAll=false;
+function vBuildPal(){
+  const pal=document.getElementById('verPal'); pal.innerHTML='';
+  const list = vPalAll ? vAllMats() : vRelevantMats();
+  for(const id of list){
+    const d=document.createElement('div'); d.className='vmat'+(id===vPaintMat?' on':'');
+    const sw=document.createElement('i');
+    sw.style.background = id===AIR ? 'repeating-linear-gradient(45deg,#0a0e15,#0a0e15 4px,#141c28 4px,#141c28 8px)'
+                                   : 'rgb('+MAT[id].color.join(',')+')';
+    const nm=document.createElement('span'); nm.textContent = id===AIR ? 'ריק' : MAT[id].name;
+    d.appendChild(sw); d.appendChild(nm);
+    d.onclick=()=>{ vPaintMat=id; vBuildPal(); };
+    pal.appendChild(d);
+  }
+  const more=document.createElement('div'); more.className='vmat';
+  const mi=document.createElement('i');
+  mi.style.cssText='background:#141c28;display:flex;align-items:center;justify-content:center;font-size:18px';
+  mi.textContent = vPalAll ? '➖' : '➕';
+  const mn=document.createElement('span'); mn.textContent = vPalAll ? 'פחות' : 'עוד חומרים';
+  more.appendChild(mi); more.appendChild(mn);
+  more.onclick=()=>{ vPalAll=!vPalAll; vBuildPal(); };
+  pal.appendChild(more);
+}
 function vOpenPaint(){
   const p=document.getElementById('verPaint'); p.style.display='block';
   const cv=document.getElementById('verEdit');
-  vEdited=vShot.after.slice();
+  // ממשיכים מהציור הקודם אם כבר ציירת, ולא מתחילים מאפס
+  const saved=vMyDrawing();
+  vEdited = saved ? saved.slice() : vShot.after.slice();
   vDraw(cv, vEdited, vShot.box);
-  const pal=document.getElementById('verPal'); pal.innerHTML='';
-  const opts=[AIR,WATER,ICE,STEAM,SAND,EARTH,STONE,IRON,LAVA,FIRE,GLASS,WOOD];
-  for(const id of opts){
-    const d=document.createElement('div'); d.className='vpm'+(id===vPaintMat?' on':'');
-    d.style.background = id===AIR ? '#0a0e15' : 'rgb('+MAT[id].color.join(',')+')';
-    d.title=MAT[id].name;
-    d.onclick=()=>{ vPaintMat=id; vOpenPaintPal(); };
-    pal.appendChild(d);
-  }
+  vBuildPal();
   const paint=(ev)=>{
     const r=cv.getBoundingClientRect();
     const tp=ev.touches?ev.touches[0]:ev;
@@ -5192,12 +5274,54 @@ function vOpenPaint(){
   cv.ontouchstart=e=>{ e.preventDefault(); paint(e); };
   cv.ontouchmove=e=>{ e.preventDefault(); paint(e); };
 }
-function vOpenPaintPal(){
-  const pal=document.getElementById('verPal');
-  [...pal.children].forEach((c,i)=>{
-    const opts=[AIR,WATER,ICE,STEAM,SAND,EARTH,STONE,IRON,LAVA,FIRE,GLASS,WOOD];
-    c.classList.toggle('on', opts[i]===vPaintMat);
-  });
+
+/* --- הציור השמור: מציגים אותו, ואפשר לחזור למה שהמשחק הפיק --- */
+function vMyDrawing(){
+  const t=vList[vIx]; if(!t) return null;
+  const r=vRec[t.name]; if(!r || !r.art) return null;
+  const bw=vShot.box.x1-vShot.box.x0+1, bh=vShot.box.y1-vShot.box.y0+1;
+  const flat=vUnRLE(r.art);
+  if(flat.length !== bw*bh) return null;           // הניסוי השתנה — הציור הישן כבר לא מתאים
+  const full=vShot.after.slice();
+  for(let y=0;y<bh;y++) for(let x=0;x<bw;x++)
+    full[(vShot.box.y0+y)*W+(vShot.box.x0+x)] = flat[y*bw+x];
+  return full;
+}
+let vTab='game';
+function vPaintTabs(){
+  const mine=vMyDrawing();
+  const tm=document.getElementById('vTabMine');
+  tm.style.display = mine ? 'inline-block' : 'none';
+  if(!mine) vTab='game';
+  document.getElementById('vTabGame').classList.toggle('on', vTab==='game');
+  tm.classList.toggle('on', vTab==='mine');
+  vDraw(document.getElementById('verAfter'), vTab==='mine'?mine:vShot.after, vShot.box);
+}
+
+/* --- הרצה חוזרת כסרטון --- */
+let vAnim=null, vFrame=0;
+function vStop(){ if(vAnim){ clearInterval(vAnim); vAnim=null; }
+  document.getElementById('vPlay').textContent='▶️ להריץ'; }
+function vPlay(){
+  if(vAnim){ vStop(); return; }
+  if(!vShot || !vShot.frames || !vShot.frames.length) return;
+  vFrame=0;
+  document.getElementById('vPlay').textContent='⏸️ עצור';
+  const cv=document.getElementById('verAfter');
+  const bw=vShot.box.x1-vShot.box.x0+1, bh=vShot.box.y1-vShot.box.y0+1;
+  const tick=()=>{
+    if(vFrame>=vShot.frames.length){ vStop(); vPaintTabs(); return; }
+    const fr=vShot.frames[vFrame++];
+    cv.width=bw; cv.height=bh;
+    const x=cv.getContext('2d'), img=x.createImageData(bw,bh), d=img.data;
+    for(let i=0;i<fr.length;i++){ const g=fr[i], o=i*4;
+      if(g===AIR){ d[o]=10; d[o+1]=14; d[o+2]=20; }
+      else { const c=MAT[g].color; d[o]=c[0]; d[o+1]=c[1]; d[o+2]=c[2]; }
+      d[o+3]=255; }
+    x.putImageData(img,0,0);
+  };
+  const sp=+document.getElementById('vSpeed').value;
+  vAnim=setInterval(tick, Math.round(340/sp));
 }
 
 /* --- הדוח --- */
@@ -5266,7 +5390,9 @@ function vOpen(){
 }
 document.getElementById('setVerify').onclick=()=>{
   document.getElementById('settings').classList.remove('open'); vOpen(); };
-document.getElementById('verClose').onclick=()=>document.getElementById('verPanel').style.display='none';
+document.getElementById('btnVerify').onclick=()=>vOpen();   // גישה ישירה מהסרגל
+document.getElementById('verClose').onclick=()=>{ vStop();
+  document.getElementById('verPanel').style.display='none'; };
 document.getElementById('verStart').onclick=()=>{
   document.getElementById('verHome').style.display='none';
   document.getElementById('verMain').style.display='block';
@@ -5280,15 +5406,28 @@ document.getElementById('vbGood').onclick=()=>{ vSet('good'); setTimeout(()=>{vI
 document.getElementById('vbBad').onclick=()=>vSet('bad');
 document.getElementById('vbDunno').onclick=()=>{ vSet('dunno'); setTimeout(()=>{vIx++;vShow();},180); };
 document.getElementById('verPaintBtn').onclick=vOpenPaint;
+document.getElementById('vTabGame').onclick=()=>{ vStop(); vTab='game'; vPaintTabs(); };
+document.getElementById('vTabMine').onclick=()=>{ vStop(); vTab='mine'; vPaintTabs(); };
+document.getElementById('vPlay').onclick=vPlay;
+document.getElementById('vSpeed').oninput=function(){
+  document.getElementById('vSpeedLbl').textContent='×'+(this.value/5).toFixed(1).replace('.0','');
+  if(vAnim){ vStop(); vPlay(); } };
 document.getElementById('verPaintCancel').onclick=()=>document.getElementById('verPaint').style.display='none';
 document.getElementById('verPaintSave').onclick=()=>{
   const t=vList[vIx]; if(!t||!vEdited) return;
   const dump=vCellDump(vEdited, vShot.box);
-  const prev=vRec[t.name]||{};
+  // שומרים גם את הציור עצמו (דחוס), כדי שאפשר יהיה לראות אותו שוב ולהמשיך לערוך
+  const bw=vShot.box.x1-vShot.box.x0+1, bh=vShot.box.y1-vShot.box.y0+1;
+  const flat=new Uint8Array(bw*bh);
+  for(let y=0;y<bh;y++) for(let x=0;x<bw;x++)
+    flat[y*bw+x]=vEdited[(vShot.box.y0+y)*W+(vShot.box.x0+x)];
   vRec[t.name]={ v:'bad', grp:t.grp, got:vShot.res.got, want:vShot.res.want,
-                 ok:!!vShot.res.ok, paint:dump };
+                 ok:!!vShot.res.ok, paint:dump, art:vRLE(flat) };
   vSave(); document.getElementById('verPaint').style.display='none';
-  vShow(); vStats(); toast('✏️ הציור נשמר');
+  vTab='mine'; vPaintTabs(); vStats();
+  for(const [id,v] of [['vbGood','good'],['vbBad','bad'],['vbDunno','dunno']])
+    document.getElementById(id).classList.toggle('sel', v==='bad');
+  toast('✏️ הציור נשמר — לחץ "הציור שלי" כדי לראות אותו');
 };
 function vShowReport(){
   document.getElementById('verHome').style.display='none';
