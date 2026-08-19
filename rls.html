@@ -1,1 +1,1495 @@
-<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><title>RLS</title><style>*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{height:100%;overflow:hidden;background:#080a0e;color:#dfe6f0;font:14px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;user-select:none;-webkit-user-select:none;touch-action:none}body{display:flex;flex-direction:column}#stage{position:relative;flex:1;min-height:0;display:flex;align-items:flex-end;justify-content:center;overflow:hidden;background:#0b0e13}canvas{image-rendering:pixelated;image-rendering:crisp-edges;display:block;touch-action:none}#hud{background:#11151c;border-top:1px solid #1e2530;padding:7px 8px calc(7px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:7px}.row{display:flex;align-items:center;gap:7px}button{border:0;color:inherit;font:inherit}.btn{background:#1c2331;border:1px solid #2a3444;border-radius:9px;padding:8px 11px;font-size:15px;line-height:1;min-width:42px}.btn.on{background:#2f6df0;border-color:#4f87ff;color:#fff}#read{position:absolute;left:50%;transform:translateX(-50%);bottom:10px;font-size:12px;color:#cfe0f5;background:rgba(8,11,16,.82);border:1px solid #2a3444;border-radius:8px;padding:5px 10px;white-space:nowrap;opacity:0;transition:opacity .25s;pointer-events:none}#fps{font-size:11px;color:#5a6b82;flex:0 0 auto}label{font-size:11px;color:#8d9bb0;min-width:52px}input[type=range]{flex:1;accent-color:#2f6df0;height:26px}#pal{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch;scrollbar-width:none}#pal::-webkit-scrollbar{display:none}.chip{flex:0 0 auto;display:flex;align-items:center;gap:5px;background:#1c2331;border:1px solid #2a3444;border-radius:9px;padding:6px 9px;font-size:12px;white-space:nowrap}.chip.on{background:#2f6df0;border-color:#4f87ff;color:#fff}.chip i{width:11px;height:11px;border-radius:3px;display:block;border:1px solid rgba(0,0,0,.35)}</style></head><body><div id="stage"><canvas id="cv"></canvas><span id="read"></span></div><div id="hud"><div class="row"><button class="btn" id="play">⏸</button><button class="btn" id="erase">מחק</button><button class="btn" id="pick">בדוק</button><button class="btn" id="new">עולם חדש</button><button class="btn" id="void">רוקן</button><span id="fps"></span></div><div class="row"><label id="bn">7 רוחב</label><input type="range" id="brush" min="0" max="14" step="1" value="3"></div><div class="row"><label id="tn">20°</label><input type="range" id="temp" min="-260" max="3000" step="10" value="20"></div><div class="row" id="pal"></div></div><script>const t={H:{Z:1,m:1.008,en:2.2,ve:1,name:"מימן",col:[235,240,248]},He:{Z:2,m:4.003,en:0,ve:2,name:"הליום",col:[190,235,230]},C:{Z:6,m:12.011,en:2.55,ve:4,name:"פחמן",col:[58,58,66]},N:{Z:7,m:14.007,en:3.04,ve:5,name:"חנקן",col:[90,110,225]},O:{Z:8,m:15.999,en:3.44,ve:6,name:"חמצן",col:[225,80,80]},Na:{Z:11,m:22.99,en:.93,ve:1,name:"נתרן",col:[175,100,210]},Mg:{Z:12,m:24.305,en:1.31,ve:2,name:"מגנזיום",col:[105,195,145]},Al:{Z:13,m:26.982,en:1.61,ve:3,name:"אלומיניום",col:[185,188,196]},Si:{Z:14,m:28.085,en:1.9,ve:4,name:"צורן",col:[130,140,150]},P:{Z:15,m:30.974,en:2.19,ve:5,name:"זרחן",col:[232,138,42]},S:{Z:16,m:32.06,en:2.58,ve:6,name:"גופרית",col:[232,210,58]},Cl:{Z:17,m:35.45,en:3.16,ve:7,name:"כלור",col:[90,200,95]},K:{Z:19,m:39.098,en:.82,ve:1,name:"אשלגן",col:[143,64,212]},Ca:{Z:20,m:40.078,en:1,ve:2,name:"סידן",col:[78,180,98]},Fe:{Z:26,m:55.845,en:1.83,ve:2,name:"ברזל",col:[188,132,90]},Cu:{Z:29,m:63.546,en:1.9,ve:2,name:"נחושת",col:[200,128,77]},Zn:{Z:30,m:65.38,en:1.65,ve:2,name:"אבץ",col:[168,176,184]},Sn:{Z:50,m:118.71,en:1.96,ve:4,name:"בדיל",col:[154,160,168]},Au:{Z:79,m:196.97,en:2.54,ve:1,name:"זהב",col:[245,197,24]},Hg:{Z:80,m:200.59,en:2,ve:2,name:"כספית",col:[166,168,176]}};function e(t){return Object.keys(t).sort().filter(e=>t[e]>0).map(e=>e+(t[e]>1?t[e]:"")).join("")}function n(t){const e={},n=/([A-Z][a-z]?)(\d*)/g;let s;for(;null!==(s=n.exec(t));)s[1]&&(e[s[1]]=(e[s[1]]||0)+(s[2]?+s[2]:1));return e}const s=(t,e)=>{const n={...t};for(const t in e)n[t]=(n[t]||0)+e[t];return n};function i(t,e){const n={...t};for(const t in e){if((n[t]||0)<e[t])return null;n[t]-=e[t],n[t]||delete n[t]}return n}const o=t=>0===Object.keys(t).length,l=t=>Object.values(t).reduce((t,e)=>t+e,0),r=e=>Object.keys(e).reduce((n,s)=>n+(t[s]?t[s].m*e[s]:0),0),c={H2:{name:"מימן",dHf:0,melt:-259,boil:-253,col:[235,240,248],st:"gas"},O2:{name:"חמצן",dHf:0,melt:-219,boil:-183,col:[225,80,80],st:"gas"},N2:{name:"חנקן",dHf:0,melt:-210,boil:-196,col:[90,110,225],st:"gas"},Cl2:{name:"כלור",dHf:0,melt:-101,boil:-34,col:[150,215,110],st:"gas"},C:{name:"פחמן",dHf:0,melt:3550,boil:4027,col:[58,58,66],st:"solid"},S:{name:"גופרית",dHf:0,melt:115,boil:445,col:[232,210,58],st:"solid"},Fe:{name:"ברזל",dHf:0,melt:1538,boil:2861,col:[188,132,90],st:"solid"},Cu:{name:"נחושת",dHf:0,melt:1085,boil:2562,col:[200,128,77],st:"solid"},Zn:{name:"אבץ",dHf:0,melt:420,boil:907,col:[168,176,184],st:"solid"},Al:{name:"אלומיניום",dHf:0,melt:660,boil:2470,col:[185,188,196],st:"solid"},Na:{name:"נתרן",dHf:0,melt:98,boil:883,col:[175,100,210],st:"solid"},K:{name:"אשלגן",dHf:0,melt:63,boil:759,col:[143,64,212],st:"solid"},Ca:{name:"סידן",dHf:0,melt:842,boil:1484,col:[78,180,98],st:"solid"},Mg:{name:"מגנזיום",dHf:0,melt:650,boil:1090,col:[105,195,145],st:"solid"},Si:{name:"צורן",dHf:0,melt:1414,boil:3265,col:[130,140,150],st:"solid"},Sn:{name:"בדיל",dHf:0,melt:232,boil:2602,col:[154,160,168],st:"solid"},Au:{name:"זהב",dHf:0,melt:1064,boil:2856,col:[245,197,24],st:"solid"},Hg:{name:"כספית",dHf:0,melt:-39,boil:357,col:[166,168,176],st:"liquid"},P4:{name:"זרחן לבן",dHf:0,melt:44,boil:280,col:[232,138,42],st:"solid"},H2O:{name:"מים",dHf:-286,melt:0,boil:100,col:[60,120,220],st:"liquid"},CO2:{name:"פחמן דו-חמצני",dHf:-394,melt:-57,boil:-78,col:[200,205,215],st:"gas"},CO:{name:"פחמן חד-חמצני",dHf:-111,melt:-205,boil:-192,col:[190,195,205],st:"gas"},CH4:{name:"מתאן",dHf:-75,melt:-182,boil:-162,col:[210,225,235],st:"gas"},NH3:{name:"אמוניה",dHf:-46,melt:-78,boil:-33,col:[170,210,235],st:"gas"},NaCl:{name:"מלח בישול",dHf:-411,melt:801,boil:1465,col:[240,240,245],st:"solid"},KCl:{name:"אשלגן כלורי",dHf:-437,melt:770,boil:1420,col:[238,232,245],st:"solid"},HCl:{name:"מימן כלורי",dHf:-92,melt:-114,boil:-85,col:[205,235,200],st:"gas"},SO2:{name:"גופרית דו-חמצנית",dHf:-297,melt:-72,boil:-10,col:[225,215,120],st:"gas"},SO3:{name:"גופרית תלת-חמצנית",dHf:-396,melt:17,boil:45,col:[230,220,140],st:"gas"},H2S:{name:"מימן גופרתי",dHf:-21,melt:-82,boil:-60,col:[220,215,150],st:"gas"},NO:{name:"תחמוצת חנקן",dHf:90,melt:-164,boil:-152,col:[160,170,215],st:"gas"},NO2:{name:"דו-תחמוצת חנקן",dHf:33,melt:-11,boil:21,col:[200,120,60],st:"gas"},Fe2O3:{name:"חלודה",dHf:-824,melt:1565,boil:2861,col:[150,70,40],st:"solid"},FeS:{name:"גופרת ברזל",dHf:-100,melt:1194,boil:2861,col:[120,95,70],st:"solid"},CuO:{name:"תחמוצת נחושת",dHf:-157,melt:1326,boil:2e3,col:[60,55,60],st:"solid"},ZnO:{name:"תחמוצת אבץ",dHf:-348,melt:1974,boil:2360,col:[235,235,230],st:"solid"},Al2O3:{name:"תחמוצת אלומיניום",dHf:-1676,melt:2072,boil:2977,col:[225,225,232],st:"solid"},MgO:{name:"מגנזיה",dHf:-601,melt:2852,boil:3600,col:[240,240,238],st:"solid"},CaO:{name:"סיד חי",dHf:-635,melt:2613,boil:2850,col:[238,235,225],st:"solid"},SiO2:{name:"צורן דו-חמצני",dHf:-911,melt:1670,boil:2950,col:[224,196,120],st:"solid"},NaOH:{name:"סודה קאוסטית",dHf:-425,melt:318,boil:1388,col:[235,225,240],st:"solid"},CaCO3:{name:"אבן גיר",dHf:-1207,melt:825,boil:825,col:[228,222,205],st:"solid"},H2O2:{name:"מי חמצן",dHf:-188,melt:-1,boil:150,col:[190,225,240],st:"liquid"},NaH:{name:"נתרן הידריד",dHf:-56,melt:638,boil:638,col:[200,170,220],st:"solid"}};function h(n){const s=Object.keys(n),i=r(n);let o=0,l=9;for(const e of s){const n=t[e]?t[e].en:2;n>o&&(o=n),n<l&&(l=n)}const c=Math.max(0,o-l),h=Math.round(420*c-100+1.6*Math.min(i,200)),m=Math.round(h+180+260*c),f=[0,0,0];let u=0;for(const e of s){const s=t[e]?t[e].col:[128,128,128];for(let t=0;t<3;t++)f[t]+=s[t]*n[e];u+=n[e]}return{name:e(n),dHf:a(n),melt:h,boil:m,col:f.map(t=>Math.round(t/Math.max(1,u))),st:h>25?"solid":m>25?"liquid":"gas",derived:!0}}function a(e){const n=Object.keys(e);if(n.length<2)return 0;let s=0,i=9;for(const e of n){const n=t[e]?t[e].en:2;n>s&&(s=n),n<i&&(i=n)}return n.some(t=>"Au"===t||"Hg"===t)?40:-Math.round(22*(s-i)*l(e)*.5)}const m=new Map,f=[];function u(t){if(m.has(t))return m.get(t);const e=n(t),s=c[t]?{...c[t]}:h(e),i={id:f.length,key:t,comp:e,...s};return f.push(i),m.set(t,i),i}const d=t=>f[t],p=()=>f.slice();let b=null;const g=()=>b||(b=f.slice());for(const t in c)u(t);const H={minRelease:60,actScale:.4,actBase:520},M=new Set(["H","O","N","Cl"]);function k(n){const s=Object.keys(n);if(0===s.length)return!1;if(1===s.length){const t=s[0];return M.has(t)?2===n[t]:1===n[t]}if(c[e(n)])return!0;if(s.length>3)return!1;for(const t of s)if(n[t]>6)return!1;if(2===s.length){const[e,i]=s,o=t[e],l=t[i];if(!o||!l)return!1;const[r,c]=o.en<l.en?[e,i]:[i,e],h=t[r].ve<=4?t[r].ve:8-t[r].ve,a=8-t[c].ve;return!(h<=0||a<=0)&&n[r]*h===n[c]*a}return!1}let v=null;function w(){return v||(v=f.filter(t=>k(t.comp)),v)}const C=(t,e)=>e?C(e,t%e):t;function O(t){const e=Object.values(t);let n=e[0];for(const t of e)n=C(n,t);if(n<2)return{unit:t,n:1};const s={};for(const e in t)s[e]=t[e]/n;return{unit:s,n:n}}const x=(t,e)=>{const n={};for(const s in t)n[s]=t[s]*e;return n};function y(t,n,r){let c=null,h=0;for(const[a,m]of[[1,1],[2,1],[1,2],[3,1],[1,3],[2,3],[3,2]]){const f=s(x(t.comp,a),x(n.comp,m)),d=t.dHf*a+n.dHf*m;for(const s of w())for(let p=1;p<=4;p++){const b=i(f,x(s.comp,p));if(null===b)break;let g=null,M=0;if(!o(b)){const t=O(b);if(!k(t.unit))continue;g=u(e(t.unit)),M=t.n}if(!g&&s.id===t.id)continue;if(g&&(s.id===t.id&&g.id===n.id||s.id===n.id&&g.id===t.id))continue;const v=d-(s.dHf*p+(g?g.dHf*M:0));if(v<H.minRelease)continue;const w=Math.max(0,H.actBase-v*H.actScale);if(r<w)continue;const C=v/l(f);C>h&&(h=C,c={nA:a,nB:m,p:s.id,pk:p,q:g?g.id:null,qk:M,gain:Math.round(v),need:Math.round(w)})}}return c}const A=new Map;function S(t,e,n){const s=t+","+e+","+(n<0?0:n<100?1:n<400?2:n<900?3:n<1600?4:5);if(A.has(s))return A.get(s);const i=y(f[t],f[e],n);return A.set(s,i),i}const Z=()=>A.size,q=()=>A.clear();function N(t,n,i){const o=s(x(f[t].comp,i.nA),x(f[n].comp,i.nB));let l=x(f[i.p].comp,i.pk);return null!=i.q&&(l=s(l,x(f[i.q].comp,i.qk))),e(o)===e(l)}const E=273.15,j=0,B=1,F=2,I=["מוצק","נוזל","גז"],L=t=>.025*l(t.comp),P=(t,e)=>e<t.melt?0:e<t.boil?1:2,R=7;function T(t,e,n){const s=void 0===n?P(t,e):n,i=r(t.comp)||1;if(2===s)return i/22400*(E/Math.max(30,e+E));const o=i/(7*l(t.comp));return 1===s?.92*o:o}const D=new Set(["H","He","C","N","O","P","S","Cl"]);function U(e){const n=Object.keys(e.comp);return 1===n.length&&!D.has(n[0])&&!!t[n[0]]}function K(t,e,n){const s=void 0===n?P(t,e):n;return 2===s?.03:U(t)?.6:1===s?.14:.1}const _=t=>.088*Math.max(40,t.boil+E),z=t=>.0096*Math.max(40,t.melt+E);function W(t,e,n){void 0===n&&P(t,e);let[s,i,o]=t.col;if(e>480){const t=Math.min(1,Math.max(0,(e-450)/2200)),n=255,l=40+195*t,r=t*t*220,c=Math.min(1,(e-480)/620);s+=(n-s)*c,i+=(l-i)*c,o+=(r-o)*c}else if(e<-60){const t=Math.min(.35,(-60-e)/900);o+=(255-o)*t,s*=1-.5*t}return[Math.round(Math.max(0,Math.min(255,s))),Math.round(Math.max(0,Math.min(255,i))),Math.round(Math.max(0,Math.min(255,o)))]}const X=65535,Y=0,G=1,J=-273.15,Q=6e4,V=t=>t<J?J:t>Q?Q:t,$=.6,tt=[[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];class et{constructor(t,e,n=20,s=12345){this.w=t,this.h=e,this.n=t*e,this.ambient=n,this.sub=new Uint16Array(this.n).fill(X),this.temp=new Float32Array(this.n).fill(n),this.phase=new Uint8Array(this.n),this.form=new Uint8Array(this.n),this.prog=new Float32Array(this.n),this.sup=new Uint8Array(this.n),this.done=new Uint8Array(this.n),this.dT=new Float32Array(this.n),this.stack=new Int32Array(this.n),this.tick=0,this.s=s>>>0||1,this.radiate=.004,this.reactions=0}rnd(){let t=this.s;return t^=t<<13,t^=t>>>17,t^=t<<5,this.s=t>>>0,this.s/4294967296}rndInt(t){return Math.floor(this.rnd()*t)%t}idx(t,e){return e*this.w+t}inside(t,e){return t>=0&&e>=0&&t<this.w&&e<this.h}at(t){return this.sub[t]===X?null:d(this.sub[t])}set(t,e,n,s,i){if(!this.inside(t,e))return;const o=this.idx(t,e);if(null===n)return void this.clear(o);const l=u(n);this.sub[o]=l.id,this.temp[o]=void 0===s?this.ambient:V(s),this.phase[o]=P(l,this.temp[o]),this.form[o]=void 0===i?0===this.phase[o]?1:0:i,this.prog[o]=0}clear(t){this.sub[t]=X,this.temp[t]=this.ambient,this.prog[t]=0,this.form[t]=0,this.phase[t]=0}fill(t,e,n,s,i,o,l){for(let r=e;r<=s;r++)for(let e=t;e<=n;e++)this.set(e,r,i,o,l)}count(t){const e=u(t).id;let n=0;for(let t=0;t<this.n;t++)this.sub[t]===e&&n++;return n}den(t){const e=this.at(t);return e?T(e,this.temp[t],this.phase[t]):0}cap(t){const e=this.at(t);return e?L(e):.02}cond(t){const e=this.at(t);return e?K(e,this.temp[t],this.phase[t]):0}color(t){const e=this.at(t);return e?W(e,this.temp[t],this.phase[t]):null}energy(){let t=0;for(let e=0;e<this.n;e++){const n=this.at(e);n&&(t+=L(n)*this.temp[e]+this.prog[e])}return t}census(){const t={};for(let e=0;e<this.n;e++){const n=this.at(e);if(n)for(const e in n.comp)t[e]=(t[e]||0)+n.comp[e]}return t}step(){this.tick++,this.doReactions(),this.doPhases(),this.doConduction(),this.computeSupport(),this.doMotion()}run(t){for(let e=0;e<t;e++)this.step()}doReactions(){const{w:t,h:e}=this;for(let n=0;n<e;n++)for(let e=0;e<t;e++)this.rnd()>.3||this.tryReact(e,n)}tryReact(t,e){const n=this.idx(t,e),s=this.sub[n];if(s===X)return!1;const i=tt[this.rndInt(8)],o=t+i[0],l=e+i[1];if(!this.inside(o,l))return!1;const r=this.idx(o,l),c=this.sub[r];if(c===X)return!1;const h=(this.temp[n]+this.temp[r])/2,a=S(s,c,h);if(!a)return!1;const m=[];for(let n=e-1;n<=e+1;n++)for(let e=t-1;e<=t+1;e++)this.inside(e,n)&&m.push(this.idx(e,n));const f=[];if(s===c){for(const t of m)this.sub[t]===s&&f.length<a.nA+a.nB&&f.push(t);if(f.length<a.nA+a.nB)return!1}else{let t=0,e=0;for(const e of m)this.sub[e]===s&&t<a.nA&&(f.push(e),t++);for(const t of m)this.sub[t]===c&&e<a.nB&&(f.push(t),e++);if(t<a.nA||e<a.nB)return!1}const u=a.pk+a.qk,p=f.slice();if(u>p.length){for(const t of m){if(p.length>=u)break;this.sub[t]!==X||p.includes(t)||p.push(t)}if(p.length<u)return!1}const b=d(a.p),g=null!=a.q?d(a.q):null;let H=L(b)*a.pk+(g?L(g)*a.qk:0);const M=Math.min(4e3,a.gain*$/Math.max(.01,H)),k=V(h+M);for(let t=0;t<a.pk;t++)this.place(p[t],b,k);for(let t=0;t<a.qk;t++)this.place(p[a.pk+t],g,k);for(let t=u;t<p.length;t++)this.clear(p[t]);return this.reactions++,!0}place(t,e,n){this.sub[t]=e.id,this.temp[t]=n,this.phase[t]=P(e,n),this.form[t]=0===this.phase[t]?1:0,this.prog[t]=0}doPhases(){for(let t=0;t<this.n;t++){const e=this.at(t);if(!e)continue;let n=this.temp[t];n=this.temp[t]=V(n);const s=L(e),i=this.phase[t];let o=0,l=0,r=0,c=0;if(0===i&&n>=e.melt?(o=1,l=e.melt,r=z(e),c=1):1===i&&n<=e.melt?(o=-1,l=e.melt,r=z(e),c=0):1===i&&n>=e.boil?(o=1,l=e.boil,r=_(e),c=2):2===i&&n<=e.boil&&(o=-1,l=e.boil,r=_(e),c=1),0===o){this.release(t,s);continue}if(this.prog[t]*o<0&&this.release(t,s),this.temp[t]=l,this.prog[t]+=o*Math.abs(n-l)*s,Math.abs(this.prog[t])<r)continue;const h=Math.abs(this.prog[t])-r;this.prog[t]=0,this.phase[t]=c,this.temp[t]=V(l+o*(h/s)),0===c&&(this.form[t]=0)}}release(t,e){this.prog[t]&&(this.temp[t]=V(this.temp[t]+this.prog[t]/e),this.prog[t]=0)}doConduction(){const{w:t,h:e,temp:n,dT:s}=this;s.fill(0);for(let i=0;i<e;i++)for(let e=0;e<t;e++){const t=this.idx(e,i);if(this.sub[t]!==X)for(let o=0;o<2;o++){const l=e+(0===o?1:0),r=i+(0===o?0:1);if(!this.inside(l,r))continue;const c=this.idx(l,r);if(this.sub[c]===X)continue;const h=this.cap(t),a=this.cap(c),m=(h*n[t]+a*n[c])/(h+a),f=.25*Math.min(this.cond(t),this.cond(c));s[t]+=(m-n[t])*f,s[c]+=(m-n[c])*f}}for(let t=0;t<this.n;t++){if(this.sub[t]===X)continue;let e=n[t]+s[t];e-=(e-this.ambient)*this.radiate,n[t]=V(e)}}computeSupport(){const{w:t,h:e,sup:n,stack:s}=this;n.fill(0);let i=0;for(let o=0;o<t;o++){const t=this.idx(o,e-1);this.sub[t]!==X&&0===this.phase[t]&&(n[t]=1,s[i++]=t)}for(;i>0;){const e=s[--i],o=e%t,l=e/t|0;for(let t=0;t<4;t++){const e=o+(0===t?-1:1===t?1:0),r=l+(2===t?-1:3===t?1:0);if(!this.inside(e,r))continue;const c=this.idx(e,r);n[c]||this.sub[c]===X||0!==this.phase[c]||(n[c]=1,s[i++]=c)}}}doMotion(){const{w:t,h:e}=this;this.done.fill(0);const n=!(1&~this.tick);for(let s=e-1;s>=0;s--)for(let e=0;e<t;e++){const i=n?t-1-e:e,o=this.idx(i,s);this.sub[o]===X||this.done[o]||this.moveCell(o,i,s)}}moveCell(t,e,n){const s=this.phase[t];if(0===s){if(0===this.form[t])return!this.sup[t]&&this.sink(t,e,n,e,n+1);if(this.sink(t,e,n,e,n+1))return!0;const s=this.rnd()<.5?1:-1;return this.sink(t,e,n,e+s,n+1)||this.sink(t,e,n,e-s,n+1)}return 1===s?this.liquidStep(t,e,n):this.gasStep(t,e,n)}sink(t,e,n,s,i,o=!0){if(!this.inside(s,i))return!1;const l=this.idx(s,i);return!this.done[l]&&(this.sub[l]===X?!!o&&(this.move(t,l),!0):0!==this.phase[l]&&this.den(l)<.995*this.den(t)&&(this.swap(t,l),!0))}side(t,e,n,s){const i=this.rnd()<.5?1:-1;for(const o of[i,-i]){if(!this.inside(e+o,n))continue;const i=this.idx(e+o,n);if(!this.done[i]){if(this.sub[i]===X)return this.move(t,i),!0;if(s&&2===this.phase[i]&&1===this.phase[t])return this.swap(t,i),!0}}return!1}liquidStep(t,e,n){if(this.sink(t,e,n,e,n+1))return!0;const s=this.rnd()<.5?1:-1;if(this.sink(t,e,n,e+s,n+1))return!0;if(this.sink(t,e,n,e-s,n+1))return!0;if(n+1<this.h){const s=this.idx(e,n+1);if(this.sub[s]===X||0!==this.phase[s]&&this.den(s)<this.den(t))return!1}return this.side(t,e,n,!0)}gasStep(t,e,n){if(this.rnd()<.65&&this.sink(t,e,n,e,n+1,!1))return!0;const s=tt[this.rndInt(8)];if(this.inside(e+s[0],n+s[1])){const i=this.idx(e+s[0],n+s[1]);if(!this.done[i]&&this.sub[i]===X)return this.move(t,i),!0}const i=this.rnd()<.5?1:-1;for(const s of[i,-i]){if(!this.inside(e+s,n))continue;const i=this.idx(e+s,n);if(!this.done[i]&&2===this.phase[i]&&this.sub[i]!==this.sub[t]&&this.rnd()<.25)return this.swap(t,i),!0}return!1}move(t,e){this.sub[e]=this.sub[t],this.temp[e]=this.temp[t],this.phase[e]=this.phase[t],this.form[e]=this.form[t],this.prog[e]=this.prog[t],this.clear(t),this.done[e]=1}swap(t,e){const n=this.sub[t],s=this.temp[t],i=this.phase[t],o=this.form[t],l=this.prog[t];this.sub[t]=this.sub[e],this.temp[t]=this.temp[e],this.phase[t]=this.phase[e],this.form[t]=this.form[e],this.prog[t]=this.prog[e],this.sub[e]=n,this.temp[e]=s,this.phase[e]=i,this.form[e]=o,this.prog[e]=l,this.done[t]=1,this.done[e]=1}}!function(){"use strict";const t=document.getElementById("cv"),e=t.getContext("2d",{alpha:!1}),n=t=>document.getElementById(t);let s=null,i=0,o=0,l=4,r=null,h=!0,a="H2O",m=20,f=3,u="draw";const p=["H2O","SiO2","Fe","C","O2","N2","H2","CH4","Al","Fe2O3","Mg","Na","Cl2","S","CaCO3","Cu","Zn","Au","Hg","CO2","NaCl","NH3","CO","P4","K","Ca","Si","Sn"],b=p.concat(Object.keys(c).filter(t=>p.indexOf(t)<0)),g=new Map,H=new Int8Array(8192);for(let t=0;t<8192;t++){let e=2654435761*t>>>0;e^=e>>>13,H[t]=e%11-5}function M(t){const e=s.sub[t];if(e===X)return 724499;const n=s.temp[t],i=s.phase[t],o=n<-260?0:n>3200?138:(n+260)/25|0,l=e<<11|i<<9|o;let r=g.get(l);if(void 0===r){const t=25*o-260,n=W(d(e),t,i);let s=1;2===i&&(s=t>360?Math.min(1,.1+(t-360)/480*.9):.1),r=11+(n[0]-11)*s<<16|14+(n[1]-14)*s<<8|19+(n[2]-19)*s,g.set(l,r)}return r}function k(){const n=t.parentElement.clientWidth,c=t.parentElement.clientHeight;l=Math.max(2,Math.floor(n/112)),i=Math.max(20,Math.floor(n/l)),o=Math.max(20,Math.floor(c/l)),t.width=i,t.height=o,t.style.width=i*l+"px",t.style.height=o*l+"px",e.imageSmoothingEnabled=!1,r=e.createImageData(i,o);const h=r.data;for(let t=3;t<h.length;t+=4)h[t]=255;const a=s;s=new et(i,o,20,2147483647&Date.now()||1),a?function(t){const e=o-t.h,n=(i-t.w)/2|0;for(let l=0;l<t.h;l++)for(let r=0;r<t.w;r++){const c=r+n,h=l+e;if(c<0||h<0||c>=i||h>=o)continue;const a=t.idx(r,l),m=s.idx(c,h);s.sub[m]=t.sub[a],s.temp[m]=t.temp[a],s.phase[m]=t.phase[a],s.form[m]=t.form[a],s.prog[m]=t.prog[a]}}(a):v()}function v(){for(let t=0;t<o;t++)for(let e=0;e<i;e++){const n=Math.round(.26*o);t>=o-2?s.set(e,t,"Al2O3",20,0):t>=o-n?s.set(e,t,"SiO2",20,1):s.set(e,t,s.rnd()<.21?"O2":"N2",20)}}function w(t){"erase"!==u?s.set(t%i,t/i|0,a,m):s.clear(t)}function C(t,e){const n=f;if(n<=0)t>=0&&e>=0&&t<i&&e<o&&w(e*i+t);else for(let s=e-n;s<=e+n;s++)for(let l=t-n;l<=t+n;l++){if(l<0||s<0||l>=i||s>=o)continue;const r=l-t,c=s-e;r*r+c*c>n*n+n||w(s*i+l)}}let O=!1,x=0,y=0;function A(e){const n=t.getBoundingClientRect();return[Math.floor((e.clientX-n.left)/l),Math.floor((e.clientY-n.top)/l)]}t.addEventListener("pointerdown",e=>{t.setPointerCapture(e.pointerId);const[n,s]=A(e);"pick"!==u?(O=!0,x=n,y=s,C(n,s),e.preventDefault()):Z(n,s)}),t.addEventListener("pointermove",t=>{const[e,n]=A(t);O?(function(t,e,n,s){const i=Math.abs(n-t),o=Math.abs(s-e),l=t<n?1:-1,r=e<s?1:-1;let c=i-o;for(;C(t,e),t!==n||e!==s;){const n=2*c;n>-o&&(c-=o,t+=l),n<i&&(c+=i,e+=r)}}(x,y,e,n),x=e,y=n,t.preventDefault()):"pick"===u&&Z(e,n)});const S=()=>{O=!1};function Z(t,e){if(t<0||e<0||t>=i||e>=o)return;const l=e*i+t,r=s.at(l);n("read").textContent=r?r.name+" · "+r.key+" · "+Math.round(s.temp[l])+"° · "+I[s.phase[l]]+(0===s.phase[l]?1===s.form[l]?" גרגרי":" מלוכד":""):"ריק (ואקום)",n("read").style.opacity=1,clearTimeout(window._rd),window._rd=setTimeout(()=>{n("read").style.opacity=0},4e3)}t.addEventListener("pointerup",S),t.addEventListener("pointercancel",S);let q=0,N=0,E=performance.now();function j(){document.querySelectorAll(".chip").forEach(t=>t.classList.toggle("on",t.dataset.k===a&&"draw"===u)),n("erase").classList.toggle("on","erase"===u),n("pick").classList.toggle("on","pick"===u)}addEventListener("resize",()=>{clearTimeout(window._rt),window._rt=setTimeout(k,150)}),function(){const t=n("pal");b.forEach(e=>{const n=c[e];if(!n)return;const s=document.createElement("button");s.className="chip",s.dataset.k=e,s.innerHTML='<i style="background:rgb('+n.col.join(",")+')"></i>'+n.name,s.onclick=()=>{a=e,u="draw",j()},t.appendChild(s)}),n("brush").oninput=t=>{f=+t.target.value,n("bn").textContent=f<=0?"1 פיקסל":2*f+1+" רוחב"},n("temp").oninput=t=>{m=+t.target.value,n("tn").textContent=m+"°"},n("play").onclick=()=>{h=!h,n("play").textContent=h?"⏸":"▶"},n("erase").onclick=()=>{u="erase"===u?"draw":"erase",j()},n("pick").onclick=()=>{u="pick"===u?"draw":"pick",j()},n("new").onclick=()=>{for(let t=0;t<s.n;t++)s.clear(t);v()},n("void").onclick=()=>{for(let t=0;t<s.n;t++)s.clear(t)},j()}(),k(),requestAnimationFrame(function t(i){requestAnimationFrame(t),h&&s.step();const o=r.data;for(let t=0,e=0;t<s.n;t++,e+=4){const n=M(t);if(s.sub[t]===X){o[e]=11,o[e+1]=14,o[e+2]=19;continue}const i=2===s.phase[t]?H[8191&t]>>1:H[8191&t];let l=(n>>16)+i,r=(n>>8&255)+i,c=(255&n)+i;o[e]=l<0?0:l>255?255:l,o[e+1]=r<0?0:r>255?255:r,o[e+2]=c<0?0:c>255?255:c}e.putImageData(r,0,0),q++,N+=i-E,E=i,N>500&&(n("fps").textContent=Math.round(1e3*q/N)+" fps",q=0,N=0)})}();</script></body></html>
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>RLS — סימולטור החיים האמיתיים</title>
+<style>
+/* ===== יסוד ===== */
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;background:#080a0e;color:#e3eaf4;
+  font:14px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  user-select:none;-webkit-user-select:none;touch-action:none}
+body{display:flex;flex-direction:column}
+button{border:0;color:inherit;font:inherit;background:none}
+
+/* ===== העולם ===== */
+#stage{position:relative;flex:1;min-height:0;display:flex;align-items:flex-end;
+  justify-content:center;overflow:hidden;background:#0b0e13}
+canvas{image-rendering:pixelated;image-rendering:crisp-edges;display:block;touch-action:none}
+#read,#hint{position:absolute;left:50%;transform:translateX(-50%);
+  background:rgba(8,11,16,.86);border:1px solid #2a3444;border-radius:9px;
+  padding:6px 11px;white-space:nowrap;pointer-events:none;transition:opacity .3s}
+#read{bottom:10px;font-size:12px;color:#cfe0f5;opacity:0}
+#hint{top:12px;font-size:12px;color:#9fb3cc;line-height:1.6;white-space:normal;
+  max-width:88%;text-align:center}
+
+/* ===== לוח הבקרה ===== */
+#hud{background:#11151c;border-top:1px solid #1e2530;
+  padding:8px 9px calc(8px + env(safe-area-inset-bottom));
+  display:flex;flex-direction:column;gap:8px;position:relative;z-index:3}
+.row{display:flex;align-items:center;gap:7px}
+.btn{background:#1c2331;border:1px solid #2a3444;border-radius:10px;
+  padding:9px 11px;font-size:14px;line-height:1;white-space:nowrap}
+.btn.on{background:#2f6df0;border-color:#5b8dff;color:#fff}
+#fps{font-size:11px;color:#5a6b82;margin-inline-start:auto;flex:0 0 auto}
+#size{font-size:11px;color:#8d9bb0}
+label{font-size:11px;color:#8d9bb0;min-width:74px}
+input[type=range]{flex:1;accent-color:#2f6df0;height:26px}
+
+/* הבחירה הנוכחית — גם התצוגה וגם הידית של המגירה */
+#curBar{display:flex;align-items:center;gap:9px;background:#182031;
+  border:1px solid #2c3a52;border-radius:12px;padding:9px 11px;width:100%}
+#curBar{border-color:#2c3a52}
+#curSwatch{width:22px;height:22px;border-radius:6px;flex:0 0 auto;
+  border:1px solid rgba(0,0,0,.4)}
+#curName{font-size:15px;font-weight:600}
+#curKey{font-size:13px;color:#8fa6c4}
+#curUp{margin-inline-start:auto;font-size:11px;color:#7f93ad}
+
+/* ===== המגירה ===== */
+#scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;
+  transition:opacity .25s;z-index:4}
+#scrim.on{opacity:1;pointer-events:auto}
+#sheet{position:fixed;left:0;right:0;bottom:0;z-index:5;background:#111722;
+  border-top:1px solid #26314a;border-radius:18px 18px 0 0;
+  transform:translateY(102%);transition:transform .3s cubic-bezier(.22,1,.36,1);
+  display:flex;flex-direction:column;max-height:86%;
+  padding-bottom:calc(6px + env(safe-area-inset-bottom))}
+#sheet.open{transform:translateY(0)}
+#grip{padding:9px 0 4px;display:flex;justify-content:center;flex:0 0 auto}
+#grip b{width:38px;height:4px;border-radius:2px;background:#3a4762;display:block}
+
+/* כרטיס ההסבר */
+#info{margin:2px 12px 10px;background:#161e2c;border:1px solid #26314a;
+  border-radius:13px;padding:11px 12px;flex:0 0 auto}
+#infoHead{display:flex;align-items:center;gap:9px}
+#inSwatch{width:26px;height:26px;border-radius:7px;border:1px solid rgba(0,0,0,.4);flex:0 0 auto}
+#inName{font-size:17px;font-weight:600}
+#inKey{font-size:14px;color:#8fa6c4;margin-inline-start:2px}
+#inTags{margin-inline-start:auto;display:flex;gap:5px}
+#inTags b{font-size:10px;font-weight:600;background:#233150;color:#a9c6ee;
+  border-radius:20px;padding:3px 8px}
+#inRows{display:grid;grid-template-columns:1fr 1fr;gap:5px 14px;margin-top:10px}
+#inRows div{display:flex;justify-content:space-between;font-size:12px;
+  border-bottom:1px solid #1e2739;padding-bottom:4px}
+#inRows span{color:#8298b4}
+#inRows em{font-style:normal;color:#dbe6f5}
+
+/* לשוניות */
+#tabs{display:flex;gap:7px;padding:0 12px 9px;flex:0 0 auto}
+#tabs .btn{flex:1;text-align:center}
+
+/* גוף המגירה */
+#body{overflow-y:auto;padding:0 12px 12px;touch-action:pan-y;-webkit-overflow-scrolling:touch}
+
+/* הטבלה המחזורית */
+/* הטבלה המחזורית נקראת תמיד משמאל לימין. הדף כולו RTL, וזה הפך אותה —
+   מימן הופיע בפינה הימנית העליונה במקום השמאלית. זו לא שאלה של שפה:
+   הסדר הוא המספר האטומי, והוא לא מתהפך. */
+#ptable{display:grid;grid-template-columns:repeat(18,1fr);gap:2px;direction:ltr}
+.pt{aspect-ratio:1;border-radius:3px;display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-weight:700;position:relative}
+.pt.off{background:#151c28}
+.pt.gap{background:transparent}
+.pt.on-able{background:color-mix(in srgb,var(--c) 26%,#1b2432);
+  border:1px solid color-mix(in srgb,var(--c) 55%,#26314a);color:#f2f7ff}
+.pt.on-able.on{background:var(--c);color:#08101c;border-color:#fff;
+  box-shadow:0 0 0 2px #2f6df0,0 0 9px rgba(47,109,240,.75);z-index:1}
+.pt i{position:absolute;top:1px;inset-inline-start:2px;font-style:normal;
+  font-size:6px;font-weight:400;opacity:.75}
+#ptNote{font-size:11px;color:#6d8099;margin-top:9px;line-height:1.6}
+
+/* תרכובות */
+#comps{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:7px}
+.chip{display:flex;align-items:center;gap:7px;background:#171f2d;border:1px solid #26314a;
+  border-radius:10px;padding:9px 10px;text-align:start}
+.chip.on{background:#2f6df0;border-color:#6f9bff}
+.chip i{width:13px;height:13px;border-radius:4px;flex:0 0 auto;border:1px solid rgba(0,0,0,.4)}
+.chip span{font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip em{font-style:normal;font-size:11px;color:#8fa6c4}
+.chip.on em{color:#d6e4ff}
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <span id="read"></span>
+  <span id="hint">צייר באצבע · גרור למעלה כדי לפתוח את הטבלה המחזורית<br>
+    שנה את הטמפרטורה כדי להמיס, להקפיא או להצית</span>
+</div>
+
+<div id="hud">
+  <div class="row">
+    <button class="btn" id="play">⏸</button>
+    <button class="btn" id="erase">מחק</button>
+    <button class="btn" id="pick">בדוק</button>
+    <button class="btn" id="new">עולם חדש</button>
+    <button class="btn" id="void">רוקן</button>
+    <span id="fps"></span>
+  </div>
+  <div class="row"><label id="bn">7 פיקסלים</label><input type="range" id="brush" min="0" max="16" step="1" value="3"></div>
+  <div class="row"><label id="tn">20°</label><input type="range" id="temp" min="-260" max="3000" step="10" value="20"></div>
+  <div class="row">
+    <button id="curBar">
+      <i id="curSwatch"></i>
+      <span id="curName">מים</span><span id="curKey">H₂O</span>
+      <span id="curUp">▲ טבלה</span>
+    </button>
+  </div>
+  <div class="row"><button class="btn" id="size" style="width:100%">פיקסל</button></div>
+</div>
+
+<div id="scrim"></div>
+<div id="sheet">
+  <div id="grip"><b></b></div>
+  <div id="info">
+    <div id="infoHead">
+      <i id="inSwatch"></i>
+      <span id="inName"></span><span id="inKey"></span>
+      <span id="inTags"></span>
+    </div>
+    <div id="inRows"></div>
+  </div>
+  <div id="tabs">
+    <button class="btn on" id="tabEl">יסודות</button>
+    <button class="btn" id="tabCo">תרכובות</button>
+  </div>
+  <div id="body">
+    <div id="ptable"></div>
+    <div id="comps" style="display:none"></div>
+    <div id="ptNote">המשבצות הכהות הן מקומות בטבלה שעדיין אין בהם יסוד במשחק.
+      בחירת יסוד נותנת את הצורה שלו בטבע — חמצן הוא O₂, לא O בודד.</div>
+  </div>
+</div>
+
+<script>
+/* ===========================================================================
+   RLS — Real Life Simulator
+   ===========================================================================
+
+   קובץ אחד. אין התקנה, אין שרת, אין ספריות. פותחים אותו — והוא רץ.
+
+   הרעיון: אין כאן "חומרים" מקודדים. יש אטומים, ויש חוק אחד שמחליט מה קורה
+   כשהם נפגשים. כל השאר נגזר — מה נשרף, מה צף, מה נמס, ובאיזה צבע.
+
+   מה נמצא איפה:
+     1) יסודות              הטבלה המחזורית, עם נתונים אמיתיים
+     2) הרכב                חומר הוא רק אוסף אטומים
+     3) חומרים מוכרים       47 חומרים עם אנתלפיית היווצרות אמיתית
+     4) גזירת תכונות        לחומר שאיש לא רשם
+     5) רישום החומרים       מזהה מספרי לכל חומר
+     6) החוק היחיד          מה קורה כששני חומרים נפגשים
+     7) תכונות פיזיקליות    צפיפות, חום, מוליכות — נגזרות מהכימיה
+     8) העולם               תאים, כובד, זרימה, מצבי צבירה
+     9) הממשק               ציור, טבלה מחזורית, הסבר על כל חומר
+
+   התכונה החשובה ביותר: שימור חומר לפי בנייה. החיפוש שוקל רק חלוקות
+   ששומרות בדיוק את אותם אטומים, ולכן אי אפשר ליצור או למחוק חומר — גם אם
+   ייכתב באג מעל. במשחק הקודם זה היה מקור לחצי מהבאגים.
+   =========================================================================== */
+
+/* ============================================================================
+   RLS — Real Life Simulator · מנוע הכימיה
+   ============================================================================
+
+   העיקרון: אין "חומרים" מקודדים. יש *אטומים*, ויש חוק אחד שמחליט מה קורה
+   כשהם נפגשים. כל השאר נגזר מזה.
+
+   למה זה שונה מהמשחק הקודם:
+     קודם — לכל זוג חומרים היה חוק ידני משלו. 60 פונקציות. כל חומר חדש דרש
+             לכתוב עוד N חוקים, וכל חוק שנשכח היה באג (מים שלא עברו מחול
+             לאדמה היה בדיוק זה — אף אחד לא כתב את החוק ההוא).
+     עכשיו — תא מחזיק *אילו אטומים יש בו*. חוק אחד בודק אם סידור מחדש של
+             האטומים משחרר אנרגיה. אם כן — זה קורה. זה הכל.
+
+   התכונה החשובה ביותר: **שימור חומר לפי בנייה, לא לפי זהירות.**
+   החיפוש שוקל רק חלוקות שמשמרות בדיוק את אותם אטומים, ולכן אי אפשר
+   ליצור או למחוק חומר גם אם נכתוב באג. במשחק הישן זה היה מקור לחצי מהבאגים.
+
+   ============================================================================ */
+
+/* ---------------------------------------------------------------------------
+   1) יסודות — נתונים אמיתיים
+   Z = מספר אטומי · m = מסה אטומית · en = אלקטרושליליות (פאולינג)
+   p = מחזור (שורה בטבלה) · g = קבוצה (עמודה)
+   ve = אלקטרונים בקליפה החיצונית · col = צבע לתצוגה
+   --------------------------------------------------------------------------- */
+const EL = {
+  H : {Z:1,  m:1.008,  en:2.20, p:1, g: 1, ve:1, name:'מימן',      col:[235,240,248]},
+  He: {Z:2,  m:4.003,  en:0,    p:1, g:18, ve:2, name:'הליום',     col:[190,235,230]},
+  C : {Z:6,  m:12.011, en:2.55, p:2, g:14, ve:4, name:'פחמן',      col:[ 58, 58, 66]},
+  N : {Z:7,  m:14.007, en:3.04, p:2, g:15, ve:5, name:'חנקן',      col:[ 90,110,225]},
+  O : {Z:8,  m:15.999, en:3.44, p:2, g:16, ve:6, name:'חמצן',      col:[225, 80, 80]},
+  Na: {Z:11, m:22.990, en:0.93, p:3, g: 1, ve:1, name:'נתרן',      col:[175,100,210]},
+  Mg: {Z:12, m:24.305, en:1.31, p:3, g: 2, ve:2, name:'מגנזיום',   col:[105,195,145]},
+  Al: {Z:13, m:26.982, en:1.61, p:3, g:13, ve:3, name:'אלומיניום', col:[185,188,196]},
+  Si: {Z:14, m:28.085, en:1.90, p:3, g:14, ve:4, name:'צורן',      col:[130,140,150]},
+  P : {Z:15, m:30.974, en:2.19, p:3, g:15, ve:5, name:'זרחן',      col:[232,138, 42]},
+  S : {Z:16, m:32.06,  en:2.58, p:3, g:16, ve:6, name:'גופרית',    col:[232,210, 58]},
+  Cl: {Z:17, m:35.45,  en:3.16, p:3, g:17, ve:7, name:'כלור',      col:[ 90,200, 95]},
+  K : {Z:19, m:39.098, en:0.82, p:4, g: 1, ve:1, name:'אשלגן',     col:[143, 64,212]},
+  Ca: {Z:20, m:40.078, en:1.00, p:4, g: 2, ve:2, name:'סידן',      col:[ 78,180, 98]},
+  Fe: {Z:26, m:55.845, en:1.83, p:4, g: 8, ve:2, name:'ברזל',      col:[188,132, 90]},
+  Cu: {Z:29, m:63.546, en:1.90, p:4, g:11, ve:2, name:'נחושת',     col:[200,128, 77]},
+  Zn: {Z:30, m:65.38,  en:1.65, p:4, g:12, ve:2, name:'אבץ',       col:[168,176,184]},
+  Sn: {Z:50, m:118.71, en:1.96, p:5, g:14, ve:4, name:'בדיל',      col:[154,160,168]},
+  Au: {Z:79, m:196.97, en:2.54, p:6, g:11, ve:1, name:'זהב',       col:[245,197, 24]},
+  Hg: {Z:80, m:200.59, en:2.00, p:6, g:12, ve:2, name:'כספית',     col:[166,168,176]},
+};
+
+/* ---------------------------------------------------------------------------
+   2) הרכב — "חומר" הוא רק אוסף אטומים
+   מיוצג כאובייקט {H:2, O:1}. המפתח הקנוני "H2O" משמש לחיפוש מהיר.
+   --------------------------------------------------------------------------- */
+function key(comp){
+  return Object.keys(comp).sort().filter(e=>comp[e]>0)
+    .map(e => e + (comp[e]>1 ? comp[e] : '')).join('');
+}
+function parse(k){                    // "H2O" -> {H:2,O:1}
+  const c={}; const re=/([A-Z][a-z]?)(\d*)/g; let m;
+  while((m=re.exec(k))!==null){ if(!m[1]) continue; c[m[1]]=(c[m[1]]||0)+(m[2]?+m[2]:1); }
+  return c;
+}
+const add = (a,b) => { const o={...a}; for(const e in b) o[e]=(o[e]||0)+b[e]; return o; };
+function sub(a,b){                    // a-b, או null אם b לא נכנס בתוך a
+  const o={...a};
+  for(const e in b){ if((o[e]||0) < b[e]) return null; o[e]-=b[e]; if(!o[e]) delete o[e]; }
+  return o;
+}
+const empty = c => Object.keys(c).length===0;
+const atoms = c => Object.values(c).reduce((a,b)=>a+b,0);
+const molarMass = c => Object.keys(c).reduce((s,e)=>s+(EL[e]?EL[e].m*c[e]:0),0);
+
+/* ---------------------------------------------------------------------------
+   3) חומרים מוכרים — נתונים אמיתיים
+   dHf = אנתלפיית היווצרות בתנאי תקן, kJ/mol. זה המספר שמחליט הכל:
+         ככל שהוא נמוך יותר, החומר יציב יותר ו"רוצה" להתקיים.
+   melt/boil במעלות צלזיוס. state = מצב הצבירה בטמפ' החדר.
+   כל מה שלא נמצא כאן עדיין יכול להיווצר — התכונות שלו ייגזרו (ראה derive).
+   --------------------------------------------------------------------------- */
+const KNOWN = {
+  // יסודות במצבם הטבעי — לפי הגדרה dHf=0
+  'H2'   :{name:'מימן',          dHf:0,     melt:-259, boil:-253, col:[235,240,248], st:'gas'},
+  'O2'   :{name:'חמצן',          dHf:0,     melt:-219, boil:-183, col:[225, 80, 80], st:'gas'},
+  'N2'   :{name:'חנקן',          dHf:0,     melt:-210, boil:-196, col:[ 90,110,225], st:'gas'},
+  'Cl2'  :{name:'כלור',          dHf:0,     melt:-101, boil: -34, col:[150,215,110], st:'gas'},
+  'C'    :{name:'פחמן',          dHf:0,     melt:3550, boil:4027, col:[ 58, 58, 66], st:'solid'},
+  'S'    :{name:'גופרית',        dHf:0,     melt: 115, boil: 445, col:[232,210, 58], st:'solid'},
+  'Fe'   :{name:'ברזל',          dHf:0,     melt:1538, boil:2861, col:[188,132, 90], st:'solid'},
+  'Cu'   :{name:'נחושת',         dHf:0,     melt:1085, boil:2562, col:[200,128, 77], st:'solid'},
+  'Zn'   :{name:'אבץ',           dHf:0,     melt: 420, boil: 907, col:[168,176,184], st:'solid'},
+  'Al'   :{name:'אלומיניום',     dHf:0,     melt: 660, boil:2470, col:[185,188,196], st:'solid'},
+  'Na'   :{name:'נתרן',          dHf:0,     melt:  98, boil: 883, col:[175,100,210], st:'solid'},
+  'K'    :{name:'אשלגן',         dHf:0,     melt:  63, boil: 759, col:[143, 64,212], st:'solid'},
+  'Ca'   :{name:'סידן',          dHf:0,     melt: 842, boil:1484, col:[ 78,180, 98], st:'solid'},
+  'Mg'   :{name:'מגנזיום',       dHf:0,     melt: 650, boil:1090, col:[105,195,145], st:'solid'},
+  'Si'   :{name:'צורן',          dHf:0,     melt:1414, boil:3265, col:[130,140,150], st:'solid'},
+  'Sn'   :{name:'בדיל',          dHf:0,     melt: 232, boil:2602, col:[154,160,168], st:'solid'},
+  'Au'   :{name:'זהב',           dHf:0,     melt:1064, boil:2856, col:[245,197, 24], st:'solid'},
+  'Hg'   :{name:'כספית',         dHf:0,     melt: -39, boil: 357, col:[166,168,176], st:'liquid'},
+  'P4'   :{name:'זרחן לבן',      dHf:0,     melt:  44, boil: 280, col:[232,138, 42], st:'solid'},
+
+  // תרכובות — dHf אמיתי
+  'H2O'  :{name:'מים',           dHf:-286,  melt:   0, boil: 100, col:[ 60,120,220], st:'liquid'},
+  'CO2'  :{name:'פחמן דו-חמצני', dHf:-394,  melt: -57, boil: -78, col:[200,205,215], st:'gas'},
+  'CO'   :{name:'פחמן חד-חמצני', dHf:-111,  melt:-205, boil:-192, col:[190,195,205], st:'gas'},
+  'CH4'  :{name:'מתאן',          dHf: -75,  melt:-182, boil:-162, col:[210,225,235], st:'gas'},
+  'NH3'  :{name:'אמוניה',        dHf: -46,  melt: -78, boil: -33, col:[170,210,235], st:'gas'},
+  'NaCl' :{name:'מלח בישול',     dHf:-411,  melt: 801, boil:1465, col:[240,240,245], st:'solid'},
+  'KCl'  :{name:'אשלגן כלורי',   dHf:-437,  melt: 770, boil:1420, col:[238,232,245], st:'solid'},
+  'HCl'  :{name:'מימן כלורי',    dHf: -92,  melt:-114, boil: -85, col:[205,235,200], st:'gas'},
+  'SO2'  :{name:'גופרית דו-חמצנית',dHf:-297,melt: -72, boil: -10, col:[225,215,120], st:'gas'},
+  'SO3'  :{name:'גופרית תלת-חמצנית',dHf:-396,melt: 17, boil:  45, col:[230,220,140], st:'gas'},
+  'H2S'  :{name:'מימן גופרתי',   dHf: -21,  melt: -82, boil: -60, col:[220,215,150], st:'gas'},
+  'NO'   :{name:'תחמוצת חנקן',   dHf:  90,  melt:-164, boil:-152, col:[160,170,215], st:'gas'},
+  'NO2'  :{name:'דו-תחמוצת חנקן',dHf:  33,  melt: -11, boil:  21, col:[200,120, 60], st:'gas'},
+  'Fe2O3':{name:'חלודה',         dHf:-824,  melt:1565, boil:2861, col:[150, 70, 40], st:'solid'},
+  'FeS'  :{name:'גופרת ברזל',    dHf:-100,  melt:1194, boil:2861, col:[120, 95, 70], st:'solid'},
+  'CuO'  :{name:'תחמוצת נחושת',  dHf:-157,  melt:1326, boil:2000, col:[ 60, 55, 60], st:'solid'},
+  'ZnO'  :{name:'תחמוצת אבץ',    dHf:-348,  melt:1974, boil:2360, col:[235,235,230], st:'solid'},
+  'Al2O3':{name:'תחמוצת אלומיניום',dHf:-1676,melt:2072,boil:2977, col:[225,225,232], st:'solid'},
+  'MgO'  :{name:'מגנזיה',        dHf:-601,  melt:2852, boil:3600, col:[240,240,238], st:'solid'},
+  'CaO'  :{name:'סיד חי',        dHf:-635,  melt:2613, boil:2850, col:[238,235,225], st:'solid'},
+  'SiO2' :{name:'צורן דו-חמצני', dHf:-911,  melt:1670, boil:2950, col:[224,196,120], st:'solid'},
+  'NaOH' :{name:'סודה קאוסטית',  dHf:-425,  melt: 318, boil:1388, col:[235,225,240], st:'solid'},
+  'CaCO3':{name:'אבן גיר',       dHf:-1207, melt: 825, boil: 825, col:[228,222,205], st:'solid'},
+  'H2O2' :{name:'מי חמצן',       dHf:-188,  melt:  -1, boil: 150, col:[190,225,240], st:'liquid'},
+  'NaH'  :{name:'נתרן הידריד',   dHf: -56,  melt: 638, boil: 638, col:[200,170,220], st:'solid'},
+  /* שני אלה נוספו אחרי שהתברר שברזל ונתרן לא נשרפים כמו שצריך בלעדיהם.
+     ברזל בוער ייצר FeO *מנוחש* עם -35 kJ במקום -272 האמיתיים, ונתרן פשוט
+     לא הגיב בכלל כי לא היה לו לאן. שני הערכים אומתו מול מקורות. */
+  'FeO'  :{name:'תחמוצת ברזל',   dHf:-272,  melt:1377, boil:3414, col:[ 44, 42, 46], st:'solid'},
+  'Na2O' :{name:'תחמוצת נתרן',   dHf:-414,  melt:1132, boil:1950, col:[238,236,242], st:'solid'},
+};
+
+/* היסודות שבטבע אינם אטום בודד. בוחרים "חמצן" בטבלה — מקבלים O₂, לא O. */
+const natural = sym => ({H:'H2', N:'N2', O:'O2', Cl:'Cl2', P:'P4'}[sym] || sym);
+
+/* ---------------------------------------------------------------------------
+   4) גזירת תכונות — לחומר שאיש לא רשם
+   זה מה שמאפשר לתרכובות *חדשות* להופיע בלי שנכתוב להן שורה.
+   הערכות גסות, ומסומנות ככאלה: derived=true.
+   --------------------------------------------------------------------------- */
+function derive(comp){
+  const els = Object.keys(comp);
+  const mm  = molarMass(comp);
+  // ככל שהפרש האלקטרושליליות גדול יותר הקשר יוני וחזק יותר → נקודת היתוך גבוהה
+  let mx=0, mn=9;
+  for(const e of els){ const en=EL[e]?EL[e].en:2; if(en>mx)mx=en; if(en<mn)mn=en; }
+  const ionic = Math.max(0, mx-mn);
+  const melt  = Math.round(-100 + ionic*420 + Math.min(mm,200)*1.6);
+  const boil  = Math.round(melt + 180 + ionic*260);
+  // צבע = ממוצע משוקלל של צבעי היסודות
+  const col=[0,0,0]; let n=0;
+  for(const e of els){ const c=EL[e]?EL[e].col:[128,128,128];
+    for(let k=0;k<3;k++) col[k]+=c[k]*comp[e]; n+=comp[e]; }
+  return { name:key(comp), dHf:estimateDHf(comp), melt, boil,
+           col: col.map(v=>Math.round(v/Math.max(1,n))),
+           st: melt>25 ? 'solid' : boil>25 ? 'liquid' : 'gas',
+           derived:true };
+}
+/* הערכת יציבות לתרכובת לא מוכרת. הפרש אלקטרושליליות גדול = קשר חזק = יציב.
+   שמרני בכוונה: תרכובת מנוחשת לא תנצח תרכובת אמיתית שנמדדה במעבדה. */
+function estimateDHf(comp){
+  const els=Object.keys(comp); if(els.length<2) return 0;
+  let mx=0, mn=9;
+  for(const e of els){ const en=EL[e]?EL[e].en:2; if(en>mx)mx=en; if(en<mn)mn=en; }
+  // מתכות אצילות לא מתחמצנות. זהב חשוף לחמצן כבר אלפי שנים ועדיין נוצץ —
+  // בלי החוק הזה המנוע המציא "AuO" והחליט שהוא יציב.
+  const noble = els.some(e => e==='Au' || e==='Hg');
+  if(noble) return +40;                      // חיובי = לא יציב, לא ייווצר מעצמו
+  // שמרני בכוונה: ניחוש לא אמור לנצח מדידה אמיתית מהמעבדה.
+  return -Math.round((mx-mn) * 22 * atoms(comp) * 0.5);
+}
+
+/* ---------------------------------------------------------------------------
+   5) רישום החומרים — כל חומר מקבל מזהה מספרי לשימוש ברשת
+   --------------------------------------------------------------------------- */
+const byKey = new Map(), list = [];
+
+/* גשר בין הנוסחה כפי שכותבים אותה לבין המפתח שהמנוע מייצר.
+   ---------------------------------------------------------------------------
+   key() ממיין את היסודות לפי הא"ב, ולכן גופרית דו-חמצנית יוצאת ממנו "O2S"
+   ולא "SO2". הטבלה למעלה כתובה בנוסחאות אמיתיות, וכך צריך להיות — אבל בלי
+   הגשר הזה, כשהחיפוש הרכיב את הנוסחה מהאטומים הוא קיבל "O2S", לא מצא אותה
+   בטבלה, והמציא *חומר כפול* עם אנתלפיה מנוחשת במקום הערך שנמדד במעבדה.
+
+   זה נגע ל-11 מתוך 44 החומרים, ובהם מלח בישול, אמוניה, חול ואבן גיר. בפועל
+   זה אמר שגופרית לא נשרפת, כי -297 kJ האמיתיים של SO₂ מעולם לא הגיעו
+   לחישוב. הבאג התגלה רק כשהממשק התחיל להציג "יציב" ליד גופרית. */
+const CANON = {};
+for(const k in KNOWN) CANON[key(parse(k))] = k;
+
+function sub_(k){                        // מחזיר (ויוצר אם צריך) חומר
+  const canon = CANON[key(parse(k))] || k;      // "O2S" ו-"SO2" הם אותו חומר
+  if(byKey.has(canon)) return byKey.get(canon);
+  const comp = parse(canon);
+  const info = KNOWN[canon] ? {...KNOWN[canon]} : derive(comp);
+  const rec = { id:list.length, key:canon, comp, ...info };
+  list.push(rec); byKey.set(canon,rec);
+  return rec;
+}
+const subById = id => list[id];
+const allSubs = () => list.slice();
+/* הרשימה הקבועה שנטענה מהטבלה. חשוב: list גדל תוך כדי ריצה (כל שארית
+   סבירה נרשמת), ולכן סריקה של כל הצמדים חייבת לרוץ על *הבסיס* ולא על
+   הרשימה המתפתחת — אחרת היא גדלה בזמן שסורקים אותה. */
+let BASE=null;
+const baseSubs = () => (BASE || (BASE = list.slice()));
+for(const k in KNOWN) sub_(k);                  // לטעון מראש את המוכרים
+
+/* ---------------------------------------------------------------------------
+   6) החוק היחיד
+   ---------------------------------------------------------------------------
+   בטבע, מה שמחליט אם תגובה קורית זה אנרגיה: אם לתוצרים אנרגיה נמוכה יותר
+   מלמקור, התגובה משחררת אנרגיה ו"רוצה" לקרות. הטמפרטורה נותנת את הדחיפה
+   הראשונית (אנרגיית שפעול).
+
+   החיפוש שוקל אך ורק חלוקות ששומרות *בדיוק* את אותם אטומים — ולכן שימור
+   החומר מובטח מהמבנה, לא מזהירות בכתיבה.
+   --------------------------------------------------------------------------- */
+const R = {
+  minRelease: 60,      // כמה kJ/mol צריך להשתחרר כדי שנטרח בכלל
+  actScale:   0.40,    // ככל שהתגובה משחררת יותר, קל יותר להצית אותה
+  actBase:    520,     // מחסום הפתיחה הבסיסי במעלות
+};
+
+/* יסודות שבטבע לא קיימים כאטום בודד — הם תמיד זוגות. אטום חמצן בודד הוא
+   לא "חומר", הוא רדיקל חופשי, ואסור שהמנוע ישאיר אותו כתוצר. */
+const DIATOMIC = new Set(['H','O','N','Cl']);
+function plausible(comp){
+  const els=Object.keys(comp);
+  if(els.length===0) return false;
+  if(els.length===1){                       // יסוד טהור
+    const e=els[0];
+    if(DIATOMIC.has(e)) return comp[e]===2;    // בדיוק זוג: O2 כן, O לא, O4 לא קיים
+    return comp[e]===1;                        // מוצק טהור — יחידה אחת
+  }
+  /* חומר שנמדד במעבדה תקף תמיד, גם אם הוא שובר את כלל האוקטט. גופרית
+     ב-SO₂ נותנת ארבעה אלקטרונים ולא שניים, ולכן כלל האצבע שלמטה פוסל
+     אותה — ובפועל זה אמר שגופרית לא נשרפת. הבדיקה כאן חייבת לעבור דרך
+     אותו מפתח קנוני כמו כל השאר, אחרת היא מחפשת "O2S" ולא מוצאת "SO2". */
+  if(CANON[key(comp)]) return true;
+  if(els.length>3) return false;
+  for(const e of els) if(comp[e]>6) return false;
+  /* תרכובת שהמנוע *ניחש* חייבת להסתדר לפי ערכיות. בלי החוק הזה נרשמו
+     19,000 חומרים כמו HN3 ו-H2N שאינם קיימים, וזה גם ניפח את הזיכרון. */
+  if(els.length===2){
+    const [a,b]=els, A=EL[a], B=EL[b];
+    if(!A||!B) return false;
+    // מי נותן אלקטרונים ומי לוקח — לפי אלקטרושליליות
+    const [give,take] = A.en<B.en ? [a,b] : [b,a];
+    const gv = EL[give].ve <= 4 ? EL[give].ve : 8-EL[give].ve;   // כמה נותן
+    const tk = 8 - EL[take].ve;                                   // כמה צריך
+    if(gv<=0 || tk<=0) return false;
+    return comp[give]*gv === comp[take]*tk;    // חייב להתאזן בדיוק
+  }
+  return false;                              // שלישיות רק אם הן מוכרות
+}
+/* רשימת המועמדים נבנית *פעם אחת*. קודם היא נבנתה תוך כדי החיפוש, וכל שארית
+   יצרה חומר חדש שהפך בעצמו למועמד — מה שגרם לרשימה לגדול בלי סוף והתקיעה
+   את המנוע. עכשיו הרשימה קבועה, ולכן החיפוש חסום וצפוי. */
+let POOL=null;
+function pool(){
+  if(POOL) return POOL;
+  POOL = list.filter(s=>plausible(s.comp));
+  return POOL;
+}
+const gcd=(a,b)=>b?gcd(b,a%b):a;
+/* מצמצם נוסחה ליחס הפשוט ביותר: H4O2 → H2O פי 2. ככה מזהים שהשארית היא
+   בעצם כמה עותקים של חומר אמיתי, ולא איזו מפלצת כמו "H4O2". */
+function reduce(comp){
+  const v=Object.values(comp); let g=v[0];
+  for(const x of v) g=gcd(g,x);
+  if(g<2) return {unit:comp, n:1};
+  const u={}; for(const e in comp) u[e]=comp[e]/g;
+  return {unit:u, n:g};
+}
+const mul=(comp,k)=>{ const o={}; for(const e in comp) o[e]=comp[e]*k; return o; };
+
+/* חיפוש התגובה.
+   כאן נמצא הלב: תגובות אמיתיות כמעט אף פעם אינן ביחס 1:1. שריפת מימן היא
+   2H₂ + O₂ → 2H₂O, תרמיט הוא Fe₂O₃ + 2Al, מלח הוא 2Na + Cl₂. מודל של
+   "תא אחד + תא אחד" פשוט לא מסוגל לבטא את זה, ולכן כל התגובות המפורסמות
+   נכשלו. עכשיו החיפוש בודק גם *כמויות*: כמה תאים מכל צד, וכמה תאים תוצר.
+   שכבת הרשת תחליט אחר כך אם באמת יש מספיק תאים שכנים. */
+function search(A, B, T){
+  let best=null, bestGain=0;
+  /* היחסים שהחיפוש מנסה. בלי 4:3 אלומיניום לא נשרף כלל — 4Al + 3O₂ → 2Al₂O₃
+     פשוט לא היה ניתן לביטוי, וזו אחת התגובות המוכרות בעולם. */
+  for(const [nA,nB] of [[1,1],[2,1],[1,2],[3,1],[1,3],[2,3],[3,2],[4,1],[1,4],[4,3],[3,4]]){
+    const total = add(mul(A.comp,nA), mul(B.comp,nB));
+    const before = A.dHf*nA + B.dHf*nB;
+    for(const P of pool()){
+      for(let k=1;k<=4;k++){
+        const taken = mul(P.comp,k);
+        const rest = sub(total, taken);
+        if(rest===null) break;                       // כבר לא נכנס, אין טעם להמשיך
+        let Q=null, m=0;
+        if(!empty(rest)){
+          const r=reduce(rest);
+          if(!plausible(r.unit)) continue;
+          Q=sub_(key(r.unit)); m=r.n;
+        }
+        // אותה תוצאה כמו ההתחלה — לא תגובה
+        if(!Q && P.id===A.id) continue;
+        if(Q && ((P.id===A.id&&Q.id===B.id)||(P.id===B.id&&Q.id===A.id))) continue;
+        const after = P.dHf*k + (Q?Q.dHf*m:0);
+        const gain = before - after;
+        if(gain < R.minRelease) continue;
+        const need = Math.max(0, R.actBase - gain*R.actScale);
+        if(T < need) continue;
+        // מנרמלים לפי מספר האטומים, אחרת תגובה גדולה תמיד "מנצחת" סתם בגלל גודלה
+        const score = gain / atoms(total);
+        if(score > bestGain){
+          bestGain = score;
+          best = {nA, nB, p:P.id, pk:k, q:Q?Q.id:null, qk:m, gain:Math.round(gain), need:Math.round(need)};
+        }
+      }
+    }
+  }
+  return best;
+}
+
+const memo = new Map();                       // ← זה מה שהופך את זה למהיר
+/* המפתח הוא *מספר*, לא מחרוזת. זה נראה כמו פרט טכני, אבל שכבת הרשת קוראת
+   לפונקציה הזו עשרות אלפי פעמים בשנייה, ובניית מחרוזת בכל קריאה הייתה
+   הדבר היקר ביותר בכל המנוע — יקר יותר מהכימיה עצמה. */
+const MAXSUB = 2048;
+function reaction(aId, bId, T){
+  const band = T<0 ? 0 : T<100 ? 1 : T<400 ? 2 : T<900 ? 3 : T<1600 ? 4 : 5;
+  const mk = (aId * MAXSUB + bId) * 8 + band;
+  const hit = memo.get(mk);
+  if(hit !== undefined) return hit;
+  const r = search(list[aId], list[bId], T);
+  memo.set(mk, r);
+  return r;
+}
+const memoSize = () => memo.size;
+const clearMemo = () => memo.clear();
+
+/* בדיקת שפיות שאפשר להריץ מכל מקום: האם התגובה שמרה על האטומים? */
+/* שימור חומר — עכשיו כולל את הכמויות. זו הבדיקה שמוודאת שהחוק לא יכול
+   להמציא או למחוק אטומים, לא משנה איזה באג נכתוב מעליו. */
+function conserves(aId,bId,r){
+  const t1 = add(mul(list[aId].comp, r.nA), mul(list[bId].comp, r.nB));
+  let t2 = mul(list[r.p].comp, r.pk);
+  if(r.q!=null) t2 = add(t2, mul(list[r.q].comp, r.qk));
+  return key(t1)===key(t2);
+}
+
+
+/* ============================================================================
+   RLS · תכונות פיזיקליות
+   ============================================================================
+
+   אף מספר כאן לא נכתב ידנית לחומר מסוים.
+
+   ב-chem.js יש רק שלושה סוגי נתונים אמיתיים: אילו אטומים יש בחומר, כמה הוא
+   יציב (dHf), ובאיזו טמפרטורה הוא נמס ורותח. הקובץ הזה לוקח את אלה ומוציא
+   מהם את כל שאר הפיזיקה — צפיפות, קיבול חום, מוליכות, חום כמוס.
+
+   למה זה חשוב: אם היינו כותבים "צפיפות של ברזל = 7.87", אז כל חומר חדש
+   שהמנוע ימציא לבד היה נשאר בלי צפיפות. כאן חומר שנולד תוך כדי משחק מקבל
+   את התכונות שלו מיד, מהאטומים שלו.
+
+   הנוסחאות הן חוקי אצבע אמיתיים מהפיזיקה — לא המצאות שלנו. כל אחת מסומנת
+   בשם שלה כדי שיהיה אפשר לבדוק אותה.
+   ============================================================================ */
+
+const K0 = 273.15;                    // אפס מוחלט במעלות צלזיוס
+const SOLID = 0, LIQUID = 1, GAS = 2;
+const STATE_NAME = ['מוצק', 'נוזל', 'גז'];
+
+/* --- קיבול חום ---------------------------------------------------------------
+   חוק דולונג–פטי (1819): מול של מוצק סופג בערך 25 ג'אול לכל מעלה, לכל אטום
+   בנוסחה. לכן מים (3 אטומים) מתחממים לאט יותר מברזל (אטום אחד) — וזו בדיוק
+   הסיבה שהים לוקח כל הקיץ להתחמם.
+   יחידות: kJ לכל מעלה, לכל תא.                                              */
+const heatCap = s => 0.025 * atoms(s.comp);
+
+/* --- מצב צבירה ---------------------------------------------------------------
+   אין "קרח", "מים" ו"אדים" כשלושה חומרים. יש H₂O אחד, והמצב נגזר מהטמפרטורה.
+   זה מבטל בבת אחת משפחה שלמה של באגים מהמשחק הישן: חימום שהמיר קרח לחומר
+   אחר, ובדרך איבד את המים.
+   כשנקודת הרתיחה נמוכה מנקודת ההיתוך (CO₂!) המצב הנוזלי פשוט לא קיים,
+   והחומר עובר היישר ממוצק לגז — המראה. גם זה יוצא מעצמו.               */
+const stateOf = (s, T) => T < s.melt ? SOLID : T < s.boil ? LIQUID : GAS;
+
+/* --- צפיפות ------------------------------------------------------------------
+   גזים: חוק הגזים האידאליים. מול תופס 22.4 ליטר, ולכן הצפיפות היא רק המסה
+   המולרית — ולכן CO₂ שוקע ומימן עולה. גז חם מתפשט ונעשה קל יותר, וזה מה
+   שמייצר קונבקציה: אוויר חם עולה בלי שנכתוב "אוויר חם עולה".
+
+   מוצקים ונוזלים: אטום תופס בערך 7 סמ״ק למול, לא משנה איזה אטום — עובדה
+   מפתיעה אבל נכונה בקירוב. ברזל יוצא 8.0 (באמת 7.87), מים 0.86 (באמת 1.0).  */
+const MOLAR_VOL = 7.0;
+function density(s, T, ph) {
+  const st = ph === undefined ? stateOf(s, T) : ph;
+  const M = molarMass(s.comp) || 1;
+  if (st === GAS) return (M / 22400) * (K0 / Math.max(30, T + K0));
+  const d = M / (MOLAR_VOL * atoms(s.comp));
+  return st === LIQUID ? d * 0.92 : d;        // נוזל מתפשט מעט לעומת המוצק
+}
+
+/* --- מוליכות חום -------------------------------------------------------------
+   מתכות מוליכות פי כמה מכל השאר, כי האלקטרונים בהן חופשיים לנוע. מתכת מזוהה
+   כאן כיסוד טהור שאינו אל-מתכת — בלי רשימה ידנית לכל מתכת.
+   גז מוליך גרוע: האטומים בו רחוקים זה מזה.                                 */
+const NONMETAL = new Set(['H', 'He', 'C', 'N', 'O', 'P', 'S', 'Cl']);
+function isMetal(s) {
+  const e = Object.keys(s.comp);
+  return e.length === 1 && !NONMETAL.has(e[0]) && !!EL[e[0]];
+}
+function conductivity(s, T, ph) {
+  const st = ph === undefined ? stateOf(s, T) : ph;
+  if (st === GAS) return 0.03;
+  if (isMetal(s)) return 0.60;
+  return st === LIQUID ? 0.14 : 0.10;
+}
+
+/* --- חום כמוס ----------------------------------------------------------------
+   למה סיר מים רותח נשאר על 100 מעלות במקום להמשיך להתחמם? כי כל האנרגיה
+   הולכת לניתוק הקשרים, לא להעלאת הטמפרטורה. בלי זה כל נוזל היה מתאדה
+   בהבזק אחד ברגע שנגע ב-100.
+
+   כלל טרוטון (1884): אנרגיית האידוי היא בערך 88 ג'אול למעלה, כפול טמפרטורת
+   הרתיחה במעלות קלווין. כלל ריצ'רדס עושה אותו דבר להיתוך עם 9.6.          */
+const latentVap = s => 0.088 * Math.max(40, s.boil + K0);
+const latentFus = s => 0.0096 * Math.max(40, s.melt + K0);
+
+/* --- צבע ---------------------------------------------------------------------
+   הצבע הבסיסי מגיע מהחומר. מעל 500 מעלות חומר זוהר — קודם אדום, אחר כך כתום,
+   ובסוף לבן. זו קרינת גוף שחור, וזה למה מתכת לוהטת נראית אותו דבר בכל מקום
+   בעולם בלי קשר לצבע שלה בקור.
+
+   כאן מוחזר הצבע *האמיתי* של החומר. אוויר קר הוא שקוף כמעט לגמרי, אבל זה
+   כבר עניין של תצוגה ולא של חומר — הממשק מחליט כמה שקוף לצייר גז.        */
+function color(s, T, ph) {
+  const st = ph === undefined ? stateOf(s, T) : ph;
+  let [r, g, b] = s.col;
+  if (T > 480) {
+    /* צבע הזוהר עצמו תלוי רק בטמפרטורה: אדום עמום → כתום → צהוב → לבן.
+       זו הסיבה שנפחים מודדים חום לפי הצבע, ולמה גחלת וברזל מלובן באותה
+       טמפרטורה נראים אותו דבר. */
+    const f = Math.min(1, Math.max(0, (T - 450) / 2200));
+    const gr = 255, gg = 40 + f * 195, gb = f * f * 220;
+    const w = Math.min(1, (T - 480) / 620);      // כמה הזוהר מכסה את צבע החומר
+    r += (gr - r) * w; g += (gg - g) * w; b += (gb - b) * w;
+  } else if (T < -60) {
+    const f = Math.min(0.35, (-60 - T) / 900);   // קור נותן גוון כחלחל
+    b = b + (255 - b) * f; r *= (1 - f * 0.5);
+  }
+  return [Math.round(Math.max(0, Math.min(255, r))),
+          Math.round(Math.max(0, Math.min(255, g))),
+          Math.round(Math.max(0, Math.min(255, b)))];
+}
+
+/* ---------------------------------------------------------------------------
+   טבלת תכונות — מחושבת פעם אחת לכל חומר
+   ---------------------------------------------------------------------------
+   כל הפונקציות למעלה קוראות מחדש את ההרכב של החומר בכל קריאה, ועוברות על
+   אובייקט. זה בסדר כשקוראים להן פעם בשנייה — אבל לולאת המשחק קוראת להן
+   מיליוני פעמים בשנייה, וכל קריאה מקצה מערך חדש בזיכרון.
+
+   ההרכב של חומר לעולם לא משתנה, ולכן אפשר לחשב הכל פעם אחת. זה מה שמאפשר
+   לרדת לפיקסלים קטנים באמת: אותו עולם, פי כמה יותר תאים, באותו זמן.
+   --------------------------------------------------------------------------- */
+const PROP = [];
+function prop(id){
+  let p = PROP[id];
+  if(p) return p;
+  const s = subById(id);
+  const n = atoms(s.comp) || 1, M = molarMass(s.comp) || 1;
+  const metal = isMetal(s);
+  p = {
+    cap:   0.025 * n,
+    melt:  s.melt, boil: s.boil,
+    lFus:  latentFus(s), lVap: latentVap(s),
+    dSol:  M / (MOLAR_VOL * n),
+    dLiq:  M / (MOLAR_VOL * n) * 0.92,
+    dGas:  (M / 22400) * K0,          // מחלקים בטמפרטורה בקלווין בזמן אמת
+    cSol:  metal ? 0.60 : 0.10,
+    cLiq:  metal ? 0.60 : 0.14,
+    cGas:  0.03,
+  };
+  PROP[id] = p;
+  return p;
+}
+const densityOf = (p, T, ph) =>
+  ph === GAS ? p.dGas / Math.max(30, T + K0) : ph === LIQUID ? p.dLiq : p.dSol;
+const conductOf = (p, ph) =>
+  ph === GAS ? p.cGas : ph === LIQUID ? p.cLiq : p.cSol;
+
+
+/* ============================================================================
+   RLS · שכבת הרשת
+   ============================================================================
+
+   העולם הוא רשת תאים. תא מחזיק *חומר אחד* — כלומר קבוצת אטומים — טמפרטורה,
+   ומצב צבירה. אין "חול", "מים", "קרח" ו"אדים" כארבעה דברים שונים: יש SiO₂
+   ויש H₂O, והשאר נגזר.
+
+   שלושה דברים מבדילים את הקובץ הזה מהמנוע של המשחק הישן:
+
+   1. תנועה נקבעת לפי צפיפות, לא לפי סוג. לא כתוב בשום מקום "שמן צף על מים"
+      — זה יוצא מזה שהצפיפות שלו נמוכה יותר. כל חומר שייוולד תוך כדי משחק
+      יידע לצוף או לשקוע נכון מהרגע הראשון.
+
+   2. מצב הצבירה נגזר מנקודות ההיתוך והרתיחה האמיתיות, דרך שער של חום כמוס.
+      לכן מים רותחים נעצרים על 100 מעלות במקום להתאדות בהבזק.
+
+   3. תגובות נקראות ממנוע הכימיה, כולל היחסים. 2H₂ + O₂ → 2H₂O באמת דורש
+      שלושה תאים ומייצר שניים. תא אחד נעלם — וזה נכון, כי נפח לא נשמר.
+      מה שכן נשמר, תמיד, זה האטומים.
+
+   ה"צורה" (form) היא השכבה הנוספת: אותו חומר בדיוק יכול להיות גרגרי או
+   מלוכד. SiO₂ גרגרי הוא חול, SiO₂ מלוכד הוא זכוכית. אף אחד לא כתב חוק
+   שהופך חול לזכוכית — כשחול נמס ומתקרר הוא פשוט מתמצק כגוש. זה מה שקורה
+   בתנור אמיתי.
+   ============================================================================ */
+
+const EMPTY = 65535;                  // ריק = ואקום, לא "אוויר"
+const BULK = 0, GRAIN = 1;            // צורה: גוש מלוכד / גרגרים
+const ABS_ZERO = -273.15;
+const MAX_TEMP = 60000;
+/* טמפרטורה חסומה — הגדרה אחת, במקום אחד. היו כאן שלושה עותקים של אותה
+   בדיקה, ואחד מהם לא היה ניתן להגעה בכלל: קלקלנו אותו בכוונה ואף בדיקה לא
+   הרגישה, כי עותק אחר תפס במקומו. שלושה עותקים של חוק אחד זה שלושה מקומות
+   שאפשר לשכוח לתקן. */
+const clampT = t => t < ABS_ZERO ? ABS_ZERO : t > MAX_TEMP ? MAX_TEMP : t;
+
+/* כמה מהאנרגיה של תגובה נשארת כחום בתאים. השאר יוצא כאור וקרינה — ולכן
+   להבה אמיתית מגיעה ל-2000 ולא ל-4000 מעלות. */
+const HEAT_YIELD = 0.60;
+const DX = [-1, 0, 1, -1, 1, -1, 0, 1];
+const DY = [-1, -1, -1, 0, 0, 1, 1, 1];
+
+class World {
+  constructor(w, h, ambient = 20, seed = 12345) {
+    this.w = w; this.h = h; this.n = w * h;
+    this.ambient = ambient;
+    this.sub   = new Uint16Array(this.n).fill(EMPTY);   // איזה חומר
+    this.temp  = new Float32Array(this.n).fill(ambient);
+    this.phase = new Uint8Array(this.n);                // מוצק/נוזל/גז
+    this.form  = new Uint8Array(this.n);                // גוש/גרגר
+    this.prog  = new Float32Array(this.n);              // התקדמות בשינוי מצב
+    this.sup   = new Uint8Array(this.n);                // נתמך על ידי הקרקע
+    this.done  = new Uint8Array(this.n);                // כבר זז השנייה הזו
+    this.dT    = new Float32Array(this.n);
+    this.stack = new Int32Array(this.n);
+    this.tick  = 0;
+    this.s     = seed >>> 0 || 1;
+    /* קצב איבוד החום לסביבה. אפס = תיבה אטומה לגמרי, שימושי כשרוצים למדוד
+       אנרגיה בלי שהקרינה תבלבל את המספרים. */
+    this.radiate = 0.004;
+    this.reactions = 0;                                 // מונה לצורכי בדיקה
+    /* חוצצים קבועים לחיפוש תגובה. הם היו מערכים חדשים בכל ניסיון, וניסיון
+       קורה עשרות אלפי פעמים בשנייה — כלומר עשרות אלפי הקצאות זיכרון שאיש
+       לא צריך. עכשיו זה אותם שלושה מערכים לתמיד. */
+    this.bBox = new Int32Array(9);
+    this.bUse = new Int32Array(16);
+    this.bSlot = new Int32Array(16);
+  }
+
+  /* מספרים אקראיים עם זרע — כדי שבדיקה שנכשלה תיכשל שוב באותה צורה */
+  rnd() { let x = this.s; x ^= x << 13; x ^= x >>> 17; x ^= x << 5; this.s = x >>> 0; return this.s / 4294967296; }
+  rndInt(k) { return Math.floor(this.rnd() * k) % k; }
+
+  idx(x, y) { return y * this.w + x; }
+  inside(x, y) { return x >= 0 && y >= 0 && x < this.w && y < this.h; }
+  at(i) { return this.sub[i] === EMPTY ? null : subById(this.sub[i]); }
+
+  /* ---------- כתיבה לעולם ---------- */
+  set(x, y, keyOrNull, T, form) {
+    if (!this.inside(x, y)) return;
+    const i = this.idx(x, y);
+    if (keyOrNull === null) { this.clear(i); return; }
+    const s = sub_(keyOrNull);
+    this.sub[i] = s.id;
+    this.temp[i] = T === undefined ? this.ambient : clampT(T);
+    this.phase[i] = stateOf(s, this.temp[i]);
+    this.form[i] = form === undefined ? (this.phase[i] === SOLID ? GRAIN : BULK) : form;
+    this.prog[i] = 0;
+  }
+  clear(i) { this.sub[i] = EMPTY; this.temp[i] = this.ambient; this.prog[i] = 0; this.form[i] = 0; this.phase[i] = 0; }
+  fill(x0, y0, x1, y1, key, T, form) {
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) this.set(x, y, key, T, form);
+  }
+  count(key) {
+    const id = sub_(key).id; let n = 0;
+    for (let i = 0; i < this.n; i++) if (this.sub[i] === id) n++;
+    return n;
+  }
+
+  /* ---------- תכונות של תא ---------- */
+  den(i)  { return densityOf(prop(this.sub[i]), this.temp[i], this.phase[i]); }
+  cap(i)  { return prop(this.sub[i]).cap; }
+  cond(i) { return conductOf(prop(this.sub[i]), this.phase[i]); }
+  color(i) { const s = this.at(i); return s ? color(s, this.temp[i], this.phase[i]) : null; }
+
+  /* ---------- ספירת אטומים בכל העולם ----------
+     הבדיקה החשובה ביותר במשחק. אם המספר הזה משתנה בלי שנגענו בעולם — יש באג
+     שמוחק או ממציא חומר. במשחק הישן זה קרה שוב ושוב.                      */
+  /* סך האנרגיה התרמית בעולם — כולל מה שנצבר לשינוי מצב שעוד לא הושלם.
+     משמש לבדיקה שחום לא נעלם בשקט. */
+  energy() {
+    let e = 0;
+    for (let i = 0; i < this.n; i++) {
+      const s = this.at(i); if (!s) continue;
+      e += heatCap(s) * this.temp[i] + this.prog[i];
+    }
+    return e;
+  }
+
+  census() {
+    const c = {};
+    for (let i = 0; i < this.n; i++) {
+      const s = this.at(i); if (!s) continue;
+      for (const e in s.comp) c[e] = (c[e] || 0) + s.comp[e];
+    }
+    return c;
+  }
+
+  /* ======================================================================
+     צעד זמן
+     ====================================================================== */
+  step() {
+    this.tick++;
+    this.doReactions();
+    this.doPhases();
+    this.doConduction();
+    this.computeSupport();
+    this.doMotion();
+  }
+  run(n) { for (let k = 0; k < n; k++) this.step(); }
+
+  /* ----------------------------------------------------------------------
+     1) תגובות — החוק היחיד, מופעל על שכנים
+     ----------------------------------------------------------------------
+     המנוע אומר "2 תאים של A עם תא של B נותנים 2 תאים של C". כאן בודקים אם
+     באמת יש מספיק תאים כאלה בסביבה הקרובה, ואם יש מקום לתוצרים. אם אין —
+     שום דבר לא קורה. זה גם מה שייתן בהמשך לחץ: תגובה שמייצרת יותר תאים
+     ממה שצרכה זקוקה למקום פנוי.                                          */
+  doReactions() {
+    /* לא בודקים כל תא בכל צעד — זה מרכך את הקצב וגם חוסך המון עבודה.
+       דילוג בקפיצות עם התחלה אקראית מכסה את כל העולם תוך שלושה צעדים,
+       ועולה שליש מהמחיר של הגרלה נפרדת לכל תא. */
+    const n = this.n, w = this.w;
+    for (let i = this.rndInt(3); i < n; i += 3) {
+      if (this.sub[i] === EMPTY) continue;
+      this.tryReact(i % w, (i / w) | 0);
+    }
+  }
+  tryReact(x, y) {
+    const i = this.idx(x, y);
+    const a = this.sub[i]; if (a === EMPTY) return false;
+    const d = this.rndInt(8);
+    const tx = x + DX[d], ty = y + DY[d];
+    if (!this.inside(tx, ty)) return false;
+    const j = this.idx(tx, ty);
+    const b = this.sub[j]; if (b === EMPTY) return false;
+
+    const T = (this.temp[i] + this.temp[j]) / 2;
+    const r = reaction(a, b, T);
+    if (!r) return false;
+
+    /* אוספים את התאים הדרושים מתוך ריבוע 3×3 סביב i */
+    const box = this.bBox, used = this.bUse, slots = this.bSlot;
+    let nBox = 0;
+    for (let yy = y - 1; yy <= y + 1; yy++) {
+      if (yy < 0 || yy >= this.h) continue;
+      for (let xx = x - 1; xx <= x + 1; xx++) {
+        if (xx < 0 || xx >= this.w) continue;
+        box[nBox++] = yy * this.w + xx;
+      }
+    }
+
+    let nUse = 0;
+    if (a === b) {
+      const want = r.nA + r.nB;
+      for (let k = 0; k < nBox && nUse < want; k++) if (this.sub[box[k]] === a) used[nUse++] = box[k];
+      if (nUse < want) return false;
+    } else {
+      let na = 0, nb = 0;
+      for (let k = 0; k < nBox && na < r.nA; k++) if (this.sub[box[k]] === a) { used[nUse++] = box[k]; na++; }
+      for (let k = 0; k < nBox && nb < r.nB; k++) if (this.sub[box[k]] === b) { used[nUse++] = box[k]; nb++; }
+      if (na < r.nA || nb < r.nB) return false;
+    }
+
+    /* מקום לתוצרים: קודם התאים שהתפנו, ואם צריך עוד — תאים ריקים בסביבה */
+    const nOut = r.pk + r.qk;
+    let nSlot = nUse;
+    for (let k = 0; k < nUse; k++) slots[k] = used[k];
+    if (nOut > nSlot) {
+      for (let k = 0; k < nBox && nSlot < nOut; k++) {
+        const c = box[k];
+        if (this.sub[c] !== EMPTY) continue;
+        let dup = false;
+        for (let q = 0; q < nSlot; q++) if (slots[q] === c) { dup = true; break; }
+        if (!dup) slots[nSlot++] = c;
+      }
+      if (nSlot < nOut) return false;          // אין מקום — התגובה לא קורית
+    }
+
+    /* אנרגיה: כל האנרגיה שהשתחררה מתחלקת על התוצרים לפי קיבול החום שלהם */
+    const P = subById(r.p), Q = r.q != null ? subById(r.q) : null;
+    const capTot = prop(r.p).cap * r.pk + (Q ? prop(r.q).cap * r.qk : 0);
+    const dT = Math.min(4000, (r.gain * HEAT_YIELD) / Math.max(0.01, capTot));
+    const newT = clampT(T + dT);
+
+    for (let k = 0; k < r.pk; k++) this.place(slots[k], P, newT);
+    for (let k = 0; k < r.qk; k++) this.place(slots[r.pk + k], Q, newT);
+    for (let k = nOut; k < nSlot; k++) this.clear(slots[k]);          // נפח קטן
+
+    this.reactions++;
+    return true;
+  }
+  /* תוצר מוצק נולד כאבקה — ככה זה נראה כשחומר מתגבש מתגובה, לא כלבנה שלמה */
+  place(i, s, T) {
+    this.sub[i] = s.id;
+    this.temp[i] = T;
+    this.phase[i] = stateOf(s, T);
+    this.form[i] = this.phase[i] === SOLID ? GRAIN : BULK;
+    this.prog[i] = 0;
+  }
+
+  /* ----------------------------------------------------------------------
+     2) שינויי מצב — עם חום כמוס
+     ----------------------------------------------------------------------
+     כשתא מגיע לנקודת ההיתוך או הרתיחה הוא *נעצר* שם, וכל האנרגיה הנוספת
+     נכנסת למונה prog. רק כשהמונה מגיע לחום הכמוס המצב באמת משתנה. בלי זה
+     כוס מים הייתה הופכת לענן בפריים אחד.                                 */
+  doPhases() {
+    for (let i = 0; i < this.n; i++) {
+      if (this.sub[i] === EMPTY) continue;
+      const s = prop(this.sub[i]);
+      let T = this.temp[i];
+      T = this.temp[i] = clampT(T);
+      const c = s.cap, ph = this.phase[i];
+
+      /* איזה מעבר ממתין, לאיזה כיוון, ובאיזה מחיר */
+      let dir = 0, edge = 0, need = 0, target = 0;
+      /* גדול-או-שווה בכוונה: תא שכבר נעצר על נקודת המעבר חייב *להישאר* שם
+         ולשמור על מה שצבר. עם "גדול" לבד הוא היה משחרר הכל בחזרה בצעד הבא
+         ומקפץ בין 100 ל-130 בלי סוף. */
+      if      (ph === SOLID  && T >= s.melt) { dir = +1; edge = s.melt; need = s.lFus; target = LIQUID; }
+      else if (ph === LIQUID && T <= s.melt) { dir = -1; edge = s.melt; need = s.lFus; target = SOLID;  }
+      else if (ph === LIQUID && T >= s.boil) { dir = +1; edge = s.boil; need = s.lVap; target = GAS;    }
+      else if (ph === GAS    && T <= s.boil) { dir = -1; edge = s.boil; need = s.lVap; target = LIQUID; }
+
+      if (dir === 0) { this.release(i, c); continue; }
+      if (this.prog[i] * dir < 0) this.release(i, c);   // הכיוון התחלף — מחזירים קודם
+
+      /* התא נעצר על נקודת המעבר, וכל האנרגיה שמעבר לה נצברת במונה */
+      this.temp[i] = edge;
+      this.prog[i] += dir * Math.abs(T - edge) * c;
+      if (Math.abs(this.prog[i]) < need) continue;
+
+      const left = Math.abs(this.prog[i]) - need;
+      this.prog[i] = 0;
+      this.phase[i] = target;
+      this.temp[i] = clampT(edge + dir * (left / c));
+      /* נוזל שהתמצק מתלכד לגוש. ככה חול מותך שהתקרר הופך לזכוכית, בלי שאף
+         אחד כתב חוק כזה. */
+      if (target === SOLID) this.form[i] = BULK;
+    }
+  }
+  /* אנרגיה שנצברה למעבר שלא הושלם חייבת לחזור לטמפרטורה. אם פשוט מאפסים
+     את המונה, החום הזה נמחק מהעולם — בדיוק סוג הדליפה השקטה שאי אפשר
+     לראות במסך אבל היא משנה כל תוצאה. */
+  release(i, c) {
+    if (!this.prog[i]) return;
+    this.temp[i] = clampT(this.temp[i] + this.prog[i] / c);
+    this.prog[i] = 0;
+  }
+
+  /* ----------------------------------------------------------------------
+     3) מוליכות חום
+     ----------------------------------------------------------------------
+     כל זוג שכנים מתקרב לטמפרטורת שיווי המשקל המשותפת שלהם. החישוב לפי
+     אנרגיה ולא לפי טמפרטורה, ולכן חום לא נוצר ולא נעלם — תא קטן שמתחמם
+     חייב לקרר מישהו אחר בדיוק באותה אנרגיה.                              */
+  doConduction() {
+    const { w, h, temp, dT } = this;
+    dT.fill(0);
+    const sub = this.sub, ph = this.phase;
+    for (let y = 0; y < h; y++) {
+      const row = y * w;
+      for (let x = 0; x < w; x++) {
+        const i = row + x;
+        if (sub[i] === EMPTY) continue;
+        const pi = prop(sub[i]), ci = pi.cap, ki = conductOf(pi, ph[i]), Ti = temp[i];
+        for (let k = 0; k < 2; k++) {
+          const j = k === 0 ? (x + 1 < w ? i + 1 : -1) : (y + 1 < h ? i + w : -1);
+          if (j < 0 || sub[j] === EMPTY) continue;
+          const pj = prop(sub[j]), cj = pj.cap;
+          const eq = (ci * Ti + cj * temp[j]) / (ci + cj);
+          const kk = (ki < conductOf(pj, ph[j]) ? ki : conductOf(pj, ph[j])) * 0.25;
+          dT[i] += (eq - Ti) * kk;
+          dT[j] += (eq - temp[j]) * kk;
+        }
+      }
+    }
+    /* קרינה: כל דבר חם מאבד אנרגיה לסביבה. בלי זה אש נדלקת ולא נכבית לעולם. */
+    for (let i = 0; i < this.n; i++) {
+      if (this.sub[i] === EMPTY) continue;
+      let t = temp[i] + dT[i];
+      t -= (t - this.ambient) * this.radiate;
+      temp[i] = clampT(t);
+    }
+  }
+
+  /* ----------------------------------------------------------------------
+     4) תמיכה — למה קיר לא נופל
+     ----------------------------------------------------------------------
+     גוש מוצק נשאר במקומו רק אם יש שרשרת מוצקים ממנו עד לקרקע. זה בדיוק
+     הבאג שהיה במשחק הישן: שם נבדק רק "יש שכן?", ולכן שני בלוקים באוויר
+     החזיקו זה את זה וריחפו.                                              */
+  computeSupport() {
+    const { w, h, sup, stack } = this;
+    sup.fill(0);
+    let top = 0;
+    for (let x = 0; x < w; x++) {
+      const i = this.idx(x, h - 1);
+      if (this.sub[i] !== EMPTY && this.phase[i] === SOLID) { sup[i] = 1; stack[top++] = i; }
+    }
+    while (top > 0) {
+      const i = stack[--top];
+      const x = i % w, y = (i / w) | 0;
+      for (let k = 0; k < 4; k++) {
+        const nx = x + (k === 0 ? -1 : k === 1 ? 1 : 0), ny = y + (k === 2 ? -1 : k === 3 ? 1 : 0);
+        if (!this.inside(nx, ny)) continue;
+        const j = this.idx(nx, ny);
+        if (sup[j] || this.sub[j] === EMPTY || this.phase[j] !== SOLID) continue;
+        sup[j] = 1; stack[top++] = j;
+      }
+    }
+  }
+
+  /* ----------------------------------------------------------------------
+     5) תנועה
+     ----------------------------------------------------------------------
+     אין כאן "חול נופל" או "מים זורמים". יש מצב צבירה וצפיפות, ומזה נובע
+     הכל: מה שכבד שוקע, מה שקל עולה, נוזל מתפשט, גז ממלא כל חלל.          */
+  doMotion() {
+    const { w, h } = this;
+    this.done.fill(0);
+    const rtl = (this.tick & 1) === 1;         // לסירוגין, אחרת הכל נוטה לצד אחד
+    for (let y = h - 1; y >= 0; y--) {
+      for (let c = 0; c < w; c++) {
+        const x = rtl ? w - 1 - c : c;
+        const i = this.idx(x, y);
+        if (this.sub[i] === EMPTY || this.done[i]) continue;
+        this.moveCell(i, x, y);
+      }
+    }
+  }
+  moveCell(i, x, y) {
+    const ph = this.phase[i];
+    if (ph === SOLID) {
+      if (this.form[i] === BULK) {
+        if (this.sup[i]) return false;         // מחובר לקרקע — לא זז
+        return this.sink(i, x, y, x, y + 1);   // גוש חופשי נופל ישר
+      }
+      if (this.sink(i, x, y, x, y + 1)) return true;
+      const d = this.rnd() < 0.5 ? 1 : -1;     // גרגר מחליק ויוצר ערימה
+      return this.sink(i, x, y, x + d, y + 1) || this.sink(i, x, y, x - d, y + 1);
+    }
+    if (ph === LIQUID) return this.liquidStep(i, x, y);
+    return this.gasStep(i, x, y);
+  }
+
+  /* מעבר לתא יעד: לתוך ריק תמיד; החלפה עם נוזל/גז רק אם היא מסדרת את
+     הצפיפות — כבד למטה, קל למעלה. הסייג הזה הוא מה שמונע ריצוד אינסופי. */
+  sink(i, x, y, tx, ty, allowEmpty = true) {
+    if (!this.inside(tx, ty)) return false;
+    const j = this.idx(tx, ty);
+    if (this.done[j]) return false;
+    if (this.sub[j] === EMPTY) { if (!allowEmpty) return false; this.move(i, j); return true; }
+    if (this.phase[j] === SOLID) return false;
+    if (this.den(j) < this.den(i) * 0.995) { this.swap(i, j); return true; }
+    return false;
+  }
+  /* אין כאן פונקציית "עלייה", בכוונה.
+     ציפה היא סימטרית: אם הקל עולה, זה בדיוק אותו דבר כמו שהכבד שמעליו יורד.
+     היה כאן קוד נפרד לעלייה, ובבדיקה התברר שאפשר למחוק אותו בלי ששום בדיקה
+     תרגיש — כי sink כבר עושה את העבודה משני הכיוונים. פחות קוד, פחות מקום
+     לבאג להתחבא בו.
+     בנוסף: ציפה דורשת חומר להדוף. בלון לא עולה בוואקום. לכן גז לא "עולה"
+     לתוך ריק — הוא רק מתפשט לכל הכיוונים. */
+  side(i, x, y, allowSwap) {
+    const d = this.rnd() < 0.5 ? 1 : -1;
+    for (const dx of [d, -d]) {
+      if (!this.inside(x + dx, y)) continue;
+      const j = this.idx(x + dx, y);
+      if (this.done[j]) continue;
+      if (this.sub[j] === EMPTY) { this.move(i, j); return true; }
+      if (allowSwap && this.phase[j] === GAS && this.phase[i] === LIQUID) { this.swap(i, j); return true; }
+    }
+    return false;
+  }
+  liquidStep(i, x, y) {
+    if (this.sink(i, x, y, x, y + 1)) return true;
+    const d = this.rnd() < 0.5 ? 1 : -1;
+    if (this.sink(i, x, y, x + d, y + 1)) return true;
+    if (this.sink(i, x, y, x - d, y + 1)) return true;
+    /* התפשטות לצדדים היא מה שמיישר מפלס של שלולית — אבל רק כשהנוזל *נח* על
+       משהו. נוזל שנופל באוויר חייב להמשיך ליפול. בלי התנאי הזה סילון מים
+       מתפזר לרסס בדרך למטה, כי בכל צעד שבו התא שמתחת כבר זז הוא ברח הצידה. */
+    if (y + 1 < this.h) {
+      const b = this.idx(x, y + 1);
+      if (this.sub[b] === EMPTY || (this.phase[b] !== SOLID && this.den(b) < this.den(i))) return false;
+    }
+    return this.side(i, x, y, true);
+  }
+  gasStep(i, x, y) {
+    /* ציפה — רק מול חומר אחר, לא לתוך ריק */
+    if (this.rnd() < 0.65) {
+      if (this.sink(i, x, y, x, y + 1, false)) return true;      // כבד מהסביבה — שוקע
+    }
+    /* התפשטות: גז ממלא כל חלל פנוי, לכל כיוון. אין כאן העדפה למעלה —
+       בוואקום אין למה לצוף, ולכן גז פשוט מתפזר. */
+    const d = this.rndInt(8);
+    if (this.inside(x + DX[d], y + DY[d])) {
+      const j = this.idx(x + DX[d], y + DY[d]);
+      if (!this.done[j] && this.sub[j] === EMPTY) { this.move(i, j); return true; }
+    }
+    /* דיפוזיה: שני גזים שכנים מתערבבים גם בלי הפרש צפיפות */
+    const s = this.rnd() < 0.5 ? 1 : -1;
+    for (const dx of [s, -s]) {
+      if (!this.inside(x + dx, y)) continue;
+      const j = this.idx(x + dx, y);
+      if (this.done[j]) continue;
+      if (this.phase[j] === GAS && this.sub[j] !== this.sub[i] && this.rnd() < 0.25) { this.swap(i, j); return true; }
+    }
+    return false;
+  }
+
+  move(i, j) {
+    this.sub[j] = this.sub[i]; this.temp[j] = this.temp[i];
+    this.phase[j] = this.phase[i]; this.form[j] = this.form[i]; this.prog[j] = this.prog[i];
+    this.clear(i);
+    this.done[j] = 1;
+  }
+  swap(i, j) {
+    const a = this.sub[i], b = this.temp[i], c = this.phase[i], d = this.form[i], e = this.prog[i];
+    this.sub[i] = this.sub[j]; this.temp[i] = this.temp[j]; this.phase[i] = this.phase[j];
+    this.form[i] = this.form[j]; this.prog[i] = this.prog[j];
+    this.sub[j] = a; this.temp[j] = b; this.phase[j] = c; this.form[j] = d; this.prog[j] = e;
+    this.done[i] = 1; this.done[j] = 1;
+  }
+}
+
+
+/* ===========================================================================
+   7) הממשק
+   ===========================================================================
+   שלושה דברים שהממשק הזה מנסה לפתור:
+
+   1. *להבין מה בחרת.* קודם היה שם בעברית ותו לא. עכשיו כל בחירה מציגה
+      נוסחה, מצב צבירה בטמפרטורה שנבחרה, נקודות היתוך ורתיחה, וצפיפות —
+      וגם אם החומר דליק. הנתונים לא נכתבו ידנית: הם נשאלים מהמנוע.
+
+   2. *לבחור מתוך משהו הגיוני.* שורת חומרים גוללת היא ערימה. גרירה למעלה
+      פותחת את הטבלה המחזורית האמיתית, במקומות הנכונים, ומשם בוחרים יסוד.
+      לתרכובות יש לשונית נפרדת.
+
+   3. *פיקסלים בגודל של פיקסלים.* גודל התא ניתן לשינוי. ככל שהוא קטן יותר
+      התמונה חדה יותר ויש יותר תאים לחשב — ולכן מוצג גם קצב הפריימים,
+      כדי שהבחירה תהיה מדעת.
+   =========================================================================== */
+(function () {
+'use strict';
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d', { alpha: false });
+
+let world = null, GW = 0, GH = 0, img = null, playing = true;
+let cur = 'H2O', curTemp = 20, brush = 3, mode = 'draw';
+
+/* גודל תא בפיקסלים של CSS. קטן יותר = תמונה חדה יותר ויותר עבודה לחשב. */
+const SIZES = [4, 3, 2, 1.5, 1];
+let sizeIx = 2;
+
+/* --------------------------------------------------------------------------
+   צבע תא
+   --------------------------------------------------------------------------
+   גז קר מצויר כמעט שקוף — אוויר אמיתי שקוף, ואם מציירים אותו מלא, המסך
+   נראה כמו ערפל ואי אפשר לראות בו כלום. גז לוהט הוא להבה, ולכן האטימות
+   עולה עם החום.
+
+   התוצאה נשמרת לכל צירוף של חומר · מצב · טווח טמפרטורה. בלי זה היינו
+   מחשבים צבע רבע מיליון פעם בכל פריים.
+   -------------------------------------------------------------------------- */
+const BG = 0x0b0e13, BGR = 11, BGG = 14, BGB = 19;
+const BANDS = 140;
+const COL = [];
+function rgbOf(i) {
+  const s = world.sub[i];
+  if (s === EMPTY) return BG;
+  const t = world.temp[i], ph = world.phase[i];
+  const b = t < -260 ? 0 : t > 3200 ? BANDS - 1 : (t + 260) * 0.04 | 0;
+  let a = COL[s];
+  if (a === undefined) { a = COL[s] = new Int32Array(BANDS * 3).fill(-1); }
+  const k = b * 3 + ph;
+  let v = a[k];
+  if (v < 0) {
+    const T = b * 25 - 260;
+    const c = color(subById(s), T, ph);
+    const op = ph === GAS ? (T > 360 ? Math.min(1, 0.10 + (T - 360) / 480 * 0.90) : 0.10) : 1;
+    v = (BGR + (c[0] - BGR) * op | 0) << 16 | (BGG + (c[1] - BGG) * op | 0) << 8 | (BGB + (c[2] - BGB) * op | 0);
+    a[k] = v;
+  }
+  return v;
+}
+/* גוש של אלפי תאים באותו צבע בדיוק נראה כמו מלבן צבוע ולא כמו חומר.
+   שינוי בהירות זעיר וקבוע לכל תא מחזיר מרקם. קבוע — כדי שלא ירצד. */
+const NOISE = new Int8Array(8192);
+for (let i = 0; i < 8192; i++) { let h = (i * 2654435761) >>> 0; h ^= h >>> 13; NOISE[i] = (h % 11) - 5; }
+
+/* --------------------------------------------------------------------------
+   גודל העולם
+   -------------------------------------------------------------------------- */
+function layout() {
+  const st = cv.parentElement;
+  const CELL = SIZES[sizeIx];
+  GW = Math.max(24, Math.floor(st.clientWidth / CELL));
+  GH = Math.max(24, Math.floor(st.clientHeight / CELL));
+  cv.width = GW; cv.height = GH;
+  cv.style.width = (GW * CELL) + 'px';
+  cv.style.height = (GH * CELL) + 'px';
+  ctx.imageSmoothingEnabled = false;
+  img = ctx.createImageData(GW, GH);
+  const buf = img.data;
+  for (let i = 3; i < buf.length; i += 4) buf[i] = 255;
+  const old = world;
+  world = new World(GW, GH, 20, (Date.now() & 0x7fffffff) || 1);
+  if (old) carryOver(old); else freshWorld();
+  $('size').textContent = 'גודל פיקסל ' + CELL + '  ·  ' + (GW * GH / 1000).toFixed(0) +
+                          'k תאים  ·  הקש להחלפה';
+}
+/* שינוי גודל לא אמור למחוק את העולם. במשחק הישן סיבוב הטלפון השמיד כמעט
+   חצי ממנו — כאן מעתיקים תא־לתא, מוצמד לתחתית. */
+function carryOver(old) {
+  const dy = GH - old.h, dx = (GW - old.w) >> 1;
+  for (let y = 0; y < old.h; y++) for (let x = 0; x < old.w; x++) {
+    const nx = x + dx, ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= GW || ny >= GH) continue;
+    const a = old.idx(x, y), b = world.idx(nx, ny);
+    world.sub[b] = old.sub[a]; world.temp[b] = old.temp[a];
+    world.phase[b] = old.phase[a]; world.form[b] = old.form[a]; world.prog[b] = old.prog[a];
+  }
+}
+/* העולם מתחיל עם אוויר אמיתי: 78% חנקן, 21% חמצן. בגלל זה דברים כאן
+   באמת בוערים — לא הוספנו "אש" כחומר, יש חמצן. */
+function freshWorld() {
+  const ground = Math.round(GH * 0.26);
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
+    if (y >= GH - 2) world.set(x, y, 'Al2O3', 20, BULK);
+    else if (y >= GH - ground) world.set(x, y, 'SiO2', 20, GRAIN);
+    else world.set(x, y, world.rnd() < 0.21 ? 'O2' : 'N2', 20);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   ציור באצבע
+   -------------------------------------------------------------------------- */
+function paintAt(gx, gy) {
+  if (gx < 0 || gy < 0 || gx >= GW || gy >= GH) return;
+  if (mode === 'erase') world.clear(gy * GW + gx);
+  else world.set(gx, gy, cur, curTemp);
+}
+function stamp(gx, gy) {
+  const r = brush;
+  if (r <= 0) { paintAt(gx, gy); return; }
+  const rr = r * r + r;
+  for (let y = gy - r; y <= gy + r; y++) for (let x = gx - r; x <= gx + r; x++) {
+    const dx = x - gx, dy = y - gy;
+    if (dx * dx + dy * dy <= rr) paintAt(x, y);
+  }
+}
+function line(x0, y0, x1, y1) {           // בלי זה קו מהיר יוצא נקודות מרוחות
+  const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+  const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let err = dx - dy;
+  for (;;) {
+    stamp(x0, y0);
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * err;
+    if (e2 > -dy) { err -= dy; x0 += sx; }
+    if (e2 < dx) { err += dx; y0 += sy; }
+  }
+}
+let drawing = false, lx = 0, ly = 0;
+function toGrid(e) {
+  const b = cv.getBoundingClientRect(), CELL = SIZES[sizeIx];
+  return [Math.floor((e.clientX - b.left) / CELL), Math.floor((e.clientY - b.top) / CELL)];
+}
+cv.addEventListener('pointerdown', e => {
+  cv.setPointerCapture(e.pointerId);
+  const [x, y] = toGrid(e);
+  if (mode === 'pick') { inspect(x, y); return; }
+  drawing = true; lx = x; ly = y; stamp(x, y); e.preventDefault();
+});
+cv.addEventListener('pointermove', e => {
+  const [x, y] = toGrid(e);
+  if (!drawing) { if (mode === 'pick') inspect(x, y); return; }
+  line(lx, ly, x, y); lx = x; ly = y; e.preventDefault();
+});
+cv.addEventListener('pointerup', () => { drawing = false; });
+cv.addEventListener('pointercancel', () => { drawing = false; });
+
+function inspect(x, y) {
+  if (x < 0 || y < 0 || x >= GW || y >= GH) return;
+  const i = y * GW + x, s = world.at(i);
+  const el = $('read');
+  el.textContent = s
+    ? s.name + ' · ' + fmt(s.key) + ' · ' + Math.round(world.temp[i]) + '° · ' +
+      STATE_NAME[world.phase[i]] +
+      (world.phase[i] === SOLID ? (world.form[i] === GRAIN ? ' גרגרי' : ' מלוכד') : '')
+    : 'ריק — ואקום';
+  el.style.opacity = 1;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.opacity = 0; }, 3500);
+}
+
+/* --------------------------------------------------------------------------
+   הלולאה
+   -------------------------------------------------------------------------- */
+let frames = 0, acc = 0, last = performance.now();
+function loop(now) {
+  requestAnimationFrame(loop);
+  if (playing) world.step();
+  const d = img.data, sub = world.sub, ph = world.phase, n = world.n;
+  for (let i = 0, o = 0; i < n; i++, o += 4) {
+    if (sub[i] === EMPTY) { d[o] = BGR; d[o + 1] = BGG; d[o + 2] = BGB; continue; }
+    const v = rgbOf(i);
+    const ns = ph[i] === GAS ? (NOISE[i & 8191] >> 1) : NOISE[i & 8191];
+    let r = (v >> 16) + ns, g = ((v >> 8) & 255) + ns, b = (v & 255) + ns;
+    d[o] = r < 0 ? 0 : r > 255 ? 255 : r;
+    d[o + 1] = g < 0 ? 0 : g > 255 ? 255 : g;
+    d[o + 2] = b < 0 ? 0 : b > 255 ? 255 : b;
+  }
+  ctx.putImageData(img, 0, 0);
+  frames++; acc += now - last; last = now;
+  if (acc > 500) { $('fps').textContent = Math.round(frames * 1000 / acc) + ' fps'; frames = 0; acc = 0; }
+}
+
+/* --------------------------------------------------------------------------
+   מה החומר הזה בעצם — הכל נשאל מהמנוע, שום דבר לא נכתב ידנית
+   -------------------------------------------------------------------------- */
+const fmt = k => k.replace(/\d/g, d => '₀₁₂₃₄₅₆₇₈₉'[d]);   // H2O → H₂O
+
+function tagsFor(id) {
+  const t = [];
+  const O2 = sub_('O2').id, W = sub_('H2O').id;
+  if (id !== O2 && reaction(id, O2, 800)) t.push('דליק');
+  if (id !== W && reaction(id, W, 20)) t.push('מגיב עם מים');
+  if (!t.length) t.push('יציב');
+  return t;
+}
+function describe(key) {
+  const s = sub_(key), p = prop(s.id);
+  const ph = stateOf(s, curTemp);
+  const el = Object.keys(s.comp).length === 1 ? EL[Object.keys(s.comp)[0]] : null;
+  const dens = ph === GAS ? p.dGas / Math.max(30, curTemp + 273.15) : ph === LIQUID ? p.dLiq : p.dSol;
+  const rows = [
+    ['מצב ב-' + curTemp + '°', STATE_NAME[ph]],
+    ['נמס ב', s.melt + '°'],
+    ['רותח ב', s.boil + '°'],
+    ['צפיפות', dens.toFixed(dens < 1 ? 4 : 2) + ' ג/סמ״ק'],
+  ];
+  if (el) rows.unshift(['מספר אטומי', el.Z], ['מסה אטומית', el.m]);
+  $('inName').textContent = s.name;
+  $('inKey').textContent = fmt(s.key);
+  $('inSwatch').style.background = 'rgb(' + s.col.join(',') + ')';
+  $('inTags').innerHTML = tagsFor(s.id).map(t => '<b>' + t + '</b>').join('');
+  $('inRows').innerHTML = rows.map(r => '<div><span>' + r[0] + '</span><em>' + r[1] + '</em></div>').join('');
+  $('curSwatch').style.background = 'rgb(' + s.col.join(',') + ')';
+  $('curName').textContent = s.name;
+  $('curKey').textContent = fmt(s.key);
+}
+function choose(key) {
+  cur = key; mode = 'draw';
+  describe(key);
+  document.querySelectorAll('[data-k]').forEach(b => b.classList.toggle('on', b.dataset.k === key));
+  syncModes();
+}
+
+/* --------------------------------------------------------------------------
+   הטבלה המחזורית
+   --------------------------------------------------------------------------
+   נבנית מהמחזור והקבוצה של כל יסוד, ולכן היא במקומות הנכונים ולא ברשימה.
+   המשבצות שאין בהן יסוד נשארות כמסגרת ריקה — ככה רואים שזו באמת הטבלה,
+   ורואים מה עוד אפשר להוסיף בעתיד.
+   -------------------------------------------------------------------------- */
+function buildTable() {
+  const grid = $('ptable');
+  const have = {};
+  for (const sym in EL) if (EL[sym].p) have[EL[sym].p + ':' + EL[sym].g] = sym;
+  let html = '';
+  for (let p = 1; p <= 6; p++) for (let g = 1; g <= 18; g++) {
+    const sym = have[p + ':' + g];
+    if (!sym) {
+      // הרווחים באמצע המחזורים הקצרים הם חלק מהצורה של הטבלה
+      const gap = (p <= 2 && g > 2 && g < 13) || (p <= 3 && g > 2 && g < 13);
+      html += '<span class="pt ' + (gap ? 'gap' : 'off') + '"></span>';
+      continue;
+    }
+    const e = EL[sym], k = natural(sym);
+    html += '<button class="pt on-able" data-k="' + k + '" data-sym="' + sym + '" ' +
+            'style="--c:rgb(' + e.col.join(',') + ')"><i>' + e.Z + '</i>' + sym + '</button>';
+  }
+  grid.innerHTML = html;
+  grid.querySelectorAll('button').forEach(b => b.onclick = () => choose(b.dataset.k));
+}
+function buildCompounds() {
+  const box = $('comps');
+  const keys = Object.keys(KNOWN).filter(k => Object.keys(parse(k)).length > 1);
+  box.innerHTML = keys.map(k => {
+    const s = KNOWN[k];
+    return '<button class="chip" data-k="' + k + '"><i style="background:rgb(' + s.col.join(',') +
+           ')"></i><span>' + s.name + '</span><em>' + fmt(k) + '</em></button>';
+  }).join('');
+  box.querySelectorAll('button').forEach(b => b.onclick = () => choose(b.dataset.k));
+}
+
+/* --------------------------------------------------------------------------
+   המגירה — גרירה למעלה פותחת
+   -------------------------------------------------------------------------- */
+let sheetOpen = false;
+function setSheet(open) {
+  sheetOpen = open;
+  $('sheet').classList.toggle('open', open);
+  $('scrim').classList.toggle('on', open);
+}
+$('curBar').onclick = () => setSheet(!sheetOpen);
+$('scrim').onclick = () => setSheet(false);
+(function dragGesture() {
+  let y0 = null;
+  const start = e => { y0 = e.touches ? e.touches[0].clientY : e.clientY; };
+  const end = e => {
+    if (y0 === null) return;
+    const y1 = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+    if (y0 - y1 > 30) setSheet(true);
+    else if (y1 - y0 > 30) setSheet(false);
+    y0 = null;
+  };
+  for (const el of [$('curBar'), $('grip')]) {
+    el.addEventListener('pointerdown', start);
+    el.addEventListener('pointerup', end);
+  }
+})();
+
+/* --------------------------------------------------------------------------
+   כפתורים
+   -------------------------------------------------------------------------- */
+function syncModes() {
+  $('erase').classList.toggle('on', mode === 'erase');
+  $('pick').classList.toggle('on', mode === 'pick');
+}
+function wire() {
+  $('brush').oninput = e => {
+    brush = +e.target.value;
+    $('bn').textContent = brush <= 0 ? 'פיקסל אחד' : (brush * 2 + 1) + ' פיקסלים';
+  };
+  $('temp').oninput = e => {
+    curTemp = +e.target.value;
+    $('tn').textContent = curTemp + '°';
+    describe(cur);                       // מצב הצבירה בתיאור משתנה עם החום
+  };
+  $('play').onclick = () => { playing = !playing; $('play').textContent = playing ? '⏸' : '▶'; };
+  $('erase').onclick = () => { mode = mode === 'erase' ? 'draw' : 'erase'; syncModes(); };
+  $('pick').onclick = () => { mode = mode === 'pick' ? 'draw' : 'pick'; syncModes(); };
+  $('new').onclick = () => { for (let i = 0; i < world.n; i++) world.clear(i); freshWorld(); };
+  $('void').onclick = () => { for (let i = 0; i < world.n; i++) world.clear(i); };
+  $('size').onclick = () => { sizeIx = (sizeIx + 1) % SIZES.length; layout(); };
+  $('tabEl').onclick = () => tab(0);
+  $('tabCo').onclick = () => tab(1);
+}
+function tab(n) {
+  $('tabEl').classList.toggle('on', n === 0);
+  $('tabCo').classList.toggle('on', n === 1);
+  $('ptable').style.display = n === 0 ? '' : 'none';
+  $('comps').style.display = n === 1 ? '' : 'none';
+}
+
+addEventListener('resize', () => { clearTimeout(window._rz); window._rz = setTimeout(layout, 200); });
+
+buildTable();
+buildCompounds();
+wire();
+tab(0);
+layout();
+choose('H2O');
+requestAnimationFrame(loop);
+
+/* רמז ראשון — נעלם אחרי שמציירים */
+setTimeout(() => { $('hint').style.opacity = 0; }, 6000);
+cv.addEventListener('pointerdown', () => { $('hint').style.opacity = 0; }, { once: true });
+})();
+</script>
+</body>
+</html>
