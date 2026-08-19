@@ -4140,7 +4140,7 @@ function draw3D(){
     }
   for (const e of enemies) sprites.push({ x:e.x/TILE, y:e.y/TILE, ent:e, kind:'enemy', h:(e.kind==='boss'?2.6:1.35) });
   for (const a of animals) sprites.push({ x:a.x/TILE, y:a.y/TILE, ent:a, kind:'animal', h:0.6 });
-  if (pickups) for (const pk of pickups) sprites.push({ x:pk.x/TILE, y:pk.y/TILE, ent:pk, kind:'pickup', h:0.45 });
+  if (pickups) for (const pk of pickups) sprites.push({ x:pk.x/TILE, y:pk.y/TILE, ent:pk, kind:'pickup', h:0.30 });
   if (net.active && !inCave) for (const id in remotePlayers){ const rp=remotePlayers[id]; sprites.push({ x:rp.x/TILE, y:rp.y/TILE, ent:rp, kind:'peer', h:1.15 }); }
   for (const s of sprites){ const ddx=s.x-posX, ddy=s.y-posY; s.d = ddx*ddx+ddy*ddy; }
   sprites.sort((a,b)=>b.d-a.d);   // far to near
@@ -4186,15 +4186,19 @@ function draw3D(){
     // Solid tiles get their true square footprint painted on the ground. The old screen-space ellipse
     // ballooned into a grey saucer as you got close, which read as fog rather than as a blocked square.
     if (s.solid) v3footprint(s.x-0.5, s.y-0.5, fog);
-    else if (s.ent && s.kind!=='pickup'){
-      // creatures don't own a tile, so they get a contact patch instead of a square footprint —
-      // without it they read as stickers hovering just off the ground
-      const rw = Math.max(1.5, sw*0.32), rh = Math.max(1, rw*0.30);
+    else if (s.ent){
+      // creatures and loose items don't own a tile, so they get a contact patch instead of a square
+      // footprint — without it they read as stickers hovering just off the ground
+      const rw = Math.max(1.5, sw*(s.kind==='pickup' ? 0.22 : 0.32)), rh = Math.max(1, rw*0.30);
       ctx.save(); ctx.globalAlpha = 0.32*(1-fog); ctx.fillStyle='#000';
       ctx.beginPath(); ctx.ellipse(scrX, floorY, rw, rh, 0, 0, 6.3); ctx.fill(); ctx.restore();
     }
     img = tintedSprite(img, fog*0.85, fogCol);     // distance haze, applied to the artwork only
-    ctx.drawImage(img, x0, y0, sw, sh);            // one clean blit — the old strip loop left seams
+    // dropped loot hovers and bobs, so it reads as something to pick up rather than scenery
+    const yTop = (s.kind==='pickup')
+      ? y0 - sh*(0.05 + 0.10*Math.abs(Math.sin(v3time*2.2 + (s.ent.id||0)*1.3)))
+      : y0;
+    ctx.drawImage(img, x0, yTop, sw, sh);          // one clean blit — the old strip loop left seams
     if (vis===2) ctx.restore();
   }
 
