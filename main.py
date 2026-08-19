@@ -4041,7 +4041,10 @@ function draw3D(){
   V3.invDet = 1/(planeX*dirY - dirX*planeY); V3.horizon = horizon;
   v3time = performance.now()*0.001;
   const torchLit = (player.inv.torch||0)>0 || player.glowTimer>0;
-  v3night.k = nf*0.70; v3night.inv = 1/(torchLit ? 5.0 : 2.0);
+  // Caves already carry a short view range and a heavy vignette; a full-strength falloff on top of
+  // both stacks into pitch black even with a torch lit.
+  v3night.k = nf*(inCave ? 0.40 : 0.70);
+  v3night.inv = 1/(torchLit ? (inCave ? 6.0 : 5.0) : (inCave ? 3.0 : 2.0));
   ctx.imageSmoothingEnabled = false;   // keep the pixel art crisp instead of blurry when scaled up
 
   // ---- sky / ceiling ----
