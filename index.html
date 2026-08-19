@@ -3506,6 +3506,20 @@ function v3texFace(type, role, face, p0, p1, p3){
   ctx.drawImage(voxFaceTex(type, role, face), 0, 0);
   ctx.restore();
 }
+// Cracks across a block you're breaking. Dimming alone reads as shading, not as damage.
+function v3crackFace(s0, s1, s3, frac, seed){
+  const n = frac < 0.35 ? 4 : (frac < 0.7 ? 3 : 2);
+  ctx.save(); ctx.clip();
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1.6; ctx.beginPath();
+  for (let i=0;i<n;i++){
+    const u0 = v3hash(seed,i,21), v0 = v3hash(seed,i,22);
+    const u1 = Math.min(1, Math.max(0, u0 + (v3hash(seed,i,23)-0.5)*0.8));
+    const v1 = Math.min(1, Math.max(0, v0 + (v3hash(seed,i,24)-0.5)*0.8));
+    ctx.moveTo(s0.x+(s1.x-s0.x)*u0+(s3.x-s0.x)*v0, s0.y+(s1.y-s0.y)*u0+(s3.y-s0.y)*v0);
+    ctx.lineTo(s0.x+(s1.x-s0.x)*u1+(s3.x-s0.x)*v1, s0.y+(s1.y-s0.y)*u1+(s3.y-s0.y)*v1);
+  }
+  ctx.stroke(); ctx.restore();
+}
 // The exact tile a solid object occupies, painted flat on the ground. This is what tells you where
 // you can and can't walk — the old floating cut-outs never made the blocked square readable.
 function v3footprint(tx, ty, fog){
@@ -3556,7 +3570,7 @@ function drawVoxelTile(type, tile, tx, ty, depth, fog, fogCol, q){
     if (V3_EYE > Z1)      faces.push(['top',    [[X0,Y0,Z1],[X1,Y0,Z1],[X1,Y1,Z1],[X0,Y1,Z1]]]);
     else if (V3_EYE < Z0) faces.push(['bottom', [[X0,Y1,Z0],[X1,Y1,Z0],[X1,Y0,Z0],[X0,Y0,Z0]]]);
     for (let f=0;f<faces.length;f++){
-      const name = faces[f][0], quad = faces[f][1];
+      const name = faces[f][0], quad = faces[f][1], fid = f;
       let allFront = true;
       for (let k=0;k<4;k++){ const c = v3cam(quad[k][0],quad[k][1],quad[k][2]); P[k]=c; if (c.y < V3_NEAR) allFront=false; }
       const cam = allFront ? P.slice() : v3clipNear(P.slice());
@@ -3575,7 +3589,10 @@ function drawVoxelTile(type, tile, tx, ty, depth, fog, fogCol, q){
         if (area > 620){
           v3texFace(type, bx.c, name, s0, s1, s3);
           if (fog > 0.02){ ctx.fillStyle='rgba('+fogCol[0]+','+fogCol[1]+','+fogCol[2]+','+(fog*0.9).toFixed(3)+')'; ctx.fill(); }
-          if (worn){ ctx.fillStyle='rgba(0,0,0,'+(0.45*(1-frac)).toFixed(3)+')'; ctx.fill(); }
+          if (worn){
+            ctx.fillStyle='rgba(0,0,0,'+(0.40*(1-frac)).toFixed(3)+')'; ctx.fill();
+            v3crackFace(s0, s1, s3, frac, (tx*73 + ty*181 + i*17 + fid));
+          }
         }
       }
       ctx.strokeStyle = edge; ctx.lineWidth = 1; ctx.stroke();
@@ -4025,6 +4042,34 @@ function view3dRange(){
   if (nf > 0.5) return torch ? 10 : 6.5;
   return 24;
 }
+// Where the block you're holding will actually land. The top-down view has drawn a ghost tile for
+// this since forever; first person had only a crosshair, so you were placing blind.
+function drawPlacePreview3D(){
+  if (!player.placingItem) return;
+  const fp = frontPos();
+  const tx = Math.floor(fp.fx/TILE), ty = Math.floor(fp.fy/TILE);
+  if (ty<0 || ty>=MAPH || tx<0 || tx>=MAPW) return;
+  const t = world[ty][tx];
+  const ptx = Math.floor(player.x/TILE), pty = Math.floor(player.y/TILE);
+  const blocked = isSolid(t) || (isWater(t) && player.placingItem.type==='plant') || (tx===ptx && ty===pty);
+  const col = blocked ? '201,74,61' : '47,122,234';
+  const a=0.02, b=0.98, hh=0.9;
+  const foot = v3clipNear([ v3cam(tx+a,ty+a,0), v3cam(tx+b,ty+a,0), v3cam(tx+b,ty+b,0), v3cam(tx+a,ty+b,0) ]);
+  if (foot.length < 3) return;
+  v3trace(foot);
+  ctx.fillStyle = 'rgba('+col+',0.26)'; ctx.fill();
+  ctx.strokeStyle = 'rgba('+col+',0.95)'; ctx.lineWidth = 2; ctx.stroke();
+  const top = v3clipNear([ v3cam(tx+a,ty+a,hh), v3cam(tx+b,ty+a,hh), v3cam(tx+b,ty+b,hh), v3cam(tx+a,ty+b,hh) ]);
+  if (top.length >= 3){ v3trace(top); ctx.strokeStyle='rgba('+col+',0.5)'; ctx.lineWidth=1.5; ctx.stroke(); }
+  ctx.strokeStyle='rgba('+col+',0.55)'; ctx.lineWidth=1.5; ctx.beginPath();
+  const cs=[[a,a],[b,a],[b,b],[a,b]];
+  for (let i=0;i<4;i++){
+    const p0=v3cam(tx+cs[i][0],ty+cs[i][1],0), p1=v3cam(tx+cs[i][0],ty+cs[i][1],hh);
+    if (p0.y<V3_NEAR || p1.y<V3_NEAR) continue;
+    ctx.moveTo(v3sx(p0),v3sy(p0)); ctx.lineTo(v3sx(p1),v3sy(p1));
+  }
+  ctx.stroke();
+}
 function draw3D(){
   const nf = getNightFactor();
   // Haze colour: pale sky by day (things fade INTO the distance), near-black at night and underground.
@@ -4220,6 +4265,8 @@ function draw3D(){
     vg.addColorStop(0,'rgba(0,0,0,'+core+')'); vg.addColorStop(1,'rgba(0,0,0,'+edge+')');
     ctx.fillStyle = vg; ctx.fillRect(0,0,W,H);
   }
+
+  drawPlacePreview3D();
 
   // ---- your own hands + crosshair ----
   ctx.save();
