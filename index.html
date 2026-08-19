@@ -3312,12 +3312,16 @@ VOX_MODEL[T.BEEHIVE] = [ _b(0.18,0.18,0.00, 0.82,0.82,0.26,'base'),
                          _b(0.14,0.14,0.26, 0.86,0.86,0.52,'hi'),
                          _b(0.18,0.18,0.52, 0.82,0.82,0.74,'base') ];
 VOX_LOOK[T.BUSH]  = { mat:'leaf', leaf:'#2f6b2a', dark:'#1d4419', leafHi:'#3f8a36', berry:'#c94a3d' };
-VOX_MODEL[T.BUSH] = [ _b(0.13,0.13,0.00, 0.87,0.87,0.33,'leaf'),
-                      _b(0.21,0.21,0.33, 0.79,0.79,0.52,'leafHi'),
-                      _b(0.30,0.87,0.13, 0.43,0.94,0.24,'berry'),   // berries break the outline, so
-                      _b(0.58,0.06,0.15, 0.71,0.13,0.26,'berry'),   // you can tell a bush is ripe
-                      _b(0.87,0.33,0.17, 0.94,0.46,0.28,'berry'),   // from any side
-                      _b(0.06,0.55,0.14, 0.13,0.68,0.25,'berry') ];
+// stepped like the boulder, so it reads as a rounded clump rather than a green crate
+VOX_MODEL[T.BUSH] = [ _b(0.09,0.09,0.00, 0.91,0.91,0.20,'leaf'),
+                      _b(0.17,0.17,0.20, 0.83,0.83,0.36,'leaf'),
+                      _b(0.29,0.29,0.36, 0.71,0.71,0.50,'leafHi'),
+                      _b(0.32,0.87,0.15, 0.40,0.92,0.23,'berry'),   // berries break the outline, so
+                      _b(0.55,0.08,0.18, 0.63,0.13,0.26,'berry'),   // you can tell a bush is ripe
+                      _b(0.87,0.36,0.20, 0.92,0.44,0.28,'berry'),   // from any side
+                      _b(0.08,0.57,0.16, 0.13,0.65,0.24,'berry'),
+                      _b(0.62,0.86,0.24, 0.69,0.91,0.31,'berry'),
+                      _b(0.22,0.13,0.22, 0.29,0.18,0.29,'berry') ];
 // Short clumps with a fat ear on top. Tall thin stalks read as a bundle of canes, not a crop.
 VOX_LOOK[T.WHEAT]  = { mat:'plant', base:'#9c7d22', dark:'#6f5813', hi:'#e3bf45' };
 VOX_MODEL[T.WHEAT] = [ _b(0.15,0.15,0.00, 0.85,0.85,0.19,'base'),   // one tuft, not four canes
@@ -3377,6 +3381,10 @@ function voxRGB(type){
 /* --- camera shared by the 3D projector; draw3D refreshes it once per frame --- */
 const V3 = { posX:0, posY:0, dirX:1, dirY:0, planeX:0, planeY:1, invDet:1, horizon:0 };
 let v3time = 0;                             // seconds, sampled once a frame to drive water motion
+// Torchlight falloff. Distance haze alone can't carry night: with the view range short, a surface a
+// tile away has almost no haze on it, so the ground at your feet stayed broad daylight green while
+// everything past it went black. k is how far a surface can be dimmed, inv the reach of your light.
+const v3night = { k:0, inv:1 };
 // Near plane, in tiles. Kept well off zero on purpose: clipping at a hair's breadth lets a face that
 // passes beside your head project to coordinates in the tens of thousands, which paints as a black
 // wedge across the screen. Collision never lets you closer than this anyway.
@@ -3554,8 +3562,10 @@ function drawVoxelTile(type, tile, tx, ty, depth, fog, fogCol, q){
       const cam = allFront ? P.slice() : v3clipNear(P.slice());
       if (cam.length < 3) continue;
       let light = FACE_LIGHT[name];
-      if (voxGlows(C, bx.c)) light = Math.min(1.75, light + C.glow);
+      const lit = voxGlows(C, bx.c);
+      if (lit) light = Math.min(1.75, light + C.glow);
       light *= wear;
+      if (!lit) light *= 1 - v3night.k*Math.min(1, depth*v3night.inv);   // fire lights itself
       v3trace(cam);
       ctx.fillStyle = v3shade(rgb, light, fog, fogCol); ctx.fill();
       if (canTex && allFront){
@@ -3700,6 +3710,7 @@ function drawFloor3D(posX,posY,dirX,dirY,planeX,planeY,horizon,maxD,fogCol,q){
     const rowDist = halfH / Math.max(0.5, sy);
     const fog = v3fog(rowDist, maxD);
     const inv = 1-fog;
+    const night = 1 - v3night.k*Math.min(1, rowDist*v3night.inv);
     const rowStepX = (planeX*2*rowDist)/bw, rowStepY = (planeY*2*rowDist)/bw;
     let wx = posX + (dirX - planeX)*rowDist, wy = posY + (dirY - planeY)*rowDist;
     let o = by*bw*4;
@@ -3744,6 +3755,7 @@ function drawFloor3D(posX,posY,dirX,dirY,planeX,planeY,horizon,maxD,fogCol,q){
             if (onEdge){ cr*=0.74; cg*=0.74; cb*=0.74; }
             else if (nearEdge){ cr*=1.09; cg*=1.09; cb*=1.09; }
           }
+          cr*=night; cg*=night; cb*=night;
           r = cr*inv + fogCol[0]*fog; g = cg*inv + fogCol[1]*fog; b = cb*inv + fogCol[2]*fog;
         }
       }
@@ -3819,6 +3831,8 @@ function draw3D(){
   V3.posX=posX; V3.posY=posY; V3.dirX=dirX; V3.dirY=dirY; V3.planeX=planeX; V3.planeY=planeY;
   V3.invDet = 1/(planeX*dirY - dirX*planeY); V3.horizon = horizon;
   v3time = performance.now()*0.001;
+  const torchLit = (player.inv.torch||0)>0 || player.glowTimer>0;
+  v3night.k = nf*0.70; v3night.inv = 1/(torchLit ? 5.0 : 2.0);
   ctx.imageSmoothingEnabled = false;   // keep the pixel art crisp instead of blurry when scaled up
 
   // ---- sky / ceiling ----
@@ -3879,6 +3893,8 @@ function draw3D(){
       if (tsh > 0.01 && dh > 0.01) ctx.drawImage(tex, (wallX*64)|0, tsy, 1, tsh, x, dy, step+1, dh);
       if (side===1 && oh>0){ ctx.fillStyle='rgba(0,0,0,0.30)'; ctx.fillRect(x,oy0,step+1,oh); }
       if (fog > 0.01 && oh>0){ ctx.fillStyle='rgba('+fogCol[0]+','+fogCol[1]+','+fogCol[2]+','+(fog*0.88).toFixed(3)+')'; ctx.fillRect(x,oy0,step+1,oh); }
+      const wn = v3night.k*Math.min(1, dist*v3night.inv);
+      if (wn > 0.01 && oh>0){ ctx.fillStyle='rgba(0,0,0,'+wn.toFixed(3)+')'; ctx.fillRect(x,oy0,step+1,oh); }
     } else {
       ctx.fillStyle = shade(WALL3D[hit.type] || '#888', (side===1 ? 0.72 : 1) * (1-0.45*fog));
       if (oh>0) ctx.fillRect(x, oy0, step+1, oh);
