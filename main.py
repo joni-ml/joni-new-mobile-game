@@ -3792,6 +3792,86 @@ function tintedSprite(img, amt, col){
   g.globalCompositeOperation='source-over';
   return sprTint;
 }
+/* ---- sky ---------------------------------------------------------------------------------------
+   Being able to look up is worth nothing if there is nothing up there. Everything here is placed by
+   its compass bearing and height angle and then projected through the same camera as the world, so
+   the sun holds still while you turn under it rather than sliding with your head. */
+const SKY_HFOV = 2*Math.atan(0.72);            // matches the raycaster's view plane
+function skyX(az){                             // compass bearing -> screen x, or null if behind you
+  let d = az - camAngle;
+  while (d >  Math.PI) d -= Math.PI*2;
+  while (d < -Math.PI) d += Math.PI*2;
+  if (Math.abs(d) > SKY_HFOV*0.85) return null;
+  return W*0.5 + (d/SKY_HFOV)*W;
+}
+function skyY(alt, horizon){ return horizon - (alt/(Math.PI/2))*H*0.92; }
+let skyStars = null;
+function drawSky3D(nf, horizon){
+  if (horizon <= 0) return;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, 0, W, horizon); ctx.clip();     // never paint sky below the skyline
+  const p = (typeof CYCLE_LEN === 'number' && CYCLE_LEN > 0) ? (time/CYCLE_LEN) % 1 : 0;
+
+  if (nf > 0.06){                                              // stars, fixed to the world
+    if (!skyStars){
+      skyStars = [];
+      for (let i=0;i<170;i++) skyStars.push({ az: v3hash(i,1,7)*Math.PI*2,
+                                             alt: 0.06 + v3hash(i,2,7)*1.45,
+                                             r: 0.6 + v3hash(i,3,7)*1.3,
+                                             tw: v3hash(i,4,7)*6.3 });
+    }
+    for (let i=0;i<skyStars.length;i++){
+      const st = skyStars[i], x = skyX(st.az); if (x===null) continue;
+      const y = skyY(st.alt, horizon); if (y > horizon) continue;
+      const a = nf * (0.55 + 0.45*Math.abs(Math.sin(v3time*0.8 + st.tw)));
+      ctx.fillStyle = 'rgba(255,255,255,'+a.toFixed(3)+')';
+      ctx.fillRect(x-st.r, y-st.r, st.r*2, st.r*2);
+    }
+    const mx = skyX(p*Math.PI*2 + Math.PI);                    // moon
+    if (mx !== null){
+      const my = skyY(0.55 + 0.5*nf, horizon);
+      if (my < horizon){
+        ctx.globalAlpha = Math.min(1, nf*1.2);
+        ctx.fillStyle = '#eef2ff'; ctx.beginPath(); ctx.arc(mx, my, 15, 0, 6.3); ctx.fill();
+        ctx.fillStyle = 'rgba(190,200,225,0.55)';
+        ctx.beginPath(); ctx.arc(mx-5, my-3, 3.5, 0, 6.3); ctx.arc(mx+4, my+5, 2.6, 0, 6.3);
+        ctx.arc(mx+6, my-6, 2, 0, 6.3); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+  if (nf < 0.94){                                              // sun
+    const sx = skyX(p*Math.PI*2);
+    if (sx !== null){
+      const sy = skyY(0.18 + (1-nf)*1.0, horizon);
+      if (sy < horizon){
+        const g = ctx.createRadialGradient(sx, sy, 4, sx, sy, 60);
+        g.addColorStop(0, 'rgba(255,246,200,'+(0.85*(1-nf)).toFixed(3)+')');
+        g.addColorStop(1, 'rgba(255,225,150,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx, sy, 60, 0, 6.3); ctx.fill();
+        ctx.globalAlpha = 1-nf;
+        ctx.fillStyle = '#fff6c8'; ctx.beginPath(); ctx.arc(sx, sy, 17, 0, 6.3); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+    // a few slow cloud banks, low over the horizon
+    ctx.globalAlpha = 0.5*(1-nf);
+    ctx.fillStyle = '#ffffff';
+    for (let i=0;i<7;i++){
+      const az = v3hash(i,11,3)*Math.PI*2 + v3time*0.006*(0.5+v3hash(i,12,3));
+      const x = skyX(az); if (x===null) continue;
+      const y = skyY(0.16 + v3hash(i,13,3)*0.42, horizon); if (y > horizon) continue;
+      const w = 46 + v3hash(i,14,3)*70;
+      ctx.beginPath();
+      ctx.ellipse(x, y, w, w*0.24, 0, 0, 6.3);
+      ctx.ellipse(x - w*0.4, y + w*0.07, w*0.5, w*0.17, 0, 0, 6.3);
+      ctx.ellipse(x + w*0.42, y + w*0.05, w*0.44, w*0.15, 0, 0, 6.3);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
 /* ---- creatures, cut for first person ---------------------------------------------------------
    The top-down artwork is drawn about twelve pixels across. Blown up to fill a phone screen it reads
    as a coloured blob, and that is exactly what the monsters looked like here. Below is a richer cut
@@ -3963,10 +4043,15 @@ function draw3D(){
   // ---- sky / ceiling ----
   if (inCave){ ctx.fillStyle = '#15151c'; ctx.fillRect(0,0,W,horizon); }
   else {
-    const sky = ctx.createLinearGradient(0,0,0,horizon);
-    if (nf > 0.5){ sky.addColorStop(0,'#05060d'); sky.addColorStop(1,'#141a2c'); }
-    else { sky.addColorStop(0,'#5aa8e0'); sky.addColorStop(1,'#bfe0f0'); }
+    // interpolate day -> night rather than snapping at the halfway mark, so dusk actually reads as dusk
+    const mix = (a,b2,t)=>'rgb('+Math.round(a[0]+(b2[0]-a[0])*t)+','+Math.round(a[1]+(b2[1]-a[1])*t)+','+Math.round(a[2]+(b2[2]-a[2])*t)+')';
+    const dusk = Math.min(1, Math.max(0, (nf-0.15)/0.55));
+    const sky = ctx.createLinearGradient(0,0,0,Math.max(1,horizon));
+    sky.addColorStop(0, mix([90,168,224],[5,6,13], nf));
+    sky.addColorStop(0.62, mix([170,214,238],[20,26,44], nf));
+    sky.addColorStop(1, mix([191,224,240], nf<0.75 ? [232,150,96] : [22,28,48], nf<0.75 ? dusk*0.75 : nf));
     ctx.fillStyle = sky; ctx.fillRect(0,0,W,horizon);
+    drawSky3D(nf, horizon);
   }
   // ---- floor (cheap floor-casting so you actually see grass / sand / snow / water underfoot) ----
   ctx.fillStyle = 'rgb('+fogCol[0]+','+fogCol[1]+','+fogCol[2]+')'; ctx.fillRect(0,horizon,W,H-horizon);
