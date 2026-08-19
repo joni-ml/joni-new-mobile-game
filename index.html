@@ -3792,16 +3792,141 @@ function tintedSprite(img, amt, col){
   g.globalCompositeOperation='source-over';
   return sprTint;
 }
+/* ---- creatures, cut for first person ---------------------------------------------------------
+   The top-down artwork is drawn about twelve pixels across. Blown up to fill a phone screen it reads
+   as a coloured blob, and that is exactly what the monsters looked like here. Below is a richer cut
+   of the SAME creatures — same silhouettes, same palette — with limbs, faces and shading that hold
+   together at two hundred pixels tall. The top-down view keeps its own art; none of this touches it. */
+function e3(col, x, y, w, h, lift){         // a chunky block, lit on top and shaded underneath
+  ctx.fillStyle = col; ctx.fillRect(x, y, w, h);
+  const hi = (lift===undefined) ? 0.20 : lift;
+  const cap = Math.max(0.8, Math.min(2.4, h*0.28));
+  if (hi > 0){ ctx.fillStyle = 'rgba(255,255,255,'+hi+')'; ctx.fillRect(x, y, w, cap); }
+  ctx.fillStyle = 'rgba(0,0,0,0.24)'; ctx.fillRect(x, y+h-cap*0.8, w, cap*0.8);
+}
+function e3dot(x, y, col, s){ ctx.fillStyle = col; ctx.fillRect(x, y, s||2.4, s||2.4); }
+function enemyArt3D(e){
+  const d  = ((e.facing||'left').indexOf('right') >= 0) ? 1 : -1;   // 1 = facing screen-right
+  const ph = performance.now()*0.005 + (e.id||0)*1.7;
+  const gait = Math.sin(ph)*2.4, bob = Math.abs(Math.sin(ph))*1.3;
+  const k = e.kind;
+
+  if (k === 'wolf' || k === 'siberian_wolf'){
+    const coat = enemyColor[k] || '#3a3a3a', dark = (k==='wolf') ? '#242424' : '#a9bccb';
+    e3(dark, -7, 2-bob, 3.4, 6, 0.10); e3(dark, 3.6, 2-bob, 3.4, 6, 0.10);          // far legs
+    e3(dark, -7+gait*0.4, 2-bob, 3.4, 6, 0.10); e3(dark, 3.6-gait*0.4, 2-bob, 3.4, 6, 0.10);
+    e3(coat, -9, -7-bob, 18, 10);                                                    // body
+    e3(coat, d*8-4.5, -12-bob, 9, 8);                                                // head
+    e3(coat, d*8-4, -16-bob, 2.6, 4, 0.30); e3(coat, d*8+1.4, -16-bob, 2.6, 4, 0.30);// ears
+    e3(coat, -d*10, -6-bob, 4, 2.6, 0.30);                                           // tail
+    e3dot(d*8+d*1.2-1, -10-bob, k==='wolf' ? '#e8452f' : '#59d8ff', 2.2);
+    ctx.fillStyle='#fff'; ctx.fillRect(d*10, -8.4-bob, 3, 1.4);                       // muzzle
+  }
+  else if (k === 'spider'){
+    ctx.strokeStyle='#151515'; ctx.lineWidth=1.7; ctx.lineCap='round';
+    for (let s=-1; s<=1; s+=2) for (let i=0; i<4; i++){
+      const kx = s*(6+i*2.4), ky = -6 + i*1.1, drop = 6 + Math.sin(ph+i)*1.2;
+      ctx.beginPath(); ctx.moveTo(0, -5); ctx.lineTo(kx, ky-3); ctx.lineTo(kx*1.15, ky+drop); ctx.stroke();
+    }
+    e3('#2b2b30', -8, -10-bob, 16, 11);                                              // abdomen
+    e3('#3a3a42', d*5-4, -13-bob, 9, 7);                                             // head
+    e3dot(d*5-2.5, -11.5-bob, '#ff2f2f', 2.2); e3dot(d*5+1.4, -11.5-bob, '#ff2f2f', 2.2);
+    e3dot(d*5-3.6, -8.6-bob, '#c01f1f', 1.5); e3dot(d*5+2.6, -8.6-bob, '#c01f1f', 1.5);
+  }
+  else if (k === 'scorpion'){
+    e3('#8a5526', -9, 1-bob, 3, 5, 0.10); e3('#8a5526', 6, 1-bob, 3, 5, 0.10);
+    e3('#b5743b', -9, -7-bob, 18, 9);                                                // body
+    for (let i=0; i<4; i++) e3('#c8894e', -8+i*4.2, -8.5-bob, 3.4, 2.4, 0.34);       // plates
+    e3('#b5743b', d*9-3, -11-bob, 7, 6);                                             // head
+    e3dot(d*9-1.5, -9.6-bob, '#2a0e04', 1.8);
+    e3('#c8894e', d*12, -5-bob, 5, 3, 0.30); e3('#c8894e', d*12, -1-bob, 5, 3, 0.30);// claws
+    ctx.strokeStyle='#b5743b'; ctx.lineWidth=3.4; ctx.beginPath();                    // tail
+    ctx.moveTo(-d*8, -8-bob); ctx.quadraticCurveTo(-d*17, -17-bob, -d*7, -22-bob); ctx.stroke();
+    e3dot(-d*7, -24-bob, '#f0e04a', 3);
+  }
+  else if (k === 'wraith' || k === 'frost_wraith'){
+    const cold = (k === 'frost_wraith');
+    const g = ctx.createLinearGradient(0, -26-bob, 0, 8);
+    g.addColorStop(0, cold ? '#e8f8ff' : '#d7d7ff'); g.addColorStop(1, cold ? 'rgba(60,130,180,0.05)' : 'rgba(70,70,150,0.05)');
+    ctx.globalAlpha = 0.78; ctx.fillStyle = g;
+    ctx.beginPath(); ctx.moveTo(-9, -14-bob);
+    ctx.quadraticCurveTo(0, -30-bob, 9, -14-bob);
+    for (let i=0; i<5; i++){ const x = 9 - i*4.5; ctx.lineTo(x, 4 + Math.sin(ph*1.6+i)*2.4); ctx.lineTo(x-2.2, -2); }
+    ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.fillStyle = cold ? '#062a44' : '#16163a';                                    // hood shadow
+    ctx.beginPath(); ctx.ellipse(0, -18-bob, 6.4, 5.4, 0, 0, 6.3); ctx.fill();
+    e3dot(-3.4, -19.5-bob, cold ? '#7fe6ff' : '#ff8f4a', 2.6);
+    e3dot(1.0, -19.5-bob, cold ? '#7fe6ff' : '#ff8f4a', 2.6);
+  }
+  else if (k === 'brute'){
+    e3('#3a2418', -8, 0-bob, 6.5, 8, 0.10); e3('#3a2418', 1.6, 0-bob, 6.5, 8, 0.10); // legs
+    e3('#5a3a2a', -11, -16-bob, 22, 17);                                             // torso
+    e3('#6b4632', -11+ (d>0?15:-4), -14-bob+gait*0.5, 7, 14);                        // near arm
+    e3('#4a2f22', -7, -25-bob, 14, 10);                                              // head
+    e3('#3a2418', -9, -26-bob, 18, 3.4, 0.30);                                       // brow
+    e3dot(-4.2, -22.5-bob, '#ffea00', 3); e3dot(1.4, -22.5-bob, '#ffea00', 3);
+    ctx.fillStyle='#e8e0d0'; for (let i=0;i<3;i++) ctx.fillRect(-4+i*3.4, -18-bob, 2, 2.6); // tusks
+  }
+  else if (k === 'mummy'){
+    e3('#c9bb92', -6, 0-bob, 5, 8, 0.10); e3('#c9bb92', 1, 0-bob, 5, 8, 0.10);
+    e3('#d8cba0', -8, -14-bob, 16, 15);                                              // torso
+    e3('#d8cba0', d*7-2, -13-bob, 5, 12);                                            // outstretched arm
+    e3('#e2d6ae', -6, -23-bob, 12, 10);                                              // head
+    ctx.fillStyle='rgba(150,138,104,0.85)';                                          // bandages
+    for (let i=0;i<5;i++) ctx.fillRect(-8, -22-bob+i*4.6, 16, 1.5);
+    e3dot(-3.4, -19.5-bob, '#2a1c08', 2.6); e3dot(1.0, -19.5-bob, '#2a1c08', 2.6);
+  }
+  else if (k === 'boss'){
+    ctx.save(); ctx.scale(1.2, 1.2);
+    e3('#b8b09a', -7, 0-bob, 5.5, 8, 0.10); e3('#b8b09a', 1.5, 0-bob, 5.5, 8, 0.10);
+    e3('#eae6d6', -10, -18-bob, 20, 19);                                             // ribcage
+    ctx.fillStyle='#b9b199'; for (let i=0;i<4;i++) ctx.fillRect(-10, -16-bob+i*4.4, 20, 2);
+    e3('#d8d2bd', d*9-2, -16-bob, 6, 15);                                            // arm
+    e3('#f2eee0', -7, -29-bob, 14, 11);                                              // skull
+    e3dot(-4.2, -25.5-bob, '#111', 4); e3dot(1.2, -25.5-bob, '#111', 4);
+    e3dot(-3.6, -24.8-bob, '#ff3b3b', 2.2); e3dot(1.8, -24.8-bob, '#ff3b3b', 2.2);
+    ctx.fillStyle='#f2eee0'; ctx.fillRect(-4, -19-bob, 8, 2.4);
+    ctx.restore();
+  }
+  else if (k === 'archer'){
+    e3('#c8c2ae', -6, 0-bob, 5, 8, 0.10); e3('#c8c2ae', 1, 0-bob, 5, 8, 0.10);
+    e3('#ded8c4', -7, -14-bob, 14, 15);
+    ctx.fillStyle='#a8a08c'; for (let i=0;i<3;i++) ctx.fillRect(-7, -12-bob+i*4.4, 14, 1.8);
+    e3('#efe9d8', -6, -23-bob, 12, 10);
+    e3dot(-3.4, -19.6-bob, '#111', 2.8); e3dot(1.0, -19.6-bob, '#111', 2.8);
+    ctx.strokeStyle='#7a5a2a'; ctx.lineWidth=2; ctx.beginPath();                     // bow
+    ctx.arc(d*8, -12-bob, 8, -1.1, 1.1); ctx.stroke();
+    ctx.strokeStyle='#efe9d8'; ctx.lineWidth=1; ctx.beginPath();
+    ctx.moveTo(d*8+d*3.4, -19-bob); ctx.lineTo(d*8+d*3.4, -5-bob); ctx.stroke();
+  }
+  else {   // zombie, and anything new that hasn't been given its own look yet
+    e3('#2f5f38', -6, 0-bob, 5, 8, 0.10); e3('#2f5f38', 1, 0-bob, 5, 8, 0.10);
+    e3('#3c7a4b', -8, -14-bob, 16, 15);                                              // torso
+    e3('#356e42', d*7-2, -13-bob+gait*0.4, 5, 12);                                   // reaching arm
+    e3('#2b5b36', -8, -6-bob, 16, 2.4, 0.06);                                        // torn shirt hem
+    e3('#4a8a58', -6, -23-bob, 12, 10);                                              // head
+    e3dot(-3.4, -19.8-bob, '#1a0f0f', 2.8); e3dot(1.0, -19.8-bob, '#1a0f0f', 2.8);
+    ctx.fillStyle='#26502f'; ctx.fillRect(-2.4, -15.6-bob, 5, 1.6);                  // mouth
+  }
+
+  if (e.hp < e.maxHp && e.kind !== 'boss'){                                          // damage readout
+    const w = 20, top = -34;
+    ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(-w/2-1, top-1, w+2, 4);
+    ctx.fillStyle='#c94a3d'; ctx.fillRect(-w/2, top, w*Math.max(0, e.hp/e.maxHp), 2.4);
+  }
+}
 let entScratch = null;
 // Creatures stay sprites on purpose — that reading is the look we want — but a walk right up to one
 // used to magnify a 64px cell into a couple of hundred screen pixels. Drawing the same art at 2x into
 // a 128px cell costs nothing per frame and keeps it crisp when it fills your view.
-const ENT_SPR = 128, ENT_SCALE = 2;
+const ENT_SPR = 128, ENT_SCALE = 3, ENT_FOOT = 8;
 function entitySprite(fn){
   if (!entScratch){ entScratch = document.createElement('canvas'); entScratch.width=ENT_SPR; entScratch.height=ENT_SPR; }
   const g = entScratch.getContext('2d'); g.clearRect(0,0,ENT_SPR,ENT_SPR);
   const saved = ctx; ctx = g; g.save();
-  g.translate(ENT_SPR/2, 44*ENT_SCALE); g.scale(ENT_SCALE, ENT_SCALE);
+  // creature art stands on local y = ENT_FOOT, and the billboard puts the canvas BOTTOM on the
+  // ground — line the two up or everything hovers above its own shadow
+  g.translate(ENT_SPR/2, ENT_SPR - ENT_SCALE*ENT_FOOT); g.scale(ENT_SCALE, ENT_SCALE);
   try{ fn(); }catch(e){} finally { g.restore(); ctx = saved; }
   return entScratch;
 }
@@ -3921,7 +4046,7 @@ function draw3D(){
       }
       sprites.push({ x:tx+0.5, y:ty+0.5, img:tileSprite(tl.type, tl), h:(SPRITE3D_H[tl.type]||1.2), solid:isSolid(tl) });
     }
-  for (const e of enemies) sprites.push({ x:e.x/TILE, y:e.y/TILE, ent:e, kind:'enemy', h:(e.kind==='boss'?2.4:1.05) });
+  for (const e of enemies) sprites.push({ x:e.x/TILE, y:e.y/TILE, ent:e, kind:'enemy', h:(e.kind==='boss'?2.6:1.35) });
   for (const a of animals) sprites.push({ x:a.x/TILE, y:a.y/TILE, ent:a, kind:'animal', h:0.6 });
   if (pickups) for (const pk of pickups) sprites.push({ x:pk.x/TILE, y:pk.y/TILE, ent:pk, kind:'pickup', h:0.45 });
   if (net.active && !inCave) for (const id in remotePlayers){ const rp=remotePlayers[id]; sprites.push({ x:rp.x/TILE, y:rp.y/TILE, ent:rp, kind:'peer', h:1.15 }); }
@@ -3949,10 +4074,10 @@ function draw3D(){
     }
     let img = s.img;
     if (!img){
-      if (s.kind==='enemy') img = entitySprite(()=>drawEnemyArt(s.ent, false));
+      if (s.kind==='enemy') img = entitySprite(()=>enemyArt3D(s.ent));
       else if (s.kind==='animal') img = entitySprite(()=>drawAnimalArt(s.ent));
       else if (s.kind==='peer') img = entitySprite(()=>{ const rp=s.ent; ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(0,7,7,3,0,0,6.3); ctx.fill(); ctx.fillStyle=rp.color||'#2f5f8a'; ctx.fillRect(-5,-4,10,10); ctx.fillStyle='#e8b98a'; ctx.beginPath(); ctx.arc(0,-9,5,0,6.3); ctx.fill(); ctx.fillStyle='#5a3a1e'; ctx.beginPath(); ctx.arc(0,-11,5.2,3.14,0); ctx.fill(); });
-      else if (s.kind==='pickup') img = entitySprite(()=>{ const emo=(names[s.ent.item]||'📦').split(' ')[0]; ctx.font='18px serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(emo,0,0); });
+      else if (s.kind==='pickup') img = entitySprite(()=>{ const emo=(names[s.ent.item]||'📦').split(' ')[0]; ctx.font='18px serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(emo,0,-9); });
       else continue;
     }
     const lineH = H/tY;
