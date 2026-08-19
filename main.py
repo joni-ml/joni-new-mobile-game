@@ -3168,18 +3168,19 @@ const WALL3D = {};                // tile type -> base wall color
 (function(){
   // Only things that are genuinely WALLS get raycast as full-height walls.
   WALL3D[T.WALL]='#8c8c86'; WALL3D[T.CAVE_WALL]='#6e6e7c'; WALL3D[T.BONE_WALL]='#ded6c0';
-  WALL3D[T.WALL_THORN]='#6b7a3a'; WALL3D[T.FURNACE]='#6a6a6a';
+  WALL3D[T.WALL_THORN]='#6b7a3a';
   WALL3D[T.CRYSTAL_DEVICE]='#7ae0ff'; WALL3D[T.TABLET]='#c0b48a'; WALL3D[T.LUCKY]='#e0c534';
 })();
 // Everything that just SITS on the ground is a billboard object — stone and ore veins are chunky boulders
 // and crystals lying on the floor, not tall walls.
-const SPRITE3D = new Set([T.TREE,T.PINE,T.TRUNK,T.SAPLING,T.CACTUS,T.BUSH,T.CROP,T.WHEAT,T.SKULL,
+const SPRITE3D = new Set([T.TREE,T.PINE,T.TRUNK,T.SAPLING,T.CACTUS,T.BUSH,T.CROP,T.WHEAT,T.SKULL,T.FURNACE,
   T.PLACED_TORCH,T.CAMPFIRE,T.CRAFTING_TABLE,T.UPGRADED_TABLE,T.BEEHIVE,T.GARDEN_TABLE,T.CAVE_IN,T.CAVE_UP,
   T.ROCK,T.COAL,T.IRONROCK,T.CRYSTAL_ORE,T.CAVE_CRYSTAL]);
 const SPRITE3D_H = { }; SPRITE3D_H[T.TREE]=2.02; SPRITE3D_H[T.PINE]=2.33; SPRITE3D_H[T.TRUNK]=0.40; SPRITE3D_H[T.CACTUS]=1.46;
-SPRITE3D_H[T.CRAFTING_TABLE]=0.9; SPRITE3D_H[T.UPGRADED_TABLE]=0.9; SPRITE3D_H[T.GARDEN_TABLE]=0.9;
-SPRITE3D_H[T.BUSH]=0.8; SPRITE3D_H[T.CROP]=0.8; SPRITE3D_H[T.WHEAT]=0.8; SPRITE3D_H[T.SKULL]=0.6;
-SPRITE3D_H[T.CAVE_IN]=0.5; SPRITE3D_H[T.CAVE_UP]=0.5; SPRITE3D_H[T.PLACED_TORCH]=1.2;
+SPRITE3D_H[T.CRAFTING_TABLE]=0.70; SPRITE3D_H[T.UPGRADED_TABLE]=0.82; SPRITE3D_H[T.GARDEN_TABLE]=0.70;
+SPRITE3D_H[T.FURNACE]=0.96; SPRITE3D_H[T.BEEHIVE]=0.74; SPRITE3D_H[T.CAMPFIRE]=0.56;
+SPRITE3D_H[T.BUSH]=0.52; SPRITE3D_H[T.CROP]=0.8; SPRITE3D_H[T.WHEAT]=0.47; SPRITE3D_H[T.SKULL]=0.38;
+SPRITE3D_H[T.CAVE_IN]=0.5; SPRITE3D_H[T.CAVE_UP]=0.5; SPRITE3D_H[T.PLACED_TORCH]=0.96;
 // ore heights match the voxel models exactly, so the far-away billboard and the close-up geometry
 // are the same size and you never see a rock "pop" as you approach it
 SPRITE3D_H[T.ROCK]=0.70; SPRITE3D_H[T.COAL]=0.70; SPRITE3D_H[T.IRONROCK]=0.70;
@@ -3271,6 +3272,60 @@ VOX_MODEL[T.COAL]     = _boulder().concat(_veins());
 VOX_MODEL[T.IRONROCK] = _boulder().concat(_veins());
 VOX_MODEL[T.CRYSTAL_ORE]  = _crystalRock();
 VOX_MODEL[T.CAVE_CRYSTAL] = _crystalRock();
+
+/* Built props. Beside real geometry a billboard cut from the top-down artwork reads as a flat
+   sticker — the campfire in particular was just an orange disc floating on the grass. */
+VOX_LOOK[T.CAMPFIRE] = { mat:'stone', stone:'#7b7b74', dark:'#4a4a45', log:'#6b4a26',
+                         flame:'#e85f10', flameHi:'#ffb02e', glow:0.42, glowRole:'flame|flameHi' };
+VOX_MODEL[T.CAMPFIRE] = [ _b(0.14,0.14,0.00, 0.86,0.86,0.07,'dark'),      // ash bed
+                          _b(0.03,0.34,0.00, 0.19,0.66,0.17,'stone'),     // ring of stones
+                          _b(0.81,0.34,0.00, 0.97,0.66,0.17,'stone'),
+                          _b(0.34,0.03,0.00, 0.66,0.19,0.17,'stone'),
+                          _b(0.34,0.81,0.00, 0.66,0.97,0.17,'stone'),
+                          _b(0.20,0.44,0.07, 0.80,0.56,0.17,'log'),       // two crossed logs
+                          _b(0.44,0.20,0.07, 0.56,0.80,0.17,'log'),
+                          _b(0.30,0.30,0.17, 0.70,0.70,0.34,'flame'),
+                          _b(0.38,0.38,0.34, 0.62,0.62,0.47,'flameHi'),
+                          _b(0.45,0.45,0.47, 0.55,0.55,0.56,'flameHi') ];
+VOX_LOOK[T.PLACED_TORCH] = { mat:'wood', bark:'#6b4a26', dark:'#4a3118',
+                             flame:'#f07a12', flameHi:'#ffc244', glow:0.45, glowRole:'flame|flameHi' };
+VOX_MODEL[T.PLACED_TORCH] = [ _b(0.45,0.45,0.00, 0.55,0.55,0.70,'bark'),
+                              _b(0.40,0.40,0.70, 0.60,0.60,0.82,'flame'),
+                              _b(0.45,0.45,0.82, 0.55,0.55,0.91,'flameHi') ];
+VOX_LOOK[T.CRAFTING_TABLE]  = { mat:'wood', bark:'#7a5a2e', dark:'#543c1c', top:'#9a7440', hi:'#b08a52' };
+VOX_MODEL[T.CRAFTING_TABLE] = [ _b(0.11,0.11,0.00, 0.89,0.89,0.56,'bark'),
+                                _b(0.04,0.04,0.56, 0.96,0.96,0.70,'top') ];
+VOX_LOOK[T.UPGRADED_TABLE]  = { mat:'wood', bark:'#6a5a3a', dark:'#463c26', top:'#8c7a4e', hi:'#a89364' };
+VOX_MODEL[T.UPGRADED_TABLE] = [ _b(0.11,0.11,0.00, 0.89,0.89,0.56,'bark'),
+                                _b(0.04,0.04,0.56, 0.96,0.96,0.70,'top'),
+                                _b(0.30,0.30,0.70, 0.52,0.52,0.82,'hi') ];
+VOX_LOOK[T.GARDEN_TABLE]  = { mat:'wood', bark:'#5d7a3a', dark:'#3e5426', top:'#7fa04e', hi:'#9dbb64' };
+VOX_MODEL[T.GARDEN_TABLE] = [ _b(0.11,0.11,0.00, 0.89,0.89,0.56,'bark'),
+                              _b(0.04,0.04,0.56, 0.96,0.96,0.70,'top') ];
+VOX_LOOK[T.FURNACE] = { mat:'stone', base:'#6e6e6e', dark:'#454545', hi:'#8a8a8a',
+                        ember:'#ff7a20', glow:0.7, glowRole:'ember' };
+VOX_MODEL[T.FURNACE] = [ _b(0.05,0.05,0.00, 0.95,0.95,0.78,'base'),
+                         _b(0.10,0.10,0.78, 0.90,0.90,0.88,'hi'),
+                         _b(0.30,0.30,0.88, 0.70,0.70,0.96,'ember') ];   // hot mouth on top
+VOX_LOOK[T.BEEHIVE]  = { mat:'wood', base:'#c79a3e', dark:'#8d6a22', hi:'#e0b75a' };
+VOX_MODEL[T.BEEHIVE] = [ _b(0.18,0.18,0.00, 0.82,0.82,0.26,'base'),
+                         _b(0.14,0.14,0.26, 0.86,0.86,0.52,'hi'),
+                         _b(0.18,0.18,0.52, 0.82,0.82,0.74,'base') ];
+VOX_LOOK[T.BUSH]  = { mat:'leaf', leaf:'#2f6b2a', dark:'#1d4419', leafHi:'#3f8a36', berry:'#c94a3d' };
+VOX_MODEL[T.BUSH] = [ _b(0.13,0.13,0.00, 0.87,0.87,0.33,'leaf'),
+                      _b(0.21,0.21,0.33, 0.79,0.79,0.52,'leafHi'),
+                      _b(0.30,0.87,0.13, 0.43,0.94,0.24,'berry'),   // berries break the outline, so
+                      _b(0.58,0.06,0.15, 0.71,0.13,0.26,'berry'),   // you can tell a bush is ripe
+                      _b(0.87,0.33,0.17, 0.94,0.46,0.28,'berry'),   // from any side
+                      _b(0.06,0.55,0.14, 0.13,0.68,0.25,'berry') ];
+// Short clumps with a fat ear on top. Tall thin stalks read as a bundle of canes, not a crop.
+VOX_LOOK[T.WHEAT]  = { mat:'plant', base:'#9c7d22', dark:'#6f5813', hi:'#e3bf45' };
+VOX_MODEL[T.WHEAT] = [ _b(0.15,0.15,0.00, 0.85,0.85,0.19,'base'),   // one tuft, not four canes
+                       _b(0.24,0.24,0.19, 0.76,0.76,0.36,'hi'),
+                       _b(0.36,0.36,0.36, 0.64,0.64,0.45,'hi') ];
+VOX_LOOK[T.SKULL]  = { mat:'stone', base:'#ddd6bd', dark:'#a49c82', hi:'#f2ecd8' };
+VOX_MODEL[T.SKULL] = [ _b(0.30,0.30,0.00, 0.70,0.70,0.30,'base'),
+                       _b(0.36,0.36,0.30, 0.64,0.64,0.38,'hi') ];
 // Trees stop being flat cut-outs: a real trunk column with a blocky canopy stacked on top. Up close
 // that's the difference between a painted backdrop and something you're actually walking around.
 // The canopy has to clear your head properly. Sitting it just above eye level means you see its
@@ -3302,6 +3357,8 @@ const FACE_LIGHT = { top:1.16, north:1.00, east:0.84, west:0.70, south:0.57, bot
 // Eye height in tiles. Has to agree with v3sy's (0.5 - h): a point at h = 0.5 lands on the horizon
 // at any depth, which is the definition of eye level.
 const V3_EYE = 0.5;
+// A model may have several self-lit parts (a fire and its tip), so glowRole is a pipe-separated list.
+function voxGlows(C, role){ return C.glow > 0 && ('|'+C.glowRole+'|').indexOf('|'+role+'|') >= 0; }
 const VOX_RGB = {};
 function voxRGB(type){
   let v = VOX_RGB[type];
@@ -3389,7 +3446,7 @@ function voxFaceTex(type, role, face){
   const pal = voxRGB(type);
   const rgb = pal[role] || pal.base || pal.bark || [128,128,128];
   let light = FACE_LIGHT[face];
-  if (pal.glow && role===pal.glowRole) light = Math.min(1.55, light + pal.glow);
+  if (voxGlows(pal, role)) light = Math.min(1.75, light + pal.glow);
   const S = VOX_TS;
   c = document.createElement('canvas'); c.width=S; c.height=S;
   const g = c.getContext('2d');
@@ -3419,7 +3476,7 @@ function voxFaceTex(type, role, face){
       const x=(v3hash(seed,i,7)*S)|0, y=(v3hash(seed,i,8)*S)|0, len=6+((v3hash(seed,i,9)*13)|0);
       if (v3hash(seed,i,10)<0.5) put(x,y,len,1,0.58); else put(x,y,1,len,0.58);
     }
-    if (pal.glow && role===pal.glowRole)
+    if (voxGlows(pal, role))
       for (let i=0;i<6;i++){ const x=(v3hash(seed,i,11)*S)|0, y=(v3hash(seed,i,12)*S)|0; put(x,y,2,2,1.5); }
   }
   voxTexCache[key]=c; return c;
@@ -3492,7 +3549,7 @@ function drawVoxelTile(type, tile, tx, ty, depth, fog, fogCol, q){
       const cam = allFront ? P.slice() : v3clipNear(P.slice());
       if (cam.length < 3) continue;
       let light = FACE_LIGHT[name];
-      if (C.glow && bx.c===C.glowRole) light = Math.min(1.55, light + C.glow);
+      if (voxGlows(C, bx.c)) light = Math.min(1.75, light + C.glow);
       light *= wear;
       v3trace(cam);
       ctx.fillStyle = v3shade(rgb, light, fog, fogCol); ctx.fill();
@@ -3702,10 +3759,15 @@ function tintedSprite(img, amt, col){
   return sprTint;
 }
 let entScratch = null;
+// Creatures stay sprites on purpose — that reading is the look we want — but a walk right up to one
+// used to magnify a 64px cell into a couple of hundred screen pixels. Drawing the same art at 2x into
+// a 128px cell costs nothing per frame and keeps it crisp when it fills your view.
+const ENT_SPR = 128, ENT_SCALE = 2;
 function entitySprite(fn){
-  if (!entScratch){ entScratch = document.createElement('canvas'); entScratch.width=64; entScratch.height=64; }
-  const g = entScratch.getContext('2d'); g.clearRect(0,0,64,64);
-  const saved = ctx; ctx = g; g.save(); g.translate(32, 44);
+  if (!entScratch){ entScratch = document.createElement('canvas'); entScratch.width=ENT_SPR; entScratch.height=ENT_SPR; }
+  const g = entScratch.getContext('2d'); g.clearRect(0,0,ENT_SPR,ENT_SPR);
+  const saved = ctx; ctx = g; g.save();
+  g.translate(ENT_SPR/2, 44*ENT_SCALE); g.scale(ENT_SCALE, ENT_SCALE);
   try{ fn(); }catch(e){} finally { g.restore(); ctx = saved; }
   return entScratch;
 }
@@ -3868,6 +3930,13 @@ function draw3D(){
     // Solid tiles get their true square footprint painted on the ground. The old screen-space ellipse
     // ballooned into a grey saucer as you got close, which read as fog rather than as a blocked square.
     if (s.solid) v3footprint(s.x-0.5, s.y-0.5, fog);
+    else if (s.ent && s.kind!=='pickup'){
+      // creatures don't own a tile, so they get a contact patch instead of a square footprint —
+      // without it they read as stickers hovering just off the ground
+      const rw = Math.max(1.5, sw*0.32), rh = Math.max(1, rw*0.30);
+      ctx.save(); ctx.globalAlpha = 0.32*(1-fog); ctx.fillStyle='#000';
+      ctx.beginPath(); ctx.ellipse(scrX, floorY, rw, rh, 0, 0, 6.3); ctx.fill(); ctx.restore();
+    }
     img = tintedSprite(img, fog*0.85, fogCol);     // distance haze, applied to the artwork only
     ctx.drawImage(img, x0, y0, sw, sh);            // one clean blit — the old strip loop left seams
     if (vis===2) ctx.restore();
