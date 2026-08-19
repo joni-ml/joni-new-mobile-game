@@ -2,7 +2,7 @@
    הרצה:  node rls/test-chem.mjs
    השאלה שכל בדיקה כאן שואלת: האם *חוק אחד* באמת מייצר כימיה אמיתית,
    בלי שכתבנו אף תגובה בשם? */
-import * as C from './chem.js';
+import * as C from './game/chem.js';
 
 let pass=0, fail=0;
 const ok=(name,cond,detail)=>{ if(cond){pass++; console.log('  ✔ '+name+(detail?'   '+detail:''));}
