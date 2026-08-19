@@ -3344,11 +3344,15 @@ VOX_MODEL[T.PINE] = [ _b(0.44,0.44,0.00, 0.56,0.56,0.95,'bark'),
 // A stump is below eye level, so you look down onto its cut face.
 VOX_MODEL[T.TRUNK] = [ _b(0.30,0.30,0.00, 0.70,0.70,0.34,'bark'),
                        _b(0.26,0.26,0.34, 0.74,0.74,0.40,'leafHi') ];
+// Arms on two axes. With both of them running east-west a cactus seen from the east was edge-on to
+// every arm and read as a bare pole.
 VOX_MODEL[T.CACTUS] = [ _b(0.38,0.38,0.00, 0.62,0.62,1.46,'base'),
-                        _b(0.14,0.44,0.52, 0.38,0.56,0.68,'base'),
-                        _b(0.14,0.44,0.68, 0.26,0.56,1.10,'base'),
-                        _b(0.62,0.44,0.74, 0.86,0.56,0.90,'base'),
-                        _b(0.74,0.44,0.90, 0.86,0.56,1.22,'base') ];
+                        _b(0.13,0.41,0.52, 0.38,0.59,0.68,'base'),
+                        _b(0.13,0.41,0.68, 0.27,0.59,1.10,'base'),
+                        _b(0.62,0.41,0.76, 0.87,0.59,0.92,'base'),
+                        _b(0.73,0.41,0.92, 0.87,0.59,1.24,'base'),
+                        _b(0.41,0.13,0.62, 0.59,0.38,0.78,'base'),
+                        _b(0.41,0.13,0.78, 0.59,0.27,1.16,'base') ];
 // A fixed world-space sun. Each facing gets its own brightness, and that — far more than the outline —
 // is what makes a block read as solid and change as you walk around it.
 // Spread wide enough that the sides read as clearly different planes, but with the darkest facing
@@ -3372,6 +3376,7 @@ function voxRGB(type){
 
 /* --- camera shared by the 3D projector; draw3D refreshes it once per frame --- */
 const V3 = { posX:0, posY:0, dirX:1, dirY:0, planeX:0, planeY:1, invDet:1, horizon:0 };
+let v3time = 0;                             // seconds, sampled once a frame to drive water motion
 // Near plane, in tiles. Kept well off zero on purpose: clipping at a hair's breadth lets a face that
 // passes beside your head project to coordinates in the tens of thousands, which paints as a black
 // wedge across the screen. Collision never lets you closer than this anyway.
@@ -3707,21 +3712,38 @@ function drawFloor3D(posX,posY,dirX,dirY,planeX,planeY,horizon,maxD,fogCol,q){
           const c = inCave ? ((tl.type===T.CAVE_FLOOR||tl.type===T.ALTAR_FLOOR) ? CAVE_RGB_FLOOR : CAVE_RGB_WALL)
                            : floorRGB(tl.type, biomeIdx(tx,ty));
           let cr=c[0], cg=c[1], cb=c[2];
-          // Grain, keyed off the WORLD position rather than the screen, so it's welded to the ground
-          // and stays put while you walk instead of boiling under your feet.
-          if (q>=3){
-            let n = (Math.imul((wx*7)|0, 92837111) ^ Math.imul((wy*7)|0, 689287499)) | 0;
-            n = Math.imul(n ^ (n>>>13), 1274126177);
-            const j = 1 + (((n>>>17) & 15) * 0.0075 - 0.056);   // ±5.6% speckle
-            cr*=j; cg*=j; cb*=j;
-          }
-          // tile seams: a dark groove with a lighter inner lip, so the ground reads as laid blocks
-          // and you can line yourself up with the grid you're actually building on
           const fx = wx-tx, fy = wy-ty;
-          const onEdge = fx<0.030||fx>0.970||fy<0.030||fy>0.970;
-          const nearEdge = !onEdge && (fx<0.060||fx>0.940||fy<0.060||fy>0.940);
-          if (onEdge){ cr*=0.74; cg*=0.74; cb*=0.74; }
-          else if (nearEdge){ cr*=1.09; cg*=1.09; cb*=1.09; }
+          if (tl.type===T.WATER && !inCave){
+            // Water was taking the same block grid and grain as the ground, which made a lake read as
+            // blue paving. Rolling swell plus foam where it meets the shore instead.
+            const sw = Math.sin(wx*3.1 + v3time*1.6) + Math.sin(wy*2.6 - v3time*1.2) + Math.sin((wx+wy)*1.9 + v3time*0.8);
+            const m = 1 + sw*0.045;
+            cr*=m; cg*=m; cb*=m;
+            let foam = 0;
+            if (fx<0.13 && tx>0        && world[ty][tx-1].type!==T.WATER) foam = 1-fx/0.13;
+            else if (fx>0.87 && tx<MAPW-1 && world[ty][tx+1].type!==T.WATER) foam = 1-(1-fx)/0.13;
+            if (fy<0.13 && ty>0        && world[ty-1][tx].type!==T.WATER) foam = Math.max(foam, 1-fy/0.13);
+            else if (fy>0.87 && ty<MAPH-1 && world[ty+1][tx].type!==T.WATER) foam = Math.max(foam, 1-(1-fy)/0.13);
+            if (foam>0){
+              const f = foam*foam*0.5*(0.75+0.25*Math.sin(v3time*2.4 + (tx+ty)*1.7));
+              cr += (255-cr)*f; cg += (255-cg)*f; cb += (255-cb)*f;
+            }
+          } else {
+            // Grain, keyed off the WORLD position rather than the screen, so it's welded to the ground
+            // and stays put while you walk instead of boiling under your feet.
+            if (q>=3){
+              let n = (Math.imul((wx*7)|0, 92837111) ^ Math.imul((wy*7)|0, 689287499)) | 0;
+              n = Math.imul(n ^ (n>>>13), 1274126177);
+              const j = 1 + (((n>>>17) & 15) * 0.0075 - 0.056);   // ±5.6% speckle
+              cr*=j; cg*=j; cb*=j;
+            }
+            // tile seams: a dark groove with a lighter inner lip, so the ground reads as laid blocks
+            // and you can line yourself up with the grid you're actually building on
+            const onEdge = fx<0.030||fx>0.970||fy<0.030||fy>0.970;
+            const nearEdge = !onEdge && (fx<0.060||fx>0.940||fy<0.060||fy>0.940);
+            if (onEdge){ cr*=0.74; cg*=0.74; cb*=0.74; }
+            else if (nearEdge){ cr*=1.09; cg*=1.09; cb*=1.09; }
+          }
           r = cr*inv + fogCol[0]*fog; g = cg*inv + fogCol[1]*fog; b = cb*inv + fogCol[2]*fog;
         }
       }
@@ -3796,6 +3818,7 @@ function draw3D(){
   // publish the camera for the geometry projector (rocks, ore, footprints)
   V3.posX=posX; V3.posY=posY; V3.dirX=dirX; V3.dirY=dirY; V3.planeX=planeX; V3.planeY=planeY;
   V3.invDet = 1/(planeX*dirY - dirX*planeY); V3.horizon = horizon;
+  v3time = performance.now()*0.001;
   ctx.imageSmoothingEnabled = false;   // keep the pixel art crisp instead of blurry when scaled up
 
   // ---- sky / ceiling ----
