@@ -3203,9 +3203,9 @@ function treeSprite(kind){
     if (kind==='trunk'){ box(14,50,26,96,BARK,'#8a6236'); return; }
     if (kind==='pine'){
       box(28,36,57,96,'#5a4020','#74532a');
-      box( 6,58,38,60,'#1f5c38','#2b7a4a');
-      box(12,52,21,38,'#1f5c38','#2b7a4a');
-      box(19,45, 6,21,'#1f5c38','#2b7a4a');
+      box( 6,58,38,60,'#2d7a4a','#3d9560');
+      box(12,52,21,38,'#2d7a4a','#3d9560');
+      box(19,45, 6,21,'#2d7a4a','#3d9560');
       box(24,40, 0, 6,'#dfeef0','#ffffff');
     } else {
       box(27,37,43,96,BARK,BARK_T);
@@ -3231,7 +3231,7 @@ VOX_LOOK[T.CRYSTAL_ORE] = { mat:'stone', base:'#6d6d76', dark:'#42424a', hi:'#8f
 VOX_LOOK[T.CAVE_CRYSTAL]= { mat:'stone', base:'#5f5f69', dark:'#393940', hi:'#82828c', accent:'#86dff2', glow:0.55, glowRole:'accent' };
 // `jitter` varies a model's height per tile, so a stand of trees doesn't form one flat green roof.
 VOX_LOOK[T.TREE]        = { mat:'wood',  bark:'#6b4a26', dark:'#4a3118', leaf:'#2f7a34', leafHi:'#4da046', jitter:0.20 };
-VOX_LOOK[T.PINE]        = { mat:'wood',  bark:'#5a4020', dark:'#3d2b14', leaf:'#1f5c38', leafHi:'#dfeef0', jitter:0.20 };
+VOX_LOOK[T.PINE]        = { mat:'wood',  bark:'#5a4020', dark:'#3d2b14', leaf:'#2d7a4a', leafHi:'#dfeef0', jitter:0.20 };
 VOX_LOOK[T.TRUNK]       = { mat:'wood',  bark:'#6b4a26', dark:'#4a3118', leaf:'#6b4a26', leafHi:'#8a6236' };
 VOX_LOOK[T.CACTUS]      = { mat:'plant', base:'#2f7a3f', dark:'#1c5227', hi:'#49a256', accent:'#d8e6a0' };
 // ORE_LOOK stays the palette the far-distance billboard is cut from, and marks which tiles are ore.
@@ -3514,8 +3514,8 @@ function v3footprint(tx, ty, fog){
   if (foot.length < 3) return;
   const a = 1-fog;
   v3trace(foot);
-  ctx.fillStyle = 'rgba(0,0,0,'+(0.34*a).toFixed(3)+')'; ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,'+(0.30*a).toFixed(3)+')'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = 'rgba(0,0,0,'+(0.27*a).toFixed(3)+')'; ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,'+(0.24*a).toFixed(3)+')'; ctx.lineWidth = 1; ctx.stroke();
 }
 // Draw one tile as real geometry. Caller has already clipped to the columns the walls leave visible.
 function drawVoxelTile(type, tile, tx, ty, depth, fog, fogCol, q){
@@ -3711,6 +3711,10 @@ function drawFloor3D(posX,posY,dirX,dirY,planeX,planeY,horizon,maxD,fogCol,q){
     const fog = v3fog(rowDist, maxD);
     const inv = 1-fog;
     const night = 1 - v3night.k*Math.min(1, rowDist*v3night.inv);
+    // Seams are a hair under a twentieth of a tile wide. Far enough away that's thinner than one
+    // buffer pixel, so the grid breaks up into dashes that crawl. They only need to be legible close
+    // by, where you're lining a block up, so fade them out with distance.
+    const seam = Math.max(0, 1 - rowDist/9);
     const rowStepX = (planeX*2*rowDist)/bw, rowStepY = (planeY*2*rowDist)/bw;
     let wx = posX + (dirX - planeX)*rowDist, wy = posY + (dirY - planeY)*rowDist;
     let o = by*bw*4;
@@ -3752,8 +3756,8 @@ function drawFloor3D(posX,posY,dirX,dirY,planeX,planeY,horizon,maxD,fogCol,q){
             // and you can line yourself up with the grid you're actually building on
             const onEdge = fx<0.030||fx>0.970||fy<0.030||fy>0.970;
             const nearEdge = !onEdge && (fx<0.060||fx>0.940||fy<0.060||fy>0.940);
-            if (onEdge){ cr*=0.74; cg*=0.74; cb*=0.74; }
-            else if (nearEdge){ cr*=1.09; cg*=1.09; cb*=1.09; }
+            if (onEdge){ const m = 1-0.26*seam; cr*=m; cg*=m; cb*=m; }
+            else if (nearEdge){ const m = 1+0.09*seam; cr*=m; cg*=m; cb*=m; }
           }
           cr*=night; cg*=night; cb*=night;
           r = cr*inv + fogCol[0]*fog; g = cg*inv + fogCol[1]*fog; b = cb*inv + fogCol[2]*fog;
