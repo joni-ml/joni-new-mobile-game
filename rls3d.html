@@ -242,13 +242,63 @@ function lathe(profile, segs=52){
   return { pos:new Float32Array(P), nrm:new Float32Array(N), idx:new Uint16Array(I) };
 }
 
+/* ---- זכוכית חלולה ----
+   כלי אמיתי הוא לא משטח, יש לו עובי דופן. מזיזים את הפרופיל פנימה לאורך
+   הנורמל, ותופרים שפה מעוגלת בין השניים. זה מה שנותן לזכוכית את הכובד
+   שלה: מהצד המבט חוצה ארבע דפנות במקום שתיים, ולשפה יש עובי שרואים. */
+function profileNormal(profile,i){
+  const p=profile[Math.max(0,i-1)], n=profile[Math.min(profile.length-1,i+1)];
+  const tr=n[0]-p[0], ty=n[1]-p[1], l=Math.hypot(tr,ty)||1;
+  return [-ty/l, tr/l];
+}
+function flipNormals(m){
+  const n=new Float32Array(m.nrm);
+  for (let i=0;i<n.length;i++) n[i]=-n[i];
+  return { pos:m.pos, nrm:n, idx:m.idx };
+}
+function merge(...ms){
+  let np=0, ni=0;
+  for (const m of ms){ np+=m.pos.length; ni+=m.idx.length; }
+  const pos=new Float32Array(np), nrm=new Float32Array(np), idx=new Uint16Array(ni);
+  let po=0, io=0, vo=0;
+  for (const m of ms){
+    pos.set(m.pos,po); nrm.set(m.nrm,po);
+    for (let i=0;i<m.idx.length;i++) idx[io+i]=m.idx[i]+vo;
+    vo+=m.pos.length/3; po+=m.pos.length; io+=m.idx.length;
+  }
+  return { pos,nrm,idx };
+}
+/* השפה המגולגלת. עוברים מהדופן הפנימית מעל הקצה אל החיצונית — הפרופיל
+   נקרא עם y יורד, וזה מה שמכוון את הנורמלים החוצה. */
+function rimBead(rO,rI,y,steps=6){
+  const cr=(rO+rI)/2, rad=Math.abs(rO-rI)/2, p=[];
+  for (let i=0;i<=steps;i++){
+    const a=Math.PI - i/steps*Math.PI;
+    p.push([cr+rad*Math.cos(a), y+rad*Math.sin(a)]);
+  }
+  return p;
+}
+function hollow(profile, t, segs=52){
+  const inner=profile.map((pt,i)=>{
+    const [nr,ny]=profileNormal(profile,i);
+    return [Math.max(0, pt[0]-nr*t), pt[1]-ny*t];
+  });
+  return merge(
+    lathe(profile,segs),
+    flipNormals(lathe(inner,segs)),
+    lathe(rimBead(profile[0][0], inner[0][0], profile[0][1]), segs),
+  );
+}
+
 function flaskProfile(){
   const p=[[0.21,2.42],[0.21,2.00],[0.245,1.91],[0.32,1.82],[0.44,1.72],[0.56,1.62]];
   const R=0.90, cy=0.90;
   for (let a=0.80; a<=Math.PI+1e-6; a+=(Math.PI-0.80)/24) p.push([R*Math.sin(a), cy+R*Math.cos(a)]);
   return p;
 }
-const beakerProfile = () => [[0.68,1.48],[0.68,0.09],[0.62,0.015],[0.55,0.0],[0.0,0.0]];
+/* לכוס יש בסיס עבה יותר מהדופן, בדיוק כמו לכוס מעבדה */
+const beakerProfile = () => [[0.68,1.48],[0.68,0.12],[0.655,0.055],[0.60,0.015],
+                             [0.52,0.0],[0.0,0.0]];
 
 function condenserPath(){
   const ctrl=[[0,2.42,0],[0,2.95,0],[0.22,3.34,0],[0.85,3.54,0]];
@@ -499,31 +549,46 @@ const glassProg = program(`#version 300 es
   in vec3 vW, vN;
   ${LIB}
   uniform vec3 uEye;
-  uniform float uGlow, uAxisX;
+  uniform float uGlow, uAxisX, uMarkAng;
   uniform vec4 uMark;                 /* y0, y1, מרווח, 0=בלי מדים */
   out vec4 o;
   void main(){
     if (clipped(vW)) discard;
     vec3 N=normalize(vN), V=normalize(uEye-vW);
-    float f = pow(1.0 - abs(dot(N,V)), 2.3);
-    vec3 refl = sky(reflect(-V, N));
-    float a = 0.085 + f * 0.55;
-    vec3 c = mix(vec3(0.16,0.20,0.25), vec3(0.85,0.92,1.0), f) * 0.55 + refl * 0.75;
+    float ndv = abs(dot(N,V));
+    float f = pow(1.0 - ndv, 2.6);
 
-    /* מדים: קווים אופקיים על גזרה אחת בהיקף, כמו שחרוט על זכוכית אמיתית */
+    vec3 refl = sky(reflect(-V, N));
+    vec3 L = normalize(KEY);
+    /* שתי הבהקות: אחת צרה מהנורה בתקרה, ואחת רחבה כי גוף התאורה הוא
+       משטח ולא נקודה. זה מה שמבדיל בין זכוכית לפלסטיק אפור. */
+    float hard = pow(max(dot(normalize(L+V), N), 0.0), 400.0);
+    float soft = pow(max(dot(normalize(L+V), N), 0.0), 22.0);
+
+    /* הדופן כבר לא משטח יחיד — הזכוכית חלולה, והמבט חוצה ארבע פאות.
+       לכן הבסיס נמוך יותר: כל פאה מוסיפה משלה. */
+    float a = 0.052 + f * 0.50;
+    /* זכוכית סודה-ליים ירקרקה כשמסתכלים דרך הקצה שלה, שם הדרך ארוכה */
+    vec3 edge = mix(vec3(0.62,0.80,0.74), vec3(0.88,0.94,1.0), ndv);
+    vec3 c = mix(vec3(0.14,0.18,0.22), edge, f) * 0.60 + refl * 0.80;
+    c += vec3(1.0,0.99,0.95) * hard * 1.6 + vec3(0.55,0.60,0.66) * soft * 0.30;
+    a += hard * 0.55 + soft * 0.10;
+
+    /* מדים חרוטים על גזרה אחת בהיקף, ארוכים כל חמישה — בדיוק כמו
+       שקוראים נפח מכוס מדידה אמיתית */
     if (uMark.w > 0.5){
       float ang = atan(vW.z, vW.x - uAxisX);
-      float band = smoothstep(0.62, 0.30, abs(ang - 2.05));
-      float k = (vW.y - uMark.x) / uMark.z;
-      float major = step(0.5, fract(k * 0.2 + 0.001));
-      float line = smoothstep(0.075, 0.0, abs(fract(k) - 0.0) - 0.0)
-                 + smoothstep(0.055, 0.0, abs(fract(k) - 1.0));
+      float k   = (vW.y - uMark.x) / uMark.z;
+      float idx = floor(k + 0.5);
+      float dist = abs(k - idx);
+      bool major = abs(mod(idx, 5.0)) < 0.5;
+      float reach = major ? 0.50 : 0.26;              /* אורך הקו */
+      float band = smoothstep(reach, reach * 0.45, abs(ang - uMarkAng));
+      float line = smoothstep(0.085, 0.015, dist);
       float inRange = step(uMark.x, vW.y) * step(vW.y, uMark.y);
-      float m = clamp(line,0.0,1.0) * band * inRange;
-      /* קווים ארוכים כל חמישה */
-      m *= mix(0.55, 1.0, major);
-      c += vec3(0.85,0.90,0.97) * m * 0.9;
-      a += m * 0.45;
+      float m = line * band * inRange * (major ? 1.0 : 0.72);
+      c += vec3(0.92,0.95,1.0) * m * 1.25;
+      a += m * 0.62;
     }
 
     c += uGlow * vec3(1.0,0.45,0.16);
@@ -641,7 +706,7 @@ const compositeProg = program(FSTRI, `#version 300 es
     vec4 th0 = texture(uThick, vUV);
     /* השפה נקבעת לפי העובי ולא לפי "יש עומק / אין עומק" — סף בינארי
        על מפת חצי־רזולוציה נותן קצוות מדורגים במקום פני נוזל */
-    float cover = smoothstep(0.006, 0.10, th0.a);
+    float cover = smoothstep(0.018, 0.13, th0.a);
     if (d <= 0.0 || cover <= 0.001){ o = vec4(bg, 1.0); return; }
 
     vec3 P = viewFrom(vUV, d);
@@ -750,13 +815,17 @@ const room   = buildMesh(roomProg, roomMesh(15,9,15,2.0), false);
 /* מעט מתחת ל-0: תחתית הכלים יושבת על y=0 בדיוק, ומשטח באותו
    גובה נותן ריב-עומק שנראה ככוכב שחור בתחתית הכוס */
 const table  = buildMesh(woodProg, quadMesh(-0.006, 5.6, 5.6, 0.9, 0), false);
+const shiftX = (m,dx)=>{ for(let i=0;i<m.pos.length;i+=3) m.pos[i]+=dx; return m; };
 const GLASS = [
-  { mesh:buildMesh(glassProg, lathe(flaskProfile())), ox:0,
-    mark:[0.45,1.75,0.13,1], axis:0, glow:true },
-  { mesh:buildMesh(glassProg, (()=>{ const m=lathe(beakerProfile());
-      for(let i=0;i<m.pos.length;i+=3) m.pos[i]+=BEAKER_X; return m; })()),
-    ox:BEAKER_X, mark:[0.22,1.32,0.11,1], axis:BEAKER_X, glow:false },
-  { mesh:buildMesh(glassProg, tubeMesh(PATH,0.13)), ox:1.4,
+  /* לבקבוק תחתית עגולה אין מדים — לא במציאות ולא כאן. על בועה
+     כדורית קו בגובה קבוע מתעקל ונראה כמו צלע, לא כמו סימון. */
+  { mesh:buildMesh(glassProg, hollow(flaskProfile(), 0.024)), ox:0,
+    mark:[0,0,1,0], axis:0, glow:true },
+  { mesh:buildMesh(glassProg, shiftX(hollow(beakerProfile(), 0.028), BEAKER_X)),
+    ox:BEAKER_X, mark:[0.20,1.30,0.11,1], axis:BEAKER_X, markAng:0.45, glow:false },
+  /* הצינור חלול גם הוא, ובלי מדים — אף אחד לא מודד נפח בצינור מעבה */
+  { mesh:buildMesh(glassProg, merge(tubeMesh(PATH,0.135),
+                                    flipNormals(tubeMesh(PATH,0.112)))), ox:1.4,
     mark:[0,0,1,0], axis:0, glow:false },
 ];
 
@@ -1329,6 +1398,7 @@ function draw(){
     gl.uniform1f(glassProg.u.uGlow, g.glow?clamp((heat-320)/1500,0,0.30):0);
     gl.uniform1f(glassProg.u.uAxisX, g.axis);
     gl.uniform4fv(glassProg.u.uMark, g.mark);
+    gl.uniform1f(glassProg.u.uMarkAng, g.markAng||0);
     gl.bindVertexArray(g.mesh.vao);
     gl.drawElements(gl.TRIANGLES,g.mesh.n,gl.UNSIGNED_SHORT,0);
   }
