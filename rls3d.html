@@ -3,17 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>RLS — מולקולות</title>
+<title>RLS — מעבדה</title>
 <style>
 /* ===========================================================================
-   RLS 3D — אין פיקסלים. יש מולקולות.
+   RLS 3D — מעבדה
 
-   כל כדור על המסך הוא אטום אמיתי. מים בכלי הם לא צורה מצוירת של מים —
-   הם אלף מולקולות H₂O שנערמו בתחתית בגלל כובד. מחממים אותן, הן מתפזרות.
-   מקררים, הן חוזרות. אף אחד לא כתב "מים נראים ככה".
+   שני מצגים לאותו עולם בדיוק:
+     מולקולות — רואים כל אטום. חמצן אדום, מימן לבן, זווית 104.5° אמיתית.
+     אמיתי    — רואים מה שמצלמה הייתה רואה: נוזל, אדים, זכוכית.
+
+   אותן מולקולות. רק דרך אחרת להסתכל עליהן.
+
+   שום חומר לא "יודע" מה לעשות ליד חומר אחר. לשמן אין כלל שאומר לו לעלות
+   מעל מים — יש לו צפיפות, ולמים יש צפיפות, וההפרש הוא שדוחף אותו למעלה.
    =========================================================================== */
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;overflow:hidden;background:#070a10;color:#dfe8f4;
+html,body{height:100%;overflow:hidden;background:#0a0b0d;color:#e2e6ec;
   font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   user-select:none;-webkit-user-select:none;touch-action:none}
 body{display:flex;flex-direction:column}
@@ -22,78 +27,74 @@ button{border:0;color:inherit;font:inherit;background:none}
 #stage{position:relative;flex:1;min-height:0}
 canvas{display:block;width:100%;height:100%;touch-action:none}
 
-/* מונה האטומים — הדבר היחיד במסך שאף פעם לא משתנה */
 #atoms{position:absolute;top:calc(10px + env(safe-area-inset-top));left:50%;
-  transform:translateX(-50%);display:flex;gap:2px;align-items:stretch;
-  background:rgba(9,13,20,.82);border:1px solid #1e2937;border-radius:11px;
-  padding:3px;backdrop-filter:blur(8px);pointer-events:none}
+  transform:translateX(-50%);display:flex;gap:2px;
+  background:rgba(10,12,16,.8);border:1px solid rgba(255,255,255,.09);
+  border-radius:11px;padding:3px;backdrop-filter:blur(10px);pointer-events:none}
 #atoms b{display:flex;align-items:baseline;gap:5px;padding:5px 10px;border-radius:8px;
   font-weight:600;font-size:12px;font-variant-numeric:tabular-nums}
-#atoms b i{font-style:normal;font-size:10px;opacity:.62;letter-spacing:.04em}
+#atoms b i{font-style:normal;font-size:10px;opacity:.6}
 
-#hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);
-  font-size:11px;line-height:1.7;color:#7d90a8;text-align:center;max-width:90%;
-  background:rgba(9,13,20,.78);border:1px solid #1a2431;border-radius:10px;
-  padding:7px 13px;pointer-events:none;transition:opacity .8s ease 6s}
+#hint{position:absolute;bottom:11px;left:50%;transform:translateX(-50%);
+  font-size:11px;color:#8b96a6;text-align:center;white-space:nowrap;
+  background:rgba(10,12,16,.75);border:1px solid rgba(255,255,255,.07);
+  border-radius:9px;padding:6px 12px;pointer-events:none;transition:opacity .8s ease 6s}
 #hint.gone{opacity:0}
+#fps{position:absolute;bottom:11px;inset-inline-start:12px;font-size:10px;
+  color:#4a5462;font-variant-numeric:tabular-nums;pointer-events:none}
 
-#fps{position:absolute;bottom:10px;inset-inline-start:12px;
-  font-size:10px;color:#465569;font-variant-numeric:tabular-nums;pointer-events:none}
-
-/* ---- לוח הבקרה ---- */
-#hud{background:#0c1119;border-top:1px solid #1a2330;
+#hud{background:#0d0f13;border-top:1px solid #1b1f26;
   padding:9px 10px calc(9px + env(safe-area-inset-bottom));
   display:flex;flex-direction:column;gap:8px;z-index:3}
 .row{display:flex;align-items:center;gap:7px}
-.btn{background:#141c28;border:1px solid #23303f;border-radius:10px;
+.btn{background:#161a21;border:1px solid #262c36;border-radius:10px;
   padding:9px 12px;font-size:13px;line-height:1;white-space:nowrap;
   transition:background .15s,border-color .15s}
-.btn:active{background:#1c2735}
-.btn.on{background:#2f6df0;border-color:#5f92ff;color:#fff}
+.btn:active{background:#1f2530}
+.btn.on{background:#c9822e;border-color:#e8a44f;color:#fff}
 .btn.hot{background:#3a1a12;border-color:#6d3320;color:#ffb99e}
-.btn.hot:active{background:#6b2a16;border-color:#e0623f;color:#fff}
-label{font-size:11px;color:#7d90a8;min-width:56px;font-variant-numeric:tabular-nums}
-/* עוצמה נקראת תמיד משמאל לימין, גם בדף בעברית — אחרת "קר" נראה כמו "מלא" */
-input[type=range]{flex:1;accent-color:#e0623f;height:26px;direction:ltr}
+.btn.hot:active{background:#7a2d15;color:#fff}
+label{font-size:11px;color:#8b96a6;min-width:56px;font-variant-numeric:tabular-nums}
+input[type=range]{flex:1;accent-color:#d4632f;height:26px;direction:ltr}
 
-#pickBar{display:flex;align-items:center;gap:9px;background:#131b28;
-  border:1px solid #253345;border-radius:12px;padding:9px 11px;width:100%}
+#pickBar{display:flex;align-items:center;gap:9px;background:#151a21;
+  border:1px solid #272e39;border-radius:12px;padding:9px 11px;width:100%}
 #pickDot{width:20px;height:20px;border-radius:50%;flex:0 0 auto;
   border:1px solid rgba(0,0,0,.45)}
 #pickName{font-size:14px;font-weight:600}
-#pickKey{font-size:12px;color:#8ba3c0}
-#pickUp{margin-inline-start:auto;font-size:11px;color:#71859c}
+#pickKey{font-size:12px;color:#94a1b2}
+#pickUp{margin-inline-start:auto;font-size:11px;color:#778392}
 
-/* ---- המגירה ---- */
 #scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);opacity:0;
   pointer-events:none;transition:opacity .25s;z-index:4}
 #scrim.on{opacity:1;pointer-events:auto}
-#sheet{position:fixed;left:0;right:0;bottom:0;z-index:5;background:#0e1520;
-  border-top:1px solid #222e40;border-radius:18px 18px 0 0;
+#sheet{position:fixed;left:0;right:0;bottom:0;z-index:5;background:#101319;
+  border-top:1px solid #242b35;border-radius:18px 18px 0 0;
   transform:translateY(102%);transition:transform .32s cubic-bezier(.22,1,.36,1);
   display:flex;flex-direction:column;max-height:86%;
   padding-bottom:calc(8px + env(safe-area-inset-bottom))}
 #sheet.open{transform:translateY(0)}
 #grip{padding:9px 0 5px;display:flex;justify-content:center}
-#grip b{width:36px;height:4px;border-radius:2px;background:#334156;display:block}
+#grip b{width:36px;height:4px;border-radius:2px;background:#333c49;display:block}
 #sheet h2{font-size:15px;font-weight:600;padding:2px 14px 10px}
 
-/* הטבלה נקראת תמיד משמאל לימין — הסדר הוא המספר האטומי, והוא לא מתהפך */
 #ptable{display:grid;grid-template-columns:repeat(18,1fr);gap:2px;
   direction:ltr;padding:0 12px}
 .pt{aspect-ratio:1;border-radius:3px;display:flex;align-items:center;
   justify-content:center;font-size:9px;font-weight:700;position:relative}
 .pt.gap{background:transparent}
-.pt.off{background:#111823}
-.pt.live{background:color-mix(in srgb,var(--c) 24%,#16202c);
-  border:1px solid color-mix(in srgb,var(--c) 52%,#243146);color:#f2f7ff}
+.pt.off{background:#141922}
+.pt.live{background:color-mix(in srgb,var(--c) 24%,#181e27);
+  border:1px solid color-mix(in srgb,var(--c) 52%,#262e3a);color:#f2f7ff}
 .pt.live.on{background:var(--c);color:#0a1018;border-color:#fff;
-  box-shadow:0 0 0 2px #2f6df0,0 0 10px rgba(47,109,240,.7);z-index:1}
+  box-shadow:0 0 0 2px #c9822e;z-index:1}
 .pt i{position:absolute;top:1px;inset-inline-start:2px;font-style:normal;
   font-size:6px;font-weight:400;opacity:.7}
-#ask{margin:12px;padding:12px 13px;background:#131b28;border:1px solid #253345;
-  border-radius:12px;font-size:12px;line-height:1.75;color:#9db2cb}
-#ask b{color:#e6eef9;display:block;margin-bottom:5px;font-size:13px}
+#ask{margin:12px;padding:12px 13px;background:#151a21;border:1px solid #272e39;
+  border-radius:12px;font-size:12px;line-height:1.75;color:#9daabb}
+#ask b{color:#e8eef7;display:block;margin-bottom:5px;font-size:13px}
+#warn{position:absolute;inset:0;display:none;place-items:center;padding:40px;
+  text-align:center;line-height:2;color:#94a1b2}
 </style>
 </head>
 <body>
@@ -103,18 +104,20 @@ input[type=range]{flex:1;accent-color:#e0623f;height:26px;direction:ltr}
   <div id="atoms"></div>
   <div id="fps"></div>
   <div id="hint">שתי אצבעות לסובב · צביטה לחתוך · הקשה להוסיף</div>
+  <div id="warn"></div>
 </div>
 
 <div id="hud">
   <div class="row">
+    <button class="btn on" id="view">👁 אמיתי</button>
     <button class="btn hot" id="spark">⚡ ניצוץ</button>
-    <button class="btn" id="cut">חתך: 0%</button>
+    <button class="btn" id="cut">חתך 0%</button>
     <button class="btn" id="reset">אתחל</button>
     <button class="btn" id="pause">⏸</button>
   </div>
   <div class="row">
     <label id="heatLbl">20°</label>
-    <input type="range" id="heat" min="0" max="1200" step="5" value="20">
+    <input type="range" id="heat" min="-260" max="1200" step="5" value="20">
   </div>
   <div class="row">
     <button id="pickBar">
@@ -132,7 +135,7 @@ input[type=range]{flex:1;accent-color:#e0623f;height:26px;direction:ltr}
   <div id="ptable"></div>
   <div id="ask">
     <b>שני יסודות. זה הכל.</b>
-    מימן וחמצן — ומהם אפשר לבנות מים, להרתיח אותם, לזקק אותם ולשרוף אותם.
+    מימן וחמצן — ומהם אפשר לבנות מים, להרתיח, לזקק, להקפיא ולשרוף.
     כל שאר המשבצות כבויות כי עוד לא בניתי אותן.
     <br><br>
     איזה יסוד להוסיף הבא? תכתבו לי בתגובות ואני אוסיף אותו בפרק הבא.
@@ -142,189 +145,190 @@ input[type=range]{flex:1;accent-color:#e0623f;height:26px;direction:ltr}
 <script>
 'use strict';
 /* ===========================================================================
-   1) מתמטיקה — רק מה שצריך
+   1) מתמטיקה
    =========================================================================== */
+const v3 = {
+  sub:(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],
+  add:(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]],
+  scale:(a,s)=>[a[0]*s,a[1]*s,a[2]*s],
+  dot:(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],
+  cross:(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],
+  len:a=>Math.hypot(a[0],a[1],a[2]),
+  norm(a){ const l=v3.len(a)||1; return [a[0]/l,a[1]/l,a[2]/l]; },
+};
 const m4 = {
-  mul(a, b, o = new Float32Array(16)){
-    for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++){
-      let s = 0;
-      for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
-      o[c * 4 + r] = s;
+  mul(a,b,o=new Float32Array(16)){
+    for(let c=0;c<4;c++) for(let r=0;r<4;r++){
+      let s=0; for(let k=0;k<4;k++) s+=a[k*4+r]*b[c*4+k];
+      o[c*4+r]=s;
     }
     return o;
   },
-  perspective(fovy, asp, n, f){
-    const t = 1 / Math.tan(fovy / 2), o = new Float32Array(16);
-    o[0] = t / asp; o[5] = t; o[11] = -1;
-    o[10] = (f + n) / (n - f); o[14] = 2 * f * n / (n - f);
+  perspective(f,asp,n,fa){
+    const t=1/Math.tan(f/2), o=new Float32Array(16);
+    o[0]=t/asp; o[5]=t; o[11]=-1; o[10]=(fa+n)/(n-fa); o[14]=2*fa*n/(n-fa);
     return o;
   },
-  lookAt(eye, ctr, up){
-    const z = v3.norm(v3.sub(eye, ctr));
-    const x = v3.norm(v3.cross(up, z));
-    const y = v3.cross(z, x);
+  lookAt(eye,ctr,up){
+    const z=v3.norm(v3.sub(eye,ctr)), x=v3.norm(v3.cross(up,z)), y=v3.cross(z,x);
     return new Float32Array([
-      x[0], y[0], z[0], 0,
-      x[1], y[1], z[1], 0,
-      x[2], y[2], z[2], 0,
-      -v3.dot(x, eye), -v3.dot(y, eye), -v3.dot(z, eye), 1,
-    ]);
+      x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0,
+      -v3.dot(x,eye),-v3.dot(y,eye),-v3.dot(z,eye),1]);
   },
 };
-const v3 = {
-  sub: (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]],
-  add: (a, b) => [a[0]+b[0], a[1]+b[1], a[2]+b[2]],
-  scale: (a, s) => [a[0]*s, a[1]*s, a[2]*s],
-  dot: (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2],
-  cross: (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]],
-  len: a => Math.hypot(a[0], a[1], a[2]),
-  norm(a){ const l = v3.len(a) || 1; return [a[0]/l, a[1]/l, a[2]/l]; },
-};
-const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
-const rand  = (a, b) => a + Math.random() * (b - a);
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const rand=(a,b)=>a+Math.random()*(b-a);
 
 /* ===========================================================================
-   2) כימיה — שני יסודות, וזה מספיק לשלושה תהליכים
+   2) חומר
+
+   לכל חומר יש מספרים אמיתיים, ומהם נגזר הכל: מה צף, מה שוקע, מה נמס,
+   באיזה צבע הוא נראה ובאיזה עומק הוא מפסיק להיות שקוף.
    =========================================================================== */
 const ELEM = {
-  H: { name:'מימן', col:[0.93,0.95,0.98], r:0.052, m:1.008 },
-  O: { name:'חמצן', col:[0.88,0.38,0.25], r:0.082, m:16.00 },
+  H:{ name:'מימן', col:[0.94,0.96,0.99], r:0.052, m:1.008 },
+  O:{ name:'חמצן', col:[0.86,0.35,0.22], r:0.082, m:16.00 },
 };
 
-/* צורה של כל מולקולה: היכן יושב כל אטום ביחס למרכז.
-   הזוויות אמיתיות — במים הן 104.5°, ורואים את זה על המסך. */
+const A = 0.911;      /* חצי מזווית הקשר במים, 104.5° */
 const SPECIES = {
-  H2:  { key:'H₂',  name:'מימן',  boil:-253, atoms:[['H',[-0.065,0,0]], ['H',[0.065,0,0]]] },
-  O2:  { key:'O₂',  name:'חמצן',  boil:-183, atoms:[['O',[-0.080,0,0]], ['O',[0.080,0,0]]] },
-  H2O: { key:'H₂O', name:'מים',   boil: 100, atoms:[
-    ['O', [0, 0, 0]],
-    ['H', [ 0.114 * Math.sin(0.911), 0.114 * Math.cos(0.911), 0]],
-    ['H', [-0.114 * Math.sin(0.911), 0.114 * Math.cos(0.911), 0]],
-  ]},
+  H2: { key:'H₂', name:'מימן', boil:-253, melt:-259, liq:0.071,
+        /* מימן נוזלי חסר צבע לגמרי */
+        absorb:[0.10,0.10,0.11],
+        atoms:[['H',[-0.065,0,0]],['H',[0.065,0,0]]] },
+  O2: { key:'O₂', name:'חמצן', boil:-183, melt:-218, liq:1.141,
+        /* חמצן נוזלי הוא תכלת. זה לא סגנון — זה הצבע שלו */
+        absorb:[1.35,0.42,0.10],
+        atoms:[['O',[-0.080,0,0]],['O',[0.080,0,0]]] },
+  H2O:{ key:'H₂O', name:'מים', boil:100, melt:0, liq:1.000,
+        /* מים בולעים אדום. בכוס הם שקופים, בבריכה הם כחולים */
+        absorb:[0.62,0.13,0.07],
+        atoms:[['O',[0,0,0]],
+               ['H',[ 0.114*Math.sin(A), 0.114*Math.cos(A),0]],
+               ['H',[-0.114*Math.sin(A), 0.114*Math.cos(A),0]]] },
 };
 for (const s of Object.values(SPECIES)){
-  s.mass = s.atoms.reduce((t, [e]) => t + ELEM[e].m, 0);
-  s.count = s.atoms.reduce((t, [e]) => (t[e] = (t[e]||0)+1, t), {});
+  s.mass  = s.atoms.reduce((t,[e])=>t+ELEM[e].m,0);
+  s.count = s.atoms.reduce((t,[e])=>(t[e]=(t[e]||0)+1,t),{});
+  s.gasRho = s.mass / 24000;     /* גז אידאלי בטמפרטורת החדר, g/cm³ */
 }
 
 /* ===========================================================================
-   3) הכלים — כולם נבנים מסיבוב פרופיל דו-ממדי סביב ציר.
-      בקבוק, כוס וצינור הם אותו קוד עם פרופיל אחר.
+   3) גאומטריה — הכל נבנה מסיבוב פרופיל דו-ממדי סביב ציר
    =========================================================================== */
-/* המערכת בנויה גבוהה ולא רחבה — מסך של טלפון הוא צר, וכלים שפרושים
-   לרוחב פשוט יוצאים מהפריים. */
 const BEAKER_X = 1.95;
 const BOUNDS = { cx:0.87, cy:1.80, hx:1.77, hy:1.95, hz:0.70 };
 
-function lathe(profile, segs = 48){
-  const P = [], N = [], I = [];
-  for (let i = 0; i < profile.length; i++){
-    const [r, y] = profile[i];
-    /* נורמל מהמשיק לפרופיל */
-    const p = profile[Math.max(0, i-1)], n = profile[Math.min(profile.length-1, i+1)];
-    const tr = n[0] - p[0], ty = n[1] - p[1];
-    const l = Math.hypot(tr, ty) || 1;
-    /* הנורמל פונה החוצה מהציר: מסובבים את המשיק ב-90°, בכיוון הזה ולא ההפוך */
-    const nr = -ty / l, ny = tr / l;
-    const pole = r < 1e-6;          /* בקוטב כל הקודקודים באותה נקודה — נורמל
-                                       שמסתובב איתם היה יוצר חישורים גלויים */
-    for (let s = 0; s <= segs; s++){
-      const a = s / segs * Math.PI * 2, c = Math.cos(a), si = Math.sin(a);
-      P.push(r * c, y, r * si);
-      if (pole) N.push(0, Math.sign(ny) || -1, 0);
-      else N.push(nr * c, ny, nr * si);
+function lathe(profile, segs=52){
+  const P=[],N=[],I=[];
+  for (let i=0;i<profile.length;i++){
+    const [r,y]=profile[i];
+    const p=profile[Math.max(0,i-1)], n=profile[Math.min(profile.length-1,i+1)];
+    const tr=n[0]-p[0], ty=n[1]-p[1], l=Math.hypot(tr,ty)||1;
+    const nr=-ty/l, ny=tr/l;
+    const pole = r<1e-6;
+    for (let s=0;s<=segs;s++){
+      const a=s/segs*Math.PI*2, c=Math.cos(a), si=Math.sin(a);
+      P.push(r*c,y,r*si);
+      if (pole) N.push(0,Math.sign(ny)||-1,0);
+      else N.push(nr*c,ny,nr*si);
     }
   }
-  const rw = segs + 1;
-  for (let i = 0; i < profile.length - 1; i++)
-    for (let s = 0; s < segs; s++){
-      const a = i*rw + s, b = a + 1, c = a + rw, d = c + 1;
-      I.push(a, c, b, b, c, d);
-    }
+  const rw=segs+1;
+  for (let i=0;i<profile.length-1;i++) for (let s=0;s<segs;s++){
+    const a=i*rw+s,b=a+1,c=a+rw,d=c+1;
+    I.push(a,c,b,b,c,d);
+  }
   return { pos:new Float32Array(P), nrm:new Float32Array(N), idx:new Uint16Array(I) };
 }
 
-/* בקבוק תחתית עגולה: צוואר, כתף, ובועה כדורית */
 function flaskProfile(){
-  const p = [[0.21, 2.42], [0.21, 2.00], [0.245, 1.91], [0.32, 1.82],
-             [0.44, 1.72], [0.56, 1.62]];
-  const R = 0.90, cy = 0.90;
-  for (let a = 0.80; a <= Math.PI + 1e-6; a += (Math.PI - 0.80) / 22)
-    p.push([R * Math.sin(a), cy + R * Math.cos(a)]);
+  const p=[[0.21,2.42],[0.21,2.00],[0.245,1.91],[0.32,1.82],[0.44,1.72],[0.56,1.62]];
+  const R=0.90, cy=0.90;
+  for (let a=0.80; a<=Math.PI+1e-6; a+=(Math.PI-0.80)/24) p.push([R*Math.sin(a), cy+R*Math.cos(a)]);
   return p;
 }
-const beakerProfile = () => [[0.68, 1.48], [0.68, 0.09], [0.62, 0.015],
-                             [0.55, 0.0], [0.0, 0.0]];
+const beakerProfile = () => [[0.68,1.48],[0.68,0.09],[0.62,0.015],[0.55,0.0],[0.0,0.0]];
 
-/* ---- מסלול הגז: צוואר → קשת → סליל יורד → מעל הכוס ---- */
 function condenserPath(){
-  const ctrl = [[0, 2.42, 0], [0, 2.95, 0], [0.22, 3.34, 0], [0.85, 3.54, 0]];
-  const HR = 0.46, turns = 2, steps = 60;
-  for (let i = 0; i <= steps; i++){
-    const u = i / steps, a = Math.PI + u * turns * Math.PI * 2;
-    ctrl.push([BEAKER_X + HR * Math.cos(a), 3.34 - u * 1.10, HR * Math.sin(a)]);
+  const ctrl=[[0,2.42,0],[0,2.95,0],[0.22,3.34,0],[0.85,3.54,0]];
+  const HR=0.46, turns=2, steps=60;
+  for (let i=0;i<=steps;i++){
+    const u=i/steps, a=Math.PI+u*turns*Math.PI*2;
+    ctrl.push([BEAKER_X+HR*Math.cos(a), 3.34-u*1.10, HR*Math.sin(a)]);
   }
-  ctrl.push([BEAKER_X - 0.26, 1.94, 0], [BEAKER_X, 1.74, 0]);
-  return catmull(ctrl, 5);
+  ctrl.push([BEAKER_X-0.26,1.94,0],[BEAKER_X,1.74,0]);
+  return catmull(ctrl,5);
 }
-function catmull(pts, per){
-  const out = [];
-  for (let i = 0; i < pts.length - 1; i++){
-    const p0 = pts[Math.max(0, i-1)], p1 = pts[i],
-          p2 = pts[i+1], p3 = pts[Math.min(pts.length-1, i+2)];
-    for (let s = 0; s < per; s++){
-      const t = s / per, t2 = t*t, t3 = t2*t, q = [];
-      for (let k = 0; k < 3; k++)
-        q.push(0.5 * ((2*p1[k]) + (-p0[k]+p2[k])*t +
-               (2*p0[k]-5*p1[k]+4*p2[k]-p3[k])*t2 +
-               (-p0[k]+3*p1[k]-3*p2[k]+p3[k])*t3));
+function catmull(pts,per){
+  const out=[];
+  for (let i=0;i<pts.length-1;i++){
+    const p0=pts[Math.max(0,i-1)],p1=pts[i],p2=pts[i+1],p3=pts[Math.min(pts.length-1,i+2)];
+    for (let s=0;s<per;s++){
+      const t=s/per,t2=t*t,t3=t2*t,q=[];
+      for (let k=0;k<3;k++) q.push(0.5*((2*p1[k])+(-p0[k]+p2[k])*t+
+        (2*p0[k]-5*p1[k]+4*p2[k]-p3[k])*t2+(-p0[k]+3*p1[k]-3*p2[k]+p3[k])*t3));
       out.push(q);
     }
   }
   out.push(pts[pts.length-1]);
   return out;
 }
-
-/* צינור סביב מסלול — הובלה מקבילה של המסגרת, אחרת הצינור מתפתל */
-function tubeMesh(path, radius, segs = 14){
-  const P = [], N = [], I = [];
-  let up = [0, 0, 1];
-  for (let i = 0; i < path.length; i++){
-    const a = path[Math.max(0, i-1)], b = path[Math.min(path.length-1, i+1)];
-    const T = v3.norm(v3.sub(b, a));
-    let side = v3.cross(up, T);
-    if (v3.len(side) < 1e-4) side = v3.cross([1, 0, 0], T);
-    side = v3.norm(side);
-    up = v3.norm(v3.cross(T, side));
-    for (let s = 0; s <= segs; s++){
-      const ang = s / segs * Math.PI * 2, c = Math.cos(ang), si = Math.sin(ang);
-      const n = [side[0]*c + up[0]*si, side[1]*c + up[1]*si, side[2]*c + up[2]*si];
-      P.push(path[i][0] + n[0]*radius, path[i][1] + n[1]*radius, path[i][2] + n[2]*radius);
-      N.push(n[0], n[1], n[2]);
+function tubeMesh(path,radius,segs=16){
+  const P=[],N=[],I=[];
+  let up=[0,0,1];
+  for (let i=0;i<path.length;i++){
+    const a=path[Math.max(0,i-1)], b=path[Math.min(path.length-1,i+1)];
+    const T=v3.norm(v3.sub(b,a));
+    let side=v3.cross(up,T);
+    if (v3.len(side)<1e-4) side=v3.cross([1,0,0],T);
+    side=v3.norm(side); up=v3.norm(v3.cross(T,side));
+    for (let s=0;s<=segs;s++){
+      const ang=s/segs*Math.PI*2,c=Math.cos(ang),si=Math.sin(ang);
+      const n=[side[0]*c+up[0]*si, side[1]*c+up[1]*si, side[2]*c+up[2]*si];
+      P.push(path[i][0]+n[0]*radius, path[i][1]+n[1]*radius, path[i][2]+n[2]*radius);
+      N.push(n[0],n[1],n[2]);
     }
   }
-  const rw = segs + 1;
-  for (let i = 0; i < path.length - 1; i++)
-    for (let s = 0; s < segs; s++){
-      const a = i*rw + s, b = a + 1, c = a + rw, d = c + 1;
-      I.push(a, c, b, b, c, d);
-    }
+  const rw=segs+1;
+  for (let i=0;i<path.length-1;i++) for (let s=0;s<segs;s++){
+    const a=i*rw+s,b=a+1,c=a+rw,d=c+1;
+    I.push(a,c,b,b,c,d);
+  }
   return { pos:new Float32Array(P), nrm:new Float32Array(N), idx:new Uint16Array(I) };
 }
-
-function sphereMesh(seg = 16, ring = 12){
-  const P = [], I = [];
-  for (let r = 0; r <= ring; r++){
-    const phi = r / ring * Math.PI;
-    for (let s = 0; s <= seg; s++){
-      const th = s / seg * Math.PI * 2;
+function quadMesh(y,hx,hz,cx=0,cz=0){
+  return { pos:new Float32Array([cx-hx,y,cz-hz, cx+hx,y,cz-hz, cx+hx,y,cz+hz, cx-hx,y,cz+hz]),
+           nrm:new Float32Array([0,1,0, 0,1,0, 0,1,0, 0,1,0]),
+           idx:new Uint16Array([0,1,2, 0,2,3]) };
+}
+/* קופסה שרואים מבפנים — החדר */
+function roomMesh(w,h,d,cy){
+  const x=w/2, z=d/2, y0=cy-h/2, y1=cy+h/2, P=[],N=[],I=[];
+  const face=(a,b,c,dd,n)=>{
+    const o=P.length/3;
+    for (const p of [a,b,c,dd]){ P.push(...p); N.push(...n); }
+    I.push(o,o+1,o+2,o,o+2,o+3);
+  };
+  face([-x,y0,-z],[-x,y1,-z],[x,y1,-z],[x,y0,-z],[0,0,1]);      /* אחורי */
+  face([-x,y0, z],[-x,y0,-z],[-x,y1,-z],[-x,y1, z],[1,0,0]);    /* שמאל  */
+  face([ x,y0,-z],[ x,y0, z],[ x,y1, z],[ x,y1,-z],[-1,0,0]);   /* ימין  */
+  face([-x,y1,-z],[-x,y1, z],[ x,y1, z],[ x,y1,-z],[0,-1,0]);   /* תקרה  */
+  return { pos:new Float32Array(P), nrm:new Float32Array(N), idx:new Uint16Array(I) };
+}
+function sphereMesh(seg=16,ring=12){
+  const P=[],I=[];
+  for (let r=0;r<=ring;r++){
+    const phi=r/ring*Math.PI;
+    for (let s=0;s<=seg;s++){
+      const th=s/seg*Math.PI*2;
       P.push(Math.sin(phi)*Math.cos(th), Math.cos(phi), Math.sin(phi)*Math.sin(th));
     }
   }
-  const rw = seg + 1;
-  for (let r = 0; r < ring; r++) for (let s = 0; s < seg; s++){
-    const a = r*rw + s, b = a + 1, c = a + rw, d = c + 1;
-    I.push(a, c, b, b, c, d);
+  const rw=seg+1;
+  for (let r=0;r<ring;r++) for (let s=0;s<seg;s++){
+    const a=r*rw+s,b=a+1,c=a+rw,d=c+1;
+    I.push(a,c,b,b,c,d);
   }
   return { pos:new Float32Array(P), idx:new Uint16Array(I) };
 }
@@ -333,736 +337,1160 @@ function sphereMesh(seg = 16, ring = 12){
    4) WebGL
    =========================================================================== */
 const cv = document.getElementById('cv');
-const gl = cv.getContext('webgl2', { antialias:true, alpha:false, premultipliedAlpha:false });
-if (!gl){
-  document.body.innerHTML = '<div style="padding:40px;text-align:center;line-height:2">' +
-    'הדפדפן הזה לא תומך ב-WebGL2.<br>נסה כרום או ספארי מעודכן.</div>';
-  throw new Error('no webgl2');
+/* בלי antialias על הקנבס: כל הגאומטריה מצוירת ל-FBO מרובה־דגימות משלנו
+   ונפתרת החוצה בסוף. אם גם ברירת המחדל הייתה מרובת־דגימות, ההעתקה אליה
+   הייתה פעולה לא חוקית — והמסך היה נשאר שחור. */
+const gl = cv.getContext('webgl2',{antialias:false,alpha:false});
+function fail(msg){
+  const w=document.getElementById('warn');
+  w.style.display='grid'; w.textContent=msg; throw new Error(msg);
 }
+if (!gl) fail('הדפדפן הזה לא תומך ב-WebGL2. נסה כרום או ספארי מעודכן.');
+const FLOAT_FBO = !!gl.getExtension('EXT_color_buffer_float');
+gl.getExtension('OES_texture_float_linear');
 
-function shader(type, src){
-  const s = gl.createShader(type);
-  gl.shaderSource(s, src); gl.compileShader(s);
-  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
-    throw new Error(gl.getShaderInfoLog(s) + '\n' + src);
+function shader(t,src){
+  const s=gl.createShader(t); gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)+'\n'+src);
   return s;
 }
-function program(vs, fs){
-  const p = gl.createProgram();
-  gl.attachShader(p, shader(gl.VERTEX_SHADER, vs));
-  gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
+function program(vs,fs){
+  const p=gl.createProgram();
+  gl.attachShader(p,shader(gl.VERTEX_SHADER,vs));
+  gl.attachShader(p,shader(gl.FRAGMENT_SHADER,fs));
   gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS))
-    throw new Error(gl.getProgramInfoLog(p));
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  p.u = new Proxy({},{ get:(c,n)=> n in c ? c[n] : (c[n]=gl.getUniformLocation(p,n)) });
   return p;
 }
 
-/* מישור החיתוך משותף לשני השיידרים: זורקים כל פיקסל שלפני המישור.
-   זה בדיוק "לחתוך תפוח" — הסכין היא מישור, והזום מזיז אותה פנימה. */
-const CLIP = `
-  uniform vec4 uClip;          // xyz = נורמל, w = מרחק
+/* פונקציות משותפות לכל השיידרים */
+const LIB = `
+  const vec3 KEY = vec3(0.38, 0.86, 0.34);       // אור ראשי מלמעלה־קדימה
+  const vec3 FILL = vec3(-0.6, 0.25, -0.5);      // אור מילוי חלש מהצד
+  uniform vec4 uClip;
   bool clipped(vec3 p){ return dot(p, uClip.xyz) < uClip.w; }
+  float hash21(vec2 p){
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+  float vnoise(vec2 p){
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash21(i), hash21(i + vec2(1,0)), f.x),
+               mix(hash21(i + vec2(0,1)), hash21(i + vec2(1,1)), f.x), f.y);
+  }
+  float fbm(vec2 p){
+    float s = 0.0, a = 0.5;
+    for (int i = 0; i < 4; i++){ s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+    return s;
+  }
+  // האור בחדר: בהיר מלמעלה, כהה מלמטה. משמש גם להשתקפויות בזכוכית ובנוזל.
+  vec3 sky(vec3 d){
+    float up = d.y * 0.5 + 0.5;
+    vec3 c = mix(vec3(0.075,0.085,0.105), vec3(0.72,0.76,0.84), up * up);
+    c += vec3(0.95,0.93,0.86) * pow(max(dot(d, normalize(KEY)), 0.0), 20.0);
+    return c;
+  }
 `;
 
+/* ---- החדר ---- */
+const roomProg = program(`#version 300 es
+  in vec3 aPos; in vec3 aNrm;
+  uniform mat4 uVP;
+  out vec3 vW, vN;
+  void main(){ vW=aPos; vN=aNrm; gl_Position=uVP*vec4(aPos,1.0); }`,
+  `#version 300 es
+  precision highp float;
+  in vec3 vW, vN;
+  ${LIB}
+  out vec4 o;
+  void main(){
+    if (clipped(vW)) discard;
+    /* קיר בטון מחוספס, כהה, עם נפילת אור מהתקרה */
+    float grain = fbm(vW.xy * 3.0 + vW.zz * 1.7) * 0.10;
+    float fallV = smoothstep(-1.0, 5.0, vW.y);
+    float fallH = 1.0 - smoothstep(1.5, 7.5, length(vW.xz - vec2(0.9,0.0)));
+    vec3 c = vec3(0.150,0.160,0.185) * (0.30 + fallV * 1.25) * (0.42 + fallH * 1.0);
+    c += grain * 0.40 * c;
+    if (vN.y < -0.5){
+      /* התקרה היא גוף התאורה. בלי מקור אור שרואים בפריים אין מה
+         שישתקף בזכוכית ובמים, והכל יוצא שטוח ושחור. */
+      float panel = (1.0 - smoothstep(0.6, 3.4, length(vW.xz - vec2(0.9, 0.0))));
+      c = mix(c * 2.2, vec3(0.92, 0.94, 1.0), panel * 0.92);
+    }
+    o = vec4(c, 1.0);
+  }`);
+
+/* ---- שולחן העץ ---- */
+const woodProg = program(`#version 300 es
+  in vec3 aPos; in vec3 aNrm;
+  uniform mat4 uVP;
+  out vec3 vW;
+  void main(){ vW=aPos; gl_Position=uVP*vec4(aPos,1.0); }`,
+  `#version 300 es
+  precision highp float;
+  in vec3 vW;
+  ${LIB}
+  uniform vec3 uEye;
+  uniform vec2 uOccA, uOccB;
+  out vec4 o;
+  void main(){
+    if (clipped(vW)) discard;
+    vec2 p = vW.xz;
+    /* טבעות שנתיות: קווי גובה של רעש מתוח לאורך סיב אחד */
+    float warp = fbm(p * vec2(0.55, 3.1)) * 1.5;
+    float rings = fract((p.x * 0.85 + warp) * 3.4);
+    rings = smoothstep(0.0, 0.42, rings) * smoothstep(1.0, 0.62, rings);
+    float fade = 1.0 - smoothstep(1.2, 4.2, distance(uEye.xz, p));
+    float fine = fbm(p * vec2(2.0, 22.0)) * 0.26 * fade;    /* סיב דק לאורך הלוח */
+    vec3 dark = vec3(0.108, 0.062, 0.032);
+    vec3 lite = vec3(0.245, 0.148, 0.079);
+    vec3 c = mix(dark, lite, rings * 0.75 + fine);
+    /* מפגשי לוחות */
+    float seam = smoothstep(0.010, 0.0, abs(fract(p.y * 0.0 + p.x * 0.30 + 0.5) - 0.5) - 0.485);
+    c *= 1.0 - seam * 0.55;
+
+    vec3 N = normalize(vec3(0.0, 1.0, 0.0));
+    vec3 V = normalize(uEye - vW);
+    float d = max(dot(N, normalize(KEY)), 0.0);
+    float sp = pow(max(dot(reflect(-normalize(KEY), N), V), 0.0), 30.0);
+    c *= 0.30 + d * 1.05;
+    c += sp * 0.05 * (0.4 + rings);                  /* לכה */
+
+    /* צל מגע מתחת לכלים */
+    float sh = clamp((1.0 - smoothstep(0.30, 1.25, distance(p, uOccA))) +
+                     (1.0 - smoothstep(0.24, 0.98, distance(p, uOccB))), 0.0, 1.0);
+    c *= 1.0 - sh * 0.82;
+    /* דעיכה לחושך בקצוות השולחן */
+    c *= 1.0 - smoothstep(2.4, 6.4, length(p - vec2(0.9, 0.0)));
+    o = vec4(c, 1.0);
+  }`);
+
+/* ---- אטומים (מצג מולקולות) ---- */
 const atomProg = program(`#version 300 es
-  in vec3 aPos;
-  in vec3 aOff; in vec3 aCol; in float aRad;
+  in vec3 aPos; in vec3 aOff; in vec3 aCol; in float aRad;
   uniform mat4 uVP;
   out vec3 vN, vW, vC;
-  void main(){
-    vN = aPos;
-    vW = aOff + aPos * aRad;
-    vC = aCol;
-    gl_Position = uVP * vec4(vW, 1.0);
-  }`, `#version 300 es
+  void main(){ vN=aPos; vW=aOff+aPos*aRad; vC=aCol; gl_Position=uVP*vec4(vW,1.0); }`,
+  `#version 300 es
   precision highp float;
   in vec3 vN, vW, vC;
-  ${CLIP}
+  ${LIB}
   uniform vec3 uEye;
   out vec4 o;
   void main(){
     if (clipped(vW)) discard;
-    vec3 N = normalize(vN);
-    vec3 L = normalize(vec3(0.45, 0.92, 0.5));
-    vec3 V = normalize(uEye - vW);
-    float d = max(dot(N, L), 0.0);
-    float sp = pow(max(dot(reflect(-L, N), V), 0.0), 42.0);
-    /* חצי-כדור עליון בהיר יותר — אור מפוזר מלמעלה, כמו בחדר */
-    vec3 amb = mix(vec3(0.09,0.11,0.15), vec3(0.26,0.30,0.36), N.y*0.5+0.5);
-    o = vec4(vC * (amb + d * 0.95) + vec3(sp * 0.55), 1.0);
+    vec3 N=normalize(vN), V=normalize(uEye-vW), L=normalize(KEY);
+    float d = max(dot(N,L),0.0) + max(dot(N,normalize(FILL)),0.0)*0.22;
+    float sp = pow(max(dot(reflect(-L,N),V),0.0), 46.0);
+    o = vec4(vC * (sky(N)*0.9 + d*0.85) + vec3(sp*0.7), 1.0);
   }`);
 
+/* ---- זכוכית, עם מדים כמו על כלי אמיתי ---- */
 const glassProg = program(`#version 300 es
   in vec3 aPos; in vec3 aNrm;
   uniform mat4 uVP;
-  out vec3 vN, vW;
-  void main(){ vN = aNrm; vW = aPos; gl_Position = uVP * vec4(aPos, 1.0); }
-  `, `#version 300 es
+  out vec3 vW, vN;
+  void main(){ vW=aPos; vN=aNrm; gl_Position=uVP*vec4(aPos,1.0); }`,
+  `#version 300 es
   precision highp float;
-  in vec3 vN, vW;
-  ${CLIP}
-  uniform vec3 uEye, uTint;
-  uniform float uGlow;
+  in vec3 vW, vN;
+  ${LIB}
+  uniform vec3 uEye;
+  uniform float uGlow, uAxisX;
+  uniform vec4 uMark;                 /* y0, y1, מרווח, 0=בלי מדים */
   out vec4 o;
   void main(){
     if (clipped(vW)) discard;
-    vec3 N = normalize(vN);
-    vec3 V = normalize(uEye - vW);
-    /* פרנל: זכוכית שקופה מלפנים וזוהרת בקצוות. הבסיס לא יכול להיות אפס —
-       על רקע כהה זכוכית שקופה לגמרי נעלמת והכלי נראה כמו כתם שחור. */
-    float f = pow(1.0 - abs(dot(N, V)), 2.2);
-    float a = 0.11 + f * 0.60;
-    vec3 c = mix(uTint, vec3(0.80, 0.89, 0.99), f);
-    /* צבע לא מוכפל מראש — המיזוג כבר מכפיל ב-alpha. להכפיל כאן שוב
-       נותן a² והזכוכית יוצאת שחורה. */
-    o = vec4(c + uGlow, a);
+    vec3 N=normalize(vN), V=normalize(uEye-vW);
+    float f = pow(1.0 - abs(dot(N,V)), 2.3);
+    vec3 refl = sky(reflect(-V, N));
+    float a = 0.085 + f * 0.55;
+    vec3 c = mix(vec3(0.16,0.20,0.25), vec3(0.85,0.92,1.0), f) * 0.55 + refl * 0.75;
+
+    /* מדים: קווים אופקיים על גזרה אחת בהיקף, כמו שחרוט על זכוכית אמיתית */
+    if (uMark.w > 0.5){
+      float ang = atan(vW.z, vW.x - uAxisX);
+      float band = smoothstep(0.62, 0.30, abs(ang - 2.05));
+      float k = (vW.y - uMark.x) / uMark.z;
+      float major = step(0.5, fract(k * 0.2 + 0.001));
+      float line = smoothstep(0.075, 0.0, abs(fract(k) - 0.0) - 0.0)
+                 + smoothstep(0.055, 0.0, abs(fract(k) - 1.0));
+      float inRange = step(uMark.x, vW.y) * step(vW.y, uMark.y);
+      float m = clamp(line,0.0,1.0) * band * inRange;
+      /* קווים ארוכים כל חמישה */
+      m *= mix(0.55, 1.0, major);
+      c += vec3(0.85,0.90,0.97) * m * 0.9;
+      a += m * 0.45;
+    }
+
+    c += uGlow * vec3(1.0,0.45,0.16);
+    o = vec4(c, clamp(a,0.0,1.0));
   }`);
 
-/* השולחן. בלי משטח מתחת, כלים עם תחתית עגולה נראים מרחפים באוויר —
-   וצל מגע הוא מה שאומר לעין "זה עומד על משהו". */
-const groundProg = program(`#version 300 es
-  in vec3 aPos;
-  uniform mat4 uVP;
-  out vec3 vW;
-  void main(){ vW = aPos; gl_Position = uVP * vec4(aPos, 1.0); }
-  `, `#version 300 es
+/* ---- נוזל: עומק, עובי, טשטוש, הרכבה ----
+   הרעיון: לא מנסים לבנות משטח גאומטרי מהמולקולות. מציירים אותן ככדורים
+   לתוך מפת עומק, מטשטשים אותה — והטשטוש הופך אלף כדורים לפני נוזל אחד.
+   העובי המצטבר קובע כמה אור נבלע, ומזה יוצא הצבע האמיתי של החומר.        */
+const BILLBOARD = `#version 300 es
+  in vec2 aCorner;
+  in vec3 aOff; in vec3 aCol; in float aRad; in float aKind;
+  uniform mat4 uProj, uView;
+  out vec3 vCol; out float vKind, vRad;
+  out vec3 vCenterView; out vec2 vLocal;
+  void main(){
+    vec3 cv = (uView * vec4(aOff,1.0)).xyz;
+    vCenterView = cv; vLocal = aCorner; vCol = aCol; vKind = aKind; vRad = aRad;
+    gl_Position = uProj * vec4(cv + vec3(aCorner * aRad, 0.0), 1.0);
+  }`;
+
+const fluidDepthProg = program(BILLBOARD, `#version 300 es
   precision highp float;
-  in vec3 vW;
-  ${CLIP}
-  uniform vec2 uOccA, uOccB;
+  in vec3 vCol; in float vKind, vRad;
+  in vec3 vCenterView; in vec2 vLocal;
+  uniform mat4 uProj;
+  uniform vec4 uClipView;
   out vec4 o;
-  float contact(vec2 c, float r){
-    return 1.0 - smoothstep(r * 0.35, r * 1.5, distance(vW.xz, c));
+  void main(){
+    if (vKind < 0.5) discard;                       /* גז לא יוצר פני שטח */
+    float r2 = dot(vLocal, vLocal);
+    if (r2 > 1.0) discard;
+    vec3 p = vCenterView + vec3(vLocal * vRad, sqrt(1.0 - r2) * vRad);
+    if (dot(p, uClipView.xyz) < uClipView.w) discard;
+    vec4 cp = uProj * vec4(p, 1.0);
+    gl_FragDepth = (cp.z / cp.w) * 0.5 + 0.5;
+    o = vec4(-p.z, 0.0, 0.0, 1.0);
+  }`);
+
+const fluidThickProg = program(BILLBOARD, `#version 300 es
+  precision highp float;
+  in vec3 vCol; in float vKind, vRad;
+  in vec3 vCenterView; in vec2 vLocal;
+  uniform vec4 uClipView;
+  out vec4 o;
+  void main(){
+    float r2 = dot(vLocal, vLocal);
+    if (r2 > 1.0) discard;
+    vec3 p = vCenterView + vec3(vLocal * vRad, 0.0);
+    if (dot(p, uClipView.xyz) < uClipView.w) discard;
+    /* גז תורם מעט מאוד עובי — כך אדים נראים כערפל ולא כנוזל */
+    float w = (1.0 - r2) * vRad * (vKind > 0.5 ? 2.6 : 0.30);
+    o = vec4(vCol * w, w);
+  }`);
+
+const FSTRI = `#version 300 es
+  out vec2 vUV;
+  void main(){
+    vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+    vUV = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+  }`;
+
+const blurProg = program(FSTRI, `#version 300 es
+  precision highp float;
+  in vec2 vUV;
+  uniform sampler2D uTex;
+  uniform vec2 uDir;
+  uniform float uDepthFalloff;
+  out vec4 o;
+  void main(){
+    float c = texture(uTex, vUV).r;
+    if (c <= 0.0){ o = vec4(0.0); return; }
+    float sum = c, wsum = 1.0;
+    for (int i = 1; i <= 10; i++){
+      float fi = float(i);
+      float w = exp(-fi * fi / 42.0);
+      for (float s = -1.0; s <= 1.0; s += 2.0){
+        float t = texture(uTex, vUV + uDir * fi * s).r;
+        /* דו-צדדי: לא מטשטשים מעבר לשפה, אחרת הנוזל "נמרח" על הרקע */
+        if (t <= 0.0) continue;
+        float wd = w * exp(-abs(t - c) * uDepthFalloff);
+        sum += t * wd; wsum += wd;
+      }
+    }
+    o = vec4(sum / wsum, 0.0, 0.0, 1.0);
+  }`);
+
+/* ההצגה למסך היא ציור של מרובע, לא העתקה. העתקה מחוצץ מרובה־דגימות
+   דורשת שהפורמטים יתאימו בדיוק, וחוצץ ברירת המחדל של הקנבס הוא RGB8
+   בזמן שלנו יש RGBA8 — ההעתקה נכשלת בשקט והמסך נשאר שחור. */
+const presentProg = program(FSTRI, `#version 300 es
+  precision highp float;
+  in vec2 vUV;
+  uniform sampler2D uTex;
+  out vec4 o;
+  void main(){ o = vec4(texture(uTex, vUV).rgb, 1.0); }`);
+
+const compositeProg = program(FSTRI, `#version 300 es
+  precision highp float;
+  in vec2 vUV;
+  ${LIB}
+  uniform sampler2D uScene, uDepth, uThick;
+  uniform vec2 uTan;                  /* חצי שדה ראייה, אופקי ואנכי */
+  uniform vec2 uTexel;
+  uniform mat4 uInvView;
+  out vec4 o;
+
+  vec3 viewFrom(vec2 uv, float d){
+    return vec3((uv * 2.0 - 1.0) * uTan * d, -d);
   }
   void main(){
-    if (clipped(vW)) discard;
-    float fade = 1.0 - smoothstep(1.6, 5.4, length(vW.xz - vec2(0.9, 0.0)));
-    float sh = clamp(contact(uOccA, 0.90) + contact(uOccB, 0.70), 0.0, 1.0);
-    vec3 c = mix(vec3(0.055, 0.075, 0.105), vec3(0.012, 0.016, 0.024), sh);
-    o = vec4(c, fade * (0.55 + sh * 0.45));
+    vec3 bg = texture(uScene, vUV).rgb;
+    float d = texture(uDepth, vUV).r;
+    vec4 th0 = texture(uThick, vUV);
+    /* השפה נקבעת לפי העובי ולא לפי "יש עומק / אין עומק" — סף בינארי
+       על מפת חצי־רזולוציה נותן קצוות מדורגים במקום פני נוזל */
+    float cover = smoothstep(0.006, 0.10, th0.a);
+    if (d <= 0.0 || cover <= 0.001){ o = vec4(bg, 1.0); return; }
+
+    vec3 P = viewFrom(vUV, d);
+    /* נורמל מנגזרות העומק, עם בחירת ההפרש הקטן — אחרת נוצר קו שחור בשפה */
+    vec3 ddxP = viewFrom(vUV + vec2(uTexel.x,0.0), texture(uDepth, vUV+vec2(uTexel.x,0.0)).r) - P;
+    vec3 ddxN = P - viewFrom(vUV - vec2(uTexel.x,0.0), texture(uDepth, vUV-vec2(uTexel.x,0.0)).r);
+    vec3 ddyP = viewFrom(vUV + vec2(0.0,uTexel.y), texture(uDepth, vUV+vec2(0.0,uTexel.y)).r) - P;
+    vec3 ddyN = P - viewFrom(vUV - vec2(0.0,uTexel.y), texture(uDepth, vUV-vec2(0.0,uTexel.y)).r);
+    vec3 dx = abs(ddxP.z) < abs(ddxN.z) ? ddxP : ddxN;
+    vec3 dy = abs(ddyP.z) < abs(ddyN.z) ? ddyP : ddyN;
+    vec3 N = normalize(cross(dx, dy));
+    if (N.z < 0.0) N = -N;
+
+    float thick = th0.a;
+    vec3 tint = th0.a > 1e-5 ? th0.rgb / th0.a : vec3(0.4);
+
+    vec3 V = normalize(-P);
+    /* שבירה: דוחפים את הדגימה של הרקע לפי הנורמל. ככה רואים את השולחן
+       מתעקם מבעד למים, וזה מה שגורם לעין להאמין שיש שם נוזל.            */
+    vec2 ruv = clamp(vUV + N.xy * 0.055 / max(d, 0.6), vec2(0.0), vec2(1.0));
+    vec3 refr = texture(uScene, ruv).rgb;
+
+    /* בלימת אור לפי עובי — חוק בר־למברט. עומק גדול = צבע רווי יותר.
+       המקדם מכויל כך ששכבה טיפוסית בכלי נותנת תכלת, לא שחור. */
+    vec3 absorbed = exp(-tint * thick * 1.15);
+    vec3 through = refr * absorbed;
+
+    vec3 Nw = normalize((uInvView * vec4(N, 0.0)).xyz);
+    vec3 Vw = normalize((uInvView * vec4(V, 0.0)).xyz);
+    float fres = 0.028 + 0.972 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+    vec3 refl = sky(reflect(-Vw, Nw));
+
+    vec3 L = normalize(KEY);
+    float spec = pow(max(dot(normalize(L + V), N), 0.0), 220.0);
+
+    vec3 col = mix(through, refl, fres * 0.80) + spec * 1.1;
+    /* בוהק דק בשפה, שם שכבת הנוזל מתקרבת לאפס */
+    col += vec3(0.13,0.145,0.16) * smoothstep(0.55, 0.05, thick);
+    o = vec4(mix(bg, col, cover), 1.0);
   }`);
 
-const groundMesh = (() => {
-  const P = [], I = [], N = 40, R = 6;
-  P.push(0.9, 0, 0);
-  for (let i = 0; i <= N; i++){
-    const a = i / N * Math.PI * 2;
-    P.push(0.9 + R * Math.cos(a), 0, R * Math.sin(a));
-    if (i > 0) I.push(0, i, i + 1);
-  }
-  return { pos:new Float32Array(P), idx:new Uint16Array(I) };
-})();
-
-function buildMesh(prog, m, instanced){
-  const vao = gl.createVertexArray();
+/* ---- כלי עזר ל-VAO ו-FBO ---- */
+function buildMesh(prog,m,instanced){
+  const vao=gl.createVertexArray();
   gl.bindVertexArray(vao);
-  const put = (data, name, size) => {
-    const b = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, b);
-    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-    const loc = gl.getAttribLocation(prog, name);
+  const put=(data,name,size)=>{
+    const loc=gl.getAttribLocation(prog,name);
+    if (loc<0) return null;
+    const b=gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER,b);
+    gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
     gl.enableVertexAttribArray(loc);
-    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+    gl.vertexAttribPointer(loc,size,gl.FLOAT,false,0,0);
     return b;
   };
-  put(m.pos, 'aPos', 3);
-  if (m.nrm) put(m.nrm, 'aNrm', 3);
-  const eb = gl.createBuffer();
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, eb);
-  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.idx, gl.STATIC_DRAW);
-  const out = { vao, n:m.idx.length };
+  put(m.pos, m.corner?'aCorner':'aPos', m.corner?2:3);
+  if (m.nrm) put(m.nrm,'aNrm',3);
+  const eb=gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,eb);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,m.idx,gl.STATIC_DRAW);
+  const out={vao,n:m.idx.length};
   if (instanced){
-    out.inst = {};
-    for (const [name, size] of [['aOff',3], ['aCol',3], ['aRad',1]]){
-      const b = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, b);
-      const loc = gl.getAttribLocation(prog, name);
+    out.inst={};
+    for (const [name,size] of [['aOff',3],['aCol',3],['aRad',1],['aKind',1]]){
+      const loc=gl.getAttribLocation(prog,name);
+      if (loc<0) continue;
+      const b=gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER,b);
       gl.enableVertexAttribArray(loc);
-      gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
-      gl.vertexAttribDivisor(loc, 1);
-      out.inst[name] = b;
+      gl.vertexAttribPointer(loc,size,gl.FLOAT,false,0,0);
+      gl.vertexAttribDivisor(loc,1);
+      out.inst[name]=b;
     }
   }
   gl.bindVertexArray(null);
   return out;
 }
 
+function makeTex(w,h,internal,format,type,filter){
+  const t=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texImage2D(gl.TEXTURE_2D,0,internal,w,h,0,format,type,null);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,filter);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,filter);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  return t;
+}
+function makeFBO(tex,depthRB){
+  const f=gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER,f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
+  if (depthRB) gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,depthRB);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  return f;
+}
+
+/* ---- מש-ים ---- */
+const PATH = condenserPath();
+const billboard = buildMesh(fluidDepthProg,
+  { pos:new Float32Array([-1,-1, 1,-1, 1,1, -1,1]), idx:new Uint16Array([0,1,2,0,2,3]), corner:true }, true);
+const billboard2 = buildMesh(fluidThickProg,
+  { pos:new Float32Array([-1,-1, 1,-1, 1,1, -1,1]), idx:new Uint16Array([0,1,2,0,2,3]), corner:true }, true);
 const sphere = buildMesh(atomProg, sphereMesh(), true);
-const ground = buildMesh(groundProg, groundMesh, false);
-const PATH   = condenserPath();
-const GLASS  = [
-  { name:'flask',  mesh:buildMesh(glassProg, lathe(flaskProfile()), false), tint:[0.20,0.30,0.42], ox:0 },
-  { name:'beaker', mesh:buildMesh(glassProg, (() => {
-      const m = lathe(beakerProfile());
-      for (let i = 0; i < m.pos.length; i += 3) m.pos[i] += BEAKER_X;
-      return m;
-    })()), tint:[0.20,0.30,0.42], ox:BEAKER_X },
-  { name:'tube',   mesh:buildMesh(glassProg, tubeMesh(PATH, 0.13), false), tint:[0.19,0.29,0.40], ox:1.4 },
+const room   = buildMesh(roomProg, roomMesh(15,9,15,2.0), false);
+/* מעט מתחת ל-0: תחתית הכלים יושבת על y=0 בדיוק, ומשטח באותו
+   גובה נותן ריב-עומק שנראה ככוכב שחור בתחתית הכוס */
+const table  = buildMesh(woodProg, quadMesh(-0.006, 5.6, 5.6, 0.9, 0), false);
+const GLASS = [
+  { mesh:buildMesh(glassProg, lathe(flaskProfile())), ox:0,
+    mark:[0.45,1.75,0.13,1], axis:0, glow:true },
+  { mesh:buildMesh(glassProg, (()=>{ const m=lathe(beakerProfile());
+      for(let i=0;i<m.pos.length;i+=3) m.pos[i]+=BEAKER_X; return m; })()),
+    ox:BEAKER_X, mark:[0.22,1.32,0.11,1], axis:BEAKER_X, glow:false },
+  { mesh:buildMesh(glassProg, tubeMesh(PATH,0.13)), ox:1.4,
+    mark:[0,0,1,0], axis:0, glow:false },
 ];
 
 /* ===========================================================================
-   5) העולם — מולקולות, לא פיקסלים
+   5) העולם
    =========================================================================== */
-const MAX = 1100;
-const IN_FLASK = 0, IN_TUBE = 1, IN_BEAKER = 2;
+const MAX = 1200;
+const IN_FLASK=0, IN_TUBE=1, IN_BEAKER=2;
+const GAS=0, LIQ=1, SOL=2;
 
 const mol = {
-  n: 0,
-  sp:  new Array(MAX),                   // מפתח ב-SPECIES
-  x:   new Float32Array(MAX), y:new Float32Array(MAX), z:new Float32Array(MAX),
-  vx:  new Float32Array(MAX), vy:new Float32Array(MAX), vz:new Float32Array(MAX),
-  spin:new Float32Array(MAX), axis:new Float32Array(MAX * 3),
-  where:new Uint8Array(MAX),
-  t:   new Float32Array(MAX),            // מיקום על מסלול הצינור
+  n:0, sp:new Array(MAX),
+  x:new Float32Array(MAX), y:new Float32Array(MAX), z:new Float32Array(MAX),
+  vx:new Float32Array(MAX), vy:new Float32Array(MAX), vz:new Float32Array(MAX),
+  spin:new Float32Array(MAX), axis:new Float32Array(MAX*3),
+  where:new Uint8Array(MAX), t:new Float32Array(MAX),
+  phase:new Uint8Array(MAX), rho:new Float32Array(MAX), around:new Float32Array(MAX),
 };
 
-function spawn(sp, x, y, z, where = IN_FLASK){
-  if (mol.n >= MAX) return -1;
-  const i = mol.n++;
-  mol.sp[i] = sp;
-  mol.x[i] = x; mol.y[i] = y; mol.z[i] = z;
-  mol.vx[i] = rand(-.3,.3); mol.vy[i] = rand(-.3,.3); mol.vz[i] = rand(-.3,.3);
-  mol.spin[i] = rand(0, 6.28);
-  const a = v3.norm([rand(-1,1), rand(-1,1), rand(-1,1)]);
-  mol.axis[i*3] = a[0]; mol.axis[i*3+1] = a[1]; mol.axis[i*3+2] = a[2];
-  mol.where[i] = where; mol.t[i] = 0;
+function spawn(sp,x,y,z,where=IN_FLASK){
+  if (mol.n>=MAX) return -1;
+  const i=mol.n++;
+  mol.sp[i]=sp; mol.x[i]=x; mol.y[i]=y; mol.z[i]=z;
+  mol.vx[i]=rand(-.3,.3); mol.vy[i]=rand(-.3,.3); mol.vz[i]=rand(-.3,.3);
+  mol.spin[i]=rand(0,6.28);
+  const a=v3.norm([rand(-1,1),rand(-1,1),rand(-1,1)]);
+  mol.axis[i*3]=a[0]; mol.axis[i*3+1]=a[1]; mol.axis[i*3+2]=a[2];
+  mol.where[i]=where; mol.t[i]=0; mol.phase[i]=LIQ; mol.around[i]=0;
   return i;
 }
 function kill(i){
-  const j = --mol.n;
-  if (i !== j){
-    for (const k of ['sp','x','y','z','vx','vy','vz','spin','where','t']) mol[k][i] = mol[k][j];
-    for (let c = 0; c < 3; c++) mol.axis[i*3+c] = mol.axis[j*3+c];
+  const j=--mol.n;
+  if (i!==j){
+    for (const k of ['sp','x','y','z','vx','vy','vz','spin','where','t','phase','rho','around']) mol[k][i]=mol[k][j];
+    for (let c=0;c<3;c++) mol.axis[i*3+c]=mol.axis[j*3+c];
   }
 }
 
-/* ---- גבולות הכלים ---- */
-const FLASK_R = 0.86, FLASK_CY = 0.90, NECK_R = 0.17, NECK_TOP = 2.40;
+const FLASK_R=0.86, FLASK_CY=0.90, NECK_R=0.17, NECK_TOP=2.40;
 function flaskRadiusAt(y){
-  if (y >= 1.95) return NECK_R;
-  if (y <= 1.62){
-    const d = y - FLASK_CY;
-    return Math.sqrt(Math.max(0, FLASK_R*FLASK_R - d*d));
-  }
-  const u = (y - 1.62) / (1.95 - 1.62);
-  return 0.52 * (1 - u) + NECK_R * u;
+  if (y>=1.95) return NECK_R;
+  if (y<=1.62){ const d=y-FLASK_CY; return Math.sqrt(Math.max(0,FLASK_R*FLASK_R-d*d)); }
+  const u=(y-1.62)/0.33;
+  return 0.52*(1-u)+NECK_R*u;
 }
 
-let heat = 20, paused = false;
-const AMBIENT = 20;
-
-/* טמפרטורה משתנה לפי איפה אתה — הבקבוק מתחמם, הצינור נשאר קר.
-   זה כל מה שצריך כדי שזיקוק יעבוד לבד. */
-function tempAt(where, y){
-  if (where === IN_FLASK)  return heat;
-  if (where === IN_BEAKER) return AMBIENT;
-  return AMBIENT + Math.max(0, heat - AMBIENT) * 0.12;   /* הצינור מוליך קצת */
+let heat=20, paused=false;
+const AMBIENT=20;
+function tempAt(where){
+  if (where===IN_FLASK) return heat;
+  if (where===IN_BEAKER) return AMBIENT + Math.max(0,heat-AMBIENT)*0.04;
+  return AMBIENT + Math.max(0,heat-AMBIENT)*0.12;
 }
-const isGas = (i) => tempAt(mol.where[i], mol.y[i]) > SPECIES[mol.sp[i]].boil;
 
-/* ---- רשת מרחבית לדחייה קצרת-טווח ---- */
-const CELL = 0.20, grid = new Map();
-const hash = (x, y, z) =>
-  ((x/CELL)|0) * 73856093 ^ ((y/CELL)|0) * 19349663 ^ ((z/CELL)|0) * 83492791;
+/* מצב הצבירה נגזר מהטמפרטורה בלבד. אין "קרח" ו"אדים" כחומרים נפרדים. */
+function phaseOf(i){
+  const S=SPECIES[mol.sp[i]], T=tempAt(mol.where[i]);
+  return T > S.boil ? GAS : T > S.melt ? LIQ : SOL;
+}
+const densityOf = i => mol.phase[i]===GAS ? SPECIES[mol.sp[i]].gasRho : SPECIES[mol.sp[i]].liq;
 
-function repel(dt){
+/* ---- שכנים: דחייה, לכידות, וצפיפות מקומית ---- */
+/* מפתח התא חייב להיות חד־חד־ערכי. עם גיבוב שמתנגש, אותו זוג מולקולות
+   נספר שוב ושוב — הכוחות יוצאים מוכפלים והנוזל מתפוצץ החוצה במקום לשקוע.
+   התא גדול מרדיוס ההשפעה, כך ש-27 השכנים מכסים אותו במלואו. */
+let STIFF=1.0, COH_L=4, COH_S=12, ITERS=3;
+const CELL=0.26, grid=new Map();
+const ci = p => Math.floor(p / CELL);
+const cellKey = (cx,cy,cz) => ((cx + 512) * 1024 + (cy + 512)) * 1024 + (cz + 512);
+
+/* בונים את הרשת פעם אחת, ואז פותרים את החפיפות בכמה מעברים.
+   מעבר יחיד לא מספיק: לכל מולקולה יש כמה עשרות אילוצים בו-זמנית, וכל
+   דחיפה מבטלת את קודמתה. עם מעבר אחד הנוזל קורס לגוש דחוס. */
+/* בונים את רשימת הזוגות פעם אחת בכל צעד, ואז פותרים את החפיפות בכמה
+   מעברים על מערך שטוח. מעבר יחיד לא מספיק — לכל מולקולה יש עשרות
+   אילוצים בו-זמנית וכל דחיפה מבטלת את קודמתה, והנוזל קורס לגוש דחוס.
+   סריקת הרשת מחדש בכל מעבר הייתה מייקרת את הצעד פי שלושה. */
+let pairs = new Int32Array(1 << 15), nPairs = 0;
+
+function buildPairs(){
   grid.clear();
-  for (let i = 0; i < mol.n; i++){
-    const h = hash(mol.x[i], mol.y[i], mol.z[i]);
-    let b = grid.get(h);
-    if (!b) grid.set(h, b = []);
+  for (let i=0;i<mol.n;i++){
+    if (mol.where[i]===IN_TUBE) continue;
+    const k=cellKey(ci(mol.x[i]),ci(mol.y[i]),ci(mol.z[i]));
+    let b=grid.get(k); if(!b) grid.set(k,b=[]);
     b.push(i);
+    mol.rho[i]=0; mol.around[i]=0;
   }
-  for (let i = 0; i < mol.n; i++){
-    if (mol.where[i] === IN_TUBE) continue;
-    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++){
-      const b = grid.get(hash(mol.x[i] + dx*CELL, mol.y[i] + dy*CELL, mol.z[i] + dz*CELL));
+  nPairs=0;
+  for (let i=0;i<mol.n;i++){
+    if (mol.where[i]===IN_TUBE) continue;
+    const bx=ci(mol.x[i]), by=ci(mol.y[i]), bz=ci(mol.z[i]);
+    for (let dx=-1;dx<=1;dx++) for (let dy=-1;dy<=1;dy++) for (let dz=-1;dz<=1;dz++){
+      const b=grid.get(cellKey(bx+dx,by+dy,bz+dz));
       if (!b) continue;
-      for (const j of b){
-        if (j <= i || mol.where[j] === IN_TUBE) continue;
-        const ex = mol.x[i]-mol.x[j], ey = mol.y[i]-mol.y[j], ez = mol.z[i]-mol.z[j];
-        const d2 = ex*ex + ey*ey + ez*ez, R = 0.155;
-        if (d2 > R*R || d2 < 1e-9) continue;
-        const d = Math.sqrt(d2), f = (R - d) / R * 5.4 * dt;
-        const nx = ex/d*f, ny = ey/d*f, nz = ez/d*f;
-        mol.vx[i] += nx; mol.vy[i] += ny; mol.vz[i] += nz;
-        mol.vx[j] -= nx; mol.vy[j] -= ny; mol.vz[j] -= nz;
+      for (let q=0;q<b.length;q++){
+        const j=b[q];
+        if (j<=i) continue;
+        const ex=mol.x[i]-mol.x[j], ey=mol.y[i]-mol.y[j], ez=mol.z[i]-mol.z[j];
+        if (ex*ex+ey*ey+ez*ez > 0.0625) continue;
+        if (nPairs*2+2 > pairs.length){
+          const g=new Int32Array(pairs.length*2); g.set(pairs); pairs=g;
+        }
+        pairs[nPairs*2]=i; pairs[nPairs*2+1]=j; nPairs++;
       }
     }
   }
 }
 
-/* ---- החוק היחיד: 2H₂ + O₂ → 2H₂O, ורק כשחם מספיק ---- */
-const IGNITION = 560;
-let flash = 0;
+const R0=0.155;
+function separate(){
+  for (let k=0;k<nPairs;k++){
+    const i=pairs[k*2], j=pairs[k*2+1];
+    const ex=mol.x[i]-mol.x[j], ey=mol.y[i]-mol.y[j], ez=mol.z[i]-mol.z[j];
+    let d=Math.sqrt(ex*ex+ey*ey+ez*ez), ux,uy,uz;
+    if (d<1e-6){                    /* בדיוק באותה נקודה — אין כיוון להיפרד
+                                       אליו, ובלי דחיפה אקראית הן נתקעות */
+      ux=Math.random()-.5; uy=Math.random()-.5; uz=Math.random()-.5;
+      const l=Math.hypot(ux,uy,uz)||1; ux/=l; uy/=l; uz/=l; d=0;
+    } else if (d<R0){ ux=ex/d; uy=ey/d; uz=ez/d; }
+    else continue;
+    const push=(R0-d)*0.5*STIFF;
+    mol.x[i]+=ux*push; mol.y[i]+=uy*push; mol.z[i]+=uz*push;
+    mol.x[j]-=ux*push; mol.y[j]-=uy*push; mol.z[j]-=uz*push;
+    const rel=((mol.vx[i]-mol.vx[j])*ux+(mol.vy[i]-mol.vy[j])*uy+(mol.vz[i]-mol.vz[j])*uz)*0.16;
+    mol.vx[i]-=ux*rel; mol.vy[i]-=uy*rel; mol.vz[i]-=uz*rel;
+    mol.vx[j]+=ux*rel; mol.vy[j]+=uy*rel; mol.vz[j]+=uz*rel;
+  }
+}
+
+/* צילום מיקומים לפני הפתרון, כדי שאפשר יהיה לגזור ממנו מהירות */
+const px=new Float32Array(MAX), py=new Float32Array(MAX), pz=new Float32Array(MAX);
+
+function neighbours(dt){
+  buildPairs();
+  for (let i=0;i<mol.n;i++){ px[i]=mol.x[i]; py[i]=mol.y[i]; pz[i]=mol.z[i]; }
+  for (let it=0;it<ITERS;it++) separate();
+
+  /* המהירות חייבת ללמוד על התיקון. בלי זה מולקולה שנחה על הערימה
+     נדחפת למעלה במיקום אבל ממשיכה לצבור מהירות כלפי מטה — הפיזיקה
+     צוברת אנרגיה עד שהנוזל רותח בלי חום. */
+  const inv=1/dt;
+  for (let i=0;i<mol.n;i++){
+    if (mol.where[i]===IN_TUBE) continue;
+    let cx=(mol.x[i]-px[i])*inv, cy=(mol.y[i]-py[i])*inv, cz=(mol.z[i]-pz[i])*inv;
+    const l=Math.hypot(cx,cy,cz);
+    if (l>6){ const s=6/l; cx*=s; cy*=s; cz*=s; }
+    mol.vx[i]=mol.vx[i]*0.55+cx*0.45;
+    mol.vy[i]=mol.vy[i]*0.55+cy*0.45;
+    mol.vz[i]=mol.vz[i]*0.55+cz*0.45;
+  }
+
+  /* צפיפות מקומית ולכידות — מעבר אחד, אחרי שהמיקומים התייצבו */
+  for (let k=0;k<nPairs;k++){
+    const i=pairs[k*2], j=pairs[k*2+1];
+    const ex=mol.x[i]-mol.x[j], ey=mol.y[i]-mol.y[j], ez=mol.z[i]-mol.z[j];
+    const d=Math.sqrt(ex*ex+ey*ey+ez*ez);
+    if (d<1e-6) continue;
+    mol.rho[i]+=densityOf(j); mol.around[i]++;
+    mol.rho[j]+=densityOf(i); mol.around[j]++;
+    if (d<=R0 || mol.phase[i]===GAS || mol.phase[j]===GAS) continue;
+    const f=-(d-R0)/R0*(mol.phase[i]===SOL?COH_S:COH_L)*dt;
+    const nx=ex/d*f, ny=ey/d*f, nz=ez/d*f;
+    mol.vx[i]+=nx; mol.vy[i]+=ny; mol.vz[i]+=nz;
+    mol.vx[j]-=nx; mol.vy[j]-=ny; mol.vz[j]-=nz;
+  }
+}
+
+const IGNITION=560;
+let flash=0;
 
 function react(){
-  if (heat < IGNITION && flash <= 0) return;
-  const h = [], o = [];
-  for (let i = 0; i < mol.n; i++){
-    if (mol.where[i] === IN_TUBE) continue;
-    if (mol.sp[i] === 'H2') h.push(i); else if (mol.sp[i] === 'O2') o.push(i);
+  if (heat<IGNITION && flash<=0) return;
+  const h=[],o=[];
+  for (let i=0;i<mol.n;i++){
+    if (mol.where[i]===IN_TUBE) continue;
+    if (mol.sp[i]==='H2') h.push(i); else if (mol.sp[i]==='O2') o.push(i);
   }
-  let made = 0;
+  let made=0;
   for (const oi of o){
-    if (h.length < 2 || made > 6) break;
-    /* שני מימנים קרובים לאותו חמצן */
-    const near = [];
+    if (h.length<2 || made>6) break;
+    const near=[];
     for (const hi of h){
-      const d = Math.hypot(mol.x[hi]-mol.x[oi], mol.y[hi]-mol.y[oi], mol.z[hi]-mol.z[oi]);
-      if (d < 0.55) near.push(hi);
-      if (near.length === 2) break;
+      if (Math.hypot(mol.x[hi]-mol.x[oi],mol.y[hi]-mol.y[oi],mol.z[hi]-mol.z[oi])<0.55) near.push(hi);
+      if (near.length===2) break;
     }
-    if (near.length < 2) continue;
-
-    /* שני H₂ הופכים לשני H₂O; ה-O₂ נבלע. ארבעה H ושני O — לפני ואחרי. */
-    for (const hi of near){ mol.sp[hi] = 'H2O'; mol.vy[hi] += rand(1.5, 3.4); }
-    const idx = h.indexOf(near[0]); if (idx >= 0) h.splice(idx, 1);
-    const idx2 = h.indexOf(near[1]); if (idx2 >= 0) h.splice(idx2, 1);
+    if (near.length<2) continue;
+    /* שני H₂ הופכים לשני H₂O, וה-O₂ נבלע. ארבעה H ושני O — לפני ואחרי. */
+    for (const hi of near){ mol.sp[hi]='H2O'; mol.vy[hi]+=rand(1.5,3.4); }
+    h.splice(h.indexOf(near[0]),1);
+    h.splice(h.indexOf(near[1]),1);
     kill(oi);
-    made++; flash = 0.45;
-    heat = Math.min(1200, heat + 55);          /* התגובה מחממת את עצמה */
+    made++; flash=0.45;
+    heat=Math.min(1200,heat+55);
   }
   if (made) syncHeat();
 }
 
 function step(dt){
-  repel(dt);
+  neighbours(dt);
+  for (let i=0;i<mol.n;i++){
+    const S=SPECIES[mol.sp[i]];
+    mol.phase[i]=phaseOf(i);
+    const ph=mol.phase[i], T=tempAt(mol.where[i]);
+    mol.spin[i]+=dt*(ph===GAS?5:ph===LIQ?1.2:0.15);
 
-  for (let i = 0; i < mol.n; i++){
-    const S = SPECIES[mol.sp[i]];
-    const gas = isGas(i);
-    const T = tempAt(mol.where[i], mol.y[i]);
-    mol.spin[i] += dt * (gas ? 5 : 1.2);
-
-    if (mol.where[i] === IN_TUBE){
-      /* בתוך הצינור נעים לאורך המסלול — גז מהר, נוזל נוטף */
-      mol.t[i] += dt * (gas ? 0.46 : 0.26);
-      if (mol.t[i] >= 1){
-        mol.where[i] = IN_BEAKER;
-        const e = PATH[PATH.length-1];
-        mol.x[i] = e[0] + rand(-.05,.05); mol.y[i] = e[1]; mol.z[i] = e[2] + rand(-.05,.05);
-        mol.vx[i] = 0; mol.vy[i] = -1.2; mol.vz[i] = 0;
+    if (mol.where[i]===IN_TUBE){
+      mol.t[i]+=dt*(ph===GAS?0.46:0.26);
+      if (mol.t[i]>=1){
+        mol.where[i]=IN_BEAKER;
+        const e=PATH[PATH.length-1];
+        mol.x[i]=e[0]+rand(-.05,.05); mol.y[i]=e[1]; mol.z[i]=e[2]+rand(-.05,.05);
+        mol.vx[i]=0; mol.vy[i]=-1.2; mol.vz[i]=0;
       } else {
-        const p = PATH[Math.min(PATH.length-1, (mol.t[i] * (PATH.length-1))|0)];
-        mol.x[i] = p[0]; mol.y[i] = p[1]; mol.z[i] = p[2];
+        const p=PATH[Math.min(PATH.length-1,(mol.t[i]*(PATH.length-1))|0)];
+        mol.x[i]=p[0]; mol.y[i]=p[1]; mol.z[i]=p[2];
       }
       continue;
     }
 
-    /* כובד, ותנועה תרמית שגדלה עם הטמפרטורה */
-    const therm = gas ? clamp((T - S.boil) / 260, 0.25, 3.2) : 0.05;
-    mol.vy[i] -= 5.2 * dt;
-    mol.vx[i] += rand(-1,1) * therm * dt * 9;
-    mol.vy[i] += rand(-1,1) * therm * dt * 9;
-    mol.vz[i] += rand(-1,1) * therm * dt * 9;
-    if (gas) mol.vy[i] += 5.6 * dt;                 /* ציפה — גז עולה */
+    /* כובד וציפה בצעד אחד: מה שדוחף גוף למעלה או למטה הוא ההפרש בין
+       הצפיפות שלו לצפיפות של מה שמקיף אותו. גז בתוך נוזל עולה חזק,
+       נוזל כבד בתוך נוזל קל שוקע, ושני גזים נפרדים לשכבות לפי משקל. */
+    const mine=densityOf(i);
+    const amb = mol.around[i]>2 ? mol.rho[i]/mol.around[i] : mine;
+    const lift = clamp((amb-mine)/Math.max(mine,1e-4), -6, 6);
+    /* על גז הכובד כמעט לא משפיע בקנה המידה הזה, ומעל נוזל רותח יש זרם
+       עולה. בלי זה אדים בתוך אדים לא מרגישים שום הפרש צפיפות ופשוט
+       יושבים בבועה — הזיקוק נעצר לפני שהוא מגיע לצוואר. */
+    const G = ph===GAS ? 0.8 : 5.2;
+    const conv = ph===GAS ? clamp((T-S.boil)/150,0,1) * 5.2 : 0;
+    mol.vy[i] += (-G + G*lift + conv) * dt;
 
-    const drag = gas ? 0.55 : 3.4;
-    const k = Math.exp(-drag * dt);
-    mol.vx[i] *= k; mol.vy[i] *= k; mol.vz[i] *= k;
+    const therm = ph===GAS ? clamp((T-S.boil)/260,0.25,3.2) : ph===LIQ ? 0.16 : 0.02;
+    mol.vx[i]+=rand(-1,1)*therm*dt*9;
+    mol.vy[i]+=rand(-1,1)*therm*dt*9;
+    mol.vz[i]+=rand(-1,1)*therm*dt*9;
 
-    mol.x[i] += mol.vx[i] * dt;
-    mol.y[i] += mol.vy[i] * dt;
-    mol.z[i] += mol.vz[i] * dt;
+    const k=Math.exp(-(ph===GAS?0.55:ph===LIQ?3.4:11.0)*dt);
+    mol.vx[i]*=k; mol.vy[i]*=k; mol.vz[i]*=k;
+    mol.x[i]+=mol.vx[i]*dt; mol.y[i]+=mol.vy[i]*dt; mol.z[i]+=mol.vz[i]*dt;
 
-    /* ---- כליאה ---- */
-    if (mol.where[i] === IN_FLASK){
-      if (gas && mol.y[i] > NECK_TOP - 0.04 && Math.hypot(mol.x[i], mol.z[i]) < NECK_R){
-        mol.where[i] = IN_TUBE; mol.t[i] = 0; continue;
+    if (mol.where[i]===IN_FLASK){
+      if (ph===GAS && mol.y[i]>NECK_TOP-0.04 && Math.hypot(mol.x[i],mol.z[i])<NECK_R){
+        mol.where[i]=IN_TUBE; mol.t[i]=0; continue;
       }
-      const maxR = flaskRadiusAt(mol.y[i]) - 0.06;
-      const r = Math.hypot(mol.x[i], mol.z[i]);
-      if (r > maxR && r > 1e-6){
-        const s = maxR / r;
-        mol.x[i] *= s; mol.z[i] *= s;
-        mol.vx[i] *= -0.35; mol.vz[i] *= -0.35;
-      }
-      if (mol.y[i] > NECK_TOP - 0.05){ mol.y[i] = NECK_TOP - 0.05; mol.vy[i] *= -0.3; }
-      if (mol.y[i] < 0.06){ mol.y[i] = 0.06; mol.vy[i] *= -0.25; }
+      const maxR=flaskRadiusAt(mol.y[i])-0.06, r=Math.hypot(mol.x[i],mol.z[i]);
+      if (r>maxR && r>1e-6){ const s=maxR/r; mol.x[i]*=s; mol.z[i]*=s; mol.vx[i]*=-.35; mol.vz[i]*=-.35; }
+      if (mol.y[i]>NECK_TOP-0.05){ mol.y[i]=NECK_TOP-0.05; mol.vy[i]*=-.3; }
+      if (mol.y[i]<0.06){ mol.y[i]=0.06; mol.vy[i]*=-.25; }
     } else {
-      const r = Math.hypot(mol.x[i] - BEAKER_X, mol.z[i]);
-      if (r > 0.60){
-        const s = 0.60 / r;
-        mol.x[i] = BEAKER_X + (mol.x[i]-BEAKER_X) * s; mol.z[i] *= s;
-        mol.vx[i] *= -0.35; mol.vz[i] *= -0.35;
-      }
-      if (mol.y[i] > 1.42){ mol.y[i] = 1.42; mol.vy[i] *= -0.3; }
-      if (mol.y[i] < 0.06){ mol.y[i] = 0.06; mol.vy[i] *= -0.25; }
+      const r=Math.hypot(mol.x[i]-BEAKER_X,mol.z[i]);
+      if (r>0.60){ const s=0.60/r; mol.x[i]=BEAKER_X+(mol.x[i]-BEAKER_X)*s; mol.z[i]*=s;
+                   mol.vx[i]*=-.35; mol.vz[i]*=-.35; }
+      if (mol.y[i]>1.42){ mol.y[i]=1.42; mol.vy[i]*=-.3; }
+      if (mol.y[i]<0.06){ mol.y[i]=0.06; mol.vy[i]*=-.25; }
     }
   }
-
   react();
-  if (flash > 0) flash -= dt;
-  if (heat > AMBIENT) heat = Math.max(AMBIENT, heat - dt * 6);   /* מתקרר לאט */
+  if (flash>0) flash-=dt;
+  if (heat>AMBIENT) heat=Math.max(AMBIENT,heat-dt*6);
+  else if (heat<AMBIENT) heat=Math.min(AMBIENT,heat+dt*4);
 }
 
 /* ===========================================================================
-   6) מצלמה ומגע
+   6) מצלמה
    =========================================================================== */
-const FOV = 0.86;
-const cam = { az: 1.15, el: 0.16, dist: 7, target: [BOUNDS.cx, BOUNDS.cy, 0], slice: 0 };
-const SCENE_R = 3.2;
-
-/* המרחק נגזר משני דברים שמשתנים: יחס המסך, וזווית הסיבוב.
-   המערכת רחבה יותר משהיא עמוקה, אז כשמסתכלים עליה מהצד היא תופסת
-   הרבה יותר רוחב מסך מאשר מלפנים. מרחק קבוע היה חותך את הכוס בחצי
-   מהזוויות, או משאיר שני שליש מסך ריקים בחצי השני. */
-/* מודדים את שמונה פינות תיבת הגבול. לכל פינה, המרחק המינימלי שבו היא
-   עדיין בפריים הוא מרחקה מהציר חלקי חצי-שדה-הראייה, ועוד כמה שהיא בולטת
-   לכיוון המצלמה. הקירוב הקודם התעלם מהבליטה, והסליל יצא מהפריים
-   בדיוק בזוויות שבהן הוא הכי קרוב. */
+const FOV=0.86;
+const cam={ az:1.15, el:0.16, dist:7, target:[BOUNDS.cx,BOUNDS.cy,0], slice:0 };
+const SCENE_R=3.2;
+const eyePos=()=>{
+  const ce=Math.cos(cam.el);
+  return [cam.target[0]+cam.dist*ce*Math.sin(cam.az),
+          cam.target[1]+cam.dist*Math.sin(cam.el),
+          cam.target[2]+cam.dist*ce*Math.cos(cam.az)];
+};
 function fitDistance(){
-  const asp = (cv.clientWidth || 1) / (cv.clientHeight || 1);
-  const halfV = Math.tan(FOV / 2), halfH = halfV * asp;
-  const ce = Math.cos(cam.el), se = Math.sin(cam.el);
-  const sa = Math.sin(cam.az), ca = Math.cos(cam.az);
-  const f = [-ce * sa, -se, -ce * ca];            /* מהמצלמה אל המטרה */
-  const r = [ca, 0, -sa];                         /* ימינה על המסך */
-  const u = v3.cross(r, f);
-  let d = 0;
-  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]){
-    const c = [sx * BOUNDS.hx, sy * BOUNDS.hy, sz * BOUNDS.hz];
-    const need = Math.max(Math.abs(v3.dot(c, r)) / halfH,
-                          Math.abs(v3.dot(c, u)) / halfV) - v3.dot(c, f);
-    if (need > d) d = need;
+  const asp=(cv.clientWidth||1)/(cv.clientHeight||1);
+  const halfV=Math.tan(FOV/2), halfH=halfV*asp;
+  const ce=Math.cos(cam.el), se=Math.sin(cam.el);
+  const sa=Math.sin(cam.az), ca=Math.cos(cam.az);
+  const f=[-ce*sa,-se,-ce*ca], r=[ca,0,-sa], u=v3.cross(r,f);
+  let d=0;
+  for (const sx of [-1,1]) for (const sy of [-1,1]) for (const sz of [-1,1]){
+    const c=[sx*BOUNDS.hx, sy*BOUNDS.hy, sz*BOUNDS.hz];
+    const need=Math.max(Math.abs(v3.dot(c,r))/halfH, Math.abs(v3.dot(c,u))/halfV) - v3.dot(c,f);
+    if (need>d) d=need;
   }
-  return d * 1.04;
+  return d*1.04;
 }
 
-function eyePos(){
-  const ce = Math.cos(cam.el);
-  return [
-    cam.target[0] + cam.dist * ce * Math.sin(cam.az),
-    cam.target[1] + cam.dist * Math.sin(cam.el),
-    cam.target[2] + cam.dist * ce * Math.cos(cam.az),
-  ];
-}
-
-let touches = new Map(), pinch0 = 0, slice0 = 0, last2 = null;
-
-cv.addEventListener('pointerdown', e => {
+let touches=new Map(), pinch0=0, slice0=0, last2=null;
+cv.addEventListener('pointerdown',e=>{
   cv.setPointerCapture(e.pointerId);
-  touches.set(e.pointerId, { x:e.clientX, y:e.clientY });
-  if (touches.size === 2){
-    const [a, b] = [...touches.values()];
-    pinch0 = Math.hypot(a.x-b.x, a.y-b.y);
-    slice0 = cam.slice;
-    last2 = { x:(a.x+b.x)/2, y:(a.y+b.y)/2 };
+  touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if (touches.size===2){
+    const [a,b]=[...touches.values()];
+    pinch0=Math.hypot(a.x-b.x,a.y-b.y); slice0=cam.slice;
+    last2={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
   }
 });
-cv.addEventListener('pointermove', e => {
-  const p = touches.get(e.pointerId);
-  if (!p) return;
-  p.x = e.clientX; p.y = e.clientY;
-
-  if (touches.size >= 2){
-    const [a, b] = [...touches.values()];
-    /* צביטה חותכת, גרירה של שתי אצבעות מסובבת */
-    const d = Math.hypot(a.x-b.x, a.y-b.y);
-    cam.slice = clamp(slice0 + (d - pinch0) / 260, 0, 1);
-    const mid = { x:(a.x+b.x)/2, y:(a.y+b.y)/2 };
-    if (last2){
-      cam.az -= (mid.x - last2.x) * 0.008;
-      cam.el = clamp(cam.el + (mid.y - last2.y) * 0.006, -0.9, 1.25);
-    }
-    last2 = mid;
-    syncCut();
+cv.addEventListener('pointermove',e=>{
+  const p=touches.get(e.pointerId); if(!p) return;
+  p.x=e.clientX; p.y=e.clientY;
+  if (touches.size>=2){
+    const [a,b]=[...touches.values()];
+    cam.slice=clamp(slice0+(Math.hypot(a.x-b.x,a.y-b.y)-pinch0)/260,0,1);
+    const mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
+    if (last2){ cam.az-=(mid.x-last2.x)*0.008; cam.el=clamp(cam.el+(mid.y-last2.y)*0.006,-0.55,1.25); }
+    last2=mid; syncCut();
   }
 });
-function release(e){
-  touches.delete(e.pointerId);
-  if (touches.size < 2) last2 = null;
-}
-cv.addEventListener('pointerup', release);
-cv.addEventListener('pointercancel', release);
+const release=e=>{ touches.delete(e.pointerId); if (touches.size<2) last2=null; };
+cv.addEventListener('pointerup',release);
+cv.addEventListener('pointercancel',release);
 
-/* עכבר: גרירה מסובבת, גלגלת חותכת */
-let mdown = false, mx = 0, my = 0;
-cv.addEventListener('mousedown', e => { mdown = true; mx = e.clientX; my = e.clientY; });
-addEventListener('mouseup', () => mdown = false);
-addEventListener('mousemove', e => {
-  if (!mdown) return;
-  cam.az -= (e.clientX - mx) * 0.008;
-  cam.el = clamp(cam.el + (e.clientY - my) * 0.006, -0.9, 1.25);
-  mx = e.clientX; my = e.clientY;
+let mdown=false,mx=0,my=0;
+cv.addEventListener('mousedown',e=>{mdown=true;mx=e.clientX;my=e.clientY;});
+addEventListener('mouseup',()=>mdown=false);
+addEventListener('mousemove',e=>{
+  if(!mdown) return;
+  cam.az-=(e.clientX-mx)*0.008; cam.el=clamp(cam.el+(e.clientY-my)*0.006,-0.55,1.25);
+  mx=e.clientX; my=e.clientY;
 });
-cv.addEventListener('wheel', e => {
-  e.preventDefault();
-  cam.slice = clamp(cam.slice - e.deltaY * 0.0012, 0, 1);
-  syncCut();
-}, { passive:false });
-
-/* הקשה אחת מוסיפה מהיסוד הנבחר */
-cv.addEventListener('click', e => {
-  if (touches.size > 1) return;
-  const into = e.clientX / innerWidth > 0.56 ? IN_BEAKER : IN_FLASK;
-  addMolecules(picked, 26, into);
+cv.addEventListener('wheel',e=>{ e.preventDefault();
+  cam.slice=clamp(cam.slice-e.deltaY*0.0012,0,1); syncCut(); },{passive:false});
+cv.addEventListener('click',e=>{
+  if (touches.size>1) return;
+  addMolecules(picked, 26, e.clientX/innerWidth>0.56 ? IN_BEAKER : IN_FLASK);
 });
 
 /* ===========================================================================
    7) ציור
    =========================================================================== */
-const inst = {
-  off: new Float32Array(MAX * 3 * 3),
-  col: new Float32Array(MAX * 3 * 3),
-  rad: new Float32Array(MAX * 3),
-};
+let W=0,H=0,FW=0,FH=0,SAMPLES=1;
+let msFBO,msColor,msDepth;          /* כל הגאומטריה נכנסת לכאן, עם MSAA */
+let sceneTex,sceneFBO;              /* אותה תמונה אחרי פתירה, כדי שהנוזל ידגום אותה */
+let fdTex,fdRB,fdFBO, b1Tex,b1FBO, thTex,thFBO;
 
-function buildInstances(){
-  let k = 0;
-  for (let i = 0; i < mol.n; i++){
-    const S = SPECIES[mol.sp[i]];
-    /* סיבוב סביב ציר אקראי — מולקולה אמיתית מתגלגלת */
-    const a = mol.spin[i], c = Math.cos(a), s = Math.sin(a);
-    const ax = mol.axis[i*3], ay = mol.axis[i*3+1], az = mol.axis[i*3+2];
-    for (const [el, off] of S.atoms){
-      const E = ELEM[el];
-      const [ox, oy, oz] = off;
-      /* רודריגז */
-      const dt = ax*ox + ay*oy + az*oz;
-      const cx = ay*oz - az*oy, cy = az*ox - ax*oz, cz = ax*oy - ay*ox;
-      inst.off[k*3]   = mol.x[i] + ox*c + cx*s + ax*dt*(1-c);
-      inst.off[k*3+1] = mol.y[i] + oy*c + cy*s + ay*dt*(1-c);
-      inst.off[k*3+2] = mol.z[i] + oz*c + cz*s + az*dt*(1-c);
-      const glow = flash > 0 && mol.sp[i] === 'H2O' ? flash * 1.6 : 0;
-      inst.col[k*3]   = Math.min(1, E.col[0] + glow);
-      inst.col[k*3+1] = Math.min(1, E.col[1] + glow * .8);
-      inst.col[k*3+2] = Math.min(1, E.col[2] + glow * .5);
-      inst.rad[k] = E.r;
+function resize(){
+  const dpr=Math.min(devicePixelRatio||1,1.75);
+  const w=Math.max(1,(cv.clientWidth*dpr)|0), h=Math.max(1,(cv.clientHeight*dpr)|0);
+  if (w===W && h===H) return;
+  W=w; H=h; cv.width=w; cv.height=h;
+  FW=Math.max(1,W>>1); FH=Math.max(1,H>>1);   /* הנוזל בחצי רזולוציה — הטשטוש מסתיר את זה */
+  SAMPLES=Math.min(4, gl.getParameter(gl.MAX_SAMPLES)||1);
+
+  for (const t of [sceneTex,fdTex,b1Tex,thTex]) if (t) gl.deleteTexture(t);
+  for (const f of [msFBO,sceneFBO,fdFBO,b1FBO,thFBO]) if (f) gl.deleteFramebuffer(f);
+  for (const r of [msColor,msDepth,fdRB]) if (r) gl.deleteRenderbuffer(r);
+
+  const rb=(w,h,fmt,samples)=>{
+    const r=gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER,r);
+    if (samples>1) gl.renderbufferStorageMultisample(gl.RENDERBUFFER,samples,fmt,w,h);
+    else gl.renderbufferStorage(gl.RENDERBUFFER,fmt,w,h);
+    return r;
+  };
+
+  msColor=rb(W,H,gl.RGBA8,SAMPLES);
+  msDepth=rb(W,H,gl.DEPTH_COMPONENT24,SAMPLES);
+  msFBO=gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER,msFBO);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.RENDERBUFFER,msColor);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,msDepth);
+
+  sceneTex=makeTex(W,H,gl.RGBA8,gl.RGBA,gl.UNSIGNED_BYTE,gl.LINEAR);
+  sceneFBO=makeFBO(sceneTex,null);
+
+  if (FLOAT_FBO){
+    fdRB =rb(FW,FH,gl.DEPTH_COMPONENT24,1);
+    fdTex=makeTex(FW,FH,gl.R16F,gl.RED,gl.HALF_FLOAT,gl.LINEAR);
+    b1Tex=makeTex(FW,FH,gl.R16F,gl.RED,gl.HALF_FLOAT,gl.LINEAR);
+    thTex=makeTex(FW,FH,gl.RGBA16F,gl.RGBA,gl.HALF_FLOAT,gl.LINEAR);
+    fdFBO=makeFBO(fdTex,fdRB); b1FBO=makeFBO(b1Tex,null); thFBO=makeFBO(thTex,null);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+}
+
+/* MSAA → דגימה בודדת. זו ההעתקה היחידה שמותרת מחוצץ מרובה־דגימות. */
+function resolveTo(dstFBO){
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER,msFBO);
+  gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER,dstFBO);
+  gl.blitFramebuffer(0,0,W,H, 0,0,W,H, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER,null);
+  gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER,null);
+}
+
+const inst={ off:new Float32Array(MAX*3*3), col:new Float32Array(MAX*3*3),
+             rad:new Float32Array(MAX*3),   kind:new Float32Array(MAX*3) };
+
+function buildAtoms(){
+  let k=0;
+  for (let i=0;i<mol.n;i++){
+    const S=SPECIES[mol.sp[i]];
+    const a=mol.spin[i], c=Math.cos(a), s=Math.sin(a);
+    const ax=mol.axis[i*3], ay=mol.axis[i*3+1], az=mol.axis[i*3+2];
+    for (const [el,off] of S.atoms){
+      const E=ELEM[el], [ox,oy,oz]=off;
+      const dt=ax*ox+ay*oy+az*oz;
+      const cx=ay*oz-az*oy, cy=az*ox-ax*oz, cz=ax*oy-ay*ox;
+      inst.off[k*3]  =mol.x[i]+ox*c+cx*s+ax*dt*(1-c);
+      inst.off[k*3+1]=mol.y[i]+oy*c+cy*s+ay*dt*(1-c);
+      inst.off[k*3+2]=mol.z[i]+oz*c+cz*s+az*dt*(1-c);
+      const g = flash>0 && mol.sp[i]==='H2O' ? flash*1.6 : 0;
+      inst.col[k*3]  =Math.min(1,E.col[0]+g);
+      inst.col[k*3+1]=Math.min(1,E.col[1]+g*.8);
+      inst.col[k*3+2]=Math.min(1,E.col[2]+g*.5);
+      inst.rad[k]=E.r;
       k++;
     }
   }
   return k;
 }
+function buildBlobs(){
+  let k=0;
+  for (let i=0;i<mol.n;i++){
+    const S=SPECIES[mol.sp[i]];
+    inst.off[k*3]=mol.x[i]; inst.off[k*3+1]=mol.y[i]; inst.off[k*3+2]=mol.z[i];
+    inst.col[k*3]=S.absorb[0]; inst.col[k*3+1]=S.absorb[1]; inst.col[k*3+2]=S.absorb[2];
+    const gas=mol.phase[i]===GAS;
+    inst.rad[k]=gas?0.20:0.135;                  /* אדים מתפרשים רחב יותר */
+    inst.kind[k]=gas?0:1;
+    k++;
+  }
+  return k;
+}
+function upload(mesh,n,withKind){
+  gl.bindVertexArray(mesh.vao);
+  const put=(name,arr,size)=>{
+    if (!mesh.inst[name]) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER,mesh.inst[name]);
+    gl.bufferData(gl.ARRAY_BUFFER,arr.subarray(0,n*size),gl.DYNAMIC_DRAW);
+  };
+  put('aOff',inst.off,3); put('aCol',inst.col,3); put('aRad',inst.rad,1);
+  if (withKind) put('aKind',inst.kind,1);
+}
+
+let realView = FLOAT_FBO;
 
 function draw(){
-  const w = cv.clientWidth, h = cv.clientHeight;
-  const dpr = Math.min(devicePixelRatio || 1, 2);
-  if (cv.width !== (w*dpr|0) || cv.height !== (h*dpr|0)){
-    cv.width = w*dpr|0; cv.height = h*dpr|0;
+  resize();
+  const want=fitDistance();
+  cam.dist = cam.dist>0 ? cam.dist+(want-cam.dist)*0.12 : want;
+
+  const eye=eyePos();
+  const asp=W/H;
+  const proj=m4.perspective(FOV,asp,0.1,60);
+  const view=m4.lookAt(eye,cam.target,[0,1,0]);
+  const VP=m4.mul(proj,view);
+
+  const fwd=v3.norm(v3.sub(cam.target,eye));
+  const pp=v3.add(cam.target,v3.scale(fwd,SCENE_R*(2*cam.slice-1)));
+  const clip=[fwd[0],fwd[1],fwd[2],v3.dot(pp,fwd)];
+  /* אותו מישור, במרחב המצלמה — שם חיים שיידרי הנוזל */
+  const cvn=[ view[0]*clip[0]+view[4]*clip[1]+view[8]*clip[2],
+              view[1]*clip[0]+view[5]*clip[1]+view[9]*clip[2],
+              view[2]*clip[0]+view[6]*clip[1]+view[10]*clip[2] ];
+  const cvd=clip[3] - (view[12]*clip[0]+view[13]*clip[1]+view[14]*clip[2]);
+
+  /* --- 1. החדר והשולחן --- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER,msFBO);
+  gl.viewport(0,0,W,H);
+  gl.clearColor(0.020,0.023,0.030,1);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
+
+  gl.useProgram(roomProg);
+  gl.uniformMatrix4fv(roomProg.u.uVP,false,VP);
+  gl.uniform4fv(roomProg.u.uClip,clip);
+  gl.bindVertexArray(room.vao);
+  gl.drawElements(gl.TRIANGLES,room.n,gl.UNSIGNED_SHORT,0);
+
+  gl.useProgram(woodProg);
+  gl.uniformMatrix4fv(woodProg.u.uVP,false,VP);
+  gl.uniform4fv(woodProg.u.uClip,clip);
+  gl.uniform3fv(woodProg.u.uEye,eye);
+  gl.uniform2f(woodProg.u.uOccA,0,0);
+  gl.uniform2f(woodProg.u.uOccB,BEAKER_X,0);
+  gl.bindVertexArray(table.vao);
+  gl.drawElements(gl.TRIANGLES,table.n,gl.UNSIGNED_SHORT,0);
+
+  let shown=0;
+
+  if (realView && FLOAT_FBO){
+    /* --- 2. פותרים את הרקע כדי שהנוזל יוכל לשבור אותו --- */
+    resolveTo(sceneFBO);
+
+    /* --- 3. עומק פני הנוזל --- */
+    const n=buildBlobs(); shown=n;
+    gl.bindFramebuffer(gl.FRAMEBUFFER,fdFBO);
+    gl.viewport(0,0,FW,FH);
+    gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND);
+    gl.useProgram(fluidDepthProg);
+    gl.uniformMatrix4fv(fluidDepthProg.u.uProj,false,proj);
+    gl.uniformMatrix4fv(fluidDepthProg.u.uView,false,view);
+    gl.uniform4f(fluidDepthProg.u.uClipView,cvn[0],cvn[1],cvn[2],cvd);
+    upload(billboard,n,true);
+    gl.drawElementsInstanced(gl.TRIANGLES,billboard.n,gl.UNSIGNED_SHORT,0,n);
+
+    /* --- 3. טשטוש דו-צדדי: אלף כדורים → משטח אחד --- */
+    gl.disable(gl.DEPTH_TEST); gl.depthMask(false);
+    gl.useProgram(blurProg);
+    gl.uniform1i(blurProg.u.uTex,0); gl.uniform1f(blurProg.u.uDepthFalloff,5.0);
+    gl.activeTexture(gl.TEXTURE0);
+    for (const [src,dst,dir] of [[fdTex,b1FBO,[1/FW,0]],[b1Tex,fdFBO,[0,1/FH]],
+                                 [fdTex,b1FBO,[1.7/FW,0]],[b1Tex,fdFBO,[0,1.7/FH]]]){
+      gl.bindFramebuffer(gl.FRAMEBUFFER,dst);
+      gl.viewport(0,0,FW,FH);
+      gl.bindTexture(gl.TEXTURE_2D,src);
+      gl.uniform2f(blurProg.u.uDir,dir[0],dir[1]);
+      gl.drawArrays(gl.TRIANGLES,0,3);
+    }
+
+    /* --- 4. עובי: כמה חומר יש בכל פיקסל, ובאיזה צבע --- */
+    gl.bindFramebuffer(gl.FRAMEBUFFER,thFBO);
+    gl.viewport(0,0,FW,FH);
+    gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE);
+    gl.useProgram(fluidThickProg);
+    gl.uniformMatrix4fv(fluidThickProg.u.uProj,false,proj);
+    gl.uniformMatrix4fv(fluidThickProg.u.uView,false,view);
+    gl.uniform4f(fluidThickProg.u.uClipView,cvn[0],cvn[1],cvn[2],cvd);
+    upload(billboard2,n,true);
+    gl.drawElementsInstanced(gl.TRIANGLES,billboard2.n,gl.UNSIGNED_SHORT,0,n);
+    gl.disable(gl.BLEND);
+
+    /* --- 5. הרכבה חזרה לתוך חוצץ הגאומטריה. העומק שם נשאר שלם,
+             ולכן הזכוכית שתצויר אחר כך עדיין תיחסם נכון על ידי השולחן. --- */
+    gl.bindFramebuffer(gl.FRAMEBUFFER,msFBO);
+    gl.viewport(0,0,W,H);
+    gl.disable(gl.DEPTH_TEST); gl.depthMask(false);
+    gl.useProgram(compositeProg);
+    const halfV=Math.tan(FOV/2);
+    gl.uniform2f(compositeProg.u.uTan,halfV*asp,halfV);
+    gl.uniform2f(compositeProg.u.uTexel,1/FW,1/FH);
+    gl.uniform4fv(compositeProg.u.uClip,clip);
+    const iv=m4.lookAt(eye,cam.target,[0,1,0]);
+    gl.uniformMatrix4fv(compositeProg.u.uInvView,false,new Float32Array([
+      iv[0],iv[4],iv[8],0, iv[1],iv[5],iv[9],0, iv[2],iv[6],iv[10],0, 0,0,0,1]));
+    gl.uniform1i(compositeProg.u.uScene,0); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,sceneTex);
+    gl.uniform1i(compositeProg.u.uDepth,1); gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,fdTex);
+    gl.uniform1i(compositeProg.u.uThick,2); gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D,thTex);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+    gl.activeTexture(gl.TEXTURE0);
+  } else {
+    /* מצג מולקולות: כל אטום ככדור */
+    const n=buildAtoms(); shown=n;
+    gl.useProgram(atomProg);
+    gl.uniformMatrix4fv(atomProg.u.uVP,false,VP);
+    gl.uniform3fv(atomProg.u.uEye,eye);
+    gl.uniform4fv(atomProg.u.uClip,clip);
+    upload(sphere,n,false);
+    gl.drawElementsInstanced(gl.TRIANGLES,sphere.n,gl.UNSIGNED_SHORT,0,n);
   }
-  /* המרחק רודף אחרי היעד בעדינות, אחרת הוא קופץ בזמן סיבוב */
-  const want = fitDistance();
-  cam.dist = lastW < 0 ? want : cam.dist + (want - cam.dist) * 0.12;
-  lastW = 1;
 
-  gl.viewport(0, 0, cv.width, cv.height);
-  gl.clearColor(0.027, 0.039, 0.063, 1);
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  gl.enable(gl.DEPTH_TEST);
-  gl.disable(gl.CULL_FACE);
-
-  const eye = eyePos();
-  const VP = m4.mul(m4.perspective(FOV, w/h, 0.1, 60), m4.lookAt(eye, cam.target, [0,1,0]));
-
-  /* מישור החיתוך נע לאורך כיוון המבט — זו הסכין */
-  const fwd = v3.norm(v3.sub(cam.target, eye));
-  const pp = v3.add(cam.target, v3.scale(fwd, SCENE_R * (2*cam.slice - 1)));
-  const clip = [fwd[0], fwd[1], fwd[2], v3.dot(pp, fwd)];
-
-  /* השולחן קודם — הכל עומד עליו */
-  gl.enable(gl.BLEND);
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-  gl.useProgram(groundProg);
-  gl.uniformMatrix4fv(gl.getUniformLocation(groundProg, 'uVP'), false, VP);
-  gl.uniform4fv(gl.getUniformLocation(groundProg, 'uClip'), clip);
-  gl.uniform2f(gl.getUniformLocation(groundProg, 'uOccA'), 0, 0);
-  gl.uniform2f(gl.getUniformLocation(groundProg, 'uOccB'), BEAKER_X, 0);
-  gl.bindVertexArray(ground.vao);
-  gl.drawElements(gl.TRIANGLES, ground.n, gl.UNSIGNED_SHORT, 0);
-  gl.disable(gl.BLEND);
-
-  /* אטומים */
-  const n = buildInstances();
-  gl.useProgram(atomProg);
-  gl.uniformMatrix4fv(gl.getUniformLocation(atomProg, 'uVP'), false, VP);
-  gl.uniform3fv(gl.getUniformLocation(atomProg, 'uEye'), eye);
-  gl.uniform4fv(gl.getUniformLocation(atomProg, 'uClip'), clip);
-  gl.bindVertexArray(sphere.vao);
-  gl.bindBuffer(gl.ARRAY_BUFFER, sphere.inst.aOff);
-  gl.bufferData(gl.ARRAY_BUFFER, inst.off.subarray(0, n*3), gl.DYNAMIC_DRAW);
-  gl.bindBuffer(gl.ARRAY_BUFFER, sphere.inst.aCol);
-  gl.bufferData(gl.ARRAY_BUFFER, inst.col.subarray(0, n*3), gl.DYNAMIC_DRAW);
-  gl.bindBuffer(gl.ARRAY_BUFFER, sphere.inst.aRad);
-  gl.bufferData(gl.ARRAY_BUFFER, inst.rad.subarray(0, n), gl.DYNAMIC_DRAW);
-  gl.drawElementsInstanced(gl.TRIANGLES, sphere.n, gl.UNSIGNED_SHORT, 0, n);
-
-  /* זכוכית — אחרי האטומים, בלי כתיבה לעומק, מהרחוק לקרוב */
+  /* --- 6. זכוכית מעל הכל --- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER,msFBO);
+  gl.viewport(0,0,W,H);
+  gl.enable(gl.DEPTH_TEST); gl.depthMask(false);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
   gl.useProgram(glassProg);
-  gl.uniformMatrix4fv(gl.getUniformLocation(glassProg, 'uVP'), false, VP);
-  gl.uniform3fv(gl.getUniformLocation(glassProg, 'uEye'), eye);
-  gl.uniform4fv(gl.getUniformLocation(glassProg, 'uClip'), clip);
-  gl.enable(gl.BLEND);
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-  gl.depthMask(false);
-  const sorted = [...GLASS].sort((a, b) =>
-    Math.hypot(b.ox - eye[0], eye[2]) - Math.hypot(a.ox - eye[0], eye[2]));
+  gl.uniformMatrix4fv(glassProg.u.uVP,false,VP);
+  gl.uniform3fv(glassProg.u.uEye,eye);
+  gl.uniform4fv(glassProg.u.uClip,clip);
+  const sorted=[...GLASS].sort((a,b)=>
+    Math.hypot(b.ox-eye[0],eye[2])-Math.hypot(a.ox-eye[0],eye[2]));
   for (const g of sorted){
-    gl.uniform3fv(gl.getUniformLocation(glassProg, 'uTint'), g.tint);
-    gl.uniform1f(gl.getUniformLocation(glassProg, 'uGlow'),
-      g.name === 'flask' ? clamp((heat - 300) / 1400, 0, 0.35) : 0);
+    gl.uniform1f(glassProg.u.uGlow, g.glow?clamp((heat-320)/1500,0,0.30):0);
+    gl.uniform1f(glassProg.u.uAxisX, g.axis);
+    gl.uniform4fv(glassProg.u.uMark, g.mark);
     gl.bindVertexArray(g.mesh.vao);
-    gl.drawElements(gl.TRIANGLES, g.mesh.n, gl.UNSIGNED_SHORT, 0);
+    gl.drawElements(gl.TRIANGLES,g.mesh.n,gl.UNSIGNED_SHORT,0);
   }
-  gl.depthMask(true);
-  gl.disable(gl.BLEND);
+  gl.disable(gl.BLEND); gl.depthMask(true);
+
+  /* --- 7. פותרים את ה-MSAA ומציגים --- */
+  resolveTo(sceneFBO);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.viewport(0,0,W,H);
+  gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.depthMask(false);
   gl.bindVertexArray(null);
-  return n;
+  gl.useProgram(presentProg);
+  gl.uniform1i(presentProg.u.uTex,0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D,sceneTex);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+  gl.depthMask(true);
+  return shown;
 }
 
 /* ===========================================================================
    8) הממשק
    =========================================================================== */
-const PT = [
-  ['H',1,1,1],  ['He',2,1,18],
-  ['Li',3,2,1], ['Be',4,2,2], ['B',5,2,13], ['C',6,2,14], ['N',7,2,15],
-  ['O',8,2,16], ['F',9,2,17], ['Ne',10,2,18],
+const PT=[['H',1,1,1],['He',2,1,18],
+  ['Li',3,2,1],['Be',4,2,2],['B',5,2,13],['C',6,2,14],['N',7,2,15],
+  ['O',8,2,16],['F',9,2,17],['Ne',10,2,18],
   ['Na',11,3,1],['Mg',12,3,2],['Al',13,3,13],['Si',14,3,14],['P',15,3,15],
   ['S',16,3,16],['Cl',17,3,17],['Ar',18,3,18],
-  ['K',19,4,1], ['Ca',20,4,2], ['Fe',26,4,8], ['Cu',29,4,11],['Zn',30,4,12],
-  ['Ag',47,5,11],['Au',79,6,11],
-];
-const LIVE = { H:'H2', O:'O2' };
-let picked = 'H2';
+  ['K',19,4,1],['Ca',20,4,2],['Fe',26,4,8],['Cu',29,4,11],['Zn',30,4,12],
+  ['Ag',47,5,11],['Au',79,6,11]];
+const LIVE={H:'H2', O:'O2'};
+let picked='H2';
+const $=id=>document.getElementById(id);
 
-const $ = id => document.getElementById(id);
-
-(function buildTable(){
-  const slot = new Map();
-  for (const [sym, z, p, g] of PT) slot.set(p * 100 + g, [sym, z]);
-  const html = [];
-  for (let p = 1; p <= 6; p++) for (let g = 1; g <= 18; g++){
-    const e = slot.get(p * 100 + g);
+(function(){
+  const slot=new Map();
+  for (const [sym,z,p,g] of PT) slot.set(p*100+g,[sym,z]);
+  const html=[];
+  for (let p=1;p<=6;p++) for (let g=1;g<=18;g++){
+    const e=slot.get(p*100+g);
     if (!e){ html.push('<div class="pt gap"></div>'); continue; }
-    const [sym, z] = e;
-    const sp = LIVE[sym];
-    if (!sp){ html.push(`<div class="pt off"></div>`); continue; }
-    const c = ELEM[sym].col.map(v => Math.round(v * 255)).join(',');
+    const [sym,z]=e, sp=LIVE[sym];
+    if (!sp){ html.push('<div class="pt off"></div>'); continue; }
+    const c=ELEM[sym].col.map(v=>Math.round(v*255)).join(',');
     html.push(`<button class="pt live" data-sp="${sp}" data-sym="${sym}"
       style="--c:rgb(${c})"><i>${z}</i>${sym}</button>`);
   }
-  $('ptable').innerHTML = html.join('');
-  $('ptable').addEventListener('click', e => {
-    const b = e.target.closest('button[data-sp]');
-    if (b) { picked = b.dataset.sp; syncPick(); closeSheet(); }
+  $('ptable').innerHTML=html.join('');
+  $('ptable').addEventListener('click',e=>{
+    const b=e.target.closest('button[data-sp]');
+    if (b){ picked=b.dataset.sp; syncPick(); closeSheet(); }
   });
 })();
 
 function syncPick(){
-  const S = SPECIES[picked];
-  const el = S.atoms[0][0];
-  $('pickName').textContent = S.name;
-  $('pickKey').textContent  = S.key;
-  $('pickDot').style.background =
-    'rgb(' + ELEM[el].col.map(v => Math.round(v*255)).join(',') + ')';
-  for (const b of document.querySelectorAll('.pt.live'))
-    b.classList.toggle('on', b.dataset.sp === picked);
+  const S=SPECIES[picked];
+  $('pickName').textContent=S.name;
+  $('pickKey').textContent=S.key;
+  $('pickDot').style.background='rgb('+ELEM[S.atoms[0][0]].col.map(v=>Math.round(v*255)).join(',')+')';
+  for (const b of document.querySelectorAll('.pt.live')) b.classList.toggle('on', b.dataset.sp===picked);
 }
-function syncHeat(){
-  $('heat').value = Math.round(heat);
-  $('heatLbl').textContent = Math.round(heat) + '°';
-}
-function syncCut(){ $('cut').textContent = 'חתך: ' + Math.round(cam.slice * 100) + '%'; }
-
+function syncHeat(){ $('heat').value=Math.round(heat); $('heatLbl').textContent=Math.round(heat)+'°'; }
+function syncCut(){ $('cut').textContent='חתך '+Math.round(cam.slice*100)+'%'; }
 function syncAtoms(){
-  const c = { H:0, O:0 };
-  for (let i = 0; i < mol.n; i++)
-    for (const [el, k] of Object.entries(SPECIES[mol.sp[i]].count)) c[el] += k;
-  $('atoms').innerHTML = Object.entries(c).map(([el, n]) => {
-    const rgb = ELEM[el].col.map(v => Math.round(v*255)).join(',');
+  const c={H:0,O:0};
+  for (let i=0;i<mol.n;i++) for (const [el,k] of Object.entries(SPECIES[mol.sp[i]].count)) c[el]+=k;
+  $('atoms').innerHTML=Object.entries(c).map(([el,n])=>{
+    const rgb=ELEM[el].col.map(v=>Math.round(v*255)).join(',');
     return `<b style="background:rgba(${rgb},.13);color:rgb(${rgb})">${n}<i>${el}</i></b>`;
   }).join('');
 }
-
-function addMolecules(sp, count, where){
-  for (let i = 0; i < count; i++){
-    if (where === IN_BEAKER)
-      spawn(sp, BEAKER_X + rand(-.5,.5), rand(.9, 1.4), rand(-.5,.5), IN_BEAKER);
-    else
-      spawn(sp, rand(-.45,.45), rand(.5, 1.5), rand(-.45,.45), IN_FLASK);
+function addMolecules(sp,count,where){
+  for (let i=0;i<count;i++){
+    if (where===IN_BEAKER) spawn(sp, BEAKER_X+rand(-.4,.4), rand(.9,1.3), rand(-.4,.4), IN_BEAKER);
+    else spawn(sp, rand(-.45,.45), rand(.5,1.5), rand(-.45,.45), IN_FLASK);
   }
   syncAtoms();
 }
-
 function reset(){
-  mol.n = 0; heat = 20; flash = 0; cam.slice = 0;
-  /* מים בבקבוק — הסצנה מתחילה עם משהו לחמם */
-  for (let i = 0; i < 420; i++)
-    spawn('H2O', rand(-.55,.55), rand(.15, .95), rand(-.55,.55), IN_FLASK);
+  mol.n=0; heat=20; flash=0; cam.slice=0;
+  /* מספר המולקולות נקבע מהנפח: במרווח אריזה של 0.155 הן ממלאות
+     כשליש מהבועה, ונשארים פני נוזל שאפשר לראות */
+  for (let i=0;i<240;i++) spawn('H2O', rand(-.5,.5), rand(.12,.62), rand(-.5,.5), IN_FLASK);
   syncAtoms(); syncHeat(); syncCut();
 }
 
-$('heat').addEventListener('input', e => { heat = +e.target.value; syncHeat(); });
-$('spark').addEventListener('click', () => { flash = 0.5; heat = Math.max(heat, IGNITION + 60); syncHeat(); });
-$('cut').addEventListener('click', () => { cam.slice = cam.slice > 0 ? 0 : 0.5; syncCut(); });
-$('reset').addEventListener('click', reset);
-$('pause').addEventListener('click', e => {
-  paused = !paused;
-  e.target.textContent = paused ? '▶' : '⏸';
-  e.target.classList.toggle('on', paused);
+$('heat').addEventListener('input',e=>{ heat=+e.target.value; syncHeat(); });
+$('spark').addEventListener('click',()=>{ flash=.5; heat=Math.max(heat,IGNITION+60); syncHeat(); });
+$('cut').addEventListener('click',()=>{ cam.slice=cam.slice>0?0:0.5; syncCut(); });
+$('reset').addEventListener('click',reset);
+$('pause').addEventListener('click',e=>{
+  paused=!paused; e.target.textContent=paused?'▶':'⏸'; e.target.classList.toggle('on',paused);
 });
-
-const openSheet  = () => { $('sheet').classList.add('open'); $('scrim').classList.add('on'); };
-const closeSheet = () => { $('sheet').classList.remove('open'); $('scrim').classList.remove('on'); };
-$('pickBar').addEventListener('click', openSheet);
-$('scrim').addEventListener('click', closeSheet);
+$('view').addEventListener('click',e=>{
+  if (!FLOAT_FBO) return;
+  realView=!realView;
+  e.target.textContent=realView?'👁 אמיתי':'⚛ מולקולות';
+  e.target.classList.toggle('on',realView);
+});
+if (!FLOAT_FBO){
+  $('view').textContent='⚛ מולקולות';
+  $('view').classList.remove('on');
+  $('view').style.opacity='.45';
+}
+const openSheet=()=>{ $('sheet').classList.add('open'); $('scrim').classList.add('on'); };
+const closeSheet=()=>{ $('sheet').classList.remove('open'); $('scrim').classList.remove('on'); };
+$('pickBar').addEventListener('click',openSheet);
+$('scrim').addEventListener('click',closeSheet);
 
 /* ===========================================================================
    9) הלולאה
    =========================================================================== */
-let last = performance.now(), acc = 0, frames = 0, fpsT = 0, lastW = -1;
-let bank = 0, speed = 1;
-const FIXED = 1 / 60;
+let last=performance.now(), acc=0, frames=0, fpsT=0, bank=0, speed=1;
+const FIXED=1/60;
 
 function loop(now){
-  const dt = Math.min((now - last) / 1000, 0.25);
-  last = now;
-
-  /* צעד קבוע: על מכשיר איטי המשחק מפיל פריימים, אבל הזמן בעולם ממשיך
-     לזוז באותו קצב. עם צעד משתנה וחסם עליון, מכשיר חלש היה מריץ את
-     הכימיה בהילוך אטי במקום פשוט להיראות פחות חלק. */
+  const dt=Math.min((now-last)/1000,0.25);
+  last=now;
+  /* צעד קבוע: מכשיר איטי מפיל פריימים, אבל הזמן בעולם ממשיך באותו קצב */
   if (!paused){
-    bank += dt * speed;
-    for (let i = 0; i < 5 && bank >= FIXED; i++){ step(FIXED); bank -= FIXED; }
-    if (bank > FIXED * 5) bank = FIXED * 5;   /* בלי החסם, מכשיר איטי נכנס
-                                                 לסחרור: עוד צעדים → עוד איטי */
+    bank+=dt*speed;
+    for (let i=0;i<5 && bank>=FIXED;i++){ step(FIXED); bank-=FIXED; }
+    if (bank>FIXED*5) bank=FIXED*5;
   }
-  const atoms = draw();
-
-  frames++; fpsT += dt;
-  if (fpsT > 0.5){
-    $('fps').textContent = Math.round(frames / fpsT) + ' fps · ' + mol.n + ' מולקולות · ' + atoms + ' אטומים';
-    frames = 0; fpsT = 0;
+  const shown=draw();
+  frames++; fpsT+=dt;
+  if (fpsT>0.5){
+    $('fps').textContent=Math.round(frames/fpsT)+' fps · '+mol.n+' מולקולות';
+    frames=0; fpsT=0;
   }
-  acc += dt;
-  if (acc > 0.25){ syncAtoms(); acc = 0; }
+  acc+=dt;
+  if (acc>0.25){ syncAtoms(); acc=0; }
   requestAnimationFrame(loop);
 }
 
-reset();
-syncPick();
-setTimeout(() => $('hint').classList.add('gone'), 100);
+reset(); syncPick();
+$('view').textContent = realView?'👁 אמיתי':'⚛ מולקולות';
+setTimeout(()=>$('hint').classList.add('gone'),100);
 requestAnimationFrame(loop);
 
-/* ווים לבדיקות ולהקלטה — הממשק עצמו לא משתמש בהם */
+/* ווים לבדיקות ולהקלטה */
 window.RLS = {
-  orbit(daz, del){ cam.az += daz; cam.el = clamp(cam.el + del, -0.9, 1.25); },
-  setSlice(t){ cam.slice = clamp(t, 0, 1); syncCut(); },
-  setHeat(v){ heat = v; syncHeat(); },
-  add(sp, n, where){ addMolecules(sp, n, where === 'beaker' ? IN_BEAKER : IN_FLASK); },
-  spark(){ flash = 0.5; heat = Math.max(heat, IGNITION + 60); syncHeat(); },
-  setSpeed(v){ speed = v; },
+  orbit(d,e){ cam.az+=d; cam.el=clamp(cam.el+e,-0.55,1.25); },
+  setSlice(t){ cam.slice=clamp(t,0,1); syncCut(); },
+  setHeat(v){ heat=v; syncHeat(); },
+  setView(real){ realView=real&&FLOAT_FBO;
+    $('view').textContent=realView?'👁 אמיתי':'⚛ מולקולות';
+    $('view').classList.toggle('on',realView); },
+  setSpeed(v){ speed=v; },
+  tune(st,it){ STIFF=st; ITERS=it; },
+  add(sp,n,where){ addMolecules(sp,n,where==='beaker'?IN_BEAKER:IN_FLASK); },
+  spark(){ flash=.5; heat=Math.max(heat,IGNITION+60); syncHeat(); },
   state(){
-    const c = { H:0, O:0 }, by = {};
-    for (let i = 0; i < mol.n; i++){
-      by[mol.sp[i]] = (by[mol.sp[i]] || 0) + 1;
-      for (const [el, k] of Object.entries(SPECIES[mol.sp[i]].count)) c[el] += k;
+    const c={H:0,O:0}, by={}, ph=[0,0,0], w=[0,0,0];
+    for (let i=0;i<mol.n;i++){
+      by[mol.sp[i]]=(by[mol.sp[i]]||0)+1;
+      ph[mol.phase[i]]++; w[mol.where[i]]++;
+      for (const [el,k] of Object.entries(SPECIES[mol.sp[i]].count)) c[el]+=k;
     }
-    const w = [0,0,0];
-    for (let i = 0; i < mol.n; i++) w[mol.where[i]]++;
-    return { atoms:c, species:by, n:mol.n, heat:Math.round(heat),
-             where:{ flask:w[0], tube:w[1], beaker:w[2] } };
+    return { atoms:c, species:by, n:mol.n, heat:Math.round(heat), realView, floatFBO:FLOAT_FBO,
+             phase:{gas:ph[0],liquid:ph[1],solid:ph[2]},
+             where:{flask:w[0],tube:w[1],beaker:w[2]} };
   },
 };
 </script>
