@@ -658,6 +658,32 @@ const solidProg = program(`#version 300 es
     o = vec4(mix(base, uEmCol * (0.45 + uEmissive*1.7), uEmissive), 1.0);
   }`);
 
+/* ---- הלהבה ----
+   מצוירת בחיבור, בלי כתיבה לעומק: אש היא אור שנוסף למה שמאחוריה,
+   לא גוף שמסתיר אותו. */
+const flameProg = program(`#version 300 es
+  in vec3 aPos;
+  uniform mat4 uVP;
+  out vec3 vW;
+  void main(){ vW=aPos; gl_Position=uVP*vec4(aPos,1.0); }`,
+  `#version 300 es
+  precision highp float;
+  in vec3 vW;
+  ${LIB}
+  uniform float uTime, uOn, uY0, uY1;
+  out vec4 o;
+  void main(){
+    if (clipped(vW)) discard;
+    float t = clamp((vW.y - uY0) / (uY1 - uY0), 0.0, 1.0);
+    /* חרוט פנימי כחול, מעטפת חיצונית כתומה — כמו בלהבת בונזן */
+    vec3 c = mix(vec3(0.30,0.60,1.00), vec3(1.00,0.62,0.16), smoothstep(0.10,0.62,t));
+    c = mix(c, vec3(1.0,0.88,0.55), smoothstep(0.72,1.0,t));
+    float flick = 0.80 + 0.20*sin(uTime*23.0 + vW.y*11.0)
+                       + 0.12*sin(uTime*13.7 - vW.y*7.0);
+    float a = pow(1.0 - t, 1.4) * flick * uOn;
+    o = vec4(c * a * 1.45, 1.0);
+  }`);
+
 /* ---- אטומים (מצג מולקולות) ---- */
 const atomProg = program(`#version 300 es
   in vec3 aPos; in vec3 aOff; in vec3 aCol; in float aRad;
@@ -781,8 +807,29 @@ const fluidThickProg = program(BILLBOARD, `#version 300 es
     vec3 p = vCenterView + vec3(vLocal * vRad, 0.0);
     if (dot(p, uClipView.xyz) < uClipView.w) discard;
     /* גז תורם מעט מאוד עובי — כך אדים נראים כערפל ולא כנוזל */
-    float w = (1.0 - r2) * vRad * (vKind > 0.5 ? 2.6 : 0.30);
+    float w = (1.0 - r2) * vRad * (vKind > 0.5 ? 2.6 : 0.42);
     o = vec4(vCol * w, w);
+  }`);
+
+/* בועה נראית כטבעת: בשפה שכבת הנוזל שהאור חוצה היא הכי עבה, ובמרכז
+   כמעט אין מה לראות. בלי זה גז בתוך נוזל פשוט נעלם. */
+const bubbleProg = program(BILLBOARD, `#version 300 es
+  precision highp float;
+  in vec3 vCol; in float vKind, vRad;
+  in vec3 vCenterView; in vec2 vLocal;
+  uniform vec4 uClipView;
+  out vec4 o;
+  void main(){
+    if (vKind > 0.5) discard;                     /* רק גז */
+    float r2 = dot(vLocal, vLocal);
+    if (r2 > 1.0) discard;
+    vec3 p = vCenterView + vec3(vLocal * vRad, 0.0);
+    if (dot(p, uClipView.xyz) < uClipView.w) discard;
+    float r = sqrt(r2);
+    float rim  = smoothstep(0.58, 0.95, r) * (1.0 - smoothstep(0.93, 1.0, r));
+    float body = (1.0 - r2) * 0.09;
+    float hi   = smoothstep(0.42, 0.0, distance(vLocal, vec2(-0.33, 0.33))) * 0.55;
+    o = vec4(vec3(0.82,0.90,1.0) * (rim * 0.62 + body * 0.45 + hi * 0.55), 1.0);
   }`);
 
 const FSTRI = `#version 300 es
@@ -961,16 +1008,19 @@ const room = buildMesh(roomProg, roomMesh(26,10,26,2.70), false);
 /* ---- שולחן המעבדה ----
    פלטה עבה, סינר, ארבע רגליים, מדף תחתון וגב. הכל תיבות אמיתיות:
    אפשר להסתובב מאחורי השולחן ולראות את הרגליים. */
+/* פני השולחן יורדים: בין המבער לבקבוק חייב להיות מקום ללהבה */
+const BENCH_Y = -0.95;
 const BX=0.9, BZ=0, TOP_T=0.15;
 const bench = buildMesh(woodProg, merge(
   /* מעט מתחת ל-0: תחתית הכלים יושבת על y=0 בדיוק, ומשטח באותו גובה
      נותן ריב-עומק שנראה ככוכב שחור בתחתית הכוס */
-  box(6.0, TOP_T, 3.0, BX, -0.006-TOP_T/2, BZ),
-  box(5.7, 0.13, 2.7, BX, -0.23, BZ),                       /* סינר */
+  box(6.0, TOP_T, 3.0, BX, BENCH_Y-TOP_T/2, BZ),
+  box(5.7, 0.13, 2.7, BX, BENCH_Y-0.22, BZ),                /* סינר */
   ...[[-2.6,-1.25],[2.6,-1.25],[-2.6,1.25],[2.6,1.25]].map(([dx,dz])=>
-     box(0.20, 2.14, 0.20, BX+dx, (FLOOR_Y-0.30)/2, BZ+dz)),/* רגליים */
-  box(5.6, 0.10, 2.5, BX, -1.55, BZ),                       /* מדף תחתון */
-  box(6.0, 0.55, 0.12, BX, 0.20, BZ-1.50),                  /* גב */
+     box(0.20, BENCH_Y-TOP_T-FLOOR_Y, 0.20, BX+dx,
+         (FLOOR_Y+BENCH_Y-TOP_T)/2, BZ+dz)),               /* רגליים */
+  box(5.6, 0.10, 2.5, BX, BENCH_Y-1.30, BZ),                /* מדף תחתון */
+  box(6.0, 0.55, 0.12, BX, BENCH_Y+0.28, BZ-1.50),          /* גב */
 ), false);
 
 /* ---- מדף קיר עם בקבוקי ריאגנט ---- */
@@ -1020,7 +1070,7 @@ function shelfUnit(){
      למצלמה ותופסים חצי פריים. */
   [[-2.30,-1.05],[-1.85,-0.80],[2.90,-1.02],[2.45,-0.78]].forEach(([dx,dz],i)=>{
     const k=Object.values(BOTTLE)[i%4], sc=0.52+((i*7)%3)*0.10;
-    parts.push(colored(place(lathe(k.map(([r,h])=>[r*sc,h*sc]),20), BX+dx, 0, BZ+dz),
+    parts.push(colored(place(lathe(k.map(([r,h])=>[r*sc,h*sc]),20), BX+dx, BENCH_Y, BZ+dz),
                        BOTTLE_COL[(i*3+1)%BOTTLE_COL.length]));
   });
   return merge(...parts);
@@ -1038,34 +1088,104 @@ const IRON=[0.105,0.108,0.115], ALLOY=[0.380,0.390,0.405], CORK=[0.44,0.33,0.20]
 
 /* המעטפת נבנית סביב הבקבוק: השפה הפנימית חייבת להיות רחבה מרדיוס
    הבועה באותו גובה, אחרת המתכת בוקעת דרך הזכוכית. */
-const MANTLE_Y = 0.30;
-const mantleMesh = merge(
-  colored(lathe([[0.71,MANTLE_Y],[0.95,0.26],[0.92,0.13],[0.80,0.03],[0.62,0.0],[0,0.0]], 40), IRON),
-  colored(lathe([[0.71,MANTLE_Y+0.03],[0.96,MANTLE_Y-0.02],[0.95,0.26],[0.71,MANTLE_Y]], 40), ALLOY),
-  colored(box(0.50,0.26,0.44, -1.20,0.13,0.60), IRON),        /* קופסת הבקרה */
-  colored(cyl(0.080,0.14,0.18, -1.20,0.38), ALLOY),           /* חוגה */
+/* ---- מבער, חצובה ומגבה ----
+   הבקבוק נשען על רשת מעל חצובה, והמבער בוער מתחתיה. בשביל שיהיה מקום
+   ללהבה, פני השולחן יורדים — ולכן גם הכוס צריכה מגבה משלה, בדיוק כמו
+   שמרימים כלי קליטה במעבדה אמיתית. */
+const GAUZE_Y = -0.012;
+const FLAME_Y0 = BENCH_Y + 0.40, FLAME_Y1 = -0.06;
+
+const burnerMesh = merge(
+  /* חצובה: טבעת ושלוש רגליים שמתפשקות החוצה */
+  colored(lathe([[0.62,GAUZE_Y+0.03],[0.66,GAUZE_Y+0.03],[0.66,GAUZE_Y-0.02],[0.62,GAUZE_Y-0.02]], 34), IRON),
+  ...[0,1,2].map(i=>{
+    const a=i*Math.PI*2/3 + 0.5;
+    const x0=0.63*Math.cos(a), z0=0.63*Math.sin(a);
+    const x1=0.80*Math.cos(a), z1=0.80*Math.sin(a);
+    return colored(rotY(box(0.055, GAUZE_Y-BENCH_Y, 0.055,
+      (x0+x1)/2, (GAUZE_Y+BENCH_Y)/2, (z0+z1)/2), 0), IRON);
+  }),
+  /* רשת האסבסט שהבקבוק יושב עליה */
+  colored(lathe([[0.58,GAUZE_Y],[0.58,GAUZE_Y-0.018],[0,GAUZE_Y-0.018]], 30), [0.30,0.30,0.31]),
+  colored(lathe([[0.34,GAUZE_Y+0.004],[0.34,GAUZE_Y-0.004],[0,GAUZE_Y-0.004]], 26), [0.78,0.76,0.71]),
+  /* מבער בונזן */
+  colored(lathe([[0.09,BENCH_Y+0.05],[0.26,BENCH_Y+0.03],[0.26,BENCH_Y],[0,BENCH_Y]], 26), IRON),
+  colored(cyl(0.072, BENCH_Y+0.04, FLAME_Y0, 0, 0, 18), ALLOY),
+  colored(cyl(0.095, BENCH_Y+0.16, BENCH_Y+0.24, 0, 0, 18), IRON),   /* טבעת אוויר */
 );
-const mantle = buildMesh(solidProg, mantleMesh, false);
+const burner = buildMesh(solidProg, burnerMesh, false);
+
+/* המגבה שמרים את הכוס בחזרה לגובה שממנו הצינור מטפטף */
+const jackMesh = merge(
+  colored(box(1.10,0.055,1.00, BEAKER_X, BENCH_Y+0.028, 0), IRON),   /* לוח תחתון */
+  colored(box(1.02,0.050,0.92, BEAKER_X, -0.026, 0), ALLOY),         /* לוח עליון */
+  /* שתי צלבות מספריים בין הלוחות */
+  ...[-1,1].map(d=>merge(
+    colored(rotY(box(0.94,0.045,0.05, 0,0,0),  0.72), ALLOY),
+    colored(rotY(box(0.94,0.045,0.05, 0,0,0), -0.72), ALLOY),
+  )).map((m,i)=>place(m, BEAKER_X, (BENCH_Y+0.03-0.05)/2, (i?1:-1)*0.34)),
+  colored(cyl(0.030, BENCH_Y+0.06, -0.05, BEAKER_X+0.60, 0, 10), ALLOY),  /* בורג */
+);
+const jack = buildMesh(solidProg, jackMesh, false);
+
+const flameMesh = (()=>{
+  const p=[], H=FLAME_Y1-FLAME_Y0;
+  for (let i=0;i<=18;i++){
+    const t=1-i/18;                       /* מלמעלה למטה, כמו כל פרופיל כאן */
+    const r=0.165*Math.pow(Math.sin(Math.PI*Math.min(t*1.12,1.0)),0.62)*(1.0-t*0.20);
+    p.push([Math.max(r,0.001), FLAME_Y0+t*H]);
+  }
+  return lathe(p, 26);
+})();
+const flame = buildMesh(flameProg, flameMesh, false);
+
+/* סיבוב סביב ציר אנכי. בלי זה זרוע מלחציים יכולה לצאת רק לאורך ציר X,
+   וזה בדיוק למה הלסתות עצרו ליד המעמד במקום להגיע לזכוכית. */
+function rotY(m,a,cx=0,cz=0){
+  const c=Math.cos(a), s=Math.sin(a);
+  const pos=new Float32Array(m.pos), nrm=new Float32Array(m.nrm);
+  for (let i=0;i<pos.length;i+=3){
+    const x=pos[i]-cx, z=pos[i+2]-cz;
+    pos[i]=cx+x*c-z*s; pos[i+2]=cz+x*s+z*c;
+    const nx=nrm[i], nz=nrm[i+2];
+    nrm[i]=nx*c-nz*s; nrm[i+2]=nx*s+nz*c;
+  }
+  return { pos, nrm, idx:m.idx, col:m.col };
+}
+
+/* זרוע שנסגרת על משהו. מקבלת את הנקודה שצריך לאחוז בה ואת רדיוס
+   הגוף שם, ומכוונת את עצמה אליה — כולל הלסתות שמתפצלות סביבו. */
+function clampTo(rodX, rodZ, target, gripR){
+  const dx=target[0]-rodX, dz=target[2]-rodZ;
+  const ang=Math.atan2(dz,dx), len=Math.hypot(dx,dz);
+  const pad=gripR+0.055;                    /* מרכז הפקק נוגע בזכוכית */
+  const parts=[
+    colored(box(0.11,0.14,0.11, 0,0,0), IRON),                      /* ראש */
+    colored(box(len-0.08,0.048,0.048, (len-0.08)/2+0.04,0,0), ALLOY),
+    colored(box(0.10,0.05, pad*2+0.10, len-0.10,  0.085, 0), IRON),  /* לסת עליונה */
+    colored(box(0.10,0.05, pad*2+0.10, len-0.10, -0.085, 0), IRON),  /* לסת תחתונה */
+    colored(cyl(0.055,-0.085,0.085, len-0.05,  pad, 10), CORK),
+    colored(cyl(0.055,-0.085,0.085, len-0.05, -pad, 10), CORK),
+  ];
+  return place(rotY(merge(...parts), ang), rodX, target[1], rodZ);
+}
 
 function stands(){
   const p=[];
-  const rig=(bx,bz,rodH,arms)=>{
-    p.push(colored(box(0.80,0.050,0.60, bx,0.026,bz), IRON));   /* בסיס יצוק */
-    p.push(colored(cyl(0.040,0.05,rodH, bx,bz,14), ALLOY));     /* מוט */
-    for (const [y,reach,dir] of arms){
-      p.push(colored(box(0.10,0.13,0.10, bx,y,bz), IRON));      /* ראש מלחציים */
-      p.push(colored(box(reach,0.045,0.045, bx+dir*reach/2,y,bz), ALLOY));
-      /* לסתות: שתי זרועות שנסגרות על הצוואר */
-      const tip=bx+dir*reach;
-      p.push(colored(box(0.07,0.055,0.30, tip,y+0.055,bz), IRON));
-      p.push(colored(box(0.07,0.055,0.30, tip,y-0.055,bz), IRON));
-      p.push(colored(cyl(0.05,y-0.075,y+0.075, tip+dir*0.05,bz+0.13,10), CORK));
-      p.push(colored(cyl(0.05,y-0.075,y+0.075, tip+dir*0.05,bz-0.13,10), CORK));
-    }
+  const rig=(bx,bz,rodH,grips)=>{
+    p.push(colored(box(0.82,0.052,0.62, bx,BENCH_Y+0.026,bz), IRON));
+    p.push(colored(cyl(0.040,BENCH_Y+0.05,rodH, bx,bz,14), ALLOY));
+    for (const [t,gr] of grips) p.push(clampTo(bx,bz,t,gr));
   };
-  /* שמאל: אוחז את צוואר הבקבוק. ימין: אוחז את המעבה. */
-  rig(-1.38, -0.62, 2.55, [[2.14, 1.21, 1]]);
-  rig( 2.80, -0.62, 3.70, [[3.02, 0.92, -1], [2.30, 0.80, -1]]);
+  /* שמאל אוחז את צוואר הבקבוק. הבסיס מפנה מקום לחצובה שמתחת לבקבוק. */
+  rig(-1.62, 0.0, 2.62, [[[0, 2.16, 0], 0.21]]);
+  /* ימין אוחז את המעבה בשתי נקודות. הבסיס נסוג ב-z כדי לא להתנגש
+     בכוס, ולכן הזרועות מגיעות באלכסון — מה שהן עושות גם במציאות. */
+  const HR=0.46;
+  rig(3.16, -1.34, 3.62, [
+    [[BEAKER_X, 3.20, -HR], 0.135],
+    [[BEAKER_X, 2.65, -HR], 0.135],
+  ]);
   return merge(...p);
 }
 const rigMesh = buildMesh(solidProg, stands(), false);
@@ -1135,10 +1255,24 @@ function tempAt(where){
   return AMBIENT + Math.max(0,heat-AMBIENT)*0.12;
 }
 
-/* מצב הצבירה נגזר מהטמפרטורה בלבד. אין "קרח" ו"אדים" כחומרים נפרדים. */
-function phaseOf(i){
+/* מצב הצבירה נגזר מהטמפרטורה בלבד. אין "קרח" ו"אדים" כחומרים נפרדים.
+   אבל המעבר לוקח זמן: מולקולה בודדת הופכת לגז בהסתברות שגדלה עם החום,
+   ולא כולן יחד ברגע שעוברים 100°. עם סף חד כל הנוזל נעלם בפריים אחד
+   ואין שום דבר לראות — לא בעבוע, לא אדים, רק כלי שהתרוקן. */
+function updatePhase(i, dt){
   const S=SPECIES[mol.sp[i]], T=tempAt(mol.where[i]);
-  return T > S.boil ? GAS : T > S.melt ? LIQ : SOL;
+  const ph=mol.phase[i];
+  if (ph===SOL){ if (T > S.melt) mol.phase[i]=LIQ; return; }
+  if (ph===LIQ){
+    if (T < S.melt){ mol.phase[i]=SOL; return; }
+    if (T > S.boil){
+      /* בועות נולדות בתחתית, ליד הלהבה — ומשם עולות */
+      const depth = clamp((0.95 - mol.y[i]) / 0.95, 0, 1);
+      if (Math.random() < (T-S.boil) * 0.0008 * (0.3 + depth*1.5) * dt) mol.phase[i]=GAS;
+    }
+    return;
+  }
+  if (T < S.boil && Math.random() < (0.7 + (S.boil-T)*0.02) * dt) mol.phase[i]=LIQ;
 }
 const densityOf = i => mol.phase[i]===GAS ? SPECIES[mol.sp[i]].gasRho : SPECIES[mol.sp[i]].liq;
 
@@ -1283,7 +1417,7 @@ function step(dt){
   neighbours(dt);
   for (let i=0;i<mol.n;i++){
     const S=SPECIES[mol.sp[i]];
-    mol.phase[i]=phaseOf(i);
+    updatePhase(i, dt);
     const ph=mol.phase[i], T=tempAt(mol.where[i]);
     mol.spin[i]+=dt*(ph===GAS?5:ph===LIQ?1.2:0.15);
 
@@ -1500,7 +1634,7 @@ function renderShadow(){
   gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT);
   gl.useProgram(shadowProg);
   gl.uniformMatrix4fv(shadowProg.u.uLVP,false,LVP);
-  for (const m of [bench, props, mantle, rigMesh]){
+  for (const m of [bench, props, rigMesh, burner, jack]){
     gl.bindVertexArray(m.vao);
     gl.drawElements(gl.TRIANGLES,m.n,m.type,0);
   }
@@ -1555,8 +1689,10 @@ function buildBlobs(){
   for (let i=0;i<mol.n;i++){
     const S=SPECIES[mol.sp[i]];
     inst.off[k*3]=mol.x[i]; inst.off[k*3+1]=mol.y[i]; inst.off[k*3+2]=mol.z[i];
-    inst.col[k*3]=S.absorb[0]; inst.col[k*3+1]=S.absorb[1]; inst.col[k*3+2]=S.absorb[2];
     const gas=mol.phase[i]===GAS;
+    /* אדים לא נושאים את צבע הבליעה של החומר — הם ערפל לבן */
+    if (gas){ inst.col[k*3]=0.10; inst.col[k*3+1]=0.11; inst.col[k*3+2]=0.125; }
+    else { inst.col[k*3]=S.absorb[0]; inst.col[k*3+1]=S.absorb[1]; inst.col[k*3+2]=S.absorb[2]; }
     inst.rad[k]=gas?0.20:0.135;                  /* אדים מתפרשים רחב יותר */
     inst.kind[k]=gas?0:1;
     k++;
@@ -1629,15 +1765,15 @@ function draw(){
   gl.uniform3fv(solidProg.u.uEye,eye);
   bindShadow(solidProg);
   gl.uniform1f(solidProg.u.uEmissive,0);
-  for (const m of [props, rigMesh]){
+  for (const m of [props, rigMesh, jack]){
     gl.bindVertexArray(m.vao);
     gl.drawElements(gl.TRIANGLES,m.n,m.type,0);
   }
-  /* המעטפת מאדימה עם החום — מקור החום הופך לדבר שרואים, לא למחוון */
-  gl.uniform1f(solidProg.u.uEmissive, clamp((heat-430)/620,0,1)*0.85);
+  /* הרשת והחצובה מאדימות מעל החום — ברזל מתחיל לזהור סביב 500° */
+  gl.uniform1f(solidProg.u.uEmissive, clamp((heat-430)/620,0,1)*0.75);
   gl.uniform3f(solidProg.u.uEmCol, 1.0,0.26,0.05);
-  gl.bindVertexArray(mantle.vao);
-  gl.drawElements(gl.TRIANGLES,mantle.n,mantle.type,0);
+  gl.bindVertexArray(burner.vao);
+  gl.drawElements(gl.TRIANGLES,burner.n,burner.type,0);
   gl.uniform1f(solidProg.u.uEmissive,0);
 
   let shown=0;
@@ -1704,6 +1840,16 @@ function draw(){
     gl.uniform1i(compositeProg.u.uThick,2); gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D,thTex);
     gl.drawArrays(gl.TRIANGLES,0,3);
     gl.activeTexture(gl.TEXTURE0);
+
+    /* בועות ואדים, בחיבור מעל הנוזל שכבר הורכב */
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE); gl.depthMask(false);
+    gl.useProgram(bubbleProg);
+    gl.uniformMatrix4fv(bubbleProg.u.uProj,false,proj);
+    gl.uniformMatrix4fv(bubbleProg.u.uView,false,view);
+    gl.uniform4f(bubbleProg.u.uClipView,cvn[0],cvn[1],cvn[2],cvd);
+    gl.bindVertexArray(billboard2.vao);
+    gl.drawElementsInstanced(gl.TRIANGLES,billboard2.n,billboard2.type,0,n);
+    gl.disable(gl.BLEND); gl.depthMask(true);
   } else {
     /* מצג מולקולות: כל אטום ככדור */
     const n=buildAtoms(); shown=n;
@@ -1713,6 +1859,21 @@ function draw(){
     gl.uniform4fv(atomProg.u.uClip,clip);
     upload(sphere,n,false);
     gl.drawElementsInstanced(gl.TRIANGLES,sphere.n,sphere.type,0,n);
+  }
+
+  /* --- הלהבה. חיבור, בלי כתיבה לעומק. --- */
+  if (heat > 40){
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE); gl.depthMask(false);
+    gl.useProgram(flameProg);
+    gl.uniformMatrix4fv(flameProg.u.uVP,false,VP);
+    gl.uniform4fv(flameProg.u.uClip,clip);
+    gl.uniform1f(flameProg.u.uTime,performance.now()/1000);
+    gl.uniform1f(flameProg.u.uY0,FLAME_Y0);
+    gl.uniform1f(flameProg.u.uY1,FLAME_Y1);
+    gl.uniform1f(flameProg.u.uOn, clamp((heat-40)/260,0,1));
+    gl.bindVertexArray(flame.vao);
+    gl.drawElements(gl.TRIANGLES,flame.n,flame.type,0);
+    gl.depthMask(true); gl.disable(gl.BLEND);
   }
 
   /* --- 6. זכוכית מעל הכל --- */
