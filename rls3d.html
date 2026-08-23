@@ -40,6 +40,11 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
   background:rgba(10,12,16,.75);border:1px solid rgba(255,255,255,.07);
   border-radius:9px;padding:6px 12px;pointer-events:none;transition:opacity .8s ease 6s}
 #hint.gone{opacity:0}
+#fov{position:absolute;top:calc(56px + env(safe-area-inset-top));left:50%;
+  transform:translateX(-50%);font-size:11px;color:#a8b8cc;white-space:nowrap;
+  background:rgba(10,12,16,.82);border:1px solid rgba(255,255,255,.09);
+  border-radius:8px;padding:4px 11px;pointer-events:none;backdrop-filter:blur(8px)}
+#fov:empty{display:none}
 #fps{position:absolute;bottom:11px;inset-inline-start:12px;font-size:10px;
   color:#4a5462;font-variant-numeric:tabular-nums;pointer-events:none}
 
@@ -103,6 +108,7 @@ input[type=range]{flex:1;accent-color:#d4632f;height:26px;direction:ltr}
   <canvas id="cv"></canvas>
   <div id="atoms"></div>
   <div id="fps"></div>
+  <div id="fov"></div>
   <div id="hint">שתי אצבעות לסובב · צביטה להגדיל עד ×60 · הקשה להוסיף</div>
   <div id="warn"></div>
 </div>
@@ -793,6 +799,35 @@ const BILLBOARD = `#version 300 es
     gl_Position = uProj * vec4(cv + vec3(aCorner * aRad, 0.0), 1.0);
   }`;
 
+/* ---- אטומים כאימפוסטורים ----
+   כדור אמיתי הוא כ-400 משולשים. עשרים אלף אטומים כאלה זה עשרה מיליון
+   משולשים בפריים, וזה נופל. במקום זה מרובע אחד לכל אטום, והכדור נפתר
+   אנליטית בשיידר: שני משולשים, כדור מושלם בכל הגדלה. */
+const impostorProg = program(BILLBOARD, `#version 300 es
+  precision highp float;
+  in vec3 vCol; in float vKind, vRad;
+  in vec3 vCenterView; in vec2 vLocal;
+  uniform mat4 uProj;
+  uniform vec4 uClipView;
+  uniform vec3 uLightView;
+  out vec4 o;
+  void main(){
+    float r2 = dot(vLocal, vLocal);
+    if (r2 > 1.0) discard;
+    vec3 N = vec3(vLocal, sqrt(1.0 - r2));
+    vec3 p = vCenterView + N * vRad;
+    if (dot(p, uClipView.xyz) < uClipView.w) discard;
+    vec4 cp = uProj * vec4(p, 1.0);
+    gl_FragDepth = cp.z / cp.w * 0.5 + 0.5;
+
+    vec3 V = normalize(-p), L = normalize(uLightView);
+    float d = max(dot(N, L), 0.0);
+    float sp = pow(max(dot(normalize(L + V), N), 0.0), 44.0);
+    /* חצי עליון בהיר יותר — אור מפוזר מלמעלה, כמו בחדר */
+    vec3 amb = mix(vec3(0.10,0.12,0.16), vec3(0.30,0.33,0.39), N.y * 0.5 + 0.5);
+    o = vec4(vCol * (amb + d * 0.92) + vec3(sp * 0.75), 1.0);
+  }`);
+
 const fluidDepthProg = program(BILLBOARD, `#version 300 es
   precision highp float;
   in vec3 vCol; in float vKind, vRad;
@@ -1016,6 +1051,8 @@ const billboard = buildMesh(fluidDepthProg,
 const billboard2 = buildMesh(fluidThickProg,
   { pos:new Float32Array([-1,-1, 1,-1, 1,1, -1,1]), idx:new Uint16Array([0,1,2,0,2,3]), corner:true }, true);
 const sphere = buildMesh(atomProg, sphereMesh(), true);
+const atomQuad = buildMesh(impostorProg,
+  { pos:new Float32Array([-1,-1, 1,-1, 1,1, -1,1]), idx:new Uint16Array([0,1,2,0,2,3]), corner:true }, true);
 /* החדר חייב להכיל את מסלול המצלמה — היא מקיפה את השולחן ברדיוס ~8,
    ואם הקירות קרובים מזה היא יוצאת מהחדר ורואה אותו מבחוץ. */
 const FLOOR_Y = -2.30;
@@ -1510,6 +1547,165 @@ function step(dt){
 }
 
 /* ===========================================================================
+   5.5) מיקרוסקופ אטומי
+
+   בהגדלה הזאת אין שום טעם לסמלץ בקבוק. מסמלצים קופסה של כמה ננומטרים
+   בצפיפות האמיתית של מים — 33.4 מולקולות לננומטר מעוקב — ורואים אותה
+   מקרוב. זה מה שמאפשר גודל אטום אמיתי: לא כוח גס, אלא לסמלץ רק את מה
+   שנמצא בשדה הראייה. בקבוק שלם באותה רזולוציה הוא 10²⁵ מולקולות.
+
+   כל האורכים כאן בננומטרים, לא ביחידות העולם.
+   =========================================================================== */
+const NM_RHO = 33.4;          /* מולקולות מים לננומטר מעוקב, בצפיפות אמיתית */
+const NM_OO  = 0.290;         /* מרחק חמצן-חמצן במים נוזליים */
+const NM_OH  = 0.0958;        /* אורך קשר חמצן-מימן */
+const R_O    = 0.152;         /* רדיוסי ואן דר ואלס — הגודל שבו אטום "נוגע" */
+const R_H    = 0.110;
+const MICRO_MAX_N = 9000;
+
+const MC = {
+  on:false, L:4.0, n:0, cap:MICRO_MAX_N,
+  x:new Float32Array(MICRO_MAX_N), y:new Float32Array(MICRO_MAX_N), z:new Float32Array(MICRO_MAX_N),
+  vx:new Float32Array(MICRO_MAX_N), vy:new Float32Array(MICRO_MAX_N), vz:new Float32Array(MICRO_MAX_N),
+  spin:new Float32Array(MICRO_MAX_N), axis:new Float32Array(MICRO_MAX_N*3),
+  sp:new Array(MICRO_MAX_N),
+  gs:null, gc:null, gcell:null, gorder:null, gn:0,
+};
+
+/* הרכב הקופסה נלקח מהמצב האמיתי של הסימולציה — אם יש מימן בבקבוק,
+   הוא יופיע גם כאן, באותו יחס. */
+function microMix(){
+  const c={}; let tot=0;
+  for (let i=0;i<mol.n;i++){ c[mol.sp[i]]=(c[mol.sp[i]]||0)+1; tot++; }
+  if (!tot) return [['H2O',1]];
+  return Object.entries(c).map(([k,v])=>[k,v/tot]);
+}
+
+function microFill(L){
+  MC.L=L;
+  const want=Math.min(MICRO_MAX_N, Math.round(NM_RHO*L*L*L));
+  const mix=microMix();
+  /* פריסה על סריג עם רעש: מתחילים מסידור תקין ונותנים לפותר לרפות
+     אותו, אחרת אלפי מולקולות מתחילות חופפות ומתפוצצות */
+  const side=Math.ceil(Math.cbrt(want)), step=L/side;
+  MC.n=0;
+  for (let a=0;a<side && MC.n<want;a++)
+  for (let b=0;b<side && MC.n<want;b++)
+  for (let c=0;c<side && MC.n<want;c++){
+    const i=MC.n++;
+    MC.x[i]=(a+0.5+rand(-.22,.22))*step;
+    MC.y[i]=(b+0.5+rand(-.22,.22))*step;
+    MC.z[i]=(c+0.5+rand(-.22,.22))*step;
+    MC.vx[i]=MC.vy[i]=MC.vz[i]=0;
+    MC.spin[i]=rand(0,6.28);
+    const ax=v3.norm([rand(-1,1),rand(-1,1),rand(-1,1)]);
+    MC.axis[i*3]=ax[0]; MC.axis[i*3+1]=ax[1]; MC.axis[i*3+2]=ax[2];
+    let r=Math.random(), pick='H2O';
+    for (const [k,f] of mix){ if ((r-=f)<=0){ pick=k; break; } }
+    MC.sp[i]=pick;
+  }
+  microGrid();
+}
+
+/* רשת מחזורית: הקופסה נעטפת על עצמה, אחרת נוצרים קירות מלאכותיים
+   באמצע נוזל אינסופי */
+function microGrid(){
+  const g=Math.max(3, Math.floor(MC.L/(NM_OO*1.05)));
+  MC.gn=g;
+  const nc=g*g*g;
+  if (!MC.gs || MC.gs.length!==nc+1){
+    MC.gs=new Int32Array(nc+1); MC.gc=new Int32Array(nc);
+    MC.gcell=new Int32Array(MICRO_MAX_N); MC.gorder=new Int32Array(MICRO_MAX_N);
+  }
+}
+const wrap=(v,L)=>v<0?v+L:v>=L?v-L:v;
+
+function microStep(dt, T){
+  const L=MC.L, g=MC.gn, cs=L/g;
+  const gi=v=>{ let k=(v/cs)|0; return k<0?0:k>=g?g-1:k; };
+
+  MC.gs.fill(0);
+  for (let i=0;i<MC.n;i++){
+    const c=(gi(MC.z[i])*g + gi(MC.y[i]))*g + gi(MC.x[i]);
+    MC.gcell[i]=c; MC.gs[c+1]++;
+  }
+  for (let c=0;c<g*g*g;c++) MC.gs[c+1]+=MC.gs[c];
+  MC.gc.set(MC.gs.subarray(0,g*g*g));
+  for (let i=0;i<MC.n;i++) MC.gorder[MC.gc[MC.gcell[i]]++]=i;
+
+  /* תנועה תרמית: ככל שחם יותר, המולקולות רועדות חזק יותר. זו בדיוק
+     המשמעות של טמפרטורה בקנה המידה הזה. */
+  const jig = Math.sqrt(Math.max(T+273.15, 1)/293) * 0.9;
+  for (let i=0;i<MC.n;i++){
+    MC.vx[i]+=rand(-1,1)*jig*dt*14; MC.vy[i]+=rand(-1,1)*jig*dt*14; MC.vz[i]+=rand(-1,1)*jig*dt*14;
+    const k=Math.exp(-6*dt);
+    MC.vx[i]*=k; MC.vy[i]*=k; MC.vz[i]*=k;
+    MC.x[i]=wrap(MC.x[i]+MC.vx[i]*dt, L);
+    MC.y[i]=wrap(MC.y[i]+MC.vy[i]*dt, L);
+    MC.z[i]=wrap(MC.z[i]+MC.vz[i]*dt, L);
+    MC.spin[i]+=dt*jig*3.0;
+  }
+
+  /* הפרדה: אותו פותר מיקום כמו בסימולציה הגדולה, רק שהמרחק כאן הוא
+     המרחק האמיתי בין מולקולות מים */
+  const half=L/2;
+  for (let it=0;it<3;it++){
+    for (let i=0;i<MC.n;i++){
+      const cx=gi(MC.x[i]), cy=gi(MC.y[i]), cz=gi(MC.z[i]);
+      for (let dz=-1;dz<=1;dz++) for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++){
+        const c=(((cz+dz+g)%g)*g + ((cy+dy+g)%g))*g + ((cx+dx+g)%g);
+        for (let q=MC.gs[c];q<MC.gs[c+1];q++){
+          const j=MC.gorder[q];
+          if (j<=i) continue;
+          let ex=MC.x[i]-MC.x[j], ey=MC.y[i]-MC.y[j], ez=MC.z[i]-MC.z[j];
+          if (ex> half) ex-=L; else if (ex<-half) ex+=L;
+          if (ey> half) ey-=L; else if (ey<-half) ey+=L;
+          if (ez> half) ez-=L; else if (ez<-half) ez+=L;
+          const d2=ex*ex+ey*ey+ez*ez;
+          if (d2>=NM_OO*NM_OO || d2<1e-12) continue;
+          const d=Math.sqrt(d2), push=(NM_OO-d)*0.5*0.9;
+          const ux=ex/d, uy=ey/d, uz=ez/d;
+          MC.x[i]=wrap(MC.x[i]+ux*push,L); MC.y[i]=wrap(MC.y[i]+uy*push,L); MC.z[i]=wrap(MC.z[i]+uz*push,L);
+          MC.x[j]=wrap(MC.x[j]-ux*push,L); MC.y[j]=wrap(MC.y[j]-uy*push,L); MC.z[j]=wrap(MC.z[j]-uz*push,L);
+        }
+      }
+    }
+  }
+}
+
+/* צורת המולקולה בננומטרים, עם הזוויות והאורכים האמיתיים */
+const NM_SHAPE = {
+  H2O:[['O',[0,0,0]],
+       ['H',[ NM_OH*Math.sin(A), NM_OH*Math.cos(A),0]],
+       ['H',[-NM_OH*Math.sin(A), NM_OH*Math.cos(A),0]]],
+  H2: [['H',[-0.037,0,0]],['H',[0.037,0,0]]],
+  O2: [['O',[-0.060,0,0]],['O',[0.060,0,0]]],
+};
+const NM_R = { O:R_O, H:R_H };
+
+function microInstances(){
+  let k=0;
+  for (let i=0;i<MC.n;i++){
+    const shape=NM_SHAPE[MC.sp[i]] || NM_SHAPE.H2O;
+    const a=MC.spin[i], c=Math.cos(a), s=Math.sin(a);
+    const ax=MC.axis[i*3], ay=MC.axis[i*3+1], az=MC.axis[i*3+2];
+    for (const [el,off] of shape){
+      const [ox,oy,oz]=off;
+      const dt=ax*ox+ay*oy+az*oz;
+      const cx=ay*oz-az*oy, cy=az*ox-ax*oz, cz=ax*oy-ay*ox;
+      inst.off[k*3]  =MC.x[i]+ox*c+cx*s+ax*dt*(1-c);
+      inst.off[k*3+1]=MC.y[i]+oy*c+cy*s+ay*dt*(1-c);
+      inst.off[k*3+2]=MC.z[i]+oz*c+cz*s+az*dt*(1-c);
+      const col=ELEM[el].col;
+      inst.col[k*3]=col[0]; inst.col[k*3+1]=col[1]; inst.col[k*3+2]=col[2];
+      inst.rad[k]=NM_R[el];
+      k++;
+    }
+  }
+  return k;
+}
+
+/* ===========================================================================
    6) מצלמה
    =========================================================================== */
 const FOV=0.86;
@@ -1562,7 +1758,16 @@ cv.addEventListener('pointermove',e=>{
   if (touches.size>=2){
     const [a,b]=[...touches.values()];
     const d=Math.max(Math.hypot(a.x-b.x,a.y-b.y), 1);
-    cam.zoom=clamp(slice0*(pinch0/d), 1/MAXZOOM, 1.15);
+    const f=pinch0/d;
+    if (MC.on){
+      microFov=clamp(microFov*f, 1.2, 7.5); pinch0=d;
+      if (microFov>=7.45) microExit();
+      else if (microFov*1.5 > MC.L+0.9 || microFov*1.5 < MC.L-0.9) microFill(clamp(microFov*1.5,2.4,6.4));
+      syncZoom();
+    } else {
+      cam.zoom=clamp(slice0*f, 1/(MAXZOOM*1.35), 1.15);
+      if (cam.zoom <= 1/(MAXZOOM*1.3)) microEnter();
+    }
     const mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
     if (last2){ cam.az-=(mid.x-last2.x)*0.008; cam.el=clamp(cam.el+(mid.y-last2.y)*0.006,-0.55,1.25); }
     last2=mid; syncZoom();
@@ -1580,8 +1785,16 @@ addEventListener('mousemove',e=>{
   cam.az-=(e.clientX-mx)*0.008; cam.el=clamp(cam.el+(e.clientY-my)*0.006,-0.55,1.25);
   mx=e.clientX; my=e.clientY;
 });
-cv.addEventListener('wheel',e=>{ e.preventDefault();
-  cam.zoom=clamp(cam.zoom*Math.exp(e.deltaY*0.0016), 1/MAXZOOM, 1.15); syncZoom();
+cv.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const f=Math.exp(e.deltaY*0.0016);
+  if (MC.on){
+    microFov=clamp(microFov*f, 1.2, 7.5);
+    if (microFov>=7.45) microExit(); else syncZoom();
+  } else {
+    cam.zoom=clamp(cam.zoom*f, 1/(MAXZOOM*1.35), 1.15);
+    if (cam.zoom <= 1/(MAXZOOM*1.3)) microEnter(); else syncZoom();
+  }
 },{passive:false});
 cv.addEventListener('click',e=>{
   if (touches.size>1) return;
@@ -1700,8 +1913,10 @@ function resolveTo(dstFBO){
   gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER,null);
 }
 
-const inst={ off:new Float32Array(MAX*3*3), col:new Float32Array(MAX*3*3),
-             rad:new Float32Array(MAX*3),   kind:new Float32Array(MAX*3) };
+/* מספיק מקום לשני העולמות: הסימולציה הגדולה והקופסה של המיקרוסקופ */
+const ISLOTS = Math.max(MAX*3, MICRO_MAX_N*3);
+const inst={ off:new Float32Array(ISLOTS*3), col:new Float32Array(ISLOTS*3),
+             rad:new Float32Array(ISLOTS),   kind:new Float32Array(ISLOTS) };
 
 function buildAtoms(){
   let k=0;
@@ -1752,12 +1967,90 @@ function upload(mesh,n,withKind){
   if (withKind) put('aKind',inst.kind,1);
 }
 
+function drawAtoms(n, proj, view, cvn, cvd){
+  gl.useProgram(impostorProg);
+  gl.uniformMatrix4fv(impostorProg.u.uProj,false,proj);
+  gl.uniformMatrix4fv(impostorProg.u.uView,false,view);
+  gl.uniform4f(impostorProg.u.uClipView,cvn[0],cvn[1],cvn[2],cvd);
+  /* כיוון האור מסובב למרחב המצלמה, כי שם חיים האימפוסטורים */
+  const L=v3.norm([0.38,0.86,0.34]);
+  gl.uniform3f(impostorProg.u.uLightView,
+    view[0]*L[0]+view[4]*L[1]+view[8]*L[2],
+    view[1]*L[0]+view[5]*L[1]+view[9]*L[2],
+    view[2]*L[0]+view[6]*L[1]+view[10]*L[2]);
+  upload(atomQuad,n,false);
+  gl.drawElementsInstanced(gl.TRIANGLES,atomQuad.n,atomQuad.type,0,n);
+}
+
 let realView = FLOAT_FBO, wantReal = FLOAT_FBO;
 /* מעבר ×5 המצלמה כבר בתוך הנוזל. שם אין פני שטח לשקף, ומה שכן יש
    לראות הוא המולקולות עצמן — אז המצג מתחלף לבד. זו כל הנקודה בזום. */
 const MICRO = 0.20;
 
+/* המרה בין יחידות העולם למטרים: בועת הבקבוק היא 0.90 יחידות, ובקבוק
+   250 מ"ל אמיתי הוא כ-3.9 ס"מ רדיוס. */
+const M_PER_UNIT = 0.0433;
+const MACRO_VIEW_M = 0.307;        /* גובה שדה הראייה בזום מלא החוצה */
+let microFov = 4.0;                /* שדה ראייה של המיקרוסקופ, בננומטרים */
+
+function microEnter(){
+  if (MC.on) return;
+  MC.on = true;
+  microFill(clamp(microFov*1.5, 2.4, 6.4));
+  syncZoom();
+}
+function microExit(){
+  if (!MC.on) return;
+  MC.on = false; cam.zoom = 1/MAXZOOM; syncZoom();
+}
+
+/* בקנה מידה של ננומטרים אין חדר, אין זכוכית ואין שולחן — הכל נמצא
+   בתוך הנוזל. מצג נפרד לגמרי, עם מערכת צירים משלו בננומטרים. */
+function drawMicro(){
+  resize();
+  $('view').textContent='↩ יציאה';
+  $('view').classList.remove('on');
+  gl.bindFramebuffer(gl.FRAMEBUFFER,msFBO);
+  gl.viewport(0,0,W,H);
+  gl.clearColor(0.030,0.062,0.086,1);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
+
+  const c=MC.L/2, ctr=[c,c,c];
+  const dist=(microFov/2)/Math.tan(FOV/2);
+  const ce=Math.cos(cam.el);
+  const eye=[c+dist*ce*Math.sin(cam.az), c+dist*Math.sin(cam.el), c+dist*ce*Math.cos(cam.az)];
+  const VP=m4.mul(m4.perspective(FOV, W/H, dist*0.02, dist*6), m4.lookAt(eye,ctr,[0,1,0]));
+
+  /* אותו מישור חיתוך, בקנה המידה הזה */
+  const fwd=v3.norm(v3.sub(ctr,eye));
+  const pp=v3.add(ctr, v3.scale(fwd, MC.L*0.9*(2*cam.slice-1)));
+  const clip=[fwd[0],fwd[1],fwd[2], v3.dot(pp,fwd)];
+
+  const view=m4.lookAt(eye,ctr,[0,1,0]);
+  const proj=m4.perspective(FOV, W/H, dist*0.02, dist*6);
+  const cvn=[ view[0]*clip[0]+view[4]*clip[1]+view[8]*clip[2],
+              view[1]*clip[0]+view[5]*clip[1]+view[9]*clip[2],
+              view[2]*clip[0]+view[6]*clip[1]+view[10]*clip[2] ];
+  const cvd=clip[3]-(view[12]*clip[0]+view[13]*clip[1]+view[14]*clip[2]);
+  const n=microInstances();
+  drawAtoms(n, proj, view, cvn, cvd);
+
+  resolveTo(sceneFBO);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.viewport(0,0,W,H);
+  gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.depthMask(false);
+  gl.bindVertexArray(null);
+  gl.useProgram(presentProg);
+  gl.uniform1i(presentProg.u.uTex,0);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,sceneTex);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+  gl.depthMask(true);
+  return n;
+}
+
 function draw(){
+  if (MC.on) return drawMicro();
   resize();
   const micro = cam.zoom < MICRO;
   realView = micro ? false : (wantReal && FLOAT_FBO);
@@ -1906,12 +2199,7 @@ function draw(){
   } else {
     /* מצג מולקולות: כל אטום ככדור */
     const n=buildAtoms(); shown=n;
-    gl.useProgram(atomProg);
-    gl.uniformMatrix4fv(atomProg.u.uVP,false,VP);
-    gl.uniform3fv(atomProg.u.uEye,eye);
-    gl.uniform4fv(atomProg.u.uClip,clip);
-    upload(sphere,n,false);
-    gl.drawElementsInstanced(gl.TRIANGLES,sphere.n,sphere.type,0,n);
+    drawAtoms(n, proj, view, cvn, cvd);
   }
 
   /* --- הלהבה. חיבור, בלי כתיבה לעומק. --- */
@@ -2011,9 +2299,20 @@ function syncCut(){
   $('cut').value=Math.round(cam.slice*100);
   $('cutLbl').textContent='חתך '+Math.round(cam.slice*100)+'%';
 }
+const human=v=>v>=1e9?(v/1e9).toFixed(0)+' מיליארד'
+              :v>=1e6?(v/1e6).toFixed(0)+' מיליון'
+              :v>=1e3?(v/1e3).toFixed(0)+'K':Math.round(v);
 function syncZoom(){
-  const k=1/cam.zoom;
-  $('zoomBtn').textContent='🔍 ×'+(k<9.5?k.toFixed(1):Math.round(k));
+  if (MC.on){
+    $('zoomBtn').textContent='⚛ '+microFov.toFixed(1)+' ננומטר';
+    $('fov').textContent='שדה ראייה '+microFov.toFixed(1)+' ננומטר · הגדלה ×'
+      + human(MACRO_VIEW_M/(microFov*1e-9)) + ' · ' + MC.n + ' מולקולות בגודל אמיתי';
+  } else {
+    const k=1/cam.zoom;
+    $('zoomBtn').textContent='🔍 ×'+(k<9.5?k.toFixed(1):Math.round(k));
+    const m=MACRO_VIEW_M*cam.zoom;
+    $('fov').textContent = k>1.4 ? ('שדה ראייה '+(m*1000).toFixed(m<0.01?2:1)+' מ"מ') : '';
+  }
 }
 function syncAtoms(){
   const c={H:0,O:0};
@@ -2047,9 +2346,9 @@ $('pause').addEventListener('click',e=>{
   paused=!paused; e.target.textContent=paused?'▶':'⏸'; e.target.classList.toggle('on',paused);
 });
 $('view').addEventListener('click',()=>{
-  if (!FLOAT_FBO) return;
+  if (MC.on){ microExit(); cam.zoom=1; syncZoom(); return; }
   if (cam.zoom < MICRO){ cam.zoom=1; syncZoom(); return; }   /* חזרה החוצה */
-  wantReal=!wantReal;
+  if (FLOAT_FBO) wantReal=!wantReal;
 });
 if (!FLOAT_FBO){
   $('view').textContent='⚛ מולקולות';
@@ -2073,13 +2372,19 @@ function loop(now){
   /* צעד קבוע: מכשיר איטי מפיל פריימים, אבל הזמן בעולם ממשיך באותו קצב */
   if (!paused){
     bank+=dt*speed;
-    for (let i=0;i<5 && bank>=FIXED;i++){ step(FIXED); bank-=FIXED; }
+    if (MC.on){
+      /* העולם הגדול עוצר: אתה מסתכל על קופסה של ננומטרים, ואין טעם
+         להוציא את התקציב על בקבוק שלא נמצא בפריים */
+      for (let i=0;i<3 && bank>=FIXED;i++){ microStep(FIXED, heat); bank-=FIXED; }
+    } else {
+      for (let i=0;i<5 && bank>=FIXED;i++){ step(FIXED); bank-=FIXED; }
+    }
     if (bank>FIXED*5) bank=FIXED*5;
   }
   const shown=draw();
   frames++; fpsT+=dt;
   if (fpsT>0.5){
-    $('fps').textContent=Math.round(frames/fpsT)+' fps · '+mol.n+' מולקולות';
+    $('fps').textContent=Math.round(frames/fpsT)+' fps · '+(MC.on?MC.n:mol.n)+' מולקולות';
     frames=0; fpsT=0;
   }
   acc+=dt;
@@ -2095,7 +2400,9 @@ requestAnimationFrame(loop);
 window.RLS = {
   orbit(d,e){ cam.az+=d; cam.el=clamp(cam.el+e,-0.55,1.25); },
   setSlice(t){ cam.slice=clamp(t,0,1); syncCut(); },
-  setZoom(z){ cam.zoom=clamp(z,1/MAXZOOM,1.15); syncZoom(); },
+  setZoom(z){ if (MC.on) microExit(); cam.zoom=clamp(z,1/MAXZOOM,1.15); syncZoom(); },
+  micro(nm){ microFov=clamp(nm,1.2,7.5); microEnter(); microFill(clamp(microFov*1.5,2.4,6.4)); syncZoom(); },
+  macro(){ microExit(); cam.zoom=1; syncZoom(); },
   setHeat(v){ heat=v; syncHeat(); },
   setView(real){ wantReal=real&&FLOAT_FBO; },
   setSpeed(v){ speed=v; },
