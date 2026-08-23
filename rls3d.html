@@ -190,6 +190,13 @@ const ELEM = {
   O:{ name:'חמצן', col:[0.86,0.35,0.22], r:0.082, m:16.00 },
 };
 
+/* ---- כמה קטנה מולקולה ----
+   במציאות היחס בין מולקולה לבקבוק הוא בערך פי 10⁸, כלומר משהו כמו 10²⁵
+   מולקולות בכלי אחד. הגבול כאן הוא כמה זוגות שכנים המעבד מספיק לפתור
+   בכל פריים: כל הקטנה פי k דורשת פי k³ מולקולות כדי למלא אותו נפח. */
+const MSCALE = 2.2;
+const NMOL = Math.round(240 * MSCALE * MSCALE * MSCALE);
+
 const A = 0.911;      /* חצי מזווית הקשר במים, 104.5° */
 const SPECIES = {
   H2: { key:'H₂', name:'מימן', boil:-253, melt:-259, liq:0.071,
@@ -207,6 +214,11 @@ const SPECIES = {
                ['H',[ 0.114*Math.sin(A), 0.114*Math.cos(A),0]],
                ['H',[-0.114*Math.sin(A), 0.114*Math.cos(A),0]]] },
 };
+/* כל האורכים בסקאלת המולקולה מתכווצים יחד — רדיוסי אטומים ואורכי קשר */
+for (const e of Object.values(ELEM)) e.r /= MSCALE;
+for (const sp of Object.values(SPECIES))
+  for (const a of sp.atoms) a[1] = a[1].map(v => v / MSCALE);
+
 for (const s of Object.values(SPECIES)){
   s.mass  = s.atoms.reduce((t,[e])=>t+ELEM[e].m,0);
   s.count = s.atoms.reduce((t,[e])=>(t[e]=(t[e]||0)+1,t),{});
@@ -1207,7 +1219,7 @@ const GLASS = [
 /* ===========================================================================
    5) העולם
    =========================================================================== */
-const MAX = 1200;
+const MAX = NMOL + 1400;
 const IN_FLASK=0, IN_TUBE=1, IN_BEAKER=2;
 const GAS=0, LIQ=1, SOL=2;
 
@@ -1276,55 +1288,69 @@ function updatePhase(i, dt){
 }
 const densityOf = i => mol.phase[i]===GAS ? SPECIES[mol.sp[i]].gasRho : SPECIES[mol.sp[i]].liq;
 
-/* ---- שכנים: דחייה, לכידות, וצפיפות מקומית ---- */
-/* מפתח התא חייב להיות חד־חד־ערכי. עם גיבוב שמתנגש, אותו זוג מולקולות
-   נספר שוב ושוב — הכוחות יוצאים מוכפלים והנוזל מתפוצץ החוצה במקום לשקוע.
-   התא גדול מרדיוס ההשפעה, כך ש-27 השכנים מכסים אותו במלואו. */
+/* ---- שכנים: דחייה, לכידות, וצפיפות מקומית ----
+   רשת שטוחה עם מיון מנייה. הגרסה הקודמת השתמשה ב-Map, וזה יצא כתשעים
+   אלף חיפושים בכל צעד — שלושה רבעים מכל זמן הפיזיקה. כאן הכל אינדוקס
+   ישיר במערכים מוקצים מראש, בלי גיבוב ובלי הקצאה בכלל. */
 let STIFF=1.0, COH_L=4, COH_S=12, ITERS=3;
-const CELL=0.26, grid=new Map();
-const ci = p => Math.floor(p / CELL);
-const cellKey = (cx,cy,cz) => ((cx + 512) * 1024 + (cy + 512)) * 1024 + (cz + 512);
+const RANGE = 0.25/MSCALE, RANGE2 = RANGE*RANGE;
+const CELL = 0.26/MSCALE;
 
-/* בונים את הרשת פעם אחת, ואז פותרים את החפיפות בכמה מעברים.
-   מעבר יחיד לא מספיק: לכל מולקולה יש כמה עשרות אילוצים בו-זמנית, וכל
-   דחיפה מבטלת את קודמתה. עם מעבר אחד הנוזל קורס לגוש דחוס. */
-/* בונים את רשימת הזוגות פעם אחת בכל צעד, ואז פותרים את החפיפות בכמה
-   מעברים על מערך שטוח. מעבר יחיד לא מספיק — לכל מולקולה יש עשרות
-   אילוצים בו-זמנית וכל דחיפה מבטלת את קודמתה, והנוזל קורס לגוש דחוס.
-   סריקת הרשת מחדש בכל מעבר הייתה מייקרת את הצעד פי שלושה. */
-let pairs = new Int32Array(1 << 15), nPairs = 0;
+const GX0=-1.5, GY0=-0.35, GZ0=-1.2;
+const GNX=Math.ceil(4.6/CELL), GNY=Math.ceil(3.1/CELL), GNZ=Math.ceil(2.4/CELL);
+const NCELL=GNX*GNY*GNZ;
+const cellStart =new Int32Array(NCELL+1);
+const cellCursor=new Int32Array(NCELL);
+const cellOfMol =new Int32Array(MAX);
+const order     =new Int32Array(MAX);
+const gi=(v,lo,n)=>{ const k=((v-lo)/CELL)|0; return k<0?0:k>=n?n-1:k; };
+
+let pairs = new Int32Array(1 << 16), nPairs = 0;
 
 function buildPairs(){
-  grid.clear();
+  cellStart.fill(0);
   for (let i=0;i<mol.n;i++){
-    if (mol.where[i]===IN_TUBE) continue;
-    const k=cellKey(ci(mol.x[i]),ci(mol.y[i]),ci(mol.z[i]));
-    let b=grid.get(k); if(!b) grid.set(k,b=[]);
-    b.push(i);
     mol.rho[i]=0; mol.around[i]=0;
+    if (mol.where[i]===IN_TUBE){ cellOfMol[i]=-1; continue; }
+    const c=(gi(mol.z[i],GZ0,GNZ)*GNY + gi(mol.y[i],GY0,GNY))*GNX + gi(mol.x[i],GX0,GNX);
+    cellOfMol[i]=c; cellStart[c+1]++;
   }
+  for (let c=0;c<NCELL;c++) cellStart[c+1]+=cellStart[c];
+  cellCursor.set(cellStart.subarray(0,NCELL));
+  for (let i=0;i<mol.n;i++){
+    const c=cellOfMol[i];
+    if (c>=0) order[cellCursor[c]++]=i;
+  }
+
   nPairs=0;
   for (let i=0;i<mol.n;i++){
-    if (mol.where[i]===IN_TUBE) continue;
-    const bx=ci(mol.x[i]), by=ci(mol.y[i]), bz=ci(mol.z[i]);
-    for (let dx=-1;dx<=1;dx++) for (let dy=-1;dy<=1;dy++) for (let dz=-1;dz<=1;dz++){
-      const b=grid.get(cellKey(bx+dx,by+dy,bz+dz));
-      if (!b) continue;
-      for (let q=0;q<b.length;q++){
-        const j=b[q];
-        if (j<=i) continue;
-        const ex=mol.x[i]-mol.x[j], ey=mol.y[i]-mol.y[j], ez=mol.z[i]-mol.z[j];
-        if (ex*ex+ey*ey+ez*ez > 0.0625) continue;
-        if (nPairs*2+2 > pairs.length){
-          const g=new Int32Array(pairs.length*2); g.set(pairs); pairs=g;
+    const c=cellOfMol[i];
+    if (c<0) continue;
+    const cx=c%GNX, cy=((c/GNX)|0)%GNY, cz=(c/(GNX*GNY))|0;
+    const xi=mol.x[i], yi=mol.y[i], zi=mol.z[i];
+    for (let dz=-1;dz<=1;dz++){
+      const z=cz+dz; if (z<0||z>=GNZ) continue;
+      for (let dy=-1;dy<=1;dy++){
+        const y=cy+dy; if (y<0||y>=GNY) continue;
+        const row=(z*GNY+y)*GNX;
+        const lo=cx>0?cx-1:0, hi=cx<GNX-1?cx+1:GNX-1;
+        const q0=cellStart[row+lo], q1=cellStart[row+hi+1];
+        for (let q=q0;q<q1;q++){
+          const j=order[q];
+          if (j<=i) continue;
+          const ex=xi-mol.x[j], ey=yi-mol.y[j], ez=zi-mol.z[j];
+          if (ex*ex+ey*ey+ez*ez > RANGE2) continue;
+          if (nPairs*2+2 > pairs.length){
+            const g=new Int32Array(pairs.length*2); g.set(pairs); pairs=g;
+          }
+          pairs[nPairs*2]=i; pairs[nPairs*2+1]=j; nPairs++;
         }
-        pairs[nPairs*2]=i; pairs[nPairs*2+1]=j; nPairs++;
       }
     }
   }
 }
 
-const R0=0.155;
+const R0=0.155/MSCALE;
 function separate(){
   for (let k=0;k<nPairs;k++){
     const i=pairs[k*2], j=pairs[k*2+1];
@@ -1398,7 +1424,7 @@ function react(){
     if (h.length<2 || made>6) break;
     const near=[];
     for (const hi of h){
-      if (Math.hypot(mol.x[hi]-mol.x[oi],mol.y[hi]-mol.y[oi],mol.z[hi]-mol.z[oi])<0.55) near.push(hi);
+      if (Math.hypot(mol.x[hi]-mol.x[oi],mol.y[hi]-mol.y[oi],mol.z[hi]-mol.z[oi])<2.2*R0) near.push(hi);
       if (near.length===2) break;
     }
     if (near.length<2) continue;
@@ -1543,7 +1569,7 @@ cv.addEventListener('wheel',e=>{ e.preventDefault();
   cam.slice=clamp(cam.slice-e.deltaY*0.0012,0,1); syncCut(); },{passive:false});
 cv.addEventListener('click',e=>{
   if (touches.size>1) return;
-  addMolecules(picked, 26, e.clientX/innerWidth>0.56 ? IN_BEAKER : IN_FLASK);
+  addMolecules(picked, Math.round(26*MSCALE*MSCALE*MSCALE), e.clientX/innerWidth>0.56 ? IN_BEAKER : IN_FLASK);
 });
 
 /* ===========================================================================
@@ -1693,7 +1719,7 @@ function buildBlobs(){
     /* אדים לא נושאים את צבע הבליעה של החומר — הם ערפל לבן */
     if (gas){ inst.col[k*3]=0.10; inst.col[k*3+1]=0.11; inst.col[k*3+2]=0.125; }
     else { inst.col[k*3]=S.absorb[0]; inst.col[k*3+1]=S.absorb[1]; inst.col[k*3+2]=S.absorb[2]; }
-    inst.rad[k]=gas?0.20:0.135;                  /* אדים מתפרשים רחב יותר */
+    inst.rad[k]=(gas?0.20:0.135)/MSCALE;         /* אדים מתפרשים רחב יותר */
     inst.kind[k]=gas?0:1;
     k++;
   }
@@ -1974,7 +2000,7 @@ function reset(){
   mol.n=0; heat=20; flash=0; cam.slice=0;
   /* מספר המולקולות נקבע מהנפח: במרווח אריזה של 0.155 הן ממלאות
      כשליש מהבועה, ונשארים פני נוזל שאפשר לראות */
-  for (let i=0;i<240;i++) spawn('H2O', rand(-.5,.5), rand(.12,.62), rand(-.5,.5), IN_FLASK);
+  for (let i=0;i<NMOL;i++) spawn('H2O', rand(-.52,.52), rand(.10,1.02), rand(-.52,.52), IN_FLASK);
   syncAtoms(); syncHeat(); syncCut();
 }
 
