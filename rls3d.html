@@ -217,7 +217,9 @@ for (const s of Object.values(SPECIES)){
    3) גאומטריה — הכל נבנה מסיבוב פרופיל דו-ממדי סביב ציר
    =========================================================================== */
 const BEAKER_X = 1.95;
-const BOUNDS = { cx:0.87, cy:1.80, hx:1.77, hy:1.95, hz:0.70 };
+/* הגבולות כוללים גם את המעמדים. בלי זה המוטות נשארים מחוץ לפריים
+   והמלחציים נראים תלויים באוויר — בדיוק מה שבאו לתקן. */
+const BOUNDS = { cx:0.87, cy:1.80, hx:1.98, hy:1.95, hz:0.78 };
 
 function lathe(profile, segs=52){
   const P=[],N=[],I=[];
@@ -455,6 +457,10 @@ function program(vs,fs){
   const p=gl.createProgram();
   gl.attachShader(p,shader(gl.VERTEX_SHADER,vs));
   gl.attachShader(p,shader(gl.FRAGMENT_SHADER,fs));
+  /* מיקומי תכונות קבועים בכל התוכניות. בלי זה כל VAO קשור לתוכנית
+     שבנתה אותו, ומעבר הצללים לא יכול לצייר את אותם משטחים. */
+  for (const [n,i] of Object.entries({aPos:0,aCorner:0,aNrm:1,aCol:2,aOff:3,aRad:4,aKind:5}))
+    gl.bindAttribLocation(p,i,n);
   gl.linkProgram(p);
   if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
   p.u = new Proxy({},{ get:(c,n)=> n in c ? c[n] : (c[n]=gl.getUniformLocation(p,n)) });
@@ -493,6 +499,34 @@ const LIB = `
   }
 `;
 
+/* מפת צללים. זה ההבדל הגדול בין "מואר" ל"מצולם": בלי צל שנופל מהכלים
+   על השולחן, שום כמות של הבהקות לא תשכנע את העין. */
+const SHADOW = `
+  uniform highp sampler2DShadow uShadow;
+  uniform mat4 uLVP;
+  uniform float uSTexel;
+  float lit(vec3 wp, float ndl){
+    vec4 lp = uLVP * vec4(wp, 1.0);
+    vec3 q = lp.xyz / lp.w * 0.5 + 0.5;
+    if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0 || q.z > 1.0) return 1.0;
+    /* ההטיה גדלה ככל שהמשטח משופע יותר ביחס לאור, אחרת משטחים
+       כמעט מקבילים לקרן מכתימים את עצמם בפסים */
+    float bias = mix(0.0045, 0.0009, clamp(ndl, 0.0, 1.0));
+    float s = 0.0;
+    for (int y = -1; y <= 1; y++)
+      for (int x = -1; x <= 1; x++)
+        s += texture(uShadow, vec3(q.xy + vec2(x, y) * uSTexel, q.z - bias));
+    return s / 9.0;
+  }
+`;
+const shadowProg = program(`#version 300 es
+  in vec3 aPos;
+  uniform mat4 uLVP;
+  void main(){ gl_Position = uLVP * vec4(aPos, 1.0); }`,
+  `#version 300 es
+  precision highp float;
+  void main(){}`);
+
 /* ---- החדר ---- */
 const roomProg = program(`#version 300 es
   in vec3 aPos; in vec3 aNrm;
@@ -503,6 +537,7 @@ const roomProg = program(`#version 300 es
   precision highp float;
   in vec3 vW, vN;
   ${LIB}
+  ${SHADOW}
   out vec4 o;
   void main(){
     if (clipped(vW)) discard;
@@ -535,6 +570,9 @@ const roomProg = program(`#version 300 es
       c *= 0.62 + 0.52 * smoothstep(-2.4, 5.2, vW.y);
       c *= 0.80 + 0.20 * (1.0 - smoothstep(5.0, 15.0, length(vW.xz - vec2(0.9,0.0))));
     }
+    /* גם הרצפה והקירות מקבלים את הצל של הריהוט */
+    float ndl = max(dot(N, normalize(KEY)), 0.0);
+    c *= 0.42 + 0.58 * lit(vW, ndl);
     o = vec4(c, 1.0);
   }`);
 
@@ -548,6 +586,7 @@ const woodProg = program(`#version 300 es
   precision highp float;
   in vec3 vW, vN;
   ${LIB}
+  ${SHADOW}
   uniform vec3 uEye;
   uniform vec2 uOccA, uOccB;
   out vec4 o;
@@ -571,7 +610,9 @@ const woodProg = program(`#version 300 es
     c *= 1.0 - seam * 0.55;
 
     vec3 V = normalize(uEye - vW);
-    float d = max(dot(N, normalize(KEY)), 0.0) + max(dot(N, normalize(FILL)), 0.0) * 0.25;
+    float ndl = max(dot(N, normalize(KEY)), 0.0);
+    float sh = lit(vW, ndl);
+    float d = ndl * sh + max(dot(N, normalize(FILL)), 0.0) * 0.25;
     float sp = pow(max(dot(reflect(-normalize(KEY), N), V), 0.0), 30.0);
     c *= 0.30 + d * 1.05;
     c += sp * 0.05 * (0.4 + rings);                  /* לכה */
@@ -599,16 +640,22 @@ const solidProg = program(`#version 300 es
   precision highp float;
   in vec3 vW, vN, vC;
   ${LIB}
+  ${SHADOW}
   uniform vec3 uEye;
+  uniform float uEmissive;
+  uniform vec3 uEmCol;
   out vec4 o;
   void main(){
     if (clipped(vW)) discard;
     vec3 N=normalize(vN), V=normalize(uEye-vW), L=normalize(KEY);
-    float d = max(dot(N,L),0.0) + max(dot(N,normalize(FILL)),0.0)*0.30;
-    float sp = pow(max(dot(normalize(L+V),N),0.0), 34.0);
+    float ndl = max(dot(N,L),0.0);
+    float sh = lit(vW, ndl);
+    float d = ndl * sh + max(dot(N,normalize(FILL)),0.0)*0.30;
+    float sp = pow(max(dot(normalize(L+V),N),0.0), 34.0) * sh;
     /* אור מוחזר מהרצפה הבהירה — בלי זה התחתונים יוצאים שחורים */
     vec3 amb = mix(vec3(0.20,0.21,0.22), vec3(0.42,0.44,0.48), N.y*0.5+0.5);
-    o = vec4(vC * (amb + d*0.80) + vec3(sp*0.22), 1.0);
+    vec3 base = vC * (amb + d*0.80) + vec3(sp*0.22);
+    o = vec4(mix(base, uEmCol * (0.45 + uEmissive*1.7), uEmissive), 1.0);
   }`);
 
 /* ---- אטומים (מצג מולקולות) ---- */
@@ -979,6 +1026,49 @@ function shelfUnit(){
   return merge(...parts);
 }
 const props = buildMesh(solidProg, shelfUnit(), false);
+
+/* ---- מה שמחזיק את הכלים ----
+   בקבוק תחתית עגולה לא עומד לבד — הוא מתגלגל. וסליל מעבה באוויר בלי
+   מלחציים הוא בלתי אפשרי. אלה החלקים שהיו חסרים, ובלעדיהם כל המערכת
+   ריחפה: מעטפת חימום שהבקבוק יושב בתוכה, ושני מעמדים עם זרועות. */
+function cyl(r,y0,y1,cx=0,cz=0,segs=16){
+  return place(lathe([[0,y1],[r,y1],[r,y0],[0,y0]], segs), cx, 0, cz);
+}
+const IRON=[0.105,0.108,0.115], ALLOY=[0.380,0.390,0.405], CORK=[0.44,0.33,0.20];
+
+/* המעטפת נבנית סביב הבקבוק: השפה הפנימית חייבת להיות רחבה מרדיוס
+   הבועה באותו גובה, אחרת המתכת בוקעת דרך הזכוכית. */
+const MANTLE_Y = 0.30;
+const mantleMesh = merge(
+  colored(lathe([[0.71,MANTLE_Y],[0.95,0.26],[0.92,0.13],[0.80,0.03],[0.62,0.0],[0,0.0]], 40), IRON),
+  colored(lathe([[0.71,MANTLE_Y+0.03],[0.96,MANTLE_Y-0.02],[0.95,0.26],[0.71,MANTLE_Y]], 40), ALLOY),
+  colored(box(0.50,0.26,0.44, -1.20,0.13,0.60), IRON),        /* קופסת הבקרה */
+  colored(cyl(0.080,0.14,0.18, -1.20,0.38), ALLOY),           /* חוגה */
+);
+const mantle = buildMesh(solidProg, mantleMesh, false);
+
+function stands(){
+  const p=[];
+  const rig=(bx,bz,rodH,arms)=>{
+    p.push(colored(box(0.80,0.050,0.60, bx,0.026,bz), IRON));   /* בסיס יצוק */
+    p.push(colored(cyl(0.040,0.05,rodH, bx,bz,14), ALLOY));     /* מוט */
+    for (const [y,reach,dir] of arms){
+      p.push(colored(box(0.10,0.13,0.10, bx,y,bz), IRON));      /* ראש מלחציים */
+      p.push(colored(box(reach,0.045,0.045, bx+dir*reach/2,y,bz), ALLOY));
+      /* לסתות: שתי זרועות שנסגרות על הצוואר */
+      const tip=bx+dir*reach;
+      p.push(colored(box(0.07,0.055,0.30, tip,y+0.055,bz), IRON));
+      p.push(colored(box(0.07,0.055,0.30, tip,y-0.055,bz), IRON));
+      p.push(colored(cyl(0.05,y-0.075,y+0.075, tip+dir*0.05,bz+0.13,10), CORK));
+      p.push(colored(cyl(0.05,y-0.075,y+0.075, tip+dir*0.05,bz-0.13,10), CORK));
+    }
+  };
+  /* שמאל: אוחז את צוואר הבקבוק. ימין: אוחז את המעבה. */
+  rig(-1.38, -0.62, 2.55, [[2.14, 1.21, 1]]);
+  rig( 2.80, -0.62, 3.70, [[3.02, 0.92, -1], [2.30, 0.80, -1]]);
+  return merge(...p);
+}
+const rigMesh = buildMesh(solidProg, stands(), false);
 
 const shiftX = (m,dx)=>{ for(let i=0;i<m.pos.length;i+=3) m.pos[i]+=dx; return m; };
 const GLASS = [
@@ -1370,6 +1460,61 @@ function resize(){
   gl.bindFramebuffer(gl.FRAMEBUFFER,null);
 }
 
+/* ---- מפת הצללים ----
+   מקרינים את הסצנה מכיוון האור לתוך מפת עומק, ואז כל שיידר בודק מולה
+   אם הנקודה שלו רואה את האור. אור מכיוון קבוע, ולכן הטלה אורתוגונלית. */
+const SHADOW_SIZE = 1600;
+let shadowTex, shadowFBO, LVP;
+
+function initShadow(){
+  shadowTex=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,shadowTex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.DEPTH_COMPONENT24,SHADOW_SIZE,SHADOW_SIZE,0,
+                gl.DEPTH_COMPONENT,gl.UNSIGNED_INT,null);
+  /* השוואה בחומרה: הדגימה מחזירה כמה מארבעת הטקסלים עברו את המבחן,
+     כלומר PCF דו-לינארי בחינם */
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_COMPARE_MODE,gl.COMPARE_REF_TO_TEXTURE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_COMPARE_FUNC,gl.LEQUAL);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  shadowFBO=gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER,shadowFBO);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.TEXTURE_2D,shadowTex,0);
+  gl.drawBuffers([gl.NONE]); gl.readBuffer(gl.NONE);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+
+  const ortho=(hw,hh,n,f)=>new Float32Array([
+    1/hw,0,0,0, 0,1/hh,0,0, 0,0,-2/(f-n),0, 0,0,-(f+n)/(f-n),1]);
+  const L=v3.norm([0.38,0.86,0.34]), C=[0.9,0.35,-0.9];
+  LVP=m4.mul(ortho(5.2,5.2,0.1,26), m4.lookAt(v3.add(C,v3.scale(L,13)), C, [0,1,0]));
+}
+
+function renderShadow(){
+  gl.bindFramebuffer(gl.FRAMEBUFFER,shadowFBO);
+  gl.viewport(0,0,SHADOW_SIZE,SHADOW_SIZE);
+  gl.clear(gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND);
+  /* מטילים רק פאות אחוריות: הצל נדחף לצד הרחוק של הגוף ואקנה נעלמת */
+  gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT);
+  gl.useProgram(shadowProg);
+  gl.uniformMatrix4fv(shadowProg.u.uLVP,false,LVP);
+  for (const m of [bench, props, mantle, rigMesh]){
+    gl.bindVertexArray(m.vao);
+    gl.drawElements(gl.TRIANGLES,m.n,m.type,0);
+  }
+  gl.disable(gl.CULL_FACE);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+}
+function bindShadow(prog){
+  gl.uniformMatrix4fv(prog.u.uLVP,false,LVP);
+  gl.uniform1f(prog.u.uSTexel,1/SHADOW_SIZE);
+  gl.uniform1i(prog.u.uShadow,7);
+  gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D,shadowTex);
+  gl.activeTexture(gl.TEXTURE0);
+}
+
 /* MSAA → דגימה בודדת. זו ההעתקה היחידה שמותרת מחוצץ מרובה־דגימות. */
 function resolveTo(dstFBO){
   gl.bindFramebuffer(gl.READ_FRAMEBUFFER,msFBO);
@@ -1433,6 +1578,9 @@ let realView = FLOAT_FBO;
 
 function draw(){
   resize();
+  /* האור והריהוט לא זזים לעולם, ולכן מפת הצללים נכונה לתמיד.
+     ציור מחדש שלה בכל פריים הוא מעבר שלם על 1600² בלי שום סיבה. */
+  if (!shadowFBO){ initShadow(); renderShadow(); }
   const want=fitDistance();
   cam.dist = cam.dist>0 ? cam.dist+(want-cam.dist)*0.12 : want;
 
@@ -1461,6 +1609,7 @@ function draw(){
   gl.useProgram(roomProg);
   gl.uniformMatrix4fv(roomProg.u.uVP,false,VP);
   gl.uniform4fv(roomProg.u.uClip,clip);
+  bindShadow(roomProg);
   gl.bindVertexArray(room.vao);
   gl.drawElements(gl.TRIANGLES,room.n,room.type,0);
 
@@ -1470,6 +1619,7 @@ function draw(){
   gl.uniform3fv(woodProg.u.uEye,eye);
   gl.uniform2f(woodProg.u.uOccA,0,0);
   gl.uniform2f(woodProg.u.uOccB,BEAKER_X,0);
+  bindShadow(woodProg);
   gl.bindVertexArray(bench.vao);
   gl.drawElements(gl.TRIANGLES,bench.n,bench.type,0);
 
@@ -1477,8 +1627,18 @@ function draw(){
   gl.uniformMatrix4fv(solidProg.u.uVP,false,VP);
   gl.uniform4fv(solidProg.u.uClip,clip);
   gl.uniform3fv(solidProg.u.uEye,eye);
-  gl.bindVertexArray(props.vao);
-  gl.drawElements(gl.TRIANGLES,props.n,props.type,0);
+  bindShadow(solidProg);
+  gl.uniform1f(solidProg.u.uEmissive,0);
+  for (const m of [props, rigMesh]){
+    gl.bindVertexArray(m.vao);
+    gl.drawElements(gl.TRIANGLES,m.n,m.type,0);
+  }
+  /* המעטפת מאדימה עם החום — מקור החום הופך לדבר שרואים, לא למחוון */
+  gl.uniform1f(solidProg.u.uEmissive, clamp((heat-430)/620,0,1)*0.85);
+  gl.uniform3f(solidProg.u.uEmCol, 1.0,0.26,0.05);
+  gl.bindVertexArray(mantle.vao);
+  gl.drawElements(gl.TRIANGLES,mantle.n,mantle.type,0);
+  gl.uniform1f(solidProg.u.uEmissive,0);
 
   let shown=0;
 
