@@ -52,6 +52,10 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
   padding:9px 10px calc(9px + env(safe-area-inset-bottom));
   display:flex;flex-direction:column;gap:8px;z-index:3}
 .row{display:flex;align-items:center;gap:7px}
+/* שורת הכפתורים ארוכה מהמסך בטלפון — נגללת במקום לבלוע כפתורים */
+.row.tools{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.row.tools::-webkit-scrollbar{display:none}
+.row.tools .btn{flex:0 0 auto;padding:9px 10px}
 .btn{background:#161a21;border:1px solid #262c36;border-radius:10px;
   padding:9px 12px;font-size:13px;line-height:1;white-space:nowrap;
   transition:background .15s,border-color .15s}
@@ -100,6 +104,18 @@ input[type=range]{flex:1;accent-color:#d4632f;height:26px;direction:ltr}
 #ask b{color:#e8eef7;display:block;margin-bottom:5px;font-size:13px}
 #warn{position:absolute;inset:0;display:none;place-items:center;padding:40px;
   text-align:center;line-height:2;color:#94a1b2}
+#gear{position:absolute;top:calc(12px + env(safe-area-inset-top));inset-inline-start:12px;
+  width:34px;height:34px;border-radius:10px;font-size:16px;color:#b9c6d6;
+  background:rgba(10,12,16,.8);border:1px solid rgba(255,255,255,.09)}
+#langBox{position:absolute;top:calc(52px + env(safe-area-inset-top));inset-inline-start:12px;
+  background:rgba(12,15,20,.95);border:1px solid rgba(255,255,255,.11);border-radius:12px;
+  padding:9px;display:none;flex-direction:column;gap:6px;min-width:132px;
+  backdrop-filter:blur(10px);z-index:6}
+#langBox.on{display:flex}
+#langBox b{font-size:11px;color:#8b96a6;font-weight:500;padding:0 3px 2px}
+.lang{background:#171d26;border:1px solid #283040;border-radius:9px;
+  padding:8px 11px;font-size:13px;text-align:start}
+.lang.on{background:#c9822e;border-color:#e8a44f;color:#fff}
 </style>
 </head>
 <body>
@@ -109,16 +125,23 @@ input[type=range]{flex:1;accent-color:#d4632f;height:26px;direction:ltr}
   <div id="atoms"></div>
   <div id="fps"></div>
   <div id="fov"></div>
-  <div id="hint">שתי אצבעות לסובב · צביטה להגדיל עד ×60 · הקשה להוסיף</div>
+  <div id="hint"></div>
   <div id="warn"></div>
+  <button id="gear">⚙</button>
+  <div id="langBox">
+    <b id="langT"></b>
+    <button class="lang" data-l="he">עברית</button>
+    <button class="lang" data-l="en">English</button>
+  </div>
 </div>
 
 <div id="hud">
-  <div class="row">
+  <div class="row tools">
     <button class="btn on" id="view">👁 אמיתי</button>
-    <button class="btn hot" id="spark">⚡ ניצוץ</button>
+    <button class="btn hot" id="spark">⚡ <b></b></button>
+    <button class="btn" id="tap">🚰 <b></b></button>
     <button class="btn" id="zoomBtn">🔍 ×1</button>
-    <button class="btn" id="reset">אתחל</button>
+    <button class="btn" id="reset"></button>
     <button class="btn" id="pause">⏸</button>
   </div>
   <div class="row">
@@ -133,7 +156,7 @@ input[type=range]{flex:1;accent-color:#d4632f;height:26px;direction:ltr}
     <button id="pickBar">
       <i id="pickDot"></i>
       <span id="pickName">מימן</span><span id="pickKey">H₂</span>
-      <span id="pickUp">▲ טבלה</span>
+      <span id="pickUp"></span>
     </button>
   </div>
 </div>
@@ -141,15 +164,9 @@ input[type=range]{flex:1;accent-color:#d4632f;height:26px;direction:ltr}
 <div id="scrim"></div>
 <div id="sheet">
   <div id="grip"><b></b></div>
-  <h2>הטבלה המחזורית</h2>
+  <h2 id="sheetH"></h2>
   <div id="ptable"></div>
-  <div id="ask">
-    <b>שני יסודות. זה הכל.</b>
-    מימן וחמצן — ומהם אפשר לבנות מים, להרתיח, לזקק, להקפיא ולשרוף.
-    כל שאר המשבצות כבויות כי עוד לא בניתי אותן.
-    <br><br>
-    איזה יסוד להוסיף הבא? תכתבו לי בתגובות ואני אוסיף אותו בפרק הבא.
-  </div>
+  <div id="ask"><b id="askT"></b><span id="askB"></span><br><br><span id="askQ"></span></div>
 </div>
 
 <script>
@@ -186,7 +203,41 @@ const m4 = {
       -v3.dot(x,eye),-v3.dot(y,eye),-v3.dot(z,eye),1]);
   },
 };
+/* ---- שתי שפות ----
+   כל מחרוזת שהמשתמש רואה יושבת כאן. הדף מתהפך בין ימין-לשמאל
+   לשמאל-לימין, חוץ מהטבלה המחזורית — הסדר שלה הוא המספר האטומי,
+   והוא לא מתהפך בשום שפה. */
+const STR = {
+  he:{ real:'אמיתי', molecules:'מולקולות', microscope:'מיקרוסקופ', exit:'יציאה',
+       spark:'ניצוץ', tap:'ברז', reset:'אתחל', cut:'חתך', table:'טבלה',
+       ptable:'הטבלה המחזורית', settings:'הגדרות', language:'שפה',
+       askT:'שני יסודות. זה הכל.',
+       askB:'מימן וחמצן — ומהם אפשר לבנות מים, להרתיח, לזקק, להקפיא ולשרוף. כל שאר המשבצות כבויות כי עוד לא בניתי אותן.',
+       askQ:'איזה יסוד להוסיף הבא? תכתבו לי בתגובות ואני אוסיף אותו בפרק הבא.',
+       hint:'שתי אצבעות לסובב · צביטה להגדיל · הקשה למעלה מוסיפה לקערה',
+       fov:'שדה ראייה', nm:'ננומטר', mm:'מ״מ', mag:'הגדלה',
+       realSize:'מולקולות בגודל אמיתי', mols:'מולקולות',
+       K:'K', mil:' מיליון', bil:' מיליארד',
+       noGL:'הדפדפן הזה לא תומך ב-WebGL2. נסה כרום או ספארי מעודכן.' },
+  en:{ real:'Real', molecules:'Molecules', microscope:'Microscope', exit:'Exit',
+       spark:'Spark', tap:'Tap', reset:'Reset', cut:'Cut', table:'Table',
+       ptable:'The periodic table', settings:'Settings', language:'Language',
+       askT:'Two elements. That is all.',
+       askB:'Hydrogen and oxygen — enough to build water, boil it, distil it, freeze it and burn it. Every other square is dark because I have not built it yet.',
+       askQ:'Which element should come next? Tell me in the comments and I will add it in the next episode.',
+       hint:'Two fingers to rotate · pinch to magnify · tap up top to fill the bowl',
+       fov:'Field of view', nm:'nm', mm:'mm', mag:'magnification',
+       realSize:'molecules at real size', mols:'molecules',
+       K:'K', mil:'M', bil:'B',
+       noGL:'This browser does not support WebGL2. Try an up-to-date Chrome or Safari.' },
+};
+let lang = 'he';
+try { const v=localStorage.getItem('rls.lang'); if (v==='he'||v==='en') lang=v; } catch(e){}
+const T  = k => STR[lang][k];
+const nm = o => typeof o==='string' ? o : o[lang];
+
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const IDENT=new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
 const rand=(a,b)=>a+Math.random()*(b-a);
 
 /* ===========================================================================
@@ -196,8 +247,8 @@ const rand=(a,b)=>a+Math.random()*(b-a);
    באיזה צבע הוא נראה ובאיזה עומק הוא מפסיק להיות שקוף.
    =========================================================================== */
 const ELEM = {
-  H:{ name:'מימן', col:[0.94,0.96,0.99], r:0.052, m:1.008 },
-  O:{ name:'חמצן', col:[0.86,0.35,0.22], r:0.082, m:16.00 },
+  H:{ name:{he:'מימן',en:'Hydrogen'}, col:[0.94,0.96,0.99], r:0.052, m:1.008 },
+  O:{ name:{he:'חמצן',en:'Oxygen'}, col:[0.86,0.35,0.22], r:0.082, m:16.00 },
 };
 
 /* ---- כמה קטנה מולקולה ----
@@ -209,15 +260,15 @@ const NMOL = Math.round(240 * MSCALE * MSCALE * MSCALE);
 
 const A = 0.911;      /* חצי מזווית הקשר במים, 104.5° */
 const SPECIES = {
-  H2: { key:'H₂', name:'מימן', boil:-253, melt:-259, liq:0.071,
+  H2: { key:'H₂', name:{he:'מימן',en:'Hydrogen'}, boil:-253, melt:-259, liq:0.071,
         /* מימן נוזלי חסר צבע לגמרי */
         absorb:[0.10,0.10,0.11],
         atoms:[['H',[-0.065,0,0]],['H',[0.065,0,0]]] },
-  O2: { key:'O₂', name:'חמצן', boil:-183, melt:-218, liq:1.141,
+  O2: { key:'O₂', name:{he:'חמצן',en:'Oxygen'}, boil:-183, melt:-218, liq:1.141,
         /* חמצן נוזלי הוא תכלת. זה לא סגנון — זה הצבע שלו */
         absorb:[1.35,0.42,0.10],
         atoms:[['O',[-0.080,0,0]],['O',[0.080,0,0]]] },
-  H2O:{ key:'H₂O', name:'מים', boil:100, melt:0, liq:1.000,
+  H2O:{ key:'H₂O', name:{he:'מים',en:'Water'}, boil:100, melt:0, liq:1.000,
         /* מים בולעים אדום. בכוס הם שקופים, בבריכה הם כחולים */
         absorb:[0.62,0.13,0.07],
         atoms:[['O',[0,0,0]],
@@ -239,9 +290,15 @@ for (const s of Object.values(SPECIES)){
    3) גאומטריה — הכל נבנה מסיבוב פרופיל דו-ממדי סביב ציר
    =========================================================================== */
 const BEAKER_X = 1.95;
+/* משפך טפטוף מעל הבקבוק: קערה שאפשר לשים בה חומר, ברז שסוגר, וגזע
+   שיורד לתוך הצוואר. הגזע יושב בצד אחד של הצוואר והמעבה יוצא מהצד
+   השני, כמו בראש זיקוק אמיתי. */
+const FX = -0.085;
+const BOWL_Y0=3.76, BOWL_Y1=4.20, BOWL_R0=0.075, BOWL_R1=0.40;
+const TAP_Y=3.62, STEM_R=0.058, STEM_Y0=2.30;
 /* הגבולות כוללים גם את המעמדים. בלי זה המוטות נשארים מחוץ לפריים
    והמלחציים נראים תלויים באוויר — בדיוק מה שבאו לתקן. */
-const BOUNDS = { cx:0.87, cy:1.80, hx:1.98, hy:1.95, hz:0.78 };
+const BOUNDS = { cx:0.87, cy:1.98, hx:1.98, hy:2.30, hz:0.78 };
 
 function lathe(profile, segs=52){
   const P=[],N=[],I=[];
@@ -329,7 +386,7 @@ const beakerProfile = () => [[0.68,1.48],[0.68,0.12],[0.655,0.055],[0.60,0.015],
                              [0.52,0.0],[0.0,0.0]];
 
 function condenserPath(){
-  const ctrl=[[0,2.42,0],[0,2.95,0],[0.22,3.34,0],[0.85,3.54,0]];
+  const ctrl=[[0.115,2.42,0],[0.125,2.92,0],[0.30,3.30,0],[0.88,3.50,0]];
   const HR=0.46, turns=2, steps=60;
   for (let i=0;i<=steps;i++){
     const u=i/steps, a=Math.PI+u*turns*Math.PI*2;
@@ -466,7 +523,7 @@ function fail(msg){
   const w=document.getElementById('warn');
   w.style.display='grid'; w.textContent=msg; throw new Error(msg);
 }
-if (!gl) fail('הדפדפן הזה לא תומך ב-WebGL2. נסה כרום או ספארי מעודכן.');
+if (!gl) fail('This browser does not support WebGL2 / הדפדפן לא תומך ב-WebGL2');
 const FLOAT_FBO = !!gl.getExtension('EXT_color_buffer_float');
 gl.getExtension('OES_texture_float_linear');
 
@@ -655,9 +712,14 @@ const woodProg = program(`#version 300 es
    ממוזגים למש אחד כדי שכל הרקע יעלה קריאת ציור אחת. */
 const solidProg = program(`#version 300 es
   in vec3 aPos; in vec3 aNrm; in vec3 aCol;
-  uniform mat4 uVP;
+  uniform mat4 uVP, uModel;
   out vec3 vW, vN, vC;
-  void main(){ vW=aPos; vN=aNrm; vC=aCol; gl_Position=uVP*vec4(aPos,1.0); }`,
+  void main(){
+    vW=(uModel*vec4(aPos,1.0)).xyz;
+    vN=mat3(uModel)*aNrm;
+    vC=aCol;
+    gl_Position=uVP*vec4(vW,1.0);
+  }`,
   `#version 300 es
   precision highp float;
   in vec3 vW, vN, vC;
@@ -1243,7 +1305,20 @@ function stands(){
 }
 const rigMesh = buildMesh(solidProg, stands(), false);
 
+/* ידית הברז. נבנית סביב הראשית כדי שאפשר יהיה לסובב אותה. */
+const handleMesh = buildMesh(solidProg, merge(
+  colored(box(0.46,0.055,0.075, 0.13,0,0), [0.86,0.86,0.88]),
+  colored(box(0.09,0.10,0.10, 0,0,0), [0.80,0.80,0.83]),
+), false);
+
 const shiftX = (m,dx)=>{ for(let i=0;i<m.pos.length;i+=3) m.pos[i]+=dx; return m; };
+const tube2 = (r,y0,y1,t,segs=26)=>merge(
+  lathe([[r,y1],[r,y0]], segs), flipNormals(lathe([[r-t,y1],[r-t,y0]], segs)));
+const funnelGlass = shiftX(merge(
+  hollow([[BOWL_R1,BOWL_Y1],[BOWL_R1*0.97,BOWL_Y1-0.06],[0.21,BOWL_Y0+0.11],[BOWL_R0,BOWL_Y0]], 0.020, 40),
+  tube2(STEM_R, STEM_Y0, BOWL_Y0, 0.016),
+  lathe([[0.125,TAP_Y+0.09],[0.125,TAP_Y-0.09],[0,TAP_Y-0.09]], 26),   /* גוף הברז */
+), FX);
 const GLASS = [
   /* לבקבוק תחתית עגולה אין מדים — לא במציאות ולא כאן. על בועה
      כדורית קו בגובה קבוע מתעקל ונראה כמו צלע, לא כמו סימון. */
@@ -1251,6 +1326,8 @@ const GLASS = [
     mark:[0,0,1,0], axis:0, glow:true },
   { mesh:buildMesh(glassProg, shiftX(hollow(beakerProfile(), 0.028), BEAKER_X)),
     ox:BEAKER_X, mark:[0.20,1.30,0.11,1], axis:BEAKER_X, markAng:0.45, glow:false },
+  { mesh:buildMesh(glassProg, funnelGlass), ox:FX,
+    mark:[0,0,1,0], axis:FX, glow:false },
   /* הצינור חלול גם הוא, ובלי מדים — אף אחד לא מודד נפח בצינור מעבה */
   { mesh:buildMesh(glassProg, merge(tubeMesh(PATH,0.135),
                                     flipNormals(tubeMesh(PATH,0.112)))), ox:1.4,
@@ -1261,7 +1338,7 @@ const GLASS = [
    5) העולם
    =========================================================================== */
 const MAX = NMOL + 1400;
-const IN_FLASK=0, IN_TUBE=1, IN_BEAKER=2;
+const IN_FLASK=0, IN_TUBE=1, IN_BEAKER=2, IN_FUNNEL=3;
 const GAS=0, LIQ=1, SOL=2;
 
 const mol = {
@@ -1301,8 +1378,15 @@ function flaskRadiusAt(y){
 }
 
 let heat=20, paused=false;
+/* הברז: 0 סגור, 1 פתוח. הזווית רודפת אחרי היעד כדי שהסיבוב ייראה. */
+const tap={ open:false, a:0 };
+function funnelRadiusAt(y){
+  if (y >= BOWL_Y0) return BOWL_R0 + (y-BOWL_Y0)/(BOWL_Y1-BOWL_Y0)*(BOWL_R1-BOWL_R0) - 0.03;
+  return STEM_R - 0.018;
+}
 const AMBIENT=20;
 function tempAt(where){
+  if (where===IN_FUNNEL) return AMBIENT + (heat-AMBIENT)*0.05;
   if (where===IN_FLASK) return heat;
   if (where===IN_BEAKER) return AMBIENT + Math.max(0,heat-AMBIENT)*0.04;
   return AMBIENT + Math.max(0,heat-AMBIENT)*0.12;
@@ -1524,8 +1608,30 @@ function step(dt){
     mol.vx[i]*=k; mol.vy[i]*=k; mol.vz[i]*=k;
     mol.x[i]+=mol.vx[i]*dt; mol.y[i]+=mol.vy[i]*dt; mol.z[i]+=mol.vz[i]*dt;
 
+    if (mol.where[i]===IN_FUNNEL){
+      const maxR=funnelRadiusAt(mol.y[i]);
+      const r=Math.hypot(mol.x[i]-FX, mol.z[i]);
+      if (r>maxR && r>1e-6){
+        const sc=maxR/r;
+        mol.x[i]=FX+(mol.x[i]-FX)*sc; mol.z[i]*=sc;
+        mol.vx[i]*=-.35; mol.vz[i]*=-.35;
+      }
+      if (mol.y[i]>BOWL_Y1-0.05){ mol.y[i]=BOWL_Y1-0.05; mol.vy[i]*=-.3; }
+      if (tap.a>0.55){
+        /* פתוח: מה שמגיע לתחתית הגזע נכנס לבקבוק */
+        if (mol.y[i]<STEM_Y0+0.04){ mol.where[i]=IN_FLASK; mol.vy[i]=-0.8; }
+      } else if (mol.y[i]<TAP_Y+0.10){
+        mol.y[i]=TAP_Y+0.10; mol.vy[i]*=-0.25;    /* סגור: נחים על הברז */
+      }
+      continue;
+    }
+
     if (mol.where[i]===IN_FLASK){
       if (ph===GAS && mol.y[i]>NECK_TOP-0.04 && Math.hypot(mol.x[i],mol.z[i])<NECK_R){
+        /* גז שמוצא את פתח הגזע עולה למשפך — אבל רק אם הברז פתוח */
+        if (tap.a>0.55 && Math.hypot(mol.x[i]-FX,mol.z[i])<STEM_R-0.02){
+          mol.where[i]=IN_FUNNEL; mol.vy[i]=1.2; continue;
+        }
         mol.where[i]=IN_TUBE; mol.t[i]=0; continue;
       }
       const maxR=flaskRadiusAt(mol.y[i])-0.06, r=Math.hypot(mol.x[i],mol.z[i]);
@@ -1541,6 +1647,7 @@ function step(dt){
     }
   }
   react();
+  tap.a += (( tap.open?1:0 ) - tap.a) * Math.min(1, dt*3.2);
   if (flash>0) flash-=dt;
   if (heat>AMBIENT) heat=Math.max(AMBIENT,heat-dt*6);
   else if (heat<AMBIENT) heat=Math.min(AMBIENT,heat+dt*4);
@@ -1698,7 +1805,7 @@ function microInstances(){
       inst.off[k*3+2]=MC.z[i]+oz*c+cz*s+az*dt*(1-c);
       const col=ELEM[el].col;
       inst.col[k*3]=col[0]; inst.col[k*3+1]=col[1]; inst.col[k*3+2]=col[2];
-      inst.rad[k]=NM_R[el];
+      inst.rad[k]=NM_R[el]; inst.kind[k]=1;
       k++;
     }
   }
@@ -1798,7 +1905,10 @@ cv.addEventListener('wheel',e=>{
 },{passive:false});
 cv.addEventListener('click',e=>{
   if (touches.size>1) return;
-  addMolecules(picked, Math.round(26*MSCALE*MSCALE*MSCALE), e.clientX/innerWidth>0.56 ? IN_BEAKER : IN_FLASK);
+  const n=Math.round(26*MSCALE*MSCALE*MSCALE);
+  /* שליש עליון של המסך = הקערה שלמעלה */
+  addMolecules(picked, n, e.clientY/innerHeight<0.30 ? IN_FUNNEL
+                        : e.clientX/innerWidth>0.56 ? IN_BEAKER : IN_FLASK);
 });
 
 /* ===========================================================================
@@ -1935,7 +2045,7 @@ function buildAtoms(){
       inst.col[k*3]  =Math.min(1,E.col[0]+g);
       inst.col[k*3+1]=Math.min(1,E.col[1]+g*.8);
       inst.col[k*3+2]=Math.min(1,E.col[2]+g*.5);
-      inst.rad[k]=E.r;
+      inst.rad[k]=E.r; inst.kind[k]=1;
       k++;
     }
   }
@@ -1950,7 +2060,7 @@ function buildBlobs(){
     /* אדים לא נושאים את צבע הבליעה של החומר — הם ערפל לבן */
     if (gas){ inst.col[k*3]=0.10; inst.col[k*3+1]=0.11; inst.col[k*3+2]=0.125; }
     else { inst.col[k*3]=S.absorb[0]; inst.col[k*3+1]=S.absorb[1]; inst.col[k*3+2]=S.absorb[2]; }
-    inst.rad[k]=(gas?0.20:0.135)/MSCALE;         /* אדים מתפרשים רחב יותר */
+    inst.rad[k]=(gas?0.150:0.104)/MSCALE;        /* אדים מתפרשים רחב יותר */
     inst.kind[k]=gas?0:1;
     k++;
   }
@@ -1978,7 +2088,7 @@ function drawAtoms(n, proj, view, cvn, cvd){
     view[0]*L[0]+view[4]*L[1]+view[8]*L[2],
     view[1]*L[0]+view[5]*L[1]+view[9]*L[2],
     view[2]*L[0]+view[6]*L[1]+view[10]*L[2]);
-  upload(atomQuad,n,false);
+  upload(atomQuad,n,true);
   gl.drawElementsInstanced(gl.TRIANGLES,atomQuad.n,atomQuad.type,0,n);
 }
 
@@ -2008,7 +2118,7 @@ function microExit(){
    בתוך הנוזל. מצג נפרד לגמרי, עם מערכת צירים משלו בננומטרים. */
 function drawMicro(){
   resize();
-  $('view').textContent='↩ יציאה';
+  $('view').textContent='↩ '+T('exit');
   $('view').classList.remove('on');
   gl.bindFramebuffer(gl.FRAMEBUFFER,msFBO);
   gl.viewport(0,0,W,H);
@@ -2054,7 +2164,8 @@ function draw(){
   resize();
   const micro = cam.zoom < MICRO;
   realView = micro ? false : (wantReal && FLOAT_FBO);
-  $('view').textContent = realView ? '👁 אמיתי' : (micro ? '⚛ מיקרוסקופ' : '⚛ מולקולות');
+  $('view').textContent = realView ? '👁 '+T('real')
+                      : (micro ? '⚛ '+T('microscope') : '⚛ '+T('molecules'));
   $('view').classList.toggle('on', realView);
   /* האור והריהוט לא זזים לעולם, ולכן מפת הצללים נכונה לתמיד.
      ציור מחדש שלה בכל פריים הוא מעבר שלם על 1600² בלי שום סיבה. */
@@ -2111,6 +2222,7 @@ function draw(){
   gl.uniform3fv(solidProg.u.uEye,eye);
   bindShadow(solidProg);
   gl.uniform1f(solidProg.u.uEmissive,0);
+  gl.uniformMatrix4fv(solidProg.u.uModel,false,IDENT);
   for (const m of [props, rigMesh, jack]){
     gl.bindVertexArray(m.vao);
     gl.drawElements(gl.TRIANGLES,m.n,m.type,0);
@@ -2121,6 +2233,14 @@ function draw(){
   gl.bindVertexArray(burner.vao);
   gl.drawElements(gl.TRIANGLES,burner.n,burner.type,0);
   gl.uniform1f(solidProg.u.uEmissive,0);
+
+  /* ידית הברז, מסובבת לפי מצבה */
+  const ta=tap.a*Math.PI/2, cta=Math.cos(ta), sta=Math.sin(ta);
+  gl.uniformMatrix4fv(solidProg.u.uModel,false,new Float32Array([
+    cta,0,sta,0,  0,1,0,0,  -sta,0,cta,0,  FX,TAP_Y,0,1]));
+  gl.bindVertexArray(handleMesh.vao);
+  gl.drawElements(gl.TRIANGLES,handleMesh.n,handleMesh.type,0);
+  gl.uniformMatrix4fv(solidProg.u.uModel,false,IDENT);
 
   let shown=0;
 
@@ -2289,7 +2409,7 @@ const $=id=>document.getElementById(id);
 
 function syncPick(){
   const S=SPECIES[picked];
-  $('pickName').textContent=S.name;
+  $('pickName').textContent=nm(S.name);
   $('pickKey').textContent=S.key;
   $('pickDot').style.background='rgb('+ELEM[S.atoms[0][0]].col.map(v=>Math.round(v*255)).join(',')+')';
   for (const b of document.querySelectorAll('.pt.live')) b.classList.toggle('on', b.dataset.sp===picked);
@@ -2297,21 +2417,21 @@ function syncPick(){
 function syncHeat(){ $('heat').value=Math.round(heat); $('heatLbl').textContent=Math.round(heat)+'°'; }
 function syncCut(){
   $('cut').value=Math.round(cam.slice*100);
-  $('cutLbl').textContent='חתך '+Math.round(cam.slice*100)+'%';
+  $('cutLbl').textContent=T('cut')+' '+Math.round(cam.slice*100)+'%';
 }
-const human=v=>v>=1e9?(v/1e9).toFixed(0)+' מיליארד'
-              :v>=1e6?(v/1e6).toFixed(0)+' מיליון'
-              :v>=1e3?(v/1e3).toFixed(0)+'K':Math.round(v);
+const human=v=>v>=1e9?(v/1e9).toFixed(0)+T('bil')
+              :v>=1e6?(v/1e6).toFixed(0)+T('mil')
+              :v>=1e3?(v/1e3).toFixed(0)+T('K'):Math.round(v);
 function syncZoom(){
   if (MC.on){
-    $('zoomBtn').textContent='⚛ '+microFov.toFixed(1)+' ננומטר';
-    $('fov').textContent='שדה ראייה '+microFov.toFixed(1)+' ננומטר · הגדלה ×'
-      + human(MACRO_VIEW_M/(microFov*1e-9)) + ' · ' + MC.n + ' מולקולות בגודל אמיתי';
+    $('zoomBtn').textContent='⚛ '+microFov.toFixed(1)+' '+T('nm');
+    $('fov').textContent=T('fov')+' '+microFov.toFixed(1)+' '+T('nm')+' · '+T('mag')+' ×'
+      + human(MACRO_VIEW_M/(microFov*1e-9)) + ' · ' + MC.n + ' ' + T('realSize');
   } else {
     const k=1/cam.zoom;
     $('zoomBtn').textContent='🔍 ×'+(k<9.5?k.toFixed(1):Math.round(k));
     const m=MACRO_VIEW_M*cam.zoom;
-    $('fov').textContent = k>1.4 ? ('שדה ראייה '+(m*1000).toFixed(m<0.01?2:1)+' מ"מ') : '';
+    $('fov').textContent = k>1.4 ? (T('fov')+' '+(m*1000).toFixed(m<0.01?2:1)+' '+T('mm')) : '';
   }
 }
 function syncAtoms(){
@@ -2325,6 +2445,7 @@ function syncAtoms(){
 function addMolecules(sp,count,where){
   for (let i=0;i<count;i++){
     if (where===IN_BEAKER) spawn(sp, BEAKER_X+rand(-.4,.4), rand(.9,1.3), rand(-.4,.4), IN_BEAKER);
+    else if (where===IN_FUNNEL) spawn(sp, FX+rand(-.18,.18), rand(BOWL_Y0+0.10,BOWL_Y1-0.12), rand(-.18,.18), IN_FUNNEL);
     else spawn(sp, rand(-.45,.45), rand(.5,1.5), rand(-.45,.45), IN_FLASK);
   }
   syncAtoms();
@@ -2341,6 +2462,7 @@ $('heat').addEventListener('input',e=>{ heat=+e.target.value; syncHeat(); });
 $('spark').addEventListener('click',()=>{ flash=.5; heat=Math.max(heat,IGNITION+60); syncHeat(); });
 $('cut').addEventListener('input',e=>{ cam.slice=+e.target.value/100; syncCut(); });
 $('zoomBtn').addEventListener('click',()=>{ cam.zoom=cam.zoom<0.9?1:1/12; syncZoom(); });
+$('tap').addEventListener('click',e=>{ tap.open=!tap.open; e.target.classList.toggle('on',tap.open); });
 $('reset').addEventListener('click',reset);
 $('pause').addEventListener('click',e=>{
   paused=!paused; e.target.textContent=paused?'▶':'⏸'; e.target.classList.toggle('on',paused);
@@ -2355,6 +2477,31 @@ if (!FLOAT_FBO){
   $('view').classList.remove('on');
   $('view').style.opacity='.45';
 }
+/* החלפת שפה: מרעננים כל טקסט וגם את כיוון הדף */
+function applyLang(){
+  document.documentElement.lang = lang;
+  document.documentElement.dir  = lang==='he' ? 'rtl' : 'ltr';
+  $('spark').querySelector('b').textContent = T('spark');
+  $('tap').querySelector('b').textContent   = T('tap');
+  $('reset').textContent  = T('reset');
+  $('pickUp').textContent = '▲ ' + T('table');
+  $('sheetH').textContent = T('ptable');
+  $('askT').textContent   = T('askT');
+  $('askB').textContent   = T('askB');
+  $('askQ').textContent   = T('askQ');
+  $('hint').textContent   = T('hint');
+  $('langT').textContent  = T('language');
+  for (const b of document.querySelectorAll('.lang')) b.classList.toggle('on', b.dataset.l===lang);
+  syncPick(); syncCut(); syncZoom(); syncHeat();
+}
+$('gear').addEventListener('click',()=>$('langBox').classList.toggle('on'));
+for (const b of document.querySelectorAll('.lang'))
+  b.addEventListener('click',()=>{
+    lang=b.dataset.l;
+    try { localStorage.setItem('rls.lang', lang); } catch(e){}
+    applyLang(); $('langBox').classList.remove('on');
+  });
+
 const openSheet=()=>{ $('sheet').classList.add('open'); $('scrim').classList.add('on'); };
 const closeSheet=()=>{ $('sheet').classList.remove('open'); $('scrim').classList.remove('on'); };
 $('pickBar').addEventListener('click',openSheet);
@@ -2384,7 +2531,7 @@ function loop(now){
   const shown=draw();
   frames++; fpsT+=dt;
   if (fpsT>0.5){
-    $('fps').textContent=Math.round(frames/fpsT)+' fps · '+(MC.on?MC.n:mol.n)+' מולקולות';
+    $('fps').textContent=Math.round(frames/fpsT)+' fps · '+(MC.on?MC.n:mol.n)+' '+T('mols');
     frames=0; fpsT=0;
   }
   acc+=dt;
@@ -2392,7 +2539,7 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 
-reset(); syncPick(); syncZoom();
+reset(); syncPick(); syncZoom(); applyLang();
 setTimeout(()=>$('hint').classList.add('gone'),100);
 requestAnimationFrame(loop);
 
@@ -2407,10 +2554,12 @@ window.RLS = {
   setView(real){ wantReal=real&&FLOAT_FBO; },
   setSpeed(v){ speed=v; },
   tune(st,it){ STIFF=st; ITERS=it; },
-  add(sp,n,where){ addMolecules(sp,n,where==='beaker'?IN_BEAKER:IN_FLASK); },
+  add(sp,n,where){ addMolecules(sp,n, where==='beaker'?IN_BEAKER
+                                   : where==='funnel'?IN_FUNNEL : IN_FLASK); },
   spark(){ flash=.5; heat=Math.max(heat,IGNITION+60); syncHeat(); },
+  tap(o){ tap.open=o; $('tap').classList.toggle('on',o); },
   state(){
-    const c={H:0,O:0}, by={}, ph=[0,0,0], w=[0,0,0];
+    const c={H:0,O:0}, by={}, ph=[0,0,0], w=[0,0,0,0];
     for (let i=0;i<mol.n;i++){
       by[mol.sp[i]]=(by[mol.sp[i]]||0)+1;
       ph[mol.phase[i]]++; w[mol.where[i]]++;
@@ -2418,7 +2567,7 @@ window.RLS = {
     }
     return { atoms:c, species:by, n:mol.n, heat:Math.round(heat), realView, floatFBO:FLOAT_FBO,
              phase:{gas:ph[0],liquid:ph[1],solid:ph[2]},
-             where:{flask:w[0],tube:w[1],beaker:w[2]} };
+             where:{flask:w[0],tube:w[1],beaker:w[2],funnel:w[3]}, tap:tap.open };
   },
 };
 </script>
