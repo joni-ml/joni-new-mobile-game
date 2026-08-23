@@ -103,7 +103,7 @@ input[type=range]{flex:1;accent-color:#d4632f;height:26px;direction:ltr}
   <canvas id="cv"></canvas>
   <div id="atoms"></div>
   <div id="fps"></div>
-  <div id="hint">שתי אצבעות לסובב · צביטה לחתוך · הקשה להוסיף</div>
+  <div id="hint">שתי אצבעות לסובב · צביטה להגדיל עד ×60 · הקשה להוסיף</div>
   <div id="warn"></div>
 </div>
 
@@ -111,13 +111,17 @@ input[type=range]{flex:1;accent-color:#d4632f;height:26px;direction:ltr}
   <div class="row">
     <button class="btn on" id="view">👁 אמיתי</button>
     <button class="btn hot" id="spark">⚡ ניצוץ</button>
-    <button class="btn" id="cut">חתך 0%</button>
+    <button class="btn" id="zoomBtn">🔍 ×1</button>
     <button class="btn" id="reset">אתחל</button>
     <button class="btn" id="pause">⏸</button>
   </div>
   <div class="row">
     <label id="heatLbl">20°</label>
     <input type="range" id="heat" min="-260" max="1200" step="5" value="20">
+  </div>
+  <div class="row">
+    <label id="cutLbl">חתך 0%</label>
+    <input type="range" id="cut" min="0" max="100" step="1" value="0">
   </div>
   <div class="row">
     <button id="pickBar">
@@ -1509,7 +1513,17 @@ function step(dt){
    6) מצלמה
    =========================================================================== */
 const FOV=0.86;
-const cam={ az:1.15, el:0.16, dist:7, target:[BOUNDS.cx,BOUNDS.cy,0], slice:0 };
+const cam={ az:1.15, el:0.16, dist:7, target:[BOUNDS.cx,BOUNDS.cy,0], slice:0, zoom:1 };
+/* לאן המצלמה צוללת כשמגדילים: לתוך הנוזל שבבקבוק. בלי זה הזום
+   מתקרב למרכז המערכת, שהוא אוויר. */
+const DIVE=[0, 0.40, 0];
+const MAXZOOM=60;
+function camTarget(){
+  const t=clamp((1-cam.zoom)/0.80, 0, 1);
+  return [BOUNDS.cx+(DIVE[0]-BOUNDS.cx)*t,
+          BOUNDS.cy+(DIVE[1]-BOUNDS.cy)*t,
+          DIVE[2]*t];
+}
 const SCENE_R=3.2;
 const eyePos=()=>{
   const ce=Math.cos(cam.el);
@@ -1538,7 +1552,7 @@ cv.addEventListener('pointerdown',e=>{
   touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if (touches.size===2){
     const [a,b]=[...touches.values()];
-    pinch0=Math.hypot(a.x-b.x,a.y-b.y); slice0=cam.slice;
+    pinch0=Math.hypot(a.x-b.x,a.y-b.y); slice0=cam.zoom;
     last2={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
   }
 });
@@ -1547,10 +1561,11 @@ cv.addEventListener('pointermove',e=>{
   p.x=e.clientX; p.y=e.clientY;
   if (touches.size>=2){
     const [a,b]=[...touches.values()];
-    cam.slice=clamp(slice0+(Math.hypot(a.x-b.x,a.y-b.y)-pinch0)/260,0,1);
+    const d=Math.max(Math.hypot(a.x-b.x,a.y-b.y), 1);
+    cam.zoom=clamp(slice0*(pinch0/d), 1/MAXZOOM, 1.15);
     const mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
     if (last2){ cam.az-=(mid.x-last2.x)*0.008; cam.el=clamp(cam.el+(mid.y-last2.y)*0.006,-0.55,1.25); }
-    last2=mid; syncCut();
+    last2=mid; syncZoom();
   }
 });
 const release=e=>{ touches.delete(e.pointerId); if (touches.size<2) last2=null; };
@@ -1566,7 +1581,8 @@ addEventListener('mousemove',e=>{
   mx=e.clientX; my=e.clientY;
 });
 cv.addEventListener('wheel',e=>{ e.preventDefault();
-  cam.slice=clamp(cam.slice-e.deltaY*0.0012,0,1); syncCut(); },{passive:false});
+  cam.zoom=clamp(cam.zoom*Math.exp(e.deltaY*0.0016), 1/MAXZOOM, 1.15); syncZoom();
+},{passive:false});
 cv.addEventListener('click',e=>{
   if (touches.size>1) return;
   addMolecules(picked, Math.round(26*MSCALE*MSCALE*MSCALE), e.clientX/innerWidth>0.56 ? IN_BEAKER : IN_FLASK);
@@ -1736,19 +1752,30 @@ function upload(mesh,n,withKind){
   if (withKind) put('aKind',inst.kind,1);
 }
 
-let realView = FLOAT_FBO;
+let realView = FLOAT_FBO, wantReal = FLOAT_FBO;
+/* מעבר ×5 המצלמה כבר בתוך הנוזל. שם אין פני שטח לשקף, ומה שכן יש
+   לראות הוא המולקולות עצמן — אז המצג מתחלף לבד. זו כל הנקודה בזום. */
+const MICRO = 0.20;
 
 function draw(){
   resize();
+  const micro = cam.zoom < MICRO;
+  realView = micro ? false : (wantReal && FLOAT_FBO);
+  $('view').textContent = realView ? '👁 אמיתי' : (micro ? '⚛ מיקרוסקופ' : '⚛ מולקולות');
+  $('view').classList.toggle('on', realView);
   /* האור והריהוט לא זזים לעולם, ולכן מפת הצללים נכונה לתמיד.
      ציור מחדש שלה בכל פריים הוא מעבר שלם על 1600² בלי שום סיבה. */
   if (!shadowFBO){ initShadow(); renderShadow(); }
-  const want=fitDistance();
-  cam.dist = cam.dist>0 ? cam.dist+(want-cam.dist)*0.12 : want;
+  const want=fitDistance()*cam.zoom;
+  cam.dist = cam.dist>0 ? cam.dist+(want-cam.dist)*0.16 : want;
+  const tw=camTarget();
+  for (let i=0;i<3;i++) cam.target[i]+=(tw[i]-cam.target[i])*0.16;
 
   const eye=eyePos();
   const asp=W/H;
-  const proj=m4.perspective(FOV,asp,0.1,60);
+  /* המישור הקרוב חייב להתכווץ עם הזום, אחרת בהגדלה עמוקה הוא חותך
+     את מה שבאנו לראות */
+  const proj=m4.perspective(FOV,asp,Math.max(0.0015,cam.dist*0.012),60);
   const view=m4.lookAt(eye,cam.target,[0,1,0]);
   const VP=m4.mul(proj,view);
 
@@ -1980,7 +2007,14 @@ function syncPick(){
   for (const b of document.querySelectorAll('.pt.live')) b.classList.toggle('on', b.dataset.sp===picked);
 }
 function syncHeat(){ $('heat').value=Math.round(heat); $('heatLbl').textContent=Math.round(heat)+'°'; }
-function syncCut(){ $('cut').textContent='חתך '+Math.round(cam.slice*100)+'%'; }
+function syncCut(){
+  $('cut').value=Math.round(cam.slice*100);
+  $('cutLbl').textContent='חתך '+Math.round(cam.slice*100)+'%';
+}
+function syncZoom(){
+  const k=1/cam.zoom;
+  $('zoomBtn').textContent='🔍 ×'+(k<9.5?k.toFixed(1):Math.round(k));
+}
 function syncAtoms(){
   const c={H:0,O:0};
   for (let i=0;i<mol.n;i++) for (const [el,k] of Object.entries(SPECIES[mol.sp[i]].count)) c[el]+=k;
@@ -2001,21 +2035,21 @@ function reset(){
   /* מספר המולקולות נקבע מהנפח: במרווח אריזה של 0.155 הן ממלאות
      כשליש מהבועה, ונשארים פני נוזל שאפשר לראות */
   for (let i=0;i<NMOL;i++) spawn('H2O', rand(-.52,.52), rand(.10,1.02), rand(-.52,.52), IN_FLASK);
-  syncAtoms(); syncHeat(); syncCut();
+  syncAtoms(); syncHeat(); syncCut(); syncZoom();
 }
 
 $('heat').addEventListener('input',e=>{ heat=+e.target.value; syncHeat(); });
 $('spark').addEventListener('click',()=>{ flash=.5; heat=Math.max(heat,IGNITION+60); syncHeat(); });
-$('cut').addEventListener('click',()=>{ cam.slice=cam.slice>0?0:0.5; syncCut(); });
+$('cut').addEventListener('input',e=>{ cam.slice=+e.target.value/100; syncCut(); });
+$('zoomBtn').addEventListener('click',()=>{ cam.zoom=cam.zoom<0.9?1:1/12; syncZoom(); });
 $('reset').addEventListener('click',reset);
 $('pause').addEventListener('click',e=>{
   paused=!paused; e.target.textContent=paused?'▶':'⏸'; e.target.classList.toggle('on',paused);
 });
-$('view').addEventListener('click',e=>{
+$('view').addEventListener('click',()=>{
   if (!FLOAT_FBO) return;
-  realView=!realView;
-  e.target.textContent=realView?'👁 אמיתי':'⚛ מולקולות';
-  e.target.classList.toggle('on',realView);
+  if (cam.zoom < MICRO){ cam.zoom=1; syncZoom(); return; }   /* חזרה החוצה */
+  wantReal=!wantReal;
 });
 if (!FLOAT_FBO){
   $('view').textContent='⚛ מולקולות';
@@ -2053,8 +2087,7 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 
-reset(); syncPick();
-$('view').textContent = realView?'👁 אמיתי':'⚛ מולקולות';
+reset(); syncPick(); syncZoom();
 setTimeout(()=>$('hint').classList.add('gone'),100);
 requestAnimationFrame(loop);
 
@@ -2062,10 +2095,9 @@ requestAnimationFrame(loop);
 window.RLS = {
   orbit(d,e){ cam.az+=d; cam.el=clamp(cam.el+e,-0.55,1.25); },
   setSlice(t){ cam.slice=clamp(t,0,1); syncCut(); },
+  setZoom(z){ cam.zoom=clamp(z,1/MAXZOOM,1.15); syncZoom(); },
   setHeat(v){ heat=v; syncHeat(); },
-  setView(real){ realView=real&&FLOAT_FBO;
-    $('view').textContent=realView?'👁 אמיתי':'⚛ מולקולות';
-    $('view').classList.toggle('on',realView); },
+  setView(real){ wantReal=real&&FLOAT_FBO; },
   setSpeed(v){ speed=v; },
   tune(st,it){ STIFF=st; ITERS=it; },
   add(sp,n,where){ addMolecules(sp,n,where==='beaker'?IN_BEAKER:IN_FLASK); },
