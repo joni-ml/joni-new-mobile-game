@@ -66,6 +66,25 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 label{font-size:11px;color:#8b96a6;min-width:56px;font-variant-numeric:tabular-nums}
 input[type=range]{flex:1;accent-color:#d4632f;height:26px;direction:ltr}
 
+/* חוגת הגז ומדחום. במעבדה לא בוחרים מעלות — פותחים גז ומודדים מה יצא. */
+#burnRow{gap:11px}
+#knob{width:52px;height:52px;border-radius:50%;flex:0 0 auto;position:relative;
+  background:radial-gradient(circle at 34% 30%,#2b323d,#141920 68%);
+  border:1px solid #333c49;touch-action:none;cursor:grab}
+#knob::after{content:'';position:absolute;inset:7px;border-radius:50%;
+  border:1px solid rgba(255,255,255,.06)}
+#knobDot{position:absolute;left:50%;top:50%;width:3px;height:20px;margin:-20px 0 0 -1.5px;
+  background:linear-gradient(#ff9a4d,#d4632f);border-radius:2px;
+  transform-origin:50% 100%;transform:rotate(-135deg)}
+#knob.cold #knobDot{background:linear-gradient(#8fd2ff,#3f8fd6)}
+#burnPct{font-size:12px;color:#c3cedd;min-width:46px;font-variant-numeric:tabular-nums}
+#thermo{flex:1;height:16px;border-radius:8px;background:#151a21;border:1px solid #283040;
+  position:relative;overflow:hidden;display:flex;align-items:flex-end}
+#merc{display:block;width:100%;height:5%;align-self:flex-end;
+  background:linear-gradient(90deg,#3f7fd6,#d4632f 62%,#ff8a3d);
+  transition:height .18s linear}
+#heatLbl{min-width:52px;text-align:end}
+
 #pickBar{display:flex;align-items:center;gap:9px;background:#151a21;
   border:1px solid #272e39;border-radius:12px;padding:9px 11px;width:100%}
 #pickDot{width:20px;height:20px;border-radius:50%;flex:0 0 auto;
@@ -151,9 +170,11 @@ input[type=range]{flex:1;accent-color:#d4632f;height:26px;direction:ltr}
     <button class="btn" id="reset"></button>
     <button class="btn" id="pause">⏸</button>
   </div>
-  <div class="row">
+  <div class="row" id="burnRow">
+    <div id="knob"><i id="knobDot"></i></div>
+    <span id="burnPct">0%</span>
+    <div id="thermo"><i id="merc"></i></div>
     <label id="heatLbl">20°</label>
-    <input type="range" id="heat" min="-260" max="1200" step="5" value="20">
   </div>
   <div class="row">
     <label id="cutLbl">חתך 0%</label>
@@ -258,6 +279,7 @@ const rand=(a,b)=>a+Math.random()*(b-a);
 const ELEM = {
   H:{ name:{he:'מימן',en:'Hydrogen'}, col:[0.94,0.96,0.99], r:0.052, m:1.008 },
   O:{ name:{he:'חמצן',en:'Oxygen'}, col:[0.86,0.35,0.22], r:0.082, m:16.00 },
+  N:{ name:{he:'חנקן',en:'Nitrogen'}, col:[0.32,0.50,0.86], r:0.075, m:14.007 },
 };
 
 /* ---- כמה קטנה מולקולה ----
@@ -283,6 +305,12 @@ const SPECIES = {
         /* חמצן נוזלי הוא תכלת. זה לא סגנון — זה הצבע שלו */
         absorb:[1.35,0.42,0.10],
         atoms:[['O',[-0.080,0,0]],['O',[0.080,0,0]]] },
+  /* חנקן הוא 78% מהאוויר, ובלעדיו אין מה שיוליך חום מהכלי החוצה.
+     הוא גם אינרטי לחלוטין כאן — אין סידור אטומים עם H או O שמשחרר
+     אנרגיה — ולכן הוא יושב באוויר ולא עושה כלום, בדיוק כמו במציאות. */
+  N2: { key:'N₂', name:{he:'חנקן',en:'Nitrogen'}, boil:-196, melt:-210, liq:0.807,
+        absorb:[0.09,0.09,0.10],
+        atoms:[['N',[-0.055,0,0]],['N',[0.055,0,0]]] },
   H2O:{ key:'H₂O', name:{he:'מים',en:'Water'}, boil:100, melt:0, liq:1.000,
         /* מים בולעים אדום. בכוס הם שקופים, בבריכה הם כחולים */
         absorb:[0.62,0.13,0.07],
@@ -1362,7 +1390,7 @@ const mol = {
   x:new Float32Array(MAX), y:new Float32Array(MAX), z:new Float32Array(MAX),
   vx:new Float32Array(MAX), vy:new Float32Array(MAX), vz:new Float32Array(MAX),
   spin:new Float32Array(MAX), axis:new Float32Array(MAX*3),
-  where:new Uint8Array(MAX), t:new Float32Array(MAX),
+  where:new Uint8Array(MAX), t:new Float32Array(MAX), T:new Float32Array(MAX),
   phase:new Uint8Array(MAX), rho:new Float32Array(MAX), around:new Float32Array(MAX),
 };
 
@@ -1375,12 +1403,13 @@ function spawn(sp,x,y,z,where=IN_FLASK){
   const a=v3.norm([rand(-1,1),rand(-1,1),rand(-1,1)]);
   mol.axis[i*3]=a[0]; mol.axis[i*3+1]=a[1]; mol.axis[i*3+2]=a[2];
   mol.where[i]=where; mol.t[i]=0; mol.phase[i]=LIQ; mol.around[i]=0;
+  mol.T[i]=AMBIENT;
   return i;
 }
 function kill(i){
   const j=--mol.n;
   if (i!==j){
-    for (const k of ['sp','x','y','z','vx','vy','vz','spin','where','t','phase','rho','around']) mol[k][i]=mol[k][j];
+    for (const k of ['sp','x','y','z','vx','vy','vz','spin','where','t','phase','rho','around','T']) mol[k][i]=mol[k][j];
     for (let c=0;c<3;c++) mol.axis[i*3+c]=mol.axis[j*3+c];
   }
 }
@@ -1393,7 +1422,8 @@ function flaskRadiusAt(y){
   return 0.52*(1-u)+NECK_R*u;
 }
 
-let heat=20, paused=false;
+let gasTap=0, paused=false;      /* 0..1 — כמה פתוח ברז הגז של המבער */
+let heat=20;                     /* טמפרטורת הנוזל בבקבוק, לתצוגה בלבד */
 /* הברז: 0 סגור, 1 פתוח. הזווית רודפת אחרי היעד כדי שהסיבוב ייראה. */
 const tap={ open:false, a:0 };
 function funnelRadiusAt(y){
@@ -1401,11 +1431,14 @@ function funnelRadiusAt(y){
   return STEM_R - 0.018;
 }
 const AMBIENT=20;
-function tempAt(where){
-  if (where===IN_FUNNEL) return AMBIENT + (heat-AMBIENT)*0.05;
-  if (where===IN_FLASK) return heat;
-  if (where===IN_BEAKER) return AMBIENT + Math.max(0,heat-AMBIENT)*0.04;
-  return AMBIENT + Math.max(0,heat-AMBIENT)*0.12;
+/* אין יותר "טמפרטורת הבקבוק". לכל מולקולה יש טמפרטורה משלה, והיא
+   עוברת רק לשכנות. המספר שמוצג במדחום הוא ממוצע הנוזל שבבקבוק. */
+const AIR = new Set(['N2']);
+function flaskTemp(){
+  let sum=0, n=0;
+  for (let i=0;i<mol.n;i++)
+    if (mol.where[i]===IN_FLASK && !AIR.has(mol.sp[i])){ sum+=mol.T[i]; n++; }
+  return n ? sum/n : AMBIENT;
 }
 
 /* מצב הצבירה נגזר מהטמפרטורה בלבד. אין "קרח" ו"אדים" כחומרים נפרדים.
@@ -1413,7 +1446,7 @@ function tempAt(where){
    ולא כולן יחד ברגע שעוברים 100°. עם סף חד כל הנוזל נעלם בפריים אחד
    ואין שום דבר לראות — לא בעבוע, לא אדים, רק כלי שהתרוקן. */
 function updatePhase(i, dt){
-  const S=SPECIES[mol.sp[i]], T=tempAt(mol.where[i]);
+  const S=SPECIES[mol.sp[i]], T=mol.T[i];
   const ph=mol.phase[i];
   if (ph===SOL){ if (T > S.melt) mol.phase[i]=LIQ; return; }
   if (ph===LIQ){
@@ -1421,11 +1454,19 @@ function updatePhase(i, dt){
     if (T > S.boil){
       /* בועות נולדות בתחתית, ליד הלהבה — ומשם עולות */
       const depth = clamp((0.95 - mol.y[i]) / 0.95, 0, 1);
-      if (Math.random() < (T-S.boil) * 0.0008 * (0.3 + depth*1.5) * dt) mol.phase[i]=GAS;
+      if (Math.random() < (T-S.boil) * 0.0035 * (0.3 + depth*1.5) * dt){
+        mol.phase[i]=GAS;
+        mol.T[i]=S.boil;
+        cool[i]=LATENT[mol.sp[i]] || 300;
+      }
     }
     return;
   }
-  if (T < S.boil && Math.random() < (0.7 + (S.boil-T)*0.02) * dt) mol.phase[i]=LIQ;
+  if (T < S.boil && Math.random() < (0.7 + (S.boil-T)*0.02) * dt){
+    /* התעבות היא ההפך: היא משחררת את החום הזה לסביבה */
+    mol.phase[i]=LIQ; mol.T[i]=S.boil;
+    cool[i] = -(LATENT[mol.sp[i]] || 300);
+  }
 }
 const densityOf = i => mol.phase[i]===GAS ? SPECIES[mol.sp[i]].gasRho : SPECIES[mol.sp[i]].liq;
 
@@ -1434,6 +1475,13 @@ const densityOf = i => mol.phase[i]===GAS ? SPECIES[mol.sp[i]].gasRho : SPECIES[
    אלף חיפושים בכל צעד — שלושה רבעים מכל זמן הפיזיקה. כאן הכל אינדוקס
    ישיר במערכים מוקצים מראש, בלי גיבוב ובלי הקצאה בכלל. */
 let STIFF=1.0, COH_L=4, COH_S=12, ITERS=3;
+const COND=[0.20, 1.0, 1.35];   /* גז, נוזל, מוצק */
+/* חום כמוס בשווה-ערך מעלות: כמה החומר היה מתחמם אילו אותה אנרגיה
+   הייתה הולכת לטמפרטורה במקום לשינוי מצב. במים זה 540 מעלות —
+   ולכן קומקום נתקע על 100 ולא ממשיך לטפס. */
+const LATENT = { H2O:540, O2:232, N2:191, H2:31 };
+const BATH = -205;      /* אמבט חנקן נוזלי */
+const cool = new Float32Array(MAX);
 
 /* מחשב מחדש כל אורך שתלוי בסקאלה */
 function applyScale(k){
@@ -1548,7 +1596,10 @@ function neighbours(dt){
     mol.vz[i]=mol.vz[i]*0.55+cz*0.45;
   }
 
-  /* צפיפות מקומית ולכידות — מעבר אחד, אחרי שהמיקומים התייצבו */
+  /* צפיפות מקומית, לכידות, והולכת חום — מעבר אחד אחרי שהמיקומים
+     התייצבו. החום עובר רק בין מולקולות ששכנות ממש: אין דרך שנר בפינה
+     אחת של החדר יחמם את הפינה השנייה, אלא שכנה אחרי שכנה. */
+  const kCond = dt * 2.6;
   for (let k=0;k<nPairs;k++){
     const i=pairs[k*2], j=pairs[k*2+1];
     const ex=mol.x[i]-mol.x[j], ey=mol.y[i]-mol.y[j], ez=mol.z[i]-mol.z[j];
@@ -1556,6 +1607,14 @@ function neighbours(dt){
     if (d<1e-6) continue;
     mol.rho[i]+=densityOf(j); mol.around[i]++;
     mol.rho[j]+=densityOf(i); mol.around[j]++;
+    /* גז מוליך גרוע — זו הסיבה שאוויר הוא מבודד ולא מוליך */
+    const cw = Math.min(COND[mol.phase[i]], COND[mol.phase[j]]) * kCond;
+    const dT = (mol.T[j]-mol.T[i]) * cw;
+    mol.T[i]+=dT; mol.T[j]-=dT;
+    /* בועה שנולדה גובה את החום הכמוס שלה מהשכנות. זה מה שמחזיק נוזל
+       רותח על נקודת הרתיחה: כל מולקולה שעוזבת מקררת את מי שנשאר. */
+    if (cool[i]>0) mol.T[j] -= cool[i]/Math.max(6, mol.around[i]);
+    if (cool[j]>0) mol.T[i] -= cool[j]/Math.max(6, mol.around[j]);
     if (d<=R0 || mol.phase[i]===GAS || mol.phase[j]===GAS) continue;
     const f=-(d-R0)/R0*(mol.phase[i]===SOL?COH_S:COH_L)*dt;
     const nx=ex/d*f, ny=ey/d*f, nz=ez/d*f;
@@ -1568,7 +1627,11 @@ const IGNITION=560;
 let flash=0;
 
 function react(){
-  if (heat<IGNITION && flash<=0) return;
+  if (flash<=0){
+    let hot=false;
+    for (let i=0;i<mol.n && !hot;i++) if (mol.T[i]>=IGNITION) hot=true;
+    if (!hot) return;
+  }
   const h=[],o=[];
   for (let i=0;i<mol.n;i++){
     if (mol.where[i]===IN_TUBE) continue;
@@ -1584,14 +1647,14 @@ function react(){
     }
     if (near.length<2) continue;
     /* שני H₂ הופכים לשני H₂O, וה-O₂ נבלע. ארבעה H ושני O — לפני ואחרי. */
-    for (const hi of near){ mol.sp[hi]='H2O'; mol.vy[hi]+=rand(1.5,3.4); }
+    /* התגובה משחררת אנרגיה במקום שבו היא קרתה, לא לכל הכלי */
+    for (const hi of near){ mol.sp[hi]='H2O'; mol.vy[hi]+=rand(1.5,3.4); mol.T[hi]+=900; }
+    mol.T[oi]=mol.T[oi];
     h.splice(h.indexOf(near[0]),1);
     h.splice(h.indexOf(near[1]),1);
     kill(oi);
     made++; flash=0.45;
-    heat=Math.min(1200,heat+55);
   }
-  if (made) syncHeat();
 }
 
 function step(dt){
@@ -1599,7 +1662,7 @@ function step(dt){
   for (let i=0;i<mol.n;i++){
     const S=SPECIES[mol.sp[i]];
     updatePhase(i, dt);
-    const ph=mol.phase[i], T=tempAt(mol.where[i]);
+    const ph=mol.phase[i], T=mol.T[i];
     mol.spin[i]+=dt*(ph===GAS?5:ph===LIQ?1.2:0.15);
 
     if (mol.where[i]===IN_TUBE){
@@ -1628,6 +1691,22 @@ function step(dt){
     const G = ph===GAS ? 0.8 : 5.2;
     const conv = ph===GAS ? clamp((T-S.boil)/150,0,1) * 5.2 : 0;
     mol.vy[i] += (-G + G*lift + conv) * dt;
+
+    /* הלהבה מחממת רק את מה שיושב מעליה — התחתית של הבקבוק. משם
+       החום מטפס פנימה שכנה־שכנה, ולכן הרתיחה מתחילה למטה. */
+    if (gasTap>0 && mol.where[i]===IN_FLASK && mol.y[i]<0.55)
+      /* ההספק מכויל מהמאזן: להרתיח את כל הבקבוק לוקח כדקה בלהבה
+         מלאה. עם 320 מעלות לשנייה הכל התאדה תוך אחת עשרה שניות. */
+      mol.T[i] += gasTap * 62 * (1 - mol.y[i]/0.55) * dt;
+    /* צד שני של החוגה: אמבט קירור מתחת לבקבוק. במעבדה אין "לבחור
+       מינוס מאתיים" — מכניסים את הכלי לאמבט, והחום יוצא ממנו החוצה. */
+    if (gasTap<0 && mol.where[i]===IN_FLASK && mol.y[i]<0.60)
+      mol.T[i] += (BATH - mol.T[i]) * (-gasTap) * 0.85 * (1 - mol.y[i]/0.60) * dt;
+    /* אוויר נוגע בכל החדר, ולכן הוא זה שמפזר את החום החוצה. בלעדיו
+       דבר חם היה נשאר חם לנצח. */
+    if (AIR.has(mol.sp[i])) mol.T[i] += (AMBIENT - mol.T[i]) * 1.10 * dt;
+    /* אובדן קטן דרך דופן הכלי, אחרת כלי אטום לא מתקרר לעולם */
+    mol.T[i] += (AMBIENT - mol.T[i]) * 0.045 * dt;
 
     const therm = ph===GAS ? clamp((T-S.boil)/260,0.25,3.2) : ph===LIQ ? 0.16 : 0.02;
     mol.vx[i]+=rand(-1,1)*therm*dt*9;
@@ -1676,11 +1755,11 @@ function step(dt){
       if (mol.y[i]<0.06){ mol.y[i]=0.06; mol.vy[i]*=-.25; }
     }
   }
+  cool.fill(0, 0, mol.n);
   react();
   tap.a += (( tap.open?1:0 ) - tap.a) * Math.min(1, dt*3.2);
   if (flash>0) flash-=dt;
-  if (heat>AMBIENT) heat=Math.max(AMBIENT,heat-dt*6);
-  else if (heat<AMBIENT) heat=Math.min(AMBIENT,heat+dt*4);
+  heat = flaskTemp();          /* לתצוגה: מה שהמדחום היה מראה */
 }
 
 /* ===========================================================================
@@ -2084,6 +2163,7 @@ function buildAtoms(){
 function buildBlobs(){
   let k=0;
   for (let i=0;i<mol.n;i++){
+    if (AIR.has(mol.sp[i])) continue;      /* אוויר שקוף — רואים אותו רק במצג המולקולות */
     const S=SPECIES[mol.sp[i]];
     inst.off[k*3]=mol.x[i]; inst.off[k*3+1]=mol.y[i]; inst.off[k*3+2]=mol.z[i];
     const gas=mol.phase[i]===GAS;
@@ -2258,8 +2338,8 @@ function draw(){
     gl.drawElements(gl.TRIANGLES,m.n,m.type,0);
   }
   /* הרשת והחצובה מאדימות מעל החום — ברזל מתחיל לזהור סביב 500° */
-  gl.uniform1f(solidProg.u.uEmissive, clamp((heat-430)/620,0,1)*0.75);
-  gl.uniform3f(solidProg.u.uEmCol, 1.0,0.26,0.05);
+  gl.uniform1f(solidProg.u.uEmissive, Math.abs(gasTap)*0.75);
+  gl.uniform3f(solidProg.u.uEmCol, ...(gasTap<0 ? [0.42,0.72,1.0] : [1.0,0.26,0.05]));
   gl.bindVertexArray(burner.vao);
   gl.drawElements(gl.TRIANGLES,burner.n,burner.type,0);
   gl.uniform1f(solidProg.u.uEmissive,0);
@@ -2353,7 +2433,7 @@ function draw(){
   }
 
   /* --- הלהבה. חיבור, בלי כתיבה לעומק. --- */
-  if (heat > 40){
+  if (gasTap > 0.02){
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE); gl.depthMask(false);
     gl.useProgram(flameProg);
     gl.uniformMatrix4fv(flameProg.u.uVP,false,VP);
@@ -2361,7 +2441,7 @@ function draw(){
     gl.uniform1f(flameProg.u.uTime,performance.now()/1000);
     gl.uniform1f(flameProg.u.uY0,FLAME_Y0);
     gl.uniform1f(flameProg.u.uY1,FLAME_Y1);
-    gl.uniform1f(flameProg.u.uOn, clamp((heat-40)/260,0,1));
+    gl.uniform1f(flameProg.u.uOn, clamp(gasTap*1.15,0,1));
     gl.bindVertexArray(flame.vao);
     gl.drawElements(gl.TRIANGLES,flame.n,flame.type,0);
     gl.depthMask(true); gl.disable(gl.BLEND);
@@ -2444,7 +2524,22 @@ function syncPick(){
   $('pickDot').style.background='rgb('+ELEM[S.atoms[0][0]].col.map(v=>Math.round(v*255)).join(',')+')';
   for (const b of document.querySelectorAll('.pt.live')) b.classList.toggle('on', b.dataset.sp===picked);
 }
-function syncHeat(){ $('heat').value=Math.round(heat); $('heatLbl').textContent=Math.round(heat)+'°'; }
+/* ניצוץ מקומי: מחמם מעט מולקולות במקום אחד עד מעל סף ההצתה */
+function spark(){
+  flash=.5;
+  let n=0;
+  for (let i=0;i<mol.n && n<40;i++)
+    if (mol.where[i]===IN_FLASK && mol.y[i]<1.1){ mol.T[i]=Math.max(mol.T[i],IGNITION+120); n++; }
+}
+function syncHeat(){
+  const t=Math.round(heat);
+  $('heatLbl').textContent=t+'°';
+  $('merc').style.height=clamp((t+40)/1240*100,0,100)+'%';
+  $('knobDot').style.transform='rotate('+(gasTap*135)+'deg)';
+  const g=Math.round(gasTap*100);
+  $('burnPct').textContent=(g>0?'🔥':g<0?'❄':'')+Math.abs(g)+'%';
+  $('knob').classList.toggle('cold', gasTap<0);
+}
 function syncCut(){
   $('cut').value=Math.round(cam.slice*100);
   $('cutLbl').textContent=T('cut')+' '+Math.round(cam.slice*100)+'%';
@@ -2465,9 +2560,10 @@ function syncZoom(){
   }
 }
 function syncAtoms(){
-  const c={H:0,O:0};
+  /* נבנה מרשימת היסודות, לא מרשימה קשיחה — חנקן נוסף ונפל ל-NaN */
+  const c={}; for (const k of Object.keys(ELEM)) c[k]=0;
   for (let i=0;i<mol.n;i++) for (const [el,k] of Object.entries(SPECIES[mol.sp[i]].count)) c[el]+=k;
-  $('atoms').innerHTML=Object.entries(c).map(([el,n])=>{
+  $('atoms').innerHTML=Object.entries(c).filter(([,n])=>n>0).map(([el,n])=>{
     const rgb=ELEM[el].col.map(v=>Math.round(v*255)).join(',');
     return `<b style="background:rgba(${rgb},.13);color:rgb(${rgb})">${n}<i>${el}</i></b>`;
   }).join('');
@@ -2480,16 +2576,48 @@ function addMolecules(sp,count,where){
   }
   syncAtoms();
 }
+/* אוויר בכל חלל פנוי. הצפיפות כאן מוגזמת בכוונה: אוויר אמיתי דליל
+   פי אלף ממים, ובבקבוק הזה זה יוצא שתי מולקולות — מעט מדי מכדי
+   להוליך משהו. מה שמדויק הוא ההתנהגות, לא הספירה. */
+function fillAir(){
+  const n = Math.max(60, Math.round(NMOL*0.09));
+  for (let i=0;i<n;i++){
+    const sp = Math.random()<0.78 ? 'N2' : 'O2';
+    const r = Math.random();
+    if (r<0.55)      spawn(sp, rand(-.55,.55), rand(1.05,2.25), rand(-.55,.55), IN_FLASK);
+    else if (r<0.85) spawn(sp, BEAKER_X+rand(-.45,.45), rand(.2,1.35), rand(-.45,.45), IN_BEAKER);
+    else             spawn(sp, FX+rand(-.16,.16), rand(BOWL_Y0+.1,BOWL_Y1-.15), rand(-.16,.16), IN_FUNNEL);
+  }
+}
+
 function reset(){
-  mol.n=0; heat=20; flash=0; cam.slice=0;
+  mol.n=0; gasTap=0; heat=AMBIENT; flash=0; cam.slice=0;
   /* מספר המולקולות נקבע מהנפח: במרווח אריזה של 0.155 הן ממלאות
      כשליש מהבועה, ונשארים פני נוזל שאפשר לראות */
   for (let i=0;i<NMOL;i++) spawn('H2O', rand(-.52,.52), rand(.10,1.02), rand(-.52,.52), IN_FLASK);
+  fillAir();
   syncAtoms(); syncHeat(); syncCut(); syncZoom();
 }
 
-$('heat').addEventListener('input',e=>{ heat=+e.target.value; syncHeat(); });
-$('spark').addEventListener('click',()=>{ flash=.5; heat=Math.max(heat,IGNITION+60); syncHeat(); });
+/* החוגה: גוררים סביבה, והזווית היא עוצמת הלהבה. שני הכיוונים. */
+(function(){
+  const k=$('knob'); let down=false, last=0;
+  const ang=e=>{ const r=k.getBoundingClientRect();
+    return Math.atan2(e.clientY-(r.top+r.height/2), e.clientX-(r.left+r.width/2)); };
+  k.addEventListener('pointerdown',e=>{ down=true; last=ang(e); k.setPointerCapture(e.pointerId); });
+  k.addEventListener('pointermove',e=>{
+    if(!down) return;
+    const a=ang(e); let d=a-last;
+    if (d> Math.PI) d-=Math.PI*2;
+    if (d<-Math.PI) d+=Math.PI*2;
+    last=a;
+    gasTap=clamp(gasTap + d/(Math.PI*1.5), -1, 1);
+    syncHeat();
+  });
+  const up=e=>{ down=false; };
+  k.addEventListener('pointerup',up); k.addEventListener('pointercancel',up);
+})();
+$('spark').addEventListener('click',spark);
 $('cut').addEventListener('input',e=>{ cam.slice=+e.target.value/100; syncCut(); });
 $('zoomBtn').addEventListener('click',()=>{ cam.zoom=cam.zoom<0.9?1:1/12; syncZoom(); });
 $('tap').addEventListener('click',e=>{ tap.open=!tap.open; e.target.classList.toggle('on',tap.open); });
@@ -2601,16 +2729,17 @@ window.RLS = {
   setZoom(z){ if (MC.on) microExit(); cam.zoom=clamp(z,1/MAXZOOM,1.15); syncZoom(); },
   micro(nm){ microFov=clamp(nm,1.2,7.5); microEnter(); microFill(clamp(microFov*1.5,2.4,6.4)); syncZoom(); },
   macro(){ microExit(); cam.zoom=1; syncZoom(); },
-  setHeat(v){ heat=v; syncHeat(); },
+  setHeat(v){ /* לתאימות: ממפה מעלות לעוצמת להבה */ gasTap = v>=AMBIENT ? clamp((v-AMBIENT)/900,0,1) : clamp((v-AMBIENT)/240,-1,0); syncHeat(); },
   setView(real){ wantReal=real&&FLOAT_FBO; },
   setSpeed(v){ speed=v; },
   tune(st,it){ STIFF=st; ITERS=it; },
   add(sp,n,where){ addMolecules(sp,n, where==='beaker'?IN_BEAKER
                                    : where==='funnel'?IN_FUNNEL : IN_FLASK); },
-  spark(){ flash=.5; heat=Math.max(heat,IGNITION+60); syncHeat(); },
+  spark, setBurner(v){ gasTap=clamp(v,-1,1); syncHeat(); },
   tap(o){ tap.open=o; $('tap').classList.toggle('on',o); },
   state(){
-    const c={H:0,O:0}, by={}, ph=[0,0,0], w=[0,0,0,0];
+    const c={}; for (const k of Object.keys(ELEM)) c[k]=0;
+    const by={}, ph=[0,0,0], w=[0,0,0,0];
     for (let i=0;i<mol.n;i++){
       by[mol.sp[i]]=(by[mol.sp[i]]||0)+1;
       ph[mol.phase[i]]++; w[mol.where[i]]++;
