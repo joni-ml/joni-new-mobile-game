@@ -120,28 +120,41 @@ public class RLSLab : MonoBehaviour
        2)  חומרים — עובד גם ב-URP וגם בצנרת המובנית
        ====================================================================== */
     static Shader litShader;
+    static bool isHDRP, isSRP, pipeChecked;
 
-    static Shader Lit()
+    /* שלוש צנרות, שלוש התנהגויות. פרויקט URP יצייר מג'נטה עם Standard
+       ולהפך, ו-HDRP שונה משתיהן גם בשמות תכונות השקיפות וגם — וזה
+       החמור — ביחידות של עוצמת אור. שואלים את יוניטי במקום לנחש. */
+    static void CheckPipeline()
     {
-        if (litShader != null) return litShader;
-        /* פרויקט URP יצייר מג'נטה עם Standard, ולהפך. שואלים את יוניטי
-           איזו צנרת פעילה במקום לנחש. */
-        if (GraphicsSettings.currentRenderPipeline != null)
+        if (pipeChecked) return;
+        pipeChecked = true;
+        var rp = GraphicsSettings.currentRenderPipeline;
+        isSRP = rp != null;
+        if (isSRP)
         {
             litShader = Shader.Find("Universal Render Pipeline/Lit");
-            if (litShader == null) litShader = Shader.Find("HDRP/Lit");
+            if (litShader == null)
+            {
+                litShader = Shader.Find("HDRP/Lit");
+                if (litShader != null) isHDRP = true;
+            }
         }
-        if (litShader == null) litShader = Shader.Find("Standard");
+        if (litShader == null) { litShader = Shader.Find("Standard"); isSRP = false; isHDRP = false; }
         if (litShader == null) litShader = Shader.Find("Diffuse");
-        return litShader;
     }
 
-    static bool IsURP { get { return GraphicsSettings.currentRenderPipeline != null; } }
+    static Shader Lit() { CheckPipeline(); return litShader; }
+
+    /* URP ו-HDRP קוראים לצבע הבסיס _BaseColor; לצנרת המובנית זה _Color */
+    static bool IsSRP { get { CheckPipeline(); return isSRP; } }
+    static bool IsHDRP { get { CheckPipeline(); return isHDRP; } }
+    static string ColorProp { get { return IsSRP ? "_BaseColor" : "_Color"; } }
 
     static Material Mat(Color c, float smoothness = 0.35f, float metallic = 0f)
     {
         var m = new Material(Lit());
-        m.SetColor(IsURP ? "_BaseColor" : "_Color", c);
+        m.SetColor(ColorProp, c);
         if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", smoothness);
         if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", smoothness);
         if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", metallic);
@@ -154,7 +167,22 @@ public class RLSLab : MonoBehaviour
     static Material Glass(Color c, float smoothness = 0.95f)
     {
         var m = Mat(c, smoothness, 0f);
-        if (IsURP)
+        if (IsHDRP)
+        {
+            /* ל-HDRP יש _SurfaceType ולא _Surface, ו-_BlendMode ולא _Blend.
+               בלי אלה הזכוכית פשוט יוצאת אטומה. */
+            m.SetFloat("_SurfaceType", 1);
+            m.SetFloat("_BlendMode", 0);
+            m.SetFloat("_ZWrite", 0);
+            m.SetFloat("_AlphaCutoffEnable", 0);
+            m.SetFloat("_RenderQueueType", 1);
+            m.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
+            m.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
+            m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            m.EnableKeyword("_BLENDMODE_ALPHA");
+            m.DisableKeyword("_ALPHATEST_ON");
+        }
+        else if (IsSRP)
         {
             m.SetFloat("_Surface", 1);            /* Transparent */
             m.SetFloat("_Blend", 0);              /* Alpha */
@@ -999,6 +1027,7 @@ public class RLSLab : MonoBehaviour
         var fL = fLight.AddComponent<Light>();
         fL.type = LightType.Point; fL.color = new Color(1f, 0.6f, 0.25f);
         fL.range = 1.2f; fL.intensity = 0f;
+        flameLightMax = Lux(2.6f, 900f);
         flameLight = fL;
         flamePos = burner.position + Vector3.up * 0.13f;
 
@@ -1027,6 +1056,7 @@ public class RLSLab : MonoBehaviour
     }
 
     Light flameLight;
+    float flameLightMax = 2.6f;
 
     static Mesh TorusMesh(float R, float r, int seg, int side)
     {
@@ -1053,12 +1083,17 @@ public class RLSLab : MonoBehaviour
         return Finish(V, N, I);
     }
 
+    /* ב-HDRP עוצמת אור היא יחידה פיזיקלית: שמש נמדדת בלוקס ונורה
+       בלומן. המספר 1.05 שנכון לצנרת המובנית הוא שם אפס מוחלט, ולכן
+       אותה סצנה בדיוק יוצאת מסך שחור. */
+    static float Lux(float builtin, float hdrp) { return IsHDRP ? hdrp : builtin; }
+
     void BuildLights()
     {
         var sun = new GameObject("Sun").AddComponent<Light>();
         sun.type = LightType.Directional;
         sun.transform.rotation = Quaternion.Euler(48f, 35f, 0);
-        sun.intensity = 1.05f;
+        sun.intensity = Lux(1.05f, 12000f);
         sun.color = new Color(1f, 0.97f, 0.92f);
         sun.shadows = LightShadows.Soft;
 
@@ -1067,13 +1102,26 @@ public class RLSLab : MonoBehaviour
             var l = new GameObject("Strip").AddComponent<Light>();
             l.type = LightType.Point;
             l.transform.position = new Vector3(i * 1.6f, 2.75f, 0.8f);
-            l.range = 7f; l.intensity = 1.1f;
+            l.range = 7f; l.intensity = Lux(1.1f, 2200f);
             l.color = new Color(0.95f, 0.97f, 1f);
         }
         RenderSettings.ambientMode = AmbientMode.Trilight;
         RenderSettings.ambientSkyColor = new Color(0.42f, 0.45f, 0.50f);
         RenderSettings.ambientEquatorColor = new Color(0.32f, 0.33f, 0.35f);
         RenderSettings.ambientGroundColor = new Color(0.18f, 0.18f, 0.19f);
+    }
+
+    /* ---------------------------------------------------------------------
+       תבניות של יוניטי מגיעות עם מצלמה, שמש ומאזין שמע משלהן. שתי מצלמות
+       פעילות נלחמות זו בזו ואי אפשר לדעת מי מנצחת, ולכן מכבים את מה
+       שהיה כאן לפנינו. זה קורה רק במצב Play — הסצנה עצמה לא נוגעת.
+       --------------------------------------------------------------------- */
+    void ClearExisting()
+    {
+        foreach (var c in FindObjectsOfType<Camera>()) c.enabled = false;
+        foreach (var a in FindObjectsOfType<AudioListener>()) a.enabled = false;
+        foreach (var l in FindObjectsOfType<Light>())
+            if (l.type == LightType.Directional) l.enabled = false;
     }
 
     /* ======================================================================
@@ -1334,7 +1382,7 @@ public class RLSLab : MonoBehaviour
             tint = SP[domSp].tint;
             /* צבע לפי מצב: קרח בהיר יותר ממים */
             if (v.meanT < SP[domSp].melt) tint = Color.Lerp(tint, Color.white, 0.45f);
-            v.liquidMR.material.SetColor(IsURP ? "_BaseColor" : "_Color", tint);
+            v.liquidMR.material.SetColor(ColorProp, tint);
         }
     }
 
@@ -1406,6 +1454,7 @@ public class RLSLab : MonoBehaviour
         Application.targetFrameRate = 60;
         BuildSpecies();
         BuildMaterials();
+        ClearExisting();
         BuildLights();
         BuildRoom();
         BuildPlayer();
@@ -1453,7 +1502,7 @@ public class RLSLab : MonoBehaviour
         /* להבה: גודל, אור וריצוד */
         float fs = flame;
         flameTr.localScale = new Vector3(0.026f * (0.6f + fs), 0.035f * fs * (0.9f + 0.1f * Mathf.Sin(Time.time * 27f)), 0.026f * (0.6f + fs));
-        flameLight.intensity = fs * 2.6f * (0.92f + 0.08f * Mathf.Sin(Time.time * 31f));
+        flameLight.intensity = fs * flameLightMax * (0.92f + 0.08f * Mathf.Sin(Time.time * 31f));
 
         /* צעד קבוע: מכשיר איטי מפיל פריימים, אבל הזמן בעולם ממשיך
            באותו קצב, והפיזיקה לא משנה התנהגות לפי חוזק המחשב. */
