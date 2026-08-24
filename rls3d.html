@@ -158,7 +158,7 @@ input[type=range]{flex:1;accent-color:#d4632f;height:26px;direction:ltr}
     <button class="lang" data-l="en">English</button>
     <b id="detT" style="margin-top:6px"></b>
     <div id="levels"></div>
-    <button class="lang" id="airBtn" style="margin-top:6px"></button>
+    <button class="lang opt" id="airBtn" style="margin-top:6px"></button>
   </div>
 </div>
 
@@ -1389,9 +1389,17 @@ const GLASS = [
 /* ===========================================================================
    5) העולם
    =========================================================================== */
-const MAX = Math.round(240*MSCALE_MAX**3) + 1400;   /* מוקצה לרמה הגבוהה ביותר */
-const IN_FLASK=0, IN_TUBE=1, IN_BEAKER=2, IN_FUNNEL=3;
+/* אוויר תופס מקום כמו כל דבר אחר, ולכן הוא מתרבה עם הסקאלה בדיוק
+   כמו המים: אותו נפח חדר, מולקולות קטנות יותר. */
+const AIR_BASE = 112;
+const MAX = Math.round((240+AIR_BASE)*MSCALE_MAX**3) + 1400;
+const IN_FLASK=0, IN_TUBE=1, IN_BEAKER=2, IN_FUNNEL=3, IN_ROOM=4;
 const GAS=0, LIQ=1, SOL=2;
+
+/* התיבה שבה מדמים אוויר. מעבר לה יש עוד מעבדה, והיא גדולה מספיק
+   כדי לא להתחמם — לכן היא נכנסת כאן כשוליים בטמפרטורת החדר ולא
+   כמיליון מולקולות שאיש לא רואה. */
+const ROOM = { x0:-1.10, x1:2.95, y0:0.03, y1:4.55, z0:-0.92, z1:0.92 };
 
 const mol = {
   n:0, sp:new Array(MAX),
@@ -1400,6 +1408,11 @@ const mol = {
   spin:new Float32Array(MAX), axis:new Float32Array(MAX*3),
   where:new Uint8Array(MAX), t:new Float32Array(MAX), T:new Float32Array(MAX),
   phase:new Uint8Array(MAX), rho:new Float32Array(MAX), around:new Float32Array(MAX),
+  /* כמה שכנות לא-גז. זה מה שמבדיל בועה מאדים: בועה עטופה נוזל. */
+  wet:new Float32Array(MAX),
+  /* מסומן כאוויר. לא לפי מין החומר — חנקן שהשחקן מוסיף בעצמו הוא
+     חומר לכל דבר, והאוויר של החדר הוא רקע. */
+  air:new Uint8Array(MAX),
 };
 
 function spawn(sp,x,y,z,where=IN_FLASK){
@@ -1411,13 +1424,14 @@ function spawn(sp,x,y,z,where=IN_FLASK){
   const a=v3.norm([rand(-1,1),rand(-1,1),rand(-1,1)]);
   mol.axis[i*3]=a[0]; mol.axis[i*3+1]=a[1]; mol.axis[i*3+2]=a[2];
   mol.where[i]=where; mol.t[i]=0; mol.phase[i]=LIQ; mol.around[i]=0;
+  mol.air[i]=0;
   mol.T[i]=AMBIENT;
   return i;
 }
 function kill(i){
   const j=--mol.n;
   if (i!==j){
-    for (const k of ['sp','x','y','z','vx','vy','vz','spin','where','t','phase','rho','around','T']) mol[k][i]=mol[k][j];
+    for (const k of ['sp','x','y','z','vx','vy','vz','spin','where','t','phase','rho','around','T','air']) mol[k][i]=mol[k][j];
     for (let c=0;c<3;c++) mol.axis[i*3+c]=mol.axis[j*3+c];
   }
 }
@@ -1441,12 +1455,239 @@ function funnelRadiusAt(y){
 const AMBIENT=20;
 /* אין יותר "טמפרטורת הבקבוק". לכל מולקולה יש טמפרטורה משלה, והיא
    עוברת רק לשכנות. המספר שמוצג במדחום הוא ממוצע הנוזל שבבקבוק. */
-const AIR = new Set(['N2']);
 function flaskTemp(){
   let sum=0, n=0;
   for (let i=0;i<mol.n;i++)
-    if (mol.where[i]===IN_FLASK && !AIR.has(mol.sp[i])){ sum+=mol.T[i]; n++; }
+    if (mol.where[i]===IN_FLASK && !mol.air[i]){ sum+=mol.T[i]; n++; }
   return n ? sum/n : AMBIENT;
+}
+
+/* ---------------------------------------------------------------------------
+   זכוכית, מבחוץ. אוויר החדר לא יכול להיכנס דרך הדופן, ולכן צריך את
+   אותם משטחים שמכילים את מה שבפנים — רק מהצד השני.
+   מחזיר 0 אם הנקודה באוויר החופשי, ואחרת דוחף אותה החוצה במקום.
+   --------------------------------------------------------------------------- */
+const GLASS_T = 0.030;
+/* תיבה חוסמת סביב הסליל, כדי לא לסרוק מאות נקודות מסלול לכל מולקולה */
+const COIL_BOX = { x0:-0.25, x1:2.70, y0:1.45, y1:3.20, z0:-0.75, z1:0.75 };
+
+/* הנקודה הקרובה על ציר הצינור. סורקים כל שמינית ואז מדייקים סביבה —
+   המסלול חלק, ולכן זה מוצא את אותו מינימום בעשירית מהעבודה. */
+let nearestPathD2=0;
+function nearestPath(x,y,z){
+  let best=0, bd=1e9;
+  for (let k=0;k<PATH.length;k+=8){
+    const q=PATH[k], ax=x-q[0], ay=y-q[1], az=z-q[2];
+    const dd=ax*ax+ay*ay+az*az;
+    if (dd<bd){ bd=dd; best=k; }
+  }
+  const lo=Math.max(0,best-8), hi=Math.min(PATH.length-1,best+8);
+  for (let k=lo;k<=hi;k++){
+    const q=PATH[k], ax=x-q[0], ay=y-q[1], az=z-q[2];
+    const dd=ax*ax+ay*ay+az*az;
+    if (dd<bd){ bd=dd; best=k; }
+  }
+  nearestPathD2=bd;
+  return best;
+}
+
+function pushOutOfGlass(i){
+  const y=mol.y[i];
+  let hit=false;
+  /* הבקבוק: כדור עם צוואר. אותו פרופיל של הפנים, ועוד עובי דופן */
+  if (y>-0.02 && y<NECK_TOP+0.06){
+    const R=flaskRadiusAt(y)+GLASS_T, r=Math.hypot(mol.x[i],mol.z[i]);
+    if (r<R){
+      if (r>1e-6){ const s=R/r; mol.x[i]*=s; mol.z[i]*=s; }
+      else mol.x[i]=R;
+      mol.vx[i]*=0.4; mol.vz[i]*=0.4; hit=true;
+    }
+  }
+  /* הכוס */
+  if (y<1.50){
+    const R=0.68+GLASS_T, dx=mol.x[i]-BEAKER_X, r=Math.hypot(dx,mol.z[i]);
+    if (r<R){
+      /* מעל השפה עדיף להעלות מאשר להעיף הצידה — אחרת אוויר "נורה"
+         החוצה מפתח הכוס במקום לשבת מעליו */
+      if (y>1.40){ mol.y[i]=1.50; mol.vy[i]=Math.max(mol.vy[i],0); }
+      else if (r>1e-6){ const s=R/r; mol.x[i]=BEAKER_X+dx*s; mol.z[i]*=s; mol.vx[i]*=0.4; mol.vz[i]*=0.4; }
+      hit=true;
+    }
+  }
+  /* המשפך: קערה למעלה, גזע למטה */
+  if (y>STEM_Y0-0.02 && y<BOWL_Y1+0.04){
+    const R=(y>=BOWL_Y0 ? BOWL_R0+(y-BOWL_Y0)/(BOWL_Y1-BOWL_Y0)*(BOWL_R1-BOWL_R0)
+                        : STEM_R) + GLASS_T;
+    const dx=mol.x[i]-FX, r=Math.hypot(dx,mol.z[i]);
+    if (r<R){
+      if (r>1e-6){ const s=R/r; mol.x[i]=FX+dx*s; mol.z[i]*=s; }
+      else mol.x[i]=FX+R;
+      mol.vx[i]*=0.4; mol.vz[i]*=0.4; hit=true;
+    }
+  }
+  /* המעבה. סורקים את המסלול רק אם בכלל קרובים אליו */
+  if (mol.x[i]>COIL_BOX.x0 && mol.x[i]<COIL_BOX.x1 && y>COIL_BOX.y0 && y<COIL_BOX.y1 &&
+      mol.z[i]>COIL_BOX.z0 && mol.z[i]<COIL_BOX.z1){
+    const best=nearestPath(mol.x[i], y, mol.z[i]);
+    const bd=nearestPathD2;
+    const R=0.135+GLASS_T*0.5;
+    if (best>=0 && bd<R*R){
+      const q=PATH[best], d=Math.sqrt(bd);
+      if (d>1e-6){
+        const s=R/d;
+        mol.x[i]=q[0]+(mol.x[i]-q[0])*s;
+        mol.y[i]=q[1]+(y-q[1])*s;
+        mol.z[i]=q[2]+(mol.z[i]-q[2])*s;
+      } else mol.y[i]=q[1]+R;
+      mol.vx[i]*=0.4; mol.vy[i]*=0.4; mol.vz[i]*=0.4; hit=true;
+    }
+  }
+  return hit;
+}
+
+/* איזה פלח דופן המולקולה נוגעת בו, או 1- אם היא רחוקה מכל זכוכית.
+   בפנים: רק מה שקרוב לדופן מעביר אליה חום. בחוץ: אותו דבר מהצד השני. */
+/* "נוגע בדופן" הוא שכבה בעובי מולקולה, ולכן הוא מתכווץ עם הסקאלה.
+   מה שרחוק יותר מוסר את החום דרך שכנות, כמו בכל מקום אחר. */
+const touch = () => 1.4*R0;
+function patchOf(i){
+  const TOUCH = touch();
+  const x=mol.x[i], y=mol.y[i], z=mol.z[i], w=mol.where[i];
+  if (w===IN_TUBE) return band(mol.t[i]/PATH.length, W_TUBE);
+  if (w===IN_FLASK){
+    const R=flaskRadiusAt(y), r=Math.hypot(x,z);
+    return (R-r<TOUCH || y<0.10) ? band(y/NECK_TOP, W_FLASK) : -1;
+  }
+  if (w===IN_BEAKER){
+    const r=Math.hypot(x-BEAKER_X,z);
+    return (0.60-r<TOUCH || y<0.10) ? band(y/1.48, W_BEAKER) : -1;
+  }
+  if (w!==IN_ROOM) return -1;
+  /* מצד האוויר השכבה עבה יותר, פשוט כי אוויר דליל יותר: המרווח בין
+     שתי מולקולות אוויר הוא הסקאלה הקטנה ביותר שיש שם. */
+  const TA = AIR_R;
+  if (y>0 && y<NECK_TOP){
+    const d=Math.hypot(x,z)-(flaskRadiusAt(y)+GLASS_T);
+    if (d<TA) return band(y/NECK_TOP, W_FLASK);
+  }
+  if (y<1.50){
+    const d=Math.hypot(x-BEAKER_X,z)-(0.68+GLASS_T);
+    if (d<TA && d>-TA) return band(y/1.48, W_BEAKER);
+    if (y>1.36 && d<0) return band(1, W_BEAKER);
+  }
+  if (x>COIL_BOX.x0 && x<COIL_BOX.x1 && y>COIL_BOX.y0 && y<COIL_BOX.y1 &&
+      z>COIL_BOX.z0 && z<COIL_BOX.z1){
+    const k=nearestPath(x,y,z);
+    if (nearestPathD2 < (0.135+TA)*(0.135+TA)) return band(k/PATH.length, W_TUBE);
+  }
+  return -1;
+}
+
+/* מעבר החום דרך הזכוכית, בשלושה שלבים: אוספים מה נוגע בכל פלח משני
+   הצדדים, מזיזים את הדופן לכיוון שניהם, ואז מחזירים אל המולקולות. */
+function walls(dt){
+  wIn.fill(0); wInN.fill(0); wOut.fill(0); wOutN.fill(0);
+  for (let i=0;i<mol.n;i++){
+    const p=patchOf(i);
+    patch[i]=p;
+    if (p<0) continue;
+    if (mol.where[i]===IN_ROOM){ wOut[p]+=mol.T[i]; wOutN[p]++; }
+    else                       { wIn[p] +=mol.T[i]; wInN[p]++;  }
+  }
+  for (let p=0;p<NWALL;p++){
+    /* פלח שאין מולקולת אוויר לידו נשען על שאר החדר. זה לא קיצור דרך:
+       מעבר לתיבה באמת יש מעבדה, והיא באמת בטמפרטורת החדר. */
+    /* כמה אוויר באמת נוגע בפלח. זה לא פרט טכני: זכוכית בלי אוויר
+       מסביבה לא מתקררת בכלל, וזו בדיוק הסיבה שתרמוס שומר על חום —
+       שואבים משם את האוויר ולא נשאר מי שייקח אותו. */
+    const kOut = kOutOf(p) * Math.min(1, wOutN[p]/AIR_COVER);
+    const To = wOutN[p] ? wOut[p]/wOutN[p] : wallT[p];
+    const hasIn = wInN[p] > 0;
+    const Ti = hasIn ? wIn[p]/wInN[p] : wallT[p];
+    const kIn = hasIn ? K_IN : 0;
+    /* חוסם את הצעד ביחידה אחת: מעל זה הדופן מגיבה יותר מדי חזק לצעד
+       זמן גדול ומתנדנדת סביב הטמפרטורה במקום להתכנס אליה. */
+    const s = Math.min(1, (kIn+kOut)*dt) / Math.max(kIn+kOut, 1e-6);
+    wallT[p] += ((Ti-wallT[p])*kIn + (To-wallT[p])*kOut) * s;
+    if (wallT[p]<BATH) wallT[p]=BATH;
+  }
+  for (let i=0;i<mol.n;i++){
+    const p=patch[i];
+    if (p<0) continue;
+    /* האוויר נצמד לדופן מהר — לגז יש כמעט אפס קיבול חום, ומעט מאוד
+       אנרגיה משנה את הטמפרטורה שלו הרבה. */
+    const k = mol.where[i]===IN_ROOM ? K_AIR : K_IN;
+    mol.T[i] += (wallT[p]-mol.T[i]) * Math.min(0.9, k*dt);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   הולכה בתוך האוויר עצמו. גז מוליך על פני המרווח שלו ולא במגע: מולקולה
+   חוצה את הדרך בין שני משטחים ונושאת אתה אנרגיה. לכן לאוויר יש כאן
+   רשת גסה משלו, רחבה מטווח המגע של הנוזל.
+   --------------------------------------------------------------------------- */
+let AIR_R=0.34, AIR_R2=AIR_R*AIR_R, rhoRoom=0;
+const airIdx = new Int32Array(MAX);
+let airStart=new Int32Array(1), airCur=new Int32Array(1);
+const airOrder=new Int32Array(MAX), airCellOf=new Int32Array(MAX);
+let ANX=0, ANY=0, ANZ=0;
+
+function airHeat(dt){
+  ANX=Math.ceil((ROOM.x1-ROOM.x0+1.2)/AIR_R);
+  ANY=Math.ceil((ROOM.y1-ROOM.y0+1.6)/AIR_R);
+  ANZ=Math.ceil((ROOM.z1-ROOM.z0+1.2)/AIR_R);
+  const nc=ANX*ANY*ANZ;
+  if (airStart.length<nc+1){ airStart=new Int32Array(nc+1); airCur=new Int32Array(nc+1); }
+  else airStart.fill(0,0,nc+1);
+  const ax0=ROOM.x0-0.6, ay0=ROOM.y0-0.8, az0=ROOM.z0-0.6;
+  const ci=(v,lo,n)=>{ const k=((v-lo)/AIR_R)|0; return k<0?0:k>=n?n-1:k; };
+
+  let na=0;
+  for (let i=0;i<mol.n;i++) if (mol.air[i]) airIdx[na++]=i;
+  for (let a=0;a<na;a++){
+    const i=airIdx[a];
+    const c=(ci(mol.z[i],az0,ANZ)*ANY + ci(mol.y[i],ay0,ANY))*ANX + ci(mol.x[i],ax0,ANX);
+    airCellOf[a]=c; airStart[c+1]++;
+  }
+  for (let c=0;c<nc;c++) airStart[c+1]+=airStart[c];
+  airCur.set(airStart.subarray(0,nc));
+  for (let a=0;a<na;a++) airOrder[airCur[airCellOf[a]]++]=airIdx[a];
+
+  const kc = dt*1.9;
+  let rhoSum=0, rhoN=0;
+  for (let a=0;a<na;a++){
+    const i=airIdx[a], c=airCellOf[a];
+    const cx=c%ANX, cy=((c/ANX)|0)%ANY, cz=(c/(ANX*ANY))|0;
+    let sum=0, cnt=0;
+    for (let dz=-1;dz<=1;dz++){
+      const z=cz+dz; if (z<0||z>=ANZ) continue;
+      for (let dy=-1;dy<=1;dy++){
+        const y=cy+dy; if (y<0||y>=ANY) continue;
+        const row=(z*ANY+y)*ANX;
+        const lo=cx>0?cx-1:0, hi=cx<ANX-1?cx+1:ANX-1;
+        for (let q=airStart[row+lo];q<airStart[row+hi+1];q++){
+          const j=airOrder[q];
+          if (j<=i) continue;
+          /* לא מוליכים דרך זכוכית. את זה עושים הפלחים, ובקצב אחר. */
+          if ((mol.where[i]===IN_ROOM) !== (mol.where[j]===IN_ROOM)) continue;
+          const ex=mol.x[i]-mol.x[j], ey=mol.y[i]-mol.y[j], ez=mol.z[i]-mol.z[j];
+          if (ex*ex+ey*ey+ez*ez > AIR_R2) continue;
+          const dT=(mol.T[j]-mol.T[i])*kc;
+          mol.T[i]+=dT; mol.T[j]-=dT;
+          sum+=densityOf(j); cnt++;
+        }
+      }
+    }
+    /* אוויר החדר לא נכנס לרשת הצפופה, ולכן בלי זה אין לו סביבה
+       להשוות אליה — הוא לא היה מרגיש ציפה ופשוט שוקע לרצפה. */
+    if (mol.where[i]===IN_ROOM && cnt>0){ mol.rho[i]+=sum; mol.around[i]+=cnt; }
+    if (mol.where[i]===IN_ROOM){ rhoSum+=densityOf(i); rhoN++; }
+  }
+  /* הצפיפות הממוצעת של אוויר החדר. הציפה של אוויר נמדדת מולה ולא מול
+     השכנות הקרובות: שכבה שהתקררה בתקרה שווה בצפיפותה לעצמה, ולכן היא
+     לא יודעת שמתחתיה יש אוויר חם וקל ממנה — ואז היא לא יורדת, האוויר
+     נערם למעלה, ואין מחזור אלא משאבה בכיוון אחד. */
+  rhoRoom = rhoN ? rhoSum/rhoN : 0;
 }
 
 /* מצב הצבירה נגזר מהטמפרטורה בלבד. אין "קרח" ו"אדים" כחומרים נפרדים.
@@ -1496,12 +1737,38 @@ const LATENT = { H2O:540, O2:232, N2:191, H2:31 };
 const BATH = -205;      /* אמבט חנקן נוזלי */
 const cool = new Float32Array(MAX);
 
+/* ---------------------------------------------------------------------------
+   הדופן. קודם היה כאן מספר שכתבתי ביד — "בצינור מאבדים 1.8 מעלות
+   לשנייה" — וזה עבד אבל לא היה נכון: הקירור לא היה תלוי בכלום.
+   עכשיו הזכוכית היא גוף עם טמפרטורה משלה. החומר שבפנים מחמם אותה,
+   האוויר שבחוץ מקרר אותה, והיא באמצע. אם האוויר סביב הסליל מתחמם
+   ולא מתחלף, הסליל מפסיק לעבות — כמו במציאות.
+   --------------------------------------------------------------------------- */
+const WALL_N=20;
+const W_FLASK=0, W_TUBE=WALL_N, W_BEAKER=WALL_N*2, NWALL=WALL_N*3;
+const wallT   = new Float32Array(NWALL).fill(AMBIENT);
+const wIn     = new Float32Array(NWALL), wInN  = new Float32Array(NWALL);
+const wOut    = new Float32Array(NWALL), wOutN = new Float32Array(NWALL);
+const patch   = new Int16Array(MAX);
+/* מגע החומר בזכוכית טוב פי כמה מאות מהמעבר של הזכוכית לאוויר. זה לא
+   פרט: זה הצוואר הצר של כל המערכת, ולכן מה שקובע כמה כלי מקרר הוא
+   שטח הפנים שלו ולא הנפח. הבקבוק הכדורי מאבד לאט; הצינור הדק, עם
+   פי שישה שטח ליחידת נפח, מאבד מהר — וזו כל הסיבה שמזקקים בסליל. */
+const K_IN=2.6, K_AIR=0.9;
+const K_OUT=[0.026, 0.62, 0.034];      /* בקבוק, מעבה, כוס */
+const kOutOf = p => K_OUT[(p/WALL_N)|0];
+const AIR_COVER = 6;      /* מספר מולקולות שמעליו הדופן "עטופה" אוויר */
+const band=(u,base)=>base+(u<0?0:u>0.999?WALL_N-1:(u*WALL_N)|0);
+
 /* מחשב מחדש כל אורך שתלוי בסקאלה */
 function applyScale(k){
   MSCALE = k;
   NMOL   = Math.round(240 * k * k * k);
   RANGE  = 0.25/k; RANGE2 = RANGE*RANGE;
   CELL   = 0.26/k; R0 = 0.155/k;
+  /* טווח ההולכה באוויר הוא המרווח שלו, והמרווח קטן ככל שיש יותר
+     מולקולות באותו חדר */
+  AIR_R  = 0.34*2.2/k; AIR_R2 = AIR_R*AIR_R;
   GNX=Math.ceil(4.6/CELL); GNY=Math.ceil(4.9/CELL); GNZ=Math.ceil(2.4/CELL);
   NCELL=GNX*GNY*GNZ;
   for (const e of Object.values(ELEM)) e.r = e.r0 / k;
@@ -1526,7 +1793,7 @@ let pairs = new Int32Array(1 << 16), nPairs = 0;
 function buildPairs(){
   cellStart.fill(0,0,NCELL+1);
   for (let i=0;i<mol.n;i++){
-    mol.rho[i]=0; mol.around[i]=0;
+    mol.rho[i]=0; mol.around[i]=0; mol.wet[i]=0;
     const c=(gi(mol.z[i],GZ0,GNZ)*GNY + gi(mol.y[i],GY0,GNY))*GNX + gi(mol.x[i],GX0,GNX);
     cellOfMol[i]=c; cellStart[c+1]++;
   }
@@ -1619,6 +1886,8 @@ function neighbours(dt){
     if (d<1e-6) continue;
     mol.rho[i]+=densityOf(j); mol.around[i]++;
     mol.rho[j]+=densityOf(i); mol.around[j]++;
+    if (mol.phase[j]!==GAS) mol.wet[i]++;
+    if (mol.phase[i]!==GAS) mol.wet[j]++;
     /* גז מוליך גרוע — זו הסיבה שאוויר הוא מבודד ולא מוליך */
     const cw = Math.min(COND[mol.phase[i]], COND[mol.phase[j]]) * kCond;
     const dT = (mol.T[j]-mol.T[i]) * cw;
@@ -1671,6 +1940,8 @@ function react(){
 
 function step(dt){
   neighbours(dt);
+  airHeat(dt);
+  walls(dt);
   for (let i=0;i<mol.n;i++){
     const S=SPECIES[mol.sp[i]];
     updatePhase(i, dt);
@@ -1681,17 +1952,27 @@ function step(dt){
        הצפיפות שלו לצפיפות של מה שמקיף אותו. גז בתוך נוזל עולה חזק,
        נוזל כבד בתוך נוזל קל שוקע, ושני גזים נפרדים לשכבות לפי משקל. */
     const mine=densityOf(i);
-    const amb = mol.around[i]>2 ? mol.rho[i]/mol.around[i] : mine;
+    const amb = mol.where[i]===IN_ROOM ? (rhoRoom||mine)
+              : mol.around[i]>2 ? mol.rho[i]/mol.around[i] : mine;
     const lift = clamp((amb-mine)/Math.max(mine,1e-4), -6, 6);
     /* על גז הכובד כמעט לא משפיע בקנה המידה הזה, ומעל נוזל רותח יש זרם
        עולה. בלי זה אדים בתוך אדים לא מרגישים שום הפרש צפיפות ופשוט
        יושבים בבועה — הזיקוק נעצר לפני שהוא מגיע לצוואר. */
     const G = ph===GAS ? 0.8 : 5.2;
+    /* אוויר חופשי לא נופל. משקלו נישא בידי לחץ האוויר שמתחתיו, וגובה
+       הסקאלה של האטמוספירה הוא שמונה קילומטר — על פני חדר אחד אין שום
+       שקיעה שאפשר למדוד. בלי זה כל האוויר מתנקז לרצפה תוך דקה.
+       המשקל מתבטל, הציפה נשארת: חם עולה, קר יורד. זו ההסעה. */
+    const W = mol.where[i]===IN_ROOM ? 0 : G;
     /* זרם עולה מעל מקור חום. נמדד מול טמפרטורת החדר ולא מול נקודת
        הרתיחה: חום כמוס מקבע אדים רותחים בדיוק על 100°, וכל תנאי
        שדורש "מעל נקודת הרתיחה" מתאפס בשקט בדיוק כשצריך אותו. */
-    const conv = ph===GAS ? clamp((mol.T[i]-AMBIENT)/120,0,1) * 9.0 : 0;
-    mol.vy[i] += (-G + G*lift + conv) * dt;
+    /* הדחיפה הזאת היא תיקון לאדים בתוך הבקבוק, שם בועה חמה חייבת
+       לפרוץ מעלה. באוויר החדר אין בה צורך ואסור שתהיה: הציפה לבדה
+       כבר עושה את העבודה, והתוספת רק הופכת אותה למשאבה. */
+    const conv = ph===GAS && mol.where[i]!==IN_ROOM
+      ? clamp((mol.T[i]-AMBIENT)/120,0,1) * 9.0 : 0;
+    mol.vy[i] += (-W + G*lift + conv) * dt;
 
     /* הלהבה מחממת רק את מה שיושב מעליה — התחתית של הבקבוק. משם
        החום מטפס פנימה שכנה־שכנה, ולכן הרתיחה מתחילה למטה. */
@@ -1703,15 +1984,16 @@ function step(dt){
        מינוס מאתיים" — מכניסים את הכלי לאמבט, והחום יוצא ממנו החוצה. */
     if (gasTap<0 && mol.where[i]===IN_FLASK && mol.y[i]<0.60)
       mol.T[i] += (BATH - mol.T[i]) * (-gasTap) * 0.85 * (1 - mol.y[i]/0.60) * dt;
-    /* אוויר נוגע בכל החדר, ולכן הוא זה שמפזר את החום החוצה. בלעדיו
-       דבר חם היה נשאר חם לנצח. */
-    if (AIR.has(mol.sp[i])) mol.T[i] += (AMBIENT - mol.T[i]) * 0.55 * dt;
-    /* אובדן דרך דופן הכלי. במעבה זה חזק בהרבה: צינור צר עם הרבה
-       שטח פנים ביחס לנפח, וזו כל הסיבה שאדים מתעבים דווקא שם. */
-    const wall = mol.where[i]===IN_TUBE
-      ? 0.12 + 1.7 * clamp(mol.t[i]/PATH.length, 0, 1)   /* קר ככל שמתרחקים */
-      : 0.045;
-    mol.T[i] += (AMBIENT - mol.T[i]) * wall * dt;
+    /* בשוליים של תיבת האוויר מתחילה שאר המעבדה. היא גדולה מכדי
+       להתחמם, ולכן אוויר שמגיע לקצה חוזר לטמפרטורת החדר — וזה מה
+       שסוגר את מחזור ההסעה: חם עולה ויוצא, קר נכנס במקומו. */
+    if (mol.where[i]===IN_ROOM){
+      const e = Math.max(
+        Math.max((ROOM.x0+0.35-mol.x[i]), (mol.x[i]-(ROOM.x1-0.35)))/0.35,
+        Math.max((mol.y[i]-(ROOM.y1-0.40))/0.40,
+                 Math.max((ROOM.z0+0.30-mol.z[i]), (mol.z[i]-(ROOM.z1-0.30)))/0.30));
+      if (e>0) mol.T[i] += (AMBIENT-mol.T[i]) * Math.min(1,e) * 1.9 * dt;
+    }
 
     const therm = ph===GAS ? clamp((T-S.boil)/260,0.25,3.2) : ph===LIQ ? 0.16 : 0.02;
     mol.vx[i]+=rand(-1,1)*therm*dt*9;
@@ -1721,6 +2003,23 @@ function step(dt){
     const k=Math.exp(-(ph===GAS?0.55:ph===LIQ?3.4:11.0)*dt);
     mol.vx[i]*=k; mol.vy[i]*=k; mol.vz[i]*=k;
     mol.x[i]+=mol.vx[i]*dt; mol.y[i]+=mol.vy[i]*dt; mol.z[i]+=mol.vz[i]*dt;
+
+    if (mol.where[i]===IN_ROOM){
+      /* הזכוכית היא קיר גם מבחוץ. בלי זה האוויר פשוט חוצה את הבקבוק
+         ומתערבב עם המים, ואז אין בכלל שני צדדים לדופן. */
+      pushOutOfGlass(i);
+      if (mol.x[i]<ROOM.x0){ mol.x[i]=ROOM.x0; mol.vx[i]*=-.4; }
+      if (mol.x[i]>ROOM.x1){ mol.x[i]=ROOM.x1; mol.vx[i]*=-.4; }
+      if (mol.z[i]<ROOM.z0){ mol.z[i]=ROOM.z0; mol.vz[i]*=-.4; }
+      if (mol.z[i]>ROOM.z1){ mol.z[i]=ROOM.z1; mol.vz[i]*=-.4; }
+      if (mol.y[i]<ROOM.y0){ mol.y[i]=ROOM.y0; mol.vy[i]*=-.4; }
+      if (mol.y[i]>ROOM.y1){ mol.y[i]=ROOM.y1; mol.vy[i]*=-.4; }
+      /* דרך פתח הכוס אפשר להיכנס. זה הכלי היחיד שפתוח לחדר, ולכן
+         הוא היחיד שבו אוויר החדר והאוויר שבפנים הם אותו אוויר. */
+      if (mol.y[i]<1.44 && mol.y[i]>1.30 && Math.hypot(mol.x[i]-BEAKER_X,mol.z[i])<0.58 && mol.vy[i]<0)
+        mol.where[i]=IN_BEAKER;
+      continue;
+    }
 
     if (mol.where[i]===IN_TUBE){
       /* המולקולה נעה מכוח עצמה. הכליאה רק מונעת ממנה לצאת דרך הזכוכית:
@@ -1795,6 +2094,9 @@ function step(dt){
       const r=Math.hypot(mol.x[i]-BEAKER_X,mol.z[i]);
       if (r>0.60){ const s=0.60/r; mol.x[i]=BEAKER_X+(mol.x[i]-BEAKER_X)*s; mol.z[i]*=s;
                    mol.vx[i]*=-.35; mol.vz[i]*=-.35; }
+      /* הכוס פתוחה למעלה. גז שעולה יוצא ממנה אל החדר — אחרת האוויר
+         נלכד בפנים ולא מתחלף, והכוס הופכת לבקבוק סגור. */
+      if (ph===GAS && mol.y[i]>1.40 && mol.vy[i]>0){ mol.where[i]=IN_ROOM; continue; }
       if (mol.y[i]>1.42){ mol.y[i]=1.42; mol.vy[i]*=-.3; }
       if (mol.y[i]<0.06){ mol.y[i]=0.06; mol.vy[i]*=-.25; }
     }
@@ -2190,7 +2492,7 @@ let showAir = false;
 function buildAtoms(){
   let k=0;
   for (let i=0;i<mol.n;i++){
-    if (!showAir && AIR.has(mol.sp[i])) continue;
+    if (!showAir && mol.air[i]) continue;
     const S=SPECIES[mol.sp[i]];
     const md=MODEL[mol.phase[i]];
     const a=mol.spin[i], c=Math.cos(a), s=Math.sin(a);
@@ -2215,14 +2517,21 @@ function buildAtoms(){
 function buildBlobs(){
   let k=0;
   for (let i=0;i<mol.n;i++){
-    if (AIR.has(mol.sp[i])) continue;      /* אוויר שקוף — רואים אותו רק במצג המולקולות */
+    if (mol.air[i]) continue;              /* אוויר שקוף — רואים אותו רק במצג המולקולות */
     const S=SPECIES[mol.sp[i]];
     inst.off[k*3]=mol.x[i]; inst.off[k*3+1]=mol.y[i]; inst.off[k*3+2]=mol.z[i];
     const gas=mol.phase[i]===GAS;
+    /* בועה היא גז שנוזל עוטף אותו — לא סתם גז. קודם צויר ככדור כל
+       מה שהיה גז, ולכן "בועות" רחפו גם מעל פני המים וגם לאורך כל
+       הסליל, במקומות שאין בהם טיפת נוזל. גז שפרץ אל מעל פני הנוזל
+       הוא אדים: ערפל דליל, לא כדור. */
+    const bubble = gas && mol.wet[i]>=4;
+    /* ואדים שיצאו אל החדר הפתוח פשוט מתפזרים ונעלמים */
+    if (gas && !bubble && mol.where[i]===IN_ROOM) continue;
     /* אדים לא נושאים את צבע הבליעה של החומר — הם ערפל לבן */
     if (gas){ inst.col[k*3]=0.10; inst.col[k*3+1]=0.11; inst.col[k*3+2]=0.125; }
     else { inst.col[k*3]=S.absorb[0]; inst.col[k*3+1]=S.absorb[1]; inst.col[k*3+2]=S.absorb[2]; }
-    inst.rad[k]=(gas?0.150:0.104)/MSCALE;        /* אדים מתפרשים רחב יותר */
+    inst.rad[k]=(bubble?0.150:gas?0.088:0.104)/MSCALE;
     inst.kind[k]=gas?0:1;
     k++;
   }
@@ -2628,17 +2937,47 @@ function addMolecules(sp,count,where){
   }
   syncAtoms();
 }
-/* אוויר בכל חלל פנוי. הצפיפות כאן מוגזמת בכוונה: אוויר אמיתי דליל
-   פי אלף ממים, ובבקבוק הזה זה יוצא שתי מולקולות — מעט מדי מכדי
-   להוליך משהו. מה שמדויק הוא ההתנהגות, לא הספירה. */
+/* אוויר בכל חלל פנוי — גם בכלים וגם בחדר שמסביבם. הצפיפות מוגזמת
+   בכוונה: אוויר אמיתי דליל פי אלף ממים, ובבקבוק הזה זה יוצא שתי
+   מולקולות. מה שמדויק כאן הוא ההתנהגות, לא הספירה. */
+function spawnAir(x,y,z,where){
+  const i = spawn(Math.random()<0.78 ? 'N2' : 'O2', x, y, z, where);
+  if (i>=0){ mol.air[i]=1; mol.phase[i]=GAS; }
+  return i;
+}
 function fillAir(){
   const n = Math.max(60, Math.round(NMOL*0.09));
   for (let i=0;i<n;i++){
-    const sp = Math.random()<0.78 ? 'N2' : 'O2';
     const r = Math.random();
-    if (r<0.55)      spawn(sp, rand(-.55,.55), rand(1.05,2.25), rand(-.55,.55), IN_FLASK);
-    else if (r<0.85) spawn(sp, BEAKER_X+rand(-.45,.45), rand(.2,1.35), rand(-.45,.45), IN_BEAKER);
-    else             spawn(sp, FX+rand(-.16,.16), rand(BOWL_Y0+.1,BOWL_Y1-.15), rand(-.16,.16), IN_FUNNEL);
+    if (r<0.55)      spawnAir(rand(-.55,.55), rand(1.05,2.25), rand(-.55,.55), IN_FLASK);
+    else if (r<0.85) spawnAir(BEAKER_X+rand(-.45,.45), rand(.2,1.35), rand(-.45,.45), IN_BEAKER);
+    else             spawnAir(FX+rand(-.16,.16), rand(BOWL_Y0+.1,BOWL_Y1-.15), rand(-.16,.16), IN_FUNNEL);
+  }
+  /* אוויר בצינור. בלעדיו האדים מתפשטים אל תוך ריק, וזה משנה גם את
+     קצב המילוי וגם את מה שמעביר את החום אל הדופן. */
+  for (let k=0;k<PATH.length;k+=2){
+    const q=PATH[k];
+    spawnAir(q[0]+rand(-.05,.05), q[1]+rand(-.05,.05), q[2]+rand(-.05,.05), IN_TUBE)
+      >=0 && (mol.t[mol.n-1]=k);
+  }
+  fillRoomAir();
+}
+
+/* החדר עצמו. פרושׂ בהגרלה בתוך התיבה, וכל מה שנפל בתוך זכוכית
+   נדחף החוצה — ככה האוויר יושב על הכלים במקום לחדור אותם. */
+function fillRoomAir(){
+  const target = Math.round(AIR_BASE * MSCALE*MSCALE*MSCALE);
+  for (let k=0, made=0; k<target*6 && made<target; k++){
+    const x=rand(ROOM.x0,ROOM.x1), y=rand(ROOM.y0,ROOM.y1), z=rand(ROOM.z0,ROOM.z1);
+    const i=spawnAir(x,y,z,IN_ROOM);
+    if (i<0) break;
+    /* בפנים הכלי? זורקים ומגרילים שוב, במקום לדחוף ולקבל קליפה צפופה */
+    const saveX=mol.x[i], saveY=mol.y[i], saveZ=mol.z[i];
+    if (pushOutOfGlass(i)){
+      mol.x[i]=saveX; mol.y[i]=saveY; mol.z[i]=saveZ;
+      kill(i); continue;
+    }
+    made++;
   }
 }
 
@@ -2720,14 +3059,20 @@ function applyLang(){
   $('langT').textContent  = T('language');
   $('detT').textContent   = T('detail');
   $('airBtn').textContent = '💨 ' + T('air');
-  $('airBtn').classList.toggle('on', showAir);
   buildLevels();
-  for (const b of document.querySelectorAll('.lang')) b.classList.toggle('on', b.dataset.l===lang);
+  for (const b of document.querySelectorAll('.lang:not(.opt)'))
+    b.classList.toggle('on', b.dataset.l===lang);
+  /* אחרי לולאת השפות, לא לפניה: הכפתור חולק איתן מחלקה לצורך עיצוב,
+     והלולאה הייתה מכבה לו את הסימון בכל פעם מחדש. */
+  $('airBtn').classList.toggle('on', showAir);
   syncPick(); syncCut(); syncZoom(); syncHeat();
 }
 $('gear').addEventListener('click',()=>$('langBox').classList.toggle('on'));
 $('airBtn').addEventListener('click',()=>{ showAir=!showAir; applyLang(); });
-for (const b of document.querySelectorAll('.lang'))
+/* .opt הוא כפתור הגדרה רגיל שמתחזה לכפתור שפה כדי לקבל את אותו
+   עיצוב. בלי הסינון הזה לחיצה עליו מציבה lang=undefined, וכל טקסט
+   במשחק נופל בפעם הבאה שמישהו מבקש מחרוזת. */
+for (const b of document.querySelectorAll('.lang:not(.opt)'))
   b.addEventListener('click',()=>{
     lang=b.dataset.l;
     try { localStorage.setItem('rls.lang', lang); } catch(e){}
@@ -2767,7 +3112,9 @@ function loop(now){
     frames=0; fpsT=0;
   }
   acc+=dt;
-  if (acc>0.25){ syncAtoms(); acc=0; }
+  /* המדחום צריך להתעדכן מעצמו. קודם הוא נכתב רק כשנגעו בחוגה, ולכן
+     הוא הראה את המעלות של הרגע שבו נגעת ולא של עכשיו. */
+  if (acc>0.25){ syncAtoms(); syncHeat(); acc=0; }
   requestAnimationFrame(loop);
 }
 
@@ -2794,15 +3141,18 @@ window.RLS = {
   tap(o){ tap.open=o; $('tap').classList.toggle('on',o); },
   state(){
     const c={}; for (const k of Object.keys(ELEM)) c[k]=0;
-    const by={}, ph=[0,0,0], w=[0,0,0,0];
+    const by={}, ph=[0,0,0], w=[0,0,0,0,0]; let nAir=0;
     for (let i=0;i<mol.n;i++){
       by[mol.sp[i]]=(by[mol.sp[i]]||0)+1;
-      ph[mol.phase[i]]++; w[mol.where[i]]++;
+      ph[mol.phase[i]]++; w[mol.where[i]]++; if (mol.air[i]) nAir++;
       for (const [el,k] of Object.entries(SPECIES[mol.sp[i]].count)) c[el]+=k;
     }
     return { atoms:c, species:by, n:mol.n, heat:Math.round(heat), realView, floatFBO:FLOAT_FBO,
              phase:{gas:ph[0],liquid:ph[1],solid:ph[2]},
-             where:{flask:w[0],tube:w[1],beaker:w[2],funnel:w[3]}, tap:tap.open };
+             where:{flask:w[0],tube:w[1],beaker:w[2],funnel:w[3],room:w[4]},
+             air:nAir, wall:{flask:wallT[W_FLASK+2], tubeIn:wallT[W_TUBE+1],
+                             tubeOut:wallT[W_TUBE+WALL_N-2], beaker:wallT[W_BEAKER+2]},
+             tap:tap.open };
   },
 };
 </script>
