@@ -355,6 +355,11 @@ public class RLSLab : MonoBehaviour
         public Transform liquidTr; /* רשת הנוזל במצג האמיתי */
         public MeshFilter liquidMF;
         public MeshRenderer liquidMR;
+        public Mesh liquidMesh;
+        /* המצב הקודם של הכלי במרחב. בלי זה תוכן הכלי נשאר מאחור כשמזיזים
+           אותו, ובפריים הבא הוא כבר מחוץ לדפנות ומשוחרר ליפול. */
+        public Matrix4x4 prevM;
+        public bool hasPrev;
         public int count;          /* כמה חלקיקים בפנים — לתצוגה */
         public float lastFill = -1f;
         public float meanT = 20f;
@@ -627,49 +632,82 @@ public class RLSLab : MonoBehaviour
             : s.liqRho;
     }
 
-    /* ---- רשת מרחבית שטוחה, מיון־ספירה ---- */
+    /* ----------------------------------------------------------------------
+       רשת מרחבית שטוחה, מיון־ספירה.
+
+       כאן היה הלג. הרשת נבנתה סביב *כל* החלקיקים, ואוויר החדר פרוש על
+       שלושה מטרים. עם תא בגודל מגע — שבעה מילימטרים — יצאו תשעה מיליון
+       תאים, שנוקו מאפס בכל צעד, ארבע פעמים בפריים. ומכיוון שמספר התאים
+       לכל ציר נחתך ב-220, כל מה שמעבר לזה נדחס לתא אחד ענק, והחיפוש בו
+       הפך לריבועי. שתי תקלות שמזינות זו את זו.
+
+       שני תיקונים. אוויר חופשי לא נכנס לרשת בכלל — הוא לא מתנגש בכלום,
+       וקירור הזכוכית לא עובר דרכו. ואם התיבה עדיין גדולה מדי, התא גדל
+       עד שמספר התאים סביר. תא גדול יותר בודק יותר זוגות אבל לא מפספס
+       אף אחד, ולכן זה נשאר נכון.
+       ---------------------------------------------------------------------- */
+    const int CELL_CAP = 260000;
     int GNX = 1, GNY = 1, GNZ = 1;
     Vector3 gridMin;
-    int[] cellStart = new int[1], cellCur = new int[1], cellOf = new int[MAXP], order = new int[MAXP];
+    float cell = RANGE;
+    int[] cellStart = new int[1], cellCur = new int[1];
+    int[] cellOf = new int[MAXP], order = new int[MAXP], gridIdx = new int[MAXP];
+    int nGrid = 0;
     int[] pairs = new int[1 << 18];
     int nPairs = 0;
 
     void BuildPairs()
     {
-        if (nP == 0) { nPairs = 0; return; }
-        Vector3 lo = px[0], hi = px[0];
-        for (int i = 1; i < nP; i++)
+        nPairs = 0;
+        for (int i = 0; i < nP; i++) { pRho[i] = 0; pAround[i] = 0; pWet[i] = 0; }
+
+        /* מי בכלל צריך התנגשויות */
+        nGrid = 0;
+        for (int i = 0; i < nP; i++)
+            if (!(pAir[i] && pVes[i] < 0)) gridIdx[nGrid++] = i;
+        if (nGrid == 0) return;
+
+        Vector3 lo = px[gridIdx[0]], hi = lo;
+        for (int a = 1; a < nGrid; a++)
         {
-            lo = Vector3.Min(lo, px[i]); hi = Vector3.Max(hi, px[i]);
+            var p = px[gridIdx[a]];
+            lo = Vector3.Min(lo, p); hi = Vector3.Max(hi, p);
         }
-        gridMin = lo - Vector3.one * RANGE;
-        Vector3 span = (hi - lo) + Vector3.one * RANGE * 3f;
-        GNX = Mathf.Clamp(Mathf.CeilToInt(span.x / RANGE), 1, 220);
-        GNY = Mathf.Clamp(Mathf.CeilToInt(span.y / RANGE), 1, 220);
-        GNZ = Mathf.Clamp(Mathf.CeilToInt(span.z / RANGE), 1, 220);
+
+        cell = RANGE;
+        Vector3 span = (hi - lo) + Vector3.one * (RANGE * 2f);
+        for (int guard = 0; guard < 40; guard++)
+        {
+            GNX = Mathf.Max(1, Mathf.CeilToInt(span.x / cell));
+            GNY = Mathf.Max(1, Mathf.CeilToInt(span.y / cell));
+            GNZ = Mathf.Max(1, Mathf.CeilToInt(span.z / cell));
+            if ((long)GNX * GNY * GNZ <= CELL_CAP) break;
+            cell *= 1.35f;
+        }
+        gridMin = lo - Vector3.one * (cell * 0.5f);
+
         int nc = GNX * GNY * GNZ;
         if (cellStart.Length < nc + 1) { cellStart = new int[nc + 1]; cellCur = new int[nc + 1]; }
         else System.Array.Clear(cellStart, 0, nc + 1);
 
-        for (int i = 0; i < nP; i++)
+        for (int a = 0; a < nGrid; a++)
         {
-            pRho[i] = 0; pAround[i] = 0; pWet[i] = 0;
+            int i = gridIdx[a];
             var d = px[i] - gridMin;
-            int cx = Mathf.Clamp((int)(d.x / RANGE), 0, GNX - 1);
-            int cy = Mathf.Clamp((int)(d.y / RANGE), 0, GNY - 1);
-            int cz = Mathf.Clamp((int)(d.z / RANGE), 0, GNZ - 1);
+            int cx = Mathf.Clamp((int)(d.x / cell), 0, GNX - 1);
+            int cy = Mathf.Clamp((int)(d.y / cell), 0, GNY - 1);
+            int cz = Mathf.Clamp((int)(d.z / cell), 0, GNZ - 1);
             int c = (cz * GNY + cy) * GNX + cx;
-            cellOf[i] = c; cellStart[c + 1]++;
+            cellOf[a] = c; cellStart[c + 1]++;
         }
         for (int c = 0; c < nc; c++) cellStart[c + 1] += cellStart[c];
         System.Array.Copy(cellStart, cellCur, nc);
-        for (int i = 0; i < nP; i++) order[cellCur[cellOf[i]]++] = i;
+        for (int a = 0; a < nGrid; a++) order[cellCur[cellOf[a]]++] = gridIdx[a];
 
-        nPairs = 0;
         float r2 = RANGE * RANGE;
-        for (int i = 0; i < nP; i++)
+        for (int a = 0; a < nGrid; a++)
         {
-            int c = cellOf[i];
+            int i = gridIdx[a], c = cellOf[a];
             int cx = c % GNX, cy = (c / GNX) % GNY, cz = c / (GNX * GNY);
             Vector3 xi = px[i];
             for (int dz = -1; dz <= 1; dz++)
@@ -729,8 +767,28 @@ public class RLSLab : MonoBehaviour
     Vector3 flamePos;
     bool showAir = false, realView = true;
 
+    /* נוזל בכוס נוסע עם הכוס. זה נשמע מובן מאליו וזה בדיוק מה שהיה
+       חסר: הכליאה חישבה מיקום מקומי מול הכלי בזמן שהכלי כבר זז, ולכן
+       כל תנועת יד זרקה את התוכן החוצה. */
+    void CarryContents()
+    {
+        for (int vi = 0; vi < vessels.Count; vi++)
+        {
+            var v = vessels[vi];
+            Matrix4x4 cur = v.tr.localToWorldMatrix;
+            if (v.hasPrev)
+            {
+                Matrix4x4 delta = cur * v.prevM.inverse;
+                for (int i = 0; i < nP; i++)
+                    if (pVes[i] == vi) px[i] = delta.MultiplyPoint3x4(px[i]);
+            }
+            v.prevM = cur; v.hasPrev = true;
+        }
+    }
+
     void SimStep(float dt)
     {
+        CarryContents();
         BuildPairs();
 
         for (int i = 0; i < nP; i++) prevPos[i] = px[i];
@@ -849,15 +907,23 @@ public class RLSLab : MonoBehaviour
        לא מתקרר — וזה בדיוק תרמוס.
        ---------------------------------------------------------------------- */
     const float K_IN = 2.6f, K_OUT = 0.10f, K_AIR = 0.9f;
+    readonly float[] wSum = new float[64], wallK = new float[64];
+    readonly int[] wN = new int[64];
 
     void WallExchange(float dt)
     {
-        for (int vi = 0; vi < vessels.Count; vi++)
+        int nv = vessels.Count;
+        for (int v2 = 0; v2 < nv; v2++) { wSum[v2] = 0; wN[v2] = 0; }
+        for (int i = 0; i < nP; i++)
+        {
+            int vi2 = pVes[i];
+            if (vi2 < 0 || vi2 >= nv || pAir[i]) continue;
+            wSum[vi2] += pT[i]; wN[vi2]++;
+        }
+        for (int vi = 0; vi < nv; vi++)
         {
             var v = vessels[vi];
-            float sum = 0; int n = 0;
-            for (int i = 0; i < nP; i++)
-                if (pVes[i] == vi && !pAir[i]) { sum += pT[i]; n++; }
+            float sum = wSum[vi]; int n = wN[vi];
             v.count = n;
             v.meanT = n > 0 ? sum / n : v.wallT;
 
@@ -874,15 +940,18 @@ public class RLSLab : MonoBehaviour
                     v.wallT += flame * 40f * dt;
             }
 
-            float k = Mathf.Min(0.9f, K_IN * dt);
-            for (int i = 0; i < nP; i++)
-                if (pVes[i] == vi) pT[i] += (v.wallT - pT[i]) * k;
+            wallK[vi] = Mathf.Min(0.9f, K_IN * dt);
         }
 
-        /* אוויר חופשי חוזר לאט לטמפרטורת החדר: מעבר לפינה יש עוד מעבדה,
-           והיא גדולה מכדי להתחמם. */
+        float kFree = Mathf.Min(0.9f, 0.35f * dt);
         for (int i = 0; i < nP; i++)
-            if (pVes[i] < 0) pT[i] += (AMBIENT - pT[i]) * Mathf.Min(0.9f, 0.35f * dt);
+        {
+            int vi = pVes[i];
+            if (vi >= 0 && vi < nv) pT[i] += (vessels[vi].wallT - pT[i]) * wallK[vi];
+            /* אוויר חופשי חוזר לאט לטמפרטורת החדר: מעבר לפינה יש עוד
+               מעבדה, והיא גדולה מכדי להתחמם. */
+            else pT[i] += (AMBIENT - pT[i]) * kFree;
+        }
     }
 
     /* ----------------------------------------------------------------------
@@ -1218,26 +1287,39 @@ public class RLSLab : MonoBehaviour
             return;
         }
 
-        RaycastHit hit;
-        if (Physics.Raycast(ray, out hit, 2.4f))
+        /* כלי מעבדה הוא ברוחב ארבעה סנטימטרים, וכוונת בגודל פיקסל היא
+           דרישה לא הוגנת. קרן בעלת עובי תופסת גם כשמחטיאים קצת, ולכן
+           קודם בודקים את כל מה שהקרן פגשה ובוחרים את הכלי הקרוב. */
+        int n = Physics.SphereCastNonAlloc(ray, 0.055f, hits, 2.2f);
+        Vessel best = null; float bestD = float.MaxValue; bool sawBurner = false;
+        for (int k = 0; k < n; k++)
         {
-            var v = FindVessel(hit.collider.transform);
+            var t = hits[k].collider.transform;
+            var v = FindVessel(t);
             if (v != null)
             {
-                prompt = "E  pick up " + v.name + "     " + Mathf.Round(v.meanT) + "\u00B0C     " +
-                         v.count + " particles";
-                if (In.Use) PickUp(v);
-                return;
+                float d = (v.tr.position - camTr.position).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = v; }
             }
-            if (hit.collider.transform.IsChildOf(burnerTr))
-            {
-                prompt = "Scroll  flame  (" + Mathf.RoundToInt(flame * 100f) + "%)";
-                if (Mathf.Abs(In.Scroll) > 0.01f)
-                    flame = Mathf.Clamp01(flame + In.Scroll * 0.09f);
-                return;
-            }
+            else if (t.IsChildOf(burnerTr)) sawBurner = true;
+        }
+
+        if (best != null)
+        {
+            prompt = "E  pick up " + best.name + "     " + Mathf.Round(best.meanT) + "\u00B0C     " +
+                     best.count + " particles";
+            if (In.Use) PickUp(best);
+            return;
+        }
+        if (sawBurner)
+        {
+            prompt = "Scroll  flame  (" + Mathf.RoundToInt(flame * 100f) + "%)";
+            if (Mathf.Abs(In.Scroll) > 0.01f)
+                flame = Mathf.Clamp01(flame + In.Scroll * 0.09f);
         }
     }
+
+    readonly RaycastHit[] hits = new RaycastHit[16];
 
     Vessel FindVessel(Transform t)
     {
@@ -1253,10 +1335,28 @@ public class RLSLab : MonoBehaviour
         v.rb.detectCollisions = false;
     }
 
+    /* מניחים ישר וקרוב לשולחן במקום לשחרר באוויר בזווית אקראית. כלי
+       ששוחרר נוטה כשהוא נופל, ואז הוא שופך את כל תוכנו על הרצפה. */
     void DropVessel()
     {
         if (heldVessel == null) return;
         var v = heldVessel;
+
+        Vector3 want = camTr.position + camTr.forward * 0.55f;
+        RaycastHit h;
+        if (Physics.Raycast(want + Vector3.up * 0.4f, Vector3.down, out h, 1.4f))
+            want = h.point + Vector3.up * 0.004f;
+        else
+            want = new Vector3(want.x, benchTopY + 0.004f, want.z);
+
+        Vector3 shift = want - v.tr.position;
+        for (int i = 0; i < nP; i++)
+            if (pVes[i] == vessels.IndexOf(v)) px[i] += shift;
+
+        v.tr.position = want;
+        v.tr.rotation = Quaternion.identity;      /* זקוף, כמו שמניחים כלי */
+        v.hasPrev = false;
+
         v.rb.isKinematic = false;
         v.rb.detectCollisions = true;
         v.rb.velocity = Vector3.zero;
@@ -1285,7 +1385,7 @@ public class RLSLab : MonoBehaviour
        חם נשאר חם לנצח. */
     void FillAir()
     {
-        int n = 900;
+        int n = 500;
         for (int k = 0; k < n && nP < MAXP; k++)
         {
             var pos = new Vector3(Random.Range(-1.6f, 1.6f), Random.Range(0.95f, 2.3f),
@@ -1352,15 +1452,35 @@ public class RLSLab : MonoBehaviour
     /* נפח חלקיק בודד, מהמרווח שלו */
     const float PVOL = R0 * R0 * R0 * 0.74f;
 
+    int[] liqCount = new int[64];
+    int[,] spCount = new int[64, 4];
+
+    /* מעבר אחד על כל החלקיקים, לא מעבר לכל כלי. עם ארבעה כלים זו הייתה
+       פי ארבעה עבודה בכל פריים, על שום דבר. */
+    void CountContents()
+    {
+        int nv = vessels.Count;
+        for (int v = 0; v < nv; v++)
+        {
+            liqCount[v] = 0;
+            for (int s = 0; s < 4; s++) spCount[v, s] = 0;
+        }
+        for (int i = 0; i < nP; i++)
+        {
+            int vi = pVes[i];
+            if (vi < 0 || vi >= nv || pAir[i] || pPhase[i] == GAS) continue;
+            liqCount[vi]++; spCount[vi, pSp[i]]++;
+        }
+    }
+
     void DrawLiquidSurfaces()
     {
+        CountContents();
         for (int vi = 0; vi < vessels.Count; vi++)
         {
             var v = vessels[vi];
-            int liq = 0; Color tint = Color.white; int domSp = 0; var spCount = new int[4];
-            for (int i = 0; i < nP; i++)
-                if (pVes[i] == vi && !pAir[i] && pPhase[i] != GAS) { liq++; spCount[pSp[i]]++; }
-            for (int s = 1; s < 4; s++) if (spCount[s] > spCount[domSp]) domSp = s;
+            int liq = liqCount[vi]; Color tint = Color.white; int domSp = 0;
+            for (int s = 1; s < 4; s++) if (spCount[vi, s] > spCount[vi, domSp]) domSp = s;
 
             /* כלי מוטה — פני הנוזל כבר לא ניצבים לצירו, והרשת הזאת תשקר.
                באותם רגעים מציירים את החלקיקים עצמם. */
@@ -1377,7 +1497,8 @@ public class RLSLab : MonoBehaviour
             if (Mathf.Abs(fy - v.lastFill) > 0.0015f || v.liquidMF.sharedMesh == null)
             {
                 v.lastFill = fy;
-                v.liquidMF.sharedMesh = LiquidMesh(v, fy);
+                BuildLiquidMesh(v, fy);
+                v.liquidMF.sharedMesh = v.liquidMesh;
             }
             tint = SP[domSp].tint;
             /* צבע לפי מצב: קרח בהיר יותר ממים */
@@ -1417,33 +1538,41 @@ public class RLSLab : MonoBehaviour
         if (n > 0) Graphics.DrawMeshInstanced(Sphere(), 0, mGlass, batch, n);
     }
 
-    Mesh LiquidMesh(Vessel v, float fillY)
+    /* הרשת נבנית פעם אחת לכל כלי ומתמלאת מחדש. קודם כל שינוי מפלס יצר
+       שלוש רשתות חדשות ולא שחרר אף אחת — ובזמן רתיחה המפלס משתנה בלי
+       הפסקה, כלומר מאות רשתות דלופות בשנייה. זה מה שחנק את המשחק. */
+    readonly List<Vector3> lqV = new List<Vector3>();
+    readonly List<Vector3> lqN = new List<Vector3>();
+    readonly List<int> lqI = new List<int>();
+
+    void BuildLiquidMesh(Vessel v, float fillY)
     {
+        if (v.liquidMesh == null) { v.liquidMesh = new Mesh(); v.liquidMesh.MarkDynamic(); }
+        lqV.Clear(); lqN.Clear(); lqI.Clear();
+
         var pts = new List<Vector2>();
         pts.Add(new Vector2(Mathf.Max(0.0006f, v.InnerR(fillY) - 0.0004f), fillY));
         for (int i = v.py.Length - 1; i >= 0; i--)
             if (v.py[i] < fillY) pts.Add(new Vector2(Mathf.Max(0.0006f, v.pr[i] - 0.0004f), v.py[i]));
         pts.Add(new Vector2(0.0006f, v.py[0]));
-        var m = Lathe(pts.ToArray(), 32);
-        /* מכסה שטוח לפני הנוזל, אחרת רואים לתוך גוף חלול */
-        var V = new List<Vector3>(); var N = new List<Vector3>(); var I = new List<int>();
-        float r = Mathf.Max(0.0006f, v.InnerR(fillY) - 0.0004f);
-        V.Add(new Vector3(0, fillY, 0)); N.Add(Vector3.up);
-        int segs = 32;
-        for (int s = 0; s <= segs; s++)
-        {
-            float a = s / (float)segs * Mathf.PI * 2f;
-            V.Add(new Vector3(Mathf.Cos(a) * r, fillY, Mathf.Sin(a) * r)); N.Add(Vector3.up);
-        }
-        for (int s = 0; s < segs; s++) { I.Add(0); I.Add(s + 1); I.Add(s + 2); }
-        var cap = Finish(V, N, I);
+        LatheInto(lqV, lqN, lqI, pts.ToArray(), 28, false);
 
-        var comb = new CombineInstance[2];
-        comb[0].mesh = m; comb[0].transform = Matrix4x4.identity;
-        comb[1].mesh = cap; comb[1].transform = Matrix4x4.identity;
-        var outm = new Mesh();
-        outm.CombineMeshes(comb, true, true);
-        return outm;
+        /* מכסה שטוח לפני הנוזל, אחרת רואים לתוך גוף חלול */
+        int b = lqV.Count;
+        float r = Mathf.Max(0.0006f, v.InnerR(fillY) - 0.0004f);
+        lqV.Add(new Vector3(0, fillY, 0)); lqN.Add(Vector3.up);
+        int segs = 28;
+        for (int sg = 0; sg <= segs; sg++)
+        {
+            float a = sg / (float)segs * Mathf.PI * 2f;
+            lqV.Add(new Vector3(Mathf.Cos(a) * r, fillY, Mathf.Sin(a) * r)); lqN.Add(Vector3.up);
+        }
+        for (int sg = 0; sg < segs; sg++) { lqI.Add(b); lqI.Add(b + sg + 1); lqI.Add(b + sg + 2); }
+
+        var m = v.liquidMesh;
+        m.Clear();
+        m.SetVertices(lqV); m.SetNormals(lqN); m.SetTriangles(lqI, 0);
+        m.RecalculateBounds();
     }
 
     /* ======================================================================
@@ -1482,6 +1611,9 @@ public class RLSLab : MonoBehaviour
 
     float bank = 0f;
     const float FIXED = 1f / 90f;
+    /* מדד ולא ניחוש: אם עדיין כבד, המספר הזה הוא מה שאני צריך לראות */
+    float fpsSmooth = 60f;
+    int lastSteps = 0, lastPairs = 0, lastCells = 0;
 
     void Update()
     {
@@ -1510,7 +1642,9 @@ public class RLSLab : MonoBehaviour
         int steps = 0;
         while (bank >= FIXED && steps < 4) { SimStep(FIXED); bank -= FIXED; steps++; }
         if (bank > FIXED * 4) bank = FIXED * 4;
+        lastSteps = steps; lastPairs = nPairs; lastCells = GNX * GNY * GNZ;
 
+        fpsSmooth += (1f / Mathf.Max(dt, 1e-4f) - fpsSmooth) * 0.05f;
         DrawParticles();
     }
 
@@ -1545,6 +1679,11 @@ public class RLSLab : MonoBehaviour
                      "     " + (realView ? "Real" : "Molecules") +
                      (showAir ? " + air" : "");
         GUI.Label(new Rect(w / 2 - 250, 12, 500, 30), top, st);
+
+        /* שורת ביצועים. אם המשחק כבד, זו השורה לצלם. */
+        GUI.Label(new Rect(w - 330, 12, 316, 24),
+            Mathf.RoundToInt(fpsSmooth) + " fps    " + lastPairs + " pairs    " +
+            lastCells + " cells    " + lastSteps + " steps", stLeft);
 
         /* מדחום לכל כלי שמונח מול השחקן */
         float yy = 56;
