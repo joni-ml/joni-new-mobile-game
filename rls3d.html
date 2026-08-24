@@ -158,6 +158,7 @@ input[type=range]{flex:1;accent-color:#d4632f;height:26px;direction:ltr}
     <button class="lang" data-l="en">English</button>
     <b id="detT" style="margin-top:6px"></b>
     <div id="levels"></div>
+    <button class="lang" id="airBtn" style="margin-top:6px"></button>
   </div>
 </div>
 
@@ -247,6 +248,7 @@ const STR = {
        realSize:'מולקולות בגודל אמיתי', mols:'מולקולות',
        K:'K', mil:' מיליון', bil:' מיליארד',
        detail:'גודל מולקולה', smaller:'קטן יותר', heavy:'כבד',
+       air:'הצג מולקולות אוויר',
        noGL:'הדפדפן הזה לא תומך ב-WebGL2. נסה כרום או ספארי מעודכן.' },
   en:{ real:'Real', molecules:'Molecules', microscope:'Microscope', exit:'Exit',
        spark:'Spark', tap:'Tap', reset:'Reset', cut:'Cut', table:'Table',
@@ -259,6 +261,7 @@ const STR = {
        realSize:'molecules at real size', mols:'molecules',
        K:'K', mil:'M', bil:'B',
        detail:'Molecule size', smaller:'smaller', heavy:'heavy',
+       air:'Show air molecules',
        noGL:'This browser does not support WebGL2. Try an up-to-date Chrome or Safari.' },
 };
 let lang = 'en';
@@ -429,14 +432,18 @@ function flaskProfile(){
 const beakerProfile = () => [[0.68,1.48],[0.68,0.12],[0.655,0.055],[0.60,0.015],
                              [0.52,0.0],[0.0,0.0]];
 
+/* ראש זיקוק אמיתי: עלייה קצרה מהצוואר, ומשם ירידה רצופה עד הכוס.
+   הגרסה הקודמת טיפסה ל-3.5 ואז ירדה — עם תנועה מוסעת זה לא הפריע,
+   אבל ברגע שהתעבית זזה מכוח כובד היא נתקעה בפסגה ולא יכלה לעבור.
+   מעבה לא מכיל מלכודת. */
 function condenserPath(){
-  const ctrl=[[0.115,2.42,0],[0.125,2.92,0],[0.30,3.30,0],[0.88,3.50,0]];
-  const HR=0.46, turns=2, steps=60;
+  const ctrl=[[0.115,2.42,0],[0.13,2.72,0],[0.28,2.92,0],[0.72,2.98,0]];
+  const HR=0.46, turns=2, steps=64;
   for (let i=0;i<=steps;i++){
     const u=i/steps, a=Math.PI+u*turns*Math.PI*2;
-    ctrl.push([BEAKER_X+HR*Math.cos(a), 3.34-u*1.10, HR*Math.sin(a)]);
+    ctrl.push([BEAKER_X+HR*Math.cos(a), 2.93-u*1.10, HR*Math.sin(a)]);
   }
-  ctrl.push([BEAKER_X-0.26,1.94,0],[BEAKER_X,1.74,0]);
+  ctrl.push([BEAKER_X-0.24,1.76,0],[BEAKER_X,1.66,0]);
   return catmull(ctrl,5);
 }
 function catmull(pts,per){
@@ -1152,6 +1159,7 @@ function makeFBO(tex,depthRB){
 
 /* ---- מש-ים ---- */
 const PATH = condenserPath();
+const TUBE_IN = 0.112 - 0.02;   /* רדיוס פנימי פחות רדיוס מולקולה */
 const billboard = buildMesh(fluidDepthProg,
   { pos:new Float32Array([-1,-1, 1,-1, 1,1, -1,1]), idx:new Uint16Array([0,1,2,0,2,3]), corner:true }, true);
 const billboard2 = buildMesh(fluidThickProg,
@@ -1341,9 +1349,9 @@ function stands(){
   /* ימין אוחז את המעבה בשתי נקודות. הבסיס נסוג ב-z כדי לא להתנגש
      בכוס, ולכן הזרועות מגיעות באלכסון — מה שהן עושות גם במציאות. */
   const HR=0.46;
-  rig(3.16, -1.34, 3.62, [
-    [[BEAKER_X, 3.20, -HR], 0.135],
-    [[BEAKER_X, 2.65, -HR], 0.135],
+  rig(3.16, -1.34, 3.20, [
+    [[BEAKER_X, 2.78, -HR], 0.135],
+    [[BEAKER_X, 2.12, -HR], 0.135],
   ]);
   return merge(...p);
 }
@@ -1468,7 +1476,12 @@ function updatePhase(i, dt){
     cool[i] = -(LATENT[mol.sp[i]] || 300);
   }
 }
-const densityOf = i => mol.phase[i]===GAS ? SPECIES[mol.sp[i]].gasRho : SPECIES[mol.sp[i]].liq;
+/* צפיפות גז תלויה בטמפרטורה — אדים חמים קלים מאוויר קר, וזו הסיבה
+   האמיתית שהם עולים. קודם הצפיפות הייתה קבועה, ולכן אדים בתוך אדים
+   הרגישו ציפה אפס ופשוט שקעו. */
+const densityOf = i => mol.phase[i]===GAS
+  ? SPECIES[mol.sp[i]].gasRho * 293 / Math.max(mol.T[i]+273.15, 60)
+  : SPECIES[mol.sp[i]].liq;
 
 /* ---- שכנים: דחייה, לכידות, וצפיפות מקומית ----
    רשת שטוחה עם מיון מנייה. הגרסה הקודמת השתמשה ב-Map, וזה יצא כתשעים
@@ -1489,7 +1502,7 @@ function applyScale(k){
   NMOL   = Math.round(240 * k * k * k);
   RANGE  = 0.25/k; RANGE2 = RANGE*RANGE;
   CELL   = 0.26/k; R0 = 0.155/k;
-  GNX=Math.ceil(4.6/CELL); GNY=Math.ceil(3.1/CELL); GNZ=Math.ceil(2.4/CELL);
+  GNX=Math.ceil(4.6/CELL); GNY=Math.ceil(4.9/CELL); GNZ=Math.ceil(2.4/CELL);
   NCELL=GNX*GNY*GNZ;
   for (const e of Object.values(ELEM)) e.r = e.r0 / k;
   for (const sp of Object.values(SPECIES))
@@ -1501,7 +1514,7 @@ const GX0=-1.5, GY0=-0.35, GZ0=-1.2;
 let GNX, GNY, GNZ, NCELL;
 /* הרשת מוקצית לתא הקטן ביותר האפשרי, כדי שהחלפת רמה לא תקצה מחדש */
 const CELL_MIN=0.26/MSCALE_MAX;
-const NCELL_MAX=Math.ceil(4.6/CELL_MIN)*Math.ceil(3.1/CELL_MIN)*Math.ceil(2.4/CELL_MIN);
+const NCELL_MAX=Math.ceil(4.6/CELL_MIN)*Math.ceil(4.9/CELL_MIN)*Math.ceil(2.4/CELL_MIN);
 const cellStart =new Int32Array(NCELL_MAX+1);
 const cellCursor=new Int32Array(NCELL_MAX);
 const cellOfMol =new Int32Array(MAX);
@@ -1514,7 +1527,6 @@ function buildPairs(){
   cellStart.fill(0,0,NCELL+1);
   for (let i=0;i<mol.n;i++){
     mol.rho[i]=0; mol.around[i]=0;
-    if (mol.where[i]===IN_TUBE){ cellOfMol[i]=-1; continue; }
     const c=(gi(mol.z[i],GZ0,GNZ)*GNY + gi(mol.y[i],GY0,GNY))*GNX + gi(mol.x[i],GX0,GNX);
     cellOfMol[i]=c; cellStart[c+1]++;
   }
@@ -1665,20 +1677,6 @@ function step(dt){
     const ph=mol.phase[i], T=mol.T[i];
     mol.spin[i]+=dt*(ph===GAS?5:ph===LIQ?1.2:0.15);
 
-    if (mol.where[i]===IN_TUBE){
-      mol.t[i]+=dt*(ph===GAS?0.46:0.26);
-      if (mol.t[i]>=1){
-        mol.where[i]=IN_BEAKER;
-        const e=PATH[PATH.length-1];
-        mol.x[i]=e[0]+rand(-.05,.05); mol.y[i]=e[1]; mol.z[i]=e[2]+rand(-.05,.05);
-        mol.vx[i]=0; mol.vy[i]=-1.2; mol.vz[i]=0;
-      } else {
-        const p=PATH[Math.min(PATH.length-1,(mol.t[i]*(PATH.length-1))|0)];
-        mol.x[i]=p[0]; mol.y[i]=p[1]; mol.z[i]=p[2];
-      }
-      continue;
-    }
-
     /* כובד וציפה בצעד אחד: מה שדוחף גוף למעלה או למטה הוא ההפרש בין
        הצפיפות שלו לצפיפות של מה שמקיף אותו. גז בתוך נוזל עולה חזק,
        נוזל כבד בתוך נוזל קל שוקע, ושני גזים נפרדים לשכבות לפי משקל. */
@@ -1689,7 +1687,10 @@ function step(dt){
        עולה. בלי זה אדים בתוך אדים לא מרגישים שום הפרש צפיפות ופשוט
        יושבים בבועה — הזיקוק נעצר לפני שהוא מגיע לצוואר. */
     const G = ph===GAS ? 0.8 : 5.2;
-    const conv = ph===GAS ? clamp((T-S.boil)/150,0,1) * 5.2 : 0;
+    /* זרם עולה מעל מקור חום. נמדד מול טמפרטורת החדר ולא מול נקודת
+       הרתיחה: חום כמוס מקבע אדים רותחים בדיוק על 100°, וכל תנאי
+       שדורש "מעל נקודת הרתיחה" מתאפס בשקט בדיוק כשצריך אותו. */
+    const conv = ph===GAS ? clamp((mol.T[i]-AMBIENT)/120,0,1) * 9.0 : 0;
     mol.vy[i] += (-G + G*lift + conv) * dt;
 
     /* הלהבה מחממת רק את מה שיושב מעליה — התחתית של הבקבוק. משם
@@ -1704,9 +1705,13 @@ function step(dt){
       mol.T[i] += (BATH - mol.T[i]) * (-gasTap) * 0.85 * (1 - mol.y[i]/0.60) * dt;
     /* אוויר נוגע בכל החדר, ולכן הוא זה שמפזר את החום החוצה. בלעדיו
        דבר חם היה נשאר חם לנצח. */
-    if (AIR.has(mol.sp[i])) mol.T[i] += (AMBIENT - mol.T[i]) * 1.10 * dt;
-    /* אובדן קטן דרך דופן הכלי, אחרת כלי אטום לא מתקרר לעולם */
-    mol.T[i] += (AMBIENT - mol.T[i]) * 0.045 * dt;
+    if (AIR.has(mol.sp[i])) mol.T[i] += (AMBIENT - mol.T[i]) * 0.55 * dt;
+    /* אובדן דרך דופן הכלי. במעבה זה חזק בהרבה: צינור צר עם הרבה
+       שטח פנים ביחס לנפח, וזו כל הסיבה שאדים מתעבים דווקא שם. */
+    const wall = mol.where[i]===IN_TUBE
+      ? 0.12 + 1.7 * clamp(mol.t[i]/PATH.length, 0, 1)   /* קר ככל שמתרחקים */
+      : 0.045;
+    mol.T[i] += (AMBIENT - mol.T[i]) * wall * dt;
 
     const therm = ph===GAS ? clamp((T-S.boil)/260,0.25,3.2) : ph===LIQ ? 0.16 : 0.02;
     mol.vx[i]+=rand(-1,1)*therm*dt*9;
@@ -1716,6 +1721,38 @@ function step(dt){
     const k=Math.exp(-(ph===GAS?0.55:ph===LIQ?3.4:11.0)*dt);
     mol.vx[i]*=k; mol.vy[i]*=k; mol.vz[i]*=k;
     mol.x[i]+=mol.vx[i]*dt; mol.y[i]+=mol.vy[i]*dt; mol.z[i]+=mol.vz[i]*dt;
+
+    if (mol.where[i]===IN_TUBE){
+      /* המולקולה נעה מכוח עצמה. הכליאה רק מונעת ממנה לצאת דרך הזכוכית:
+         מוצאים את הנקודה הקרובה על ציר הצינור ומחזירים אותה פנימה.
+         קודם היא הוסעה על מסילה לפי פרמטר — זו הייתה אנימציה, לא זרימה. */
+      let hint=mol.t[i]|0, best=hint, bd=1e9;
+      const lo=Math.max(0,hint-14), hi=Math.min(PATH.length-1,hint+14);
+      for (let k=lo;k<=hi;k++){
+        const q=PATH[k];
+        const ax=mol.x[i]-q[0], ay=mol.y[i]-q[1], az=mol.z[i]-q[2];
+        const dd=ax*ax+ay*ay+az*az;
+        if (dd<bd){ bd=dd; best=k; }
+      }
+      mol.t[i]=best;
+      const q=PATH[best];
+      const ax=mol.x[i]-q[0], ay=mol.y[i]-q[1], az=mol.z[i]-q[2];
+      const rr=Math.sqrt(bd);
+      if (rr>TUBE_IN && rr>1e-6){
+        const sc=TUBE_IN/rr;
+        mol.x[i]=q[0]+ax*sc; mol.y[i]=q[1]+ay*sc; mol.z[i]=q[2]+az*sc;
+        const ux=ax/rr, uy=ay/rr, uz=az/rr;
+        const vn=mol.vx[i]*ux+mol.vy[i]*uy+mol.vz[i]*uz;
+        if (vn>0){ mol.vx[i]-=ux*vn*1.35; mol.vy[i]-=uy*vn*1.35; mol.vz[i]-=uz*vn*1.35; }
+      }
+      /* הקצוות: בחזרה לבקבוק רק אם היא באמת יורדת מתחת לפתח, אחרת
+         כל מולקולה שנכנסת נזרקת החוצה באותו צעד ושום דבר לא זורם */
+      if (best<=0 && mol.vy[i]<0 && mol.y[i]<PATH[0][1]-0.02){ mol.where[i]=IN_FLASK; }
+      else if (best>=PATH.length-2){
+        mol.where[i]=IN_BEAKER; mol.vy[i]=Math.min(mol.vy[i],-0.5);
+      }
+      continue;
+    }
 
     if (mol.where[i]===IN_FUNNEL){
       const maxR=funnelRadiusAt(mol.y[i]);
@@ -1736,12 +1773,19 @@ function step(dt){
     }
 
     if (mol.where[i]===IN_FLASK){
-      if (ph===GAS && mol.y[i]>NECK_TOP-0.04 && Math.hypot(mol.x[i],mol.z[i])<NECK_R){
+      /* הסף חייב להיות מתחת לתקרת הצוואר, אחרת אדים נצמדים לתקרה
+         בדיוק מתחת לפתח ולא נכנסים לעולם */
+      if (ph===GAS && mol.y[i]>NECK_TOP-0.09 && Math.hypot(mol.x[i],mol.z[i])<NECK_R){
         /* גז שמוצא את פתח הגזע עולה למשפך — אבל רק אם הברז פתוח */
         if (tap.a>0.55 && Math.hypot(mol.x[i]-FX,mol.z[i])<STEM_R-0.02){
           mol.where[i]=IN_FUNNEL; mol.vy[i]=1.2; continue;
         }
-        mol.where[i]=IN_TUBE; mol.t[i]=0; continue;
+        /* נכנסת אל תוך הצינור, לא אל השפה שלו */
+        mol.where[i]=IN_TUBE; mol.t[i]=3;
+        const q=PATH[3];
+        mol.x[i]=q[0]+rand(-.03,.03); mol.y[i]=q[1]; mol.z[i]=q[2]+rand(-.03,.03);
+        mol.vy[i]=Math.max(mol.vy[i],0.3);
+        continue;
       }
       const maxR=flaskRadiusAt(mol.y[i])-0.06, r=Math.hypot(mol.x[i],mol.z[i]);
       if (r>maxR && r>1e-6){ const s=maxR/r; mol.x[i]*=s; mol.z[i]*=s; mol.vx[i]*=-.35; mol.vz[i]*=-.35; }
@@ -2137,24 +2181,32 @@ const ISLOTS = Math.max(MAX*3, MICRO_MAX_N*3);
 const inst={ off:new Float32Array(ISLOTS*3), col:new Float32Array(ISLOTS*3),
              rad:new Float32Array(ISLOTS),   kind:new Float32Array(ISLOTS) };
 
+/* כמה גדול המודל המצויר ביחס למרווח האריזה. זה לא גודל האטום — זו
+   ההחלטה כמה מקום המולקולה תופסת על המסך, וכך רואים את הרווח שבין
+   מולקולה לשכנתה. במוצק הן צמודות, בנוזל יש רווח, בגז הרבה יותר. */
+const MODEL = [0.42, 0.62, 0.88];      /* גז, נוזל, מוצק */
+let showAir = false;
+
 function buildAtoms(){
   let k=0;
   for (let i=0;i<mol.n;i++){
+    if (!showAir && AIR.has(mol.sp[i])) continue;
     const S=SPECIES[mol.sp[i]];
+    const md=MODEL[mol.phase[i]];
     const a=mol.spin[i], c=Math.cos(a), s=Math.sin(a);
     const ax=mol.axis[i*3], ay=mol.axis[i*3+1], az=mol.axis[i*3+2];
     for (const [el,off] of S.atoms){
       const E=ELEM[el], [ox,oy,oz]=off;
       const dt=ax*ox+ay*oy+az*oz;
       const cx=ay*oz-az*oy, cy=az*ox-ax*oz, cz=ax*oy-ay*ox;
-      inst.off[k*3]  =mol.x[i]+ox*c+cx*s+ax*dt*(1-c);
-      inst.off[k*3+1]=mol.y[i]+oy*c+cy*s+ay*dt*(1-c);
-      inst.off[k*3+2]=mol.z[i]+oz*c+cz*s+az*dt*(1-c);
+      inst.off[k*3]  =mol.x[i]+(ox*c+cx*s+ax*dt*(1-c))*md;
+      inst.off[k*3+1]=mol.y[i]+(oy*c+cy*s+ay*dt*(1-c))*md;
+      inst.off[k*3+2]=mol.z[i]+(oz*c+cz*s+az*dt*(1-c))*md;
       const g = flash>0 && mol.sp[i]==='H2O' ? flash*1.6 : 0;
       inst.col[k*3]  =Math.min(1,E.col[0]+g);
       inst.col[k*3+1]=Math.min(1,E.col[1]+g*.8);
       inst.col[k*3+2]=Math.min(1,E.col[2]+g*.5);
-      inst.rad[k]=E.r; inst.kind[k]=1;
+      inst.rad[k]=E.r*md; inst.kind[k]=1;
       k++;
     }
   }
@@ -2667,11 +2719,14 @@ function applyLang(){
   $('hint').textContent   = T('hint');
   $('langT').textContent  = T('language');
   $('detT').textContent   = T('detail');
+  $('airBtn').textContent = '💨 ' + T('air');
+  $('airBtn').classList.toggle('on', showAir);
   buildLevels();
   for (const b of document.querySelectorAll('.lang')) b.classList.toggle('on', b.dataset.l===lang);
   syncPick(); syncCut(); syncZoom(); syncHeat();
 }
 $('gear').addEventListener('click',()=>$('langBox').classList.toggle('on'));
+$('airBtn').addEventListener('click',()=>{ showAir=!showAir; applyLang(); });
 for (const b of document.querySelectorAll('.lang'))
   b.addEventListener('click',()=>{
     lang=b.dataset.l;
