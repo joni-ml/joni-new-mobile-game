@@ -159,6 +159,7 @@ input[type=range]{flex:1;accent-color:#d4632f;height:26px;direction:ltr}
     <b id="detT" style="margin-top:6px"></b>
     <div id="levels"></div>
     <button class="lang opt" id="airBtn" style="margin-top:6px"></button>
+    <button class="lang opt" id="heatBtn" style="margin-top:6px"></button>
   </div>
 </div>
 
@@ -248,7 +249,7 @@ const STR = {
        realSize:'מולקולות בגודל אמיתי', mols:'מולקולות',
        K:'K', mil:' מיליון', bil:' מיליארד',
        detail:'גודל מולקולה', smaller:'קטן יותר', heavy:'כבד',
-       air:'הצג מולקולות אוויר',
+       air:'הצג מולקולות אוויר', heat:'מפת חום', room:'חדר',
        noGL:'הדפדפן הזה לא תומך ב-WebGL2. נסה כרום או ספארי מעודכן.' },
   en:{ real:'Real', molecules:'Molecules', microscope:'Microscope', exit:'Exit',
        spark:'Spark', tap:'Tap', reset:'Reset', cut:'Cut', table:'Table',
@@ -261,7 +262,7 @@ const STR = {
        realSize:'molecules at real size', mols:'molecules',
        K:'K', mil:'M', bil:'B',
        detail:'Molecule size', smaller:'smaller', heavy:'heavy',
-       air:'Show air molecules',
+       air:'Show air molecules', heat:'Heat map', room:'room',
        noGL:'This browser does not support WebGL2. Try an up-to-date Chrome or Safari.' },
 };
 let lang = 'en';
@@ -923,6 +924,10 @@ const impostorProg = program(BILLBOARD, `#version 300 es
   uniform mat4 uProj;
   uniform vec4 uClipView;
   uniform vec3 uLightView;
+  /* הבזק לבן שאינו מוכפל בצבע. על אטום זה נכון — זכוכית מבריקה —
+     אבל שכבת חום מצוירת בחיבור, ואז אלפי הבזקים לבנים מסתכמים
+     לשלג שמוחק את המעבדה. */
+  uniform float uSpec;
   out vec4 o;
   void main(){
     float r2 = dot(vLocal, vLocal);
@@ -938,7 +943,7 @@ const impostorProg = program(BILLBOARD, `#version 300 es
     float sp = pow(max(dot(normalize(L + V), N), 0.0), 44.0);
     /* חצי עליון בהיר יותר — אור מפוזר מלמעלה, כמו בחדר */
     vec3 amb = mix(vec3(0.10,0.12,0.16), vec3(0.30,0.33,0.39), N.y * 0.5 + 0.5);
-    o = vec4(vCol * (amb + d * 0.92) + vec3(sp * 0.75), 1.0);
+    o = vec4(vCol * (amb + d * 0.92) + vec3(sp * 0.75 * uSpec), 1.0);
   }`);
 
 const fluidDepthProg = program(BILLBOARD, `#version 300 es
@@ -1938,10 +1943,231 @@ function react(){
   }
 }
 
+/* ===========================================================================
+   5.7) שדה החום
+
+   עד עכשיו רק למולקולות הייתה טמפרטורה, ולכן נר יכול היה לחמם רק את מה
+   שנגע בו. אבל אם מדליקים נר בחדר, כל החדר מתחמם — לא רק מה שמולו.
+   מה שהיה חסר זה שגם למרחב עצמו תהיה טמפרטורה.
+
+   החדר מחולק לתאים. לכל תא יש טמפרטורה וחומר: אוויר, עץ, אבן, מתכת,
+   זכוכית. החום עובר בין תאים שכנים לפי המוליכות של שניהם, ולכן הוא
+   באמת עובר רק במקומות מסוימים — רגל מתכת מוליכה את החום למטה מהר,
+   פלטת עץ מוליכה אותו לאט והצידה, ואוויר כמעט לא מוליך בכלל אלא נושא
+   את החום למעלה בזרימה.
+
+   המעבר בין תאים נעשה באנרגיה ולא בטמפרטורה: Q = G·ΔT·dt, ואז כל צד
+   משנה טמפרטורה לפי קיבול החום שלו. בלי זה גרם מתכת וקוב אוויר היו
+   מתנהגים כאילו יש להם אותה כמות חום, וזה ההבדל בין להיכוות לבין
+   לשים יד בתנור.
+   =========================================================================== */
+const MAT_AIR=0, MAT_WOOD=1, MAT_STONE=2, MAT_METAL=3, MAT_GLASS=4;
+/* מוליכות, וקיבול חום לנפח. היחסים אמיתיים: מתכת מוליכה פי אלפיים
+   מאוויר, ולאוויר יש כמעט אפס קיבול — לכן הוא מתחמם מיד ומצטנן מיד. */
+/* אוויר כמעט לא מוליך. זו לא בחירה נוחה אלא המספר האמיתי: מעבירות
+   החום של אוויר קטנה פי אלפים מזו של מתכת, והדרך שבה אוויר מזיז חום
+   היא זרימה ולא הולכה. נתתי לו קודם מוליכות גבוהה מדי, וכל מה שהלהבה
+   הזרימה התפזר מיד על כל החדר במקום לעלות כעמוד. */
+const MAT_K = [0.0009, 0.15, 1.4, 45.0, 1.05];
+const MAT_C = [0.0012, 0.85, 1.90, 3.50, 1.65];
+
+const HF = (()=>{
+  const cs=0.26;
+  const x0=-3.65, y0=FLOOR_Y, z0=-3.35;
+  const nx=Math.ceil(8.4/cs), ny=Math.ceil(7.6/cs), nz=Math.ceil(5.6/cs);
+  const n=nx*ny*nz;
+  return { cs, x0, y0, z0, nx, ny, nz, n,
+           T:new Float32Array(n).fill(AMBIENT),
+           mat:new Uint8Array(n) };
+})();
+const hfIdx = (ix,iy,iz) => (iz*HF.ny + iy)*HF.nx + ix;
+const hfCellOf = (x,y,z) => {
+  const ix=(x-HF.x0)/HF.cs|0, iy=(y-HF.y0)/HF.cs|0, iz=(z-HF.z0)/HF.cs|0;
+  if (ix<0||iy<0||iz<0||ix>=HF.nx||iy>=HF.ny||iz>=HF.nz) return -1;
+  return hfIdx(ix,iy,iz);
+};
+
+/* מסמנים מה עשוי ממה. פעם אחת, בטעינה. */
+function hfPaint(){
+  const {cs,x0,y0,z0,nx,ny,nz}=HF;
+  const inBox=(x,y,z, cx,cy,cz, w,h,d)=>
+    Math.abs(x-cx)<=w/2 && Math.abs(y-cy)<=h/2 && Math.abs(z-cz)<=d/2;
+  for (let iz=0;iz<nz;iz++) for (let iy=0;iy<ny;iy++) for (let ix=0;ix<nx;ix++){
+    const x=x0+(ix+0.5)*cs, y=y0+(iy+0.5)*cs, z=z0+(iz+0.5)*cs;
+    let m=MAT_AIR;
+    if (y < FLOOR_Y+cs) m=MAT_STONE;                                  /* רצפה */
+    else if (inBox(x,y,z, BX,BENCH_Y-TOP_T/2,BZ, 6.0,TOP_T,3.0)) m=MAT_WOOD;
+    else if (inBox(x,y,z, BX,BENCH_Y-0.22,BZ, 5.7,0.13,2.7)) m=MAT_WOOD;
+    else if (inBox(x,y,z, BX,BENCH_Y-1.30,BZ, 5.6,0.10,2.5)) m=MAT_WOOD;
+    else {
+      /* רגלי השולחן */
+      for (const [dx,dz] of [[-2.6,-1.25],[2.6,-1.25],[-2.6,1.25],[2.6,1.25]])
+        if (inBox(x,y,z, BX+dx,(FLOOR_Y+BENCH_Y-TOP_T)/2,BZ+dz,
+                  0.20,BENCH_Y-TOP_T-FLOOR_Y,0.20)) { m=MAT_WOOD; break; }
+      /* חצובה ומעמדים: מתכת, וזו הסיבה שהחום מטפס בהם מהר */
+      if (m===MAT_AIR && y>BENCH_Y-0.05 && y<GAUZE_Y+0.10 &&
+          Math.hypot(x,z)<0.30) m=MAT_METAL;
+      /* דפנות הכלים */
+      if (m===MAT_AIR && y>-0.05 && y<NECK_TOP &&
+          Math.abs(Math.hypot(x,z)-flaskRadiusAt(Math.max(0,y)))<cs*0.9) m=MAT_GLASS;
+      if (m===MAT_AIR && y>-0.05 && y<1.50 &&
+          Math.abs(Math.hypot(x-BEAKER_X,z)-0.68)<cs*0.9) m=MAT_GLASS;
+    }
+    HF.mat[hfIdx(ix,iy,iz)]=m;
+  }
+}
+
+/* מוליכות המעבר בין שני תאים: ממוצע הרמוני, כמו שתי התנגדויות בטור.
+   תא מבודד ליד תא מוליך נותן מעבר איטי — הגרוע מביניהם קובע. */
+const hfG = new Float32Array(25);
+for (let a=0;a<5;a++) for (let b=0;b<5;b++)
+  hfG[a*5+b] = 2*MAT_K[a]*MAT_K[b] / (MAT_K[a]+MAT_K[b]);
+
+function hfStep(dt){
+  const {nx,ny,nz,T,mat}=HF;
+  const rowY=nx, rowZ=nx*ny;
+
+  /* הולכה. עוברים על שלושת הצירים ומעבירים אנרגיה בין כל זוג שכנים. */
+  for (let axis=0; axis<3; axis++){
+    const stride = axis===0 ? 1 : axis===1 ? rowY : rowZ;
+    const lim    = axis===0 ? nx : axis===1 ? ny : nz;
+    for (let iz=0;iz<nz;iz++) for (let iy=0;iy<ny;iy++) for (let ix=0;ix<nx;ix++){
+      const cur = axis===0?ix : axis===1?iy : iz;
+      if (cur >= lim-1) continue;
+      const a = (iz*ny+iy)*nx+ix, b = a+stride;
+      const ma=mat[a], mb=mat[b];
+      const diff = T[a]-T[b];
+      if (diff>-1e-4 && diff<1e-4) continue;
+      const q = hfG[ma*5+mb]*diff*dt;      /* אנרגיה, לא מעלות */
+      let dA = q/MAT_C[ma], dB = q/MAT_C[mb];
+      /* שני הצדדים יחד לא יעברו את הפער ביניהם. בלי החסם הזה תא מתכת
+         עם קיבול קטן קופץ מעבר לשכן שלו, ובצעד הבא חוזר — הסכמה
+         המפורשת מתנדנדת במקום להתכנס, והמתכת מהבהבת בין חם לקר. */
+      const tot = Math.abs(dA)+Math.abs(dB), room = Math.abs(diff)*0.9;
+      if (tot > room){ const f = room/tot; dA*=f; dB*=f; }
+      T[a] -= dA; T[b] += dB;
+    }
+  }
+
+  /* הסעה: אוויר חם קל מהאוויר שמעליו והם מתחלפים. זה מה שמעלה את
+     החום מהלהבה אל התקרה במקום להשאיר אותו כדור סביב הלהבה. */
+  const mix = Math.min(0.5, dt*3.4);
+  for (let iz=0;iz<nz;iz++) for (let iy=0;iy<ny-1;iy++) for (let ix=0;ix<nx;ix++){
+    const a=(iz*ny+iy)*nx+ix, b=a+rowY;
+    if (mat[a]!==MAT_AIR || mat[b]!==MAT_AIR) continue;
+    const d=T[a]-T[b];
+    if (d<=0.05) continue;
+    const t=d*mix*0.5;
+    T[a]-=t; T[b]+=t;
+  }
+
+  /* שאר המעבדה. התיבה איננה כל החדר, ומעברים לגבול נשענים על מרחב
+     גדול מכדי להתחמם. */
+  const edge = Math.min(1, dt*0.55);
+  for (let iz=0;iz<nz;iz++) for (let iy=0;iy<ny;iy++){
+    for (const ix of [0,nx-1]){ const c=(iz*ny+iy)*nx+ix; T[c]+=(AMBIENT-T[c])*edge; }
+  }
+  for (let iy=0;iy<ny;iy++) for (let ix=0;ix<nx;ix++){
+    for (const iz of [0,nz-1]){ const c=(iz*ny+iy)*nx+ix; T[c]+=(AMBIENT-T[c])*edge; }
+  }
+  for (let iz=0;iz<nz;iz++) for (let ix=0;ix<nx;ix++){
+    const c=((iz*ny+(ny-1))*nx)+ix; T[c]+=(AMBIENT-T[c])*edge;
+  }
+}
+
+/* הלהבה מזרימה הספק אל התאים שמעליה, ומשם זה כבר עניין של השדה */
+const FLAME_W = 1.15;      /* הספק הלהבה, ביחידות אנרגיה לשנייה לתא */
+function hfFlame(dt){
+  if (Math.abs(gasTap)<0.001) return;
+  const {cs}=HF;
+  for (let y=FLAME_Y0; y<FLAME_Y1+0.30; y+=cs*0.6)
+    for (let dx=-cs; dx<=cs; dx+=cs) for (let dz=-cs; dz<=cs; dz+=cs){
+      const c=hfCellOf(dx,y,dz);
+      if (c<0) continue;
+      const m = HF.mat[c];
+      /* הספק, לא טמפרטורה. כמה מעלות זה מעלה תלוי במה שיש שם: אוויר
+         קופץ מיד, המתכת של החצובה כמעט לא זזה מאותו הספק. */
+      if (gasTap>0) HF.T[c] += gasTap * FLAME_W * dt / MAT_C[m];
+      else          HF.T[c] += (BATH-HF.T[c]) * (-gasTap) * Math.min(1, dt*2.2);
+    }
+}
+
+/* חיבור בין המולקולות לשדה. שני הכיוונים, ומה שמולקולה לוקחת התא
+   מאבד — אחרת הלהבה מייצרת אנרגיה יש מאין. */
+/* קיבול החום של מולקולת אוויר מצוירת. היא מייצגת מנת אוויר בגודל
+   תא, ולכן הקיבול שלה חייב להיות בסדר הגודל של תא אוויר. נתתי לה
+   קודם 0.055 מול 0.0012 של התא — פי ארבעים וחמש — וכל מולקולה
+   שיכולה לקבע תא שלם קיבעה אותו. הלהבה הזרימה מאות מעלות לשנייה
+   והשדה נשאר על עשרים ותשע, כי הסימון של האוויר בלע הכל. */
+const MOL_C = 0.0010;
+function hfCouple(dt){
+  const k = Math.min(0.85, dt*1.8);
+  for (let i=0;i<mol.n;i++){
+    /* רק אוויר החדר. מה שבתוך כלי מופרד מהחדר בזכוכית, ומי שמעביר
+       לו חום הוא הדופן — walls() כבר עושה את זה, ובקצב הנכון.
+       כשחיברתי גם את מה שבפנים ישירות לשדה, השדה גרר את המים חזרה
+       לטמפרטורת החדר מהר יותר משהמבער חימם אותם, והזיקוק פשוט נעצר:
+       הכוס קיבלה אפס במקום חמש מאות. שתי מערכות שמושכות לשני כיוונים
+       על אותה מולקולה. */
+    if (mol.where[i] !== IN_ROOM) continue;
+    const c = hfCellOf(mol.x[i], mol.y[i], mol.z[i]);
+    if (c<0) continue;
+    const d = (HF.T[c]-mol.T[i]) * k;
+    mol.T[i] += d;
+    HF.T[c]  -= d * MOL_C / Math.max(MAT_C[HF.mat[c]], 1e-4);
+  }
+}
+
+function hfReset(){ HF.T.fill(AMBIENT); }
+
+/* לאיזה תא בשדה נוגע כל פלח דופן. קבוע, ולכן מחושב פעם אחת. */
+const wallCell = new Int32Array(NWALL).fill(-1);
+function hfWallCells(){
+  for (let i=0;i<WALL_N;i++){
+    const y=(i+0.5)/WALL_N*NECK_TOP;
+    wallCell[W_FLASK+i]=hfCellOf(flaskRadiusAt(y)+0.16, y, 0);
+    const k=Math.min(PATH.length-1, ((i+0.5)/WALL_N*PATH.length)|0), q=PATH[k];
+    wallCell[W_TUBE+i]=hfCellOf(q[0], q[1]+0.20, q[2]);
+    wallCell[W_BEAKER+i]=hfCellOf(BEAKER_X+0.80, (i+0.5)/WALL_N*1.48, 0);
+  }
+}
+
+/* זו הדרך שבה המעבדה מחממת את החדר. החומר שבפנים מחמם את הזכוכית,
+   והזכוכית מחממת את האוויר שנוגע בה מבחוץ. בלי החוליה הזאת בקבוק
+   רותח יכול לעמוד שעה ליד ראשך ולא לחמם כלום. */
+function hfWalls(dt){
+  for (let p=0;p<NWALL;p++){
+    const c=wallCell[p];
+    if (c<0) continue;
+    const m=HF.mat[c], diff=wallT[p]-HF.T[c];
+    if (diff>-1e-4 && diff<1e-4) continue;
+    const q=hfG[MAT_GLASS*5+m]*diff*dt;
+    let dW=q/MAT_C[MAT_GLASS], dF=q/MAT_C[m];
+    const tot=Math.abs(dW)+Math.abs(dF), room=Math.abs(diff)*0.9;
+    if (tot>room){ const f=room/tot; dW*=f; dF*=f; }
+    wallT[p]-=dW; HF.T[c]+=dF;
+  }
+}
+
+/* מדידה לבדיקות: הטמפרטורה הממוצעת של האוויר בתיבה, ובאזור נתון */
+function hfProbe(x0,x1,y0,y1,z0,z1){
+  let s=0,n=0;
+  for (let iz=0;iz<HF.nz;iz++) for (let iy=0;iy<HF.ny;iy++) for (let ix=0;ix<HF.nx;ix++){
+    const x=HF.x0+(ix+0.5)*HF.cs, y=HF.y0+(iy+0.5)*HF.cs, z=HF.z0+(iz+0.5)*HF.cs;
+    if (x<x0||x>x1||y<y0||y>y1||z<z0||z>z1) continue;
+    s+=HF.T[hfIdx(ix,iy,iz)]; n++;
+  }
+  return n ? s/n : AMBIENT;
+}
+
 function step(dt){
   neighbours(dt);
   airHeat(dt);
   walls(dt);
+  hfFlame(dt);
+  hfWalls(dt);
+  hfStep(dt);
+  hfCouple(dt);
   for (let i=0;i<mol.n;i++){
     const S=SPECIES[mol.sp[i]];
     updatePhase(i, dt);
@@ -2548,11 +2774,77 @@ function upload(mesh,n,withKind){
   if (withKind) put('aKind',inst.kind,1);
 }
 
+
+/* מפת החום. מציירים רק תאים שחורגים מטמפרטורת החדר, ולכן בחדר קר
+   לא מצויר כלום ומעל הלהבה נראית עמודה. הצבע הוא הטמפרטורה: כחול
+   קר, אדום חם, לבן לוהט. */
+let heatView = false;
+
+/* הצבע הוא הטמפרטורה, והבהירות היא כמה היא חורגת מהחדר. זה חשוב
+   בגלל שהשכבה מצוירת בחיבור: תא בטמפרטורת החדר יוצא שחור, ושחור
+   בחיבור לא מוסיף כלום — ולכן הוא לא מסתיר את מה שמאחוריו.
+   ניסיון ראשון צייר כל תא ככדור אטום, וכשכל החדר התחמם ל-33 מעלות
+   כל התאים עברו את הסף והמעבדה נעלמה מאחורי קיר של כדורים. */
+function heatColor(T, out, o){
+  const d = T - AMBIENT;
+  const u = clamp(d/230, -1, 1);
+  /* עקומה תלולה ולא ישרה. השכבה מצטברת בחיבור לאורך קו הראייה, ועם
+     עקומה ישרה אלפי תאים פושרים מסתכמים ללבן ומוחקים את המעבדה.
+     חריגה קטנה כמעט לא נראית, וחריגה גדולה בולטת. */
+  const i = Math.pow(Math.min(1, Math.abs(d)/120), 1.30) * 0.60;
+  let r,g,b;
+  if (u < 0){ const v=-u; r=0.10; g=0.30+0.25*v; b=0.85+0.15*v; }
+  else if (u < 0.45){ const v=u/0.45; r=0.25+0.75*v; g=0.22+0.34*v; b=0.72-0.62*v; }
+  else { const v=(u-0.45)/0.55; r=1; g=0.56+0.44*v; b=0.10+0.85*v; }
+  out[o]=r*i; out[o+1]=g*i; out[o+2]=b*i;
+}
+
+function buildHeat(){
+  let k=0;
+  const {nx,ny,nz,cs,x0,y0,z0,T,mat}=HF;
+  for (let iz=0;iz<nz;iz++) for (let iy=0;iy<ny;iy++) for (let ix=0;ix<nx;ix++){
+    const c=(iz*ny+iy)*nx+ix;
+    const d=T[c]-AMBIENT;
+    if (d>-6 && d<6) continue;              /* קרוב לטמפרטורת החדר — לא מצויר */
+    if (k>=MAX) break;
+    inst.off[k*3]  =x0+(ix+0.5)*cs;
+    inst.off[k*3+1]=y0+(iy+0.5)*cs;
+    inst.off[k*3+2]=z0+(iz+0.5)*cs;
+    heatColor(T[c], inst.col, k*3);
+    /* מוצק מצויר קטן וצפוף, אוויר גדול ורך: ככה רואים את ההבדל בין
+       חום שיושב בחומר לבין חום שנישא באוויר */
+    const hot = Math.min(1, Math.abs(d)/110);
+    inst.rad[k]= (mat[c]===MAT_AIR ? cs*0.24 : cs*0.20) * (0.40+0.60*hot);
+    inst.kind[k]=1;
+    k++;
+  }
+  return k;
+}
+
+/* בחיבור, ובלי לכתוב עומק. השכבה נחסמת על ידי מה שלפניה אבל לא
+   מסתירה אותו — כמו זוהר ולא כמו גוף. */
+function drawHeat(proj, view, cvn, cvd){
+  const n=buildHeat();
+  if (!n) return 0;
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.depthMask(false);
+  specOn = 0;
+  drawAtoms(n, proj, view, cvn, cvd);
+  specOn = 1;
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  return n;
+}
+
+let specOn = 1;
 function drawAtoms(n, proj, view, cvn, cvd){
   gl.useProgram(impostorProg);
   gl.uniformMatrix4fv(impostorProg.u.uProj,false,proj);
   gl.uniformMatrix4fv(impostorProg.u.uView,false,view);
   gl.uniform4f(impostorProg.u.uClipView,cvn[0],cvn[1],cvn[2],cvd);
+  gl.uniform1f(impostorProg.u.uSpec, specOn);
   /* כיוון האור מסובב למרחב המצלמה, כי שם חיים האימפוסטורים */
   const L=v3.norm([0.38,0.86,0.34]);
   gl.uniform3f(impostorProg.u.uLightView,
@@ -2792,6 +3084,7 @@ function draw(){
     const n=buildAtoms(); shown=n;
     drawAtoms(n, proj, view, cvn, cvd);
   }
+  if (heatView) drawHeat(proj, view, cvn, cvd);
 
   /* --- הלהבה. חיבור, בלי כתיבה לעומק. --- */
   if (gasTap > 0.02){
@@ -2894,7 +3187,11 @@ function spark(){
 }
 function syncHeat(){
   const t=Math.round(heat);
-  $('heatLbl').textContent=t+'°';
+  /* שתי טמפרטורות, ולא אחת: מה שבבקבוק, ולצידו החדר עצמו. הנר מחמם
+     את כל החדר ולא רק את מה שמולו, וזה המספר שמראה את זה. */
+  $('heatLbl').textContent = heatView
+    ? t+'°  ·  '+Math.round(hfProbe(-3.5,4.5,-2.3,5.0,-3.3,2.0))+'° '+T('room')
+    : t+'°';
   $('merc').style.height=clamp((t+40)/1240*100,0,100)+'%';
   $('knobDot').style.transform='rotate('+(gasTap*135)+'deg)';
   const g=Math.round(gasTap*100);
@@ -2983,6 +3280,7 @@ function fillRoomAir(){
 
 function reset(){
   mol.n=0; gasTap=0; heat=AMBIENT; flash=0; cam.slice=0;
+  hfReset();
   /* מספר המולקולות נקבע מהנפח: במרווח אריזה של 0.155 הן ממלאות
      כשליש מהבועה, ונשארים פני נוזל שאפשר לראות */
   for (let i=0;i<NMOL;i++) spawn('H2O', rand(-.52,.52), rand(.10,1.02), rand(-.52,.52), IN_FLASK);
@@ -3059,16 +3357,19 @@ function applyLang(){
   $('langT').textContent  = T('language');
   $('detT').textContent   = T('detail');
   $('airBtn').textContent = '💨 ' + T('air');
+  $('heatBtn').textContent = '🌡️ ' + T('heat');
   buildLevels();
   for (const b of document.querySelectorAll('.lang:not(.opt)'))
     b.classList.toggle('on', b.dataset.l===lang);
   /* אחרי לולאת השפות, לא לפניה: הכפתור חולק איתן מחלקה לצורך עיצוב,
      והלולאה הייתה מכבה לו את הסימון בכל פעם מחדש. */
   $('airBtn').classList.toggle('on', showAir);
+  $('heatBtn').classList.toggle('on', heatView);
   syncPick(); syncCut(); syncZoom(); syncHeat();
 }
 $('gear').addEventListener('click',()=>$('langBox').classList.toggle('on'));
 $('airBtn').addEventListener('click',()=>{ showAir=!showAir; applyLang(); });
+$('heatBtn').addEventListener('click',()=>{ heatView=!heatView; applyLang(); });
 /* .opt הוא כפתור הגדרה רגיל שמתחזה לכפתור שפה כדי לקבל את אותו
    עיצוב. בלי הסינון הזה לחיצה עליו מציבה lang=undefined, וכל טקסט
    במשחק נופל בפעם הבאה שמישהו מבקש מחרוזת. */
@@ -3120,6 +3421,7 @@ function loop(now){
 
 /* אחרי שכל ההצהרות רצו — קודם לכן הקבועים הנגזרים עוד בתחום המת */
 applyScale(MSCALE);
+hfPaint(); hfWallCells();
 reset(); syncPick(); syncZoom(); applyLang();
 setTimeout(()=>$('hint').classList.add('gone'),100);
 requestAnimationFrame(loop);
@@ -3152,7 +3454,8 @@ window.RLS = {
              where:{flask:w[0],tube:w[1],beaker:w[2],funnel:w[3],room:w[4]},
              air:nAir, wall:{flask:wallT[W_FLASK+2], tubeIn:wallT[W_TUBE+1],
                              tubeOut:wallT[W_TUBE+WALL_N-2], beaker:wallT[W_BEAKER+2]},
-             tap:tap.open };
+             tap:tap.open,
+             field:{ cells:HF.n, room:hfProbe(-3.5,4.5,-2.3,5.0,-3.3,2.0) } };
   },
 };
 </script>
