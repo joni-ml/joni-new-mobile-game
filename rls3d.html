@@ -247,6 +247,7 @@ const STR = {
        hint:'שתי אצבעות לסובב · צביטה להגדיל · הקשה למעלה מוסיפה לקערה',
        fov:'שדה ראייה', nm:'ננומטר', mm:'מ״מ', mag:'הגדלה',
        realSize:'מולקולות בגודל אמיתי', mols:'מולקולות',
+       per:'מולקולות אמיתיות בכל כדור',
        K:'K', mil:' מיליון', bil:' מיליארד',
        detail:'גודל מולקולה', smaller:'קטן יותר', heavy:'כבד',
        air:'הצג מולקולות אוויר', heat:'מפת חום', room:'חדר',
@@ -260,6 +261,7 @@ const STR = {
        hint:'Two fingers to rotate · pinch to magnify · tap up top to fill the bowl',
        fov:'Field of view', nm:'nm', mm:'mm', mag:'magnification',
        realSize:'molecules at real size', mols:'molecules',
+       per:'real molecules per sphere',
        K:'K', mil:'M', bil:'B',
        detail:'Molecule size', smaller:'smaller', heavy:'heavy',
        air:'Show air molecules', heat:'Heat map', room:'room',
@@ -1397,7 +1399,9 @@ const GLASS = [
 /* אוויר תופס מקום כמו כל דבר אחר, ולכן הוא מתרבה עם הסקאלה בדיוק
    כמו המים: אותו נפח חדר, מולקולות קטנות יותר. */
 const AIR_BASE = 112;
-const MAX = Math.round((240+AIR_BASE)*MSCALE_MAX**3) + 1400;
+/* שלושה פיצולים מהרמה הבסיסית מכפילים את המספר פי שמונה, והאוויר
+   מתפצל יחד עם השאר. בלי המקום הזה הצעד האחרון פשוט לא קורה. */
+const MAX = Math.round((240+AIR_BASE)*MSCALE_MAX**3) + 6000;
 const IN_FLASK=0, IN_TUBE=1, IN_BEAKER=2, IN_FUNNEL=3, IN_ROOM=4;
 const GAS=0, LIQ=1, SOL=2;
 
@@ -2160,6 +2164,89 @@ function hfProbe(x0,x1,y0,y1,z0,z1){
   return n ? s/n : AMBIENT;
 }
 
+
+/* ===========================================================================
+   5.8) רזולוציה שנגררת אחרי המצלמה
+
+   ככל שמתקרבים רואים יותר מולקולות, קטנות יותר, עד לגודל האמיתי.
+   כל צעד פנימה מפצל כל מולקולה לשתיים, וכל צעד החוצה מאחד בחזרה.
+   הכמות החומרית לא משתנה: מה שמשתנה הוא כמה נקודות מתארות אותה,
+   ולכן המרווח מתכווץ בשורש שלישי של 2 והנוזל ממלא בדיוק את אותו נפח.
+
+   כמה רחוקים מהאמת: כל כדור כאן מייצג מספר עצום של מולקולות אמיתיות,
+   והמספר הזה מוצג. הוא יורד עם כל פיצול, אבל אי אפשר להביא אותו ל-1
+   בבקבוק שלם — לזה צריך 10²¹ נקודות. שם נכנס המיקרוסקופ, שהוא קופסה
+   של ננומטרים ספורים שבה כל כדור באמת מולקולה אחת.
+   =========================================================================== */
+/* קנה המידה כבר מוגדר בקובץ — M_PER_UNIT, בקבוק 250 מ״ל. משתמשים
+   בו ולא בשני קנים לאותו עולם. */
+function repOf(){
+  const t = (R0*M_PER_UNIT*1e9)/NM_OO;
+  return t*t*t;
+}
+function sci(n){
+  if (n<1000) return String(Math.round(n));
+  const e=Math.floor(Math.log10(n));
+  const m=(n/Math.pow(10,e));
+  const SUP='⁰¹²³⁴⁵⁶⁷⁸⁹';
+  return m.toFixed(1)+'×10'+String(e).split('').map(c=>SUP[+c]).join('');
+}
+
+const MOLF = ['sp','x','y','z','vx','vy','vz','spin','where','t','T','phase','rho','around','wet','air'];
+
+/* פיצול: כל מולקולה הופכת לשתיים, והשתיים נדחפות לצדדים מתוך המקום
+   של המקורית. הכל עובר כמו שהוא — טמפרטורה, מצב, מהירות — ולכן מבנה
+   החום והזרימה בכלי נשמר ולא מוגרל מחדש. */
+function splitMolecules(){
+  const n0=mol.n, kNew=MSCALE*Math.cbrt(2);
+  if (kNew>MSCALE_MAX+1e-6) return false;
+  if (n0*2 > MAX) return false;
+  const off=R0*0.26;
+  for (let i=0;i<n0;i++){
+    const j=mol.n++;
+    for (const f of MOLF) mol[f][j]=mol[f][i];
+    for (let c=0;c<3;c++) mol.axis[j*3+c]=mol.axis[i*3+c];
+    mol.spin[j]=rand(0,6.28);
+    const ux=rand(-1,1), uy=rand(-1,1), uz=rand(-1,1);
+    const l=Math.hypot(ux,uy,uz)||1;
+    mol.x[i]+=ux/l*off; mol.y[i]+=uy/l*off; mol.z[i]+=uz/l*off;
+    mol.x[j]-=ux/l*off; mol.y[j]-=uy/l*off; mol.z[j]-=uz/l*off;
+  }
+  applyScale(kNew);
+  syncZoom(); syncAtoms();
+  return true;
+}
+
+/* איחוד: מסירים כל מולקולה שנייה מכל מין ומכל אזור, והמרווח גדל
+   בשורש שלישי של 2. הכמות החומרית נשמרת כי כל כדור שנשאר מייצג
+   פי שניים — וזה בדיוק מה שהמספר שמוצג אומר.
+   לא מיצעתי זוגות שכנים: מולקולות של חומרים שונים אי אפשר למצע,
+   ומי שלא מצא בן זוג היה נשאר עם משקל אחר מכולם, ואז "כל כדור
+   מייצג N" מפסיק להיות נכון. */
+function mergeMolecules(){
+  const kNew=MSCALE/Math.cbrt(2);
+  if (kNew < LEVELS[0]-1e-6) return false;
+  let flip=0;
+  for (let i=mol.n-1;i>=0;i--) if ((flip++ & 1)===0) kill(i);
+  applyScale(kNew);
+  syncZoom(); syncAtoms();
+  return true;
+}
+
+/* איזו רמה מתאימה לזום הנוכחי. הרצועות חופפות בכוונה: בלי זה מספיק
+   רעד קטן על הגבול כדי לפצל ולאחד לסירוגין בכל פריים. */
+const LOD_IN =[0.34, 0.14, 0.055];    /* מתחת לזה — מפצלים */
+const LOD_OUT=[0.46, 0.19, 0.075];    /* מעל לזה — מאחדים */
+/* הרמה נגזרת מהסקאלה עצמה ולא ממונה נפרד. אם מישהו בוחר רמה ידנית
+   בהגדרות, המונה היה יוצא מסנכרון והזום היה מפצל מהמקום הלא נכון. */
+const lodStepOf = () => Math.round(3*Math.log(MSCALE/LEVELS[0])/Math.log(2));
+function lodFollowZoom(){
+  if (MC.on) return;
+  const st=Math.max(0, Math.min(3, lodStepOf()));
+  if (st<3 && cam.zoom < LOD_IN[st]) splitMolecules();
+  else if (st>0 && cam.zoom > LOD_OUT[st-1]) mergeMolecules();
+}
+
 function step(dt){
   neighbours(dt);
   airHeat(dt);
@@ -2712,7 +2799,12 @@ const inst={ off:new Float32Array(ISLOTS*3), col:new Float32Array(ISLOTS*3),
 /* כמה גדול המודל המצויר ביחס למרווח האריזה. זה לא גודל האטום — זו
    ההחלטה כמה מקום המולקולה תופסת על המסך, וכך רואים את הרווח שבין
    מולקולה לשכנתה. במוצק הן צמודות, בנוזל יש רווח, בגז הרבה יותר. */
-const MODEL = [0.50, 0.72, 0.94];      /* גז, נוזל, מוצק */
+/* מולקולת מים היא באותו גודל בקרח, במים ובאדים. מה שמשתנה בין
+   המצבים הוא המרווח ביניהן, ואת זה הפיזיקה כבר עושה. לצייר גז קטן
+   יותר היה פשוט לא נכון.
+   היחס עצמו כבר מדויק: רדיוס החמצן 0.082 חלקי מרווח 0.155 יוצא
+   0.529, והמדידה האמיתית היא 0.152 חלקי 0.290 = 0.524. */
+const MODEL = [1, 1, 1];
 let showAir = false;
 
 /* ---------------------------------------------------------------------------
@@ -2742,7 +2834,7 @@ const clX=new Float32Array(CL_N*4), clY=new Float32Array(CL_N*4),
       clZ=new Float32Array(CL_N*4), clC=new Float32Array(CL_N*4);
 const clTouched=new Int32Array(CL_N*4);
 const SPI = { H2O:0, O2:1, H2:2, N2:3 };
-const lodStats = { drawn:0, merged:0, fill:0 };
+const lodStats = { drawn:0, merged:0 };
 
 /* 0 בזום מלא החוצה, 1 בסף המיקרוסקופ. לוגריתמי, כי זום הוא כפלי. */
 function zoomU(){
@@ -2756,11 +2848,6 @@ function buildAtoms(){
   /* פיקסלים לרדיאן — ככה אפשר לשאול "כמה גדולה המולקולה על המסך"
      במקום "כמה היא רחוקה", והתשובה נכונה בכל מסך ובכל זום */
   const PXR = (H*0.5)/Math.tan(FOV*0.5);
-  const u = zoomU();
-  /* המודל גדל לקראת מילוי מרחב. החזקה מתחת לאחד מקדימה את העלייה:
-     עם 1.35 שום דבר לא היה נראה שונה עד חצי הדרך למיקרוסקופ, וכל
-     השינוי נדחס לסוף — כלומר שוב קפיצה, רק במקום אחר. */
-  const fill = Math.pow(u, 0.72);
 
   let nFar=0;
   for (let g=0; g<CL_N*4; g++) clTouched[g]=0;
@@ -2768,7 +2855,7 @@ function buildAtoms(){
   for (let i=0;i<mol.n;i++){
     if (!showAir && mol.air[i]) continue;
     const S=SPECIES[mol.sp[i]];
-    const md = MODEL[mol.phase[i]]*(1-fill) + 1.06*fill;
+    const md = MODEL[mol.phase[i]];
 
     const dx=mol.x[i]-eye[0], dy=mol.y[i]-eye[1], dz=mol.z[i]-eye[2];
     const d=Math.sqrt(dx*dx+dy*dy+dz*dz) || 1e-4;
@@ -2837,7 +2924,7 @@ function buildAtoms(){
       k++;
     }
   }
-  lodStats.drawn=k; lodStats.merged=nFar; lodStats.fill=fill;
+  lodStats.drawn=k; lodStats.merged=nFar;
   return k;
 }
 
@@ -3312,19 +3399,28 @@ function syncZoom(){
     $('fov').textContent=T('fov')+' '+microFov.toFixed(1)+' '+T('nm')+' · '+T('mag')+' ×'
       + human(MACRO_VIEW_M/(microFov*1e-9)) + ' · ' + MC.n + ' ' + T('realSize');
   } else {
+    /* המספר שאומר כמה רחוקים מהאמת: כמה מולקולות אמיתיות כל כדור */
     const k=1/cam.zoom;
     $('zoomBtn').textContent='🔍 ×'+(k<9.5?k.toFixed(1):Math.round(k));
     const m=MACRO_VIEW_M*cam.zoom;
-    $('fov').textContent = k>1.4 ? (T('fov')+' '+(m*1000).toFixed(m<0.01?2:1)+' '+T('mm')) : '';
+    const per = T('per')+': '+sci(repOf());
+    $('fov').textContent = k>1.4
+      ? T('fov')+' '+(m*1000).toFixed(m<0.01?2:1)+' '+T('mm')+' · '+per
+      : per;
   }
 }
 function syncAtoms(){
   /* נבנה מרשימת היסודות, לא מרשימה קשיחה — חנקן נוסף ונפל ל-NaN */
   const c={}; for (const k of Object.keys(ELEM)) c[k]=0;
   for (let i=0;i<mol.n;i++) for (const [el,k] of Object.entries(SPECIES[mol.sp[i]].count)) c[el]+=k;
+  /* כפול כמה מולקולות אמיתיות מייצג כל כדור. בלי זה פיצול לרזולוציה
+     גבוהה יותר נראה כאילו הוא יוצר חומר יש מאין: אותם מים בדיוק,
+     והמונה קופץ מ-5112 ל-20448. מה שהשתנה הוא כמה נקודות מתארות
+     אותם, לא כמה אטומים יש. */
+  const rep=repOf();
   $('atoms').innerHTML=Object.entries(c).filter(([,n])=>n>0).map(([el,n])=>{
     const rgb=ELEM[el].col.map(v=>Math.round(v*255)).join(',');
-    return `<b style="background:rgba(${rgb},.13);color:rgb(${rgb})">${n}<i>${el}</i></b>`;
+    return `<b style="background:rgba(${rgb},.13);color:rgb(${rgb})">${sci(n*rep)}<i>${el}</i></b>`;
   }).join('');
 }
 function addMolecules(sp,count,where){
@@ -3517,6 +3613,7 @@ function loop(now){
   /* המדחום צריך להתעדכן מעצמו. קודם הוא נכתב רק כשנגעו בחוגה, ולכן
      הוא הראה את המעלות של הרגע שבו נגעת ולא של עכשיו. */
   if (acc>0.25){ syncAtoms(); syncHeat(); acc=0; }
+  lodFollowZoom();
   requestAnimationFrame(loop);
 }
 
@@ -3553,7 +3650,7 @@ window.RLS = {
     return { atoms:c, species:by, n:mol.n, heat:Math.round(heat), realView, floatFBO:FLOAT_FBO,
              phase:{gas:ph[0],liquid:ph[1],solid:ph[2]},
              where:{flask:w[0],tube:w[1],beaker:w[2],funnel:w[3],room:w[4]},
-             air:nAir, lod:{...lodStats, zoomU:zoomU(), zoom:cam.zoom}, wall:{flask:wallT[W_FLASK+2], tubeIn:wallT[W_TUBE+1],
+             air:nAir, lod:{...lodStats, step:lodStepOf(), mscale:MSCALE, rep:repOf(), zoom:cam.zoom}, wall:{flask:wallT[W_FLASK+2], tubeIn:wallT[W_TUBE+1],
                              tubeOut:wallT[W_TUBE+WALL_N-2], beaker:wallT[W_BEAKER+2]},
              tap:tap.open,
              field:{ cells:HF.n, room:hfProbe(-3.5,4.5,-2.3,5.0,-3.3,2.0) } };
