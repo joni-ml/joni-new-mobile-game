@@ -2712,24 +2712,107 @@ const inst={ off:new Float32Array(ISLOTS*3), col:new Float32Array(ISLOTS*3),
 /* כמה גדול המודל המצויר ביחס למרווח האריזה. זה לא גודל האטום — זו
    ההחלטה כמה מקום המולקולה תופסת על המסך, וכך רואים את הרווח שבין
    מולקולה לשכנתה. במוצק הן צמודות, בנוזל יש רווח, בגז הרבה יותר. */
-const MODEL = [0.42, 0.62, 0.88];      /* גז, נוזל, מוצק */
+const MODEL = [0.50, 0.72, 0.94];      /* גז, נוזל, מוצק */
 let showAir = false;
+
+/* ---------------------------------------------------------------------------
+   רמת הפירוט, ברצף.
+
+   קודם היו שני מצבים ותו לא: או המעבדה, שבה כל מולקולה היא נקודה זעירה,
+   או המיקרוסקופ, שבו הן כדורים ענקיים שנוגעים זה בזה. או הכל מפורק או
+   הכל מחובר, בלי שום דבר באמצע, והמעבר ביניהם היה קפיצה.
+
+   שני דברים משתנים עכשיו עם הזום, ושניהם ברצף:
+
+   1) גודל המודל. מרחוק המולקולה מצוירת קטנה ויש רווח בין אחת לשנייה,
+      וזה טוב כדי לראות מבנה. ככל שמתקרבים היא גדלה עד שהמולקולות
+      נוגעות — וזה לא סגנון אלא האמת: במים אמיתיים המרחק בין מרכזים
+      הוא 0.29 ננומטר ורדיוס החמצן 0.152, כלומר הן באמת נוגעות
+      וחופפות. ברגע שהמיקרוסקופ נכנס, המעבדה כבר נראית כמוהו.
+
+   2) מיזוג מרחוק. מולקולה שגודלה על המסך קטן מפיקסל אין טעם לצייר
+      בנפרד — אי אפשר לראות אותה ממילא. קבוצות באותו תא מרחבי מתמזגות
+      לכדור אחד גדול יותר, ומספרן יורד. עדיין רואים אותן, אבל לא
+      סופרים כל אחת.
+   --------------------------------------------------------------------------- */
+const CL_CS = 0.30;
+const CL_NX=Math.ceil(4.8/CL_CS), CL_NY=Math.ceil(5.2/CL_CS), CL_NZ=Math.ceil(2.6/CL_CS);
+const CL_N = CL_NX*CL_NY*CL_NZ;
+const clX=new Float32Array(CL_N*4), clY=new Float32Array(CL_N*4),
+      clZ=new Float32Array(CL_N*4), clC=new Float32Array(CL_N*4);
+const clTouched=new Int32Array(CL_N*4);
+const SPI = { H2O:0, O2:1, H2:2, N2:3 };
+const lodStats = { drawn:0, merged:0, fill:0 };
+
+/* 0 בזום מלא החוצה, 1 בסף המיקרוסקופ. לוגריתמי, כי זום הוא כפלי. */
+function zoomU(){
+  const zOut=1.15, zIn=1/(MAXZOOM*1.3);
+  return clamp(Math.log(zOut/cam.zoom)/Math.log(zOut/zIn), 0, 1);
+}
 
 function buildAtoms(){
   let k=0;
+  const eye=eyePos();
+  /* פיקסלים לרדיאן — ככה אפשר לשאול "כמה גדולה המולקולה על המסך"
+     במקום "כמה היא רחוקה", והתשובה נכונה בכל מסך ובכל זום */
+  const PXR = (H*0.5)/Math.tan(FOV*0.5);
+  const u = zoomU();
+  /* המודל גדל לקראת מילוי מרחב. החזקה מתחת לאחד מקדימה את העלייה:
+     עם 1.35 שום דבר לא היה נראה שונה עד חצי הדרך למיקרוסקופ, וכל
+     השינוי נדחס לסוף — כלומר שוב קפיצה, רק במקום אחר. */
+  const fill = Math.pow(u, 0.72);
+
+  let nFar=0;
+  for (let g=0; g<CL_N*4; g++) clTouched[g]=0;
+
   for (let i=0;i<mol.n;i++){
     if (!showAir && mol.air[i]) continue;
     const S=SPECIES[mol.sp[i]];
-    const md=MODEL[mol.phase[i]];
-    const a=mol.spin[i], c=Math.cos(a), s=Math.sin(a);
+    const md = MODEL[mol.phase[i]]*(1-fill) + 1.06*fill;
+
+    const dx=mol.x[i]-eye[0], dy=mol.y[i]-eye[1], dz=mol.z[i]-eye[2];
+    const d=Math.sqrt(dx*dx+dy*dy+dz*dz) || 1e-4;
+    /* גודל המולקולה על המסך, ברדיוס פיקסלים */
+    const px = R0*md*PXR/d;
+
+    if (px < 1.6){
+      /* קטנה מכדי להיראות לבדה — נכנסת לאשכול */
+      const cx=((mol.x[i]+1.5)/CL_CS)|0, cy=((mol.y[i]+0.4)/CL_CS)|0, cz=((mol.z[i]+1.3)/CL_CS)|0;
+      if (cx>=0&&cy>=0&&cz>=0&&cx<CL_NX&&cy<CL_NY&&cz<CL_NZ){
+        const sp=SPI[mol.sp[i]]|0;
+        const g=(((cz*CL_NY+cy)*CL_NX+cx)<<2)|sp;
+        if (!clTouched[g]){ clTouched[g]=1; clX[g]=clY[g]=clZ[g]=clC[g]=0; }
+        clX[g]+=mol.x[i]; clY[g]+=mol.y[i]; clZ[g]+=mol.z[i]; clC[g]++;
+        nFar++;
+        continue;
+      }
+    }
+
+    if (px < 3.2){
+      /* נראית, אבל לא מספיק גדולה כדי להבחין באטומים שבתוכה */
+      if (k>=MAX) break;
+      const E=ELEM[S.atoms[0][0]];
+      inst.off[k*3]=mol.x[i]; inst.off[k*3+1]=mol.y[i]; inst.off[k*3+2]=mol.z[i];
+      const g = flash>0 && mol.sp[i]==='H2O' ? flash*1.6 : 0;
+      inst.col[k*3]=Math.min(1,E.col[0]+g);
+      inst.col[k*3+1]=Math.min(1,E.col[1]+g*.8);
+      inst.col[k*3+2]=Math.min(1,E.col[2]+g*.5);
+      inst.rad[k]=R0*md*0.62; inst.kind[k]=1;
+      k++;
+      continue;
+    }
+
+    /* קרובה — כל אטום בנפרד */
+    const a=mol.spin[i], c=Math.cos(a), sn=Math.sin(a);
     const ax=mol.axis[i*3], ay=mol.axis[i*3+1], az=mol.axis[i*3+2];
     for (const [el,off] of S.atoms){
+      if (k>=MAX) break;
       const E=ELEM[el], [ox,oy,oz]=off;
       const dt=ax*ox+ay*oy+az*oz;
       const cx=ay*oz-az*oy, cy=az*ox-ax*oz, cz=ax*oy-ay*ox;
-      inst.off[k*3]  =mol.x[i]+(ox*c+cx*s+ax*dt*(1-c))*md;
-      inst.off[k*3+1]=mol.y[i]+(oy*c+cy*s+ay*dt*(1-c))*md;
-      inst.off[k*3+2]=mol.z[i]+(oz*c+cz*s+az*dt*(1-c))*md;
+      inst.off[k*3]  =mol.x[i]+(ox*c+cx*sn+ax*dt*(1-c))*md;
+      inst.off[k*3+1]=mol.y[i]+(oy*c+cy*sn+ay*dt*(1-c))*md;
+      inst.off[k*3+2]=mol.z[i]+(oz*c+cz*sn+az*dt*(1-c))*md;
       const g = flash>0 && mol.sp[i]==='H2O' ? flash*1.6 : 0;
       inst.col[k*3]  =Math.min(1,E.col[0]+g);
       inst.col[k*3+1]=Math.min(1,E.col[1]+g*.8);
@@ -2738,8 +2821,26 @@ function buildAtoms(){
       k++;
     }
   }
+
+  /* האשכולות. כדור אחד לכל תא, בנפח של כל מי שבתוכו — ולכן הוא
+     תופס בערך את אותו מקום שהם תפסו יחד. */
+  if (nFar){
+    const SPK=['H2O','O2','H2','N2'];
+    for (let g=0; g<CL_N*4; g++){
+      if (!clTouched[g] || clC[g]<1) continue;
+      if (k>=MAX) break;
+      const n=clC[g];
+      const E=ELEM[SPECIES[SPK[g&3]].atoms[0][0]];
+      inst.off[k*3]=clX[g]/n; inst.off[k*3+1]=clY[g]/n; inst.off[k*3+2]=clZ[g]/n;
+      inst.col[k*3]=E.col[0]; inst.col[k*3+1]=E.col[1]; inst.col[k*3+2]=E.col[2];
+      inst.rad[k]=R0*0.62*Math.cbrt(n)*1.05; inst.kind[k]=1;
+      k++;
+    }
+  }
+  lodStats.drawn=k; lodStats.merged=nFar; lodStats.fill=fill;
   return k;
 }
+
 function buildBlobs(){
   let k=0;
   for (let i=0;i<mol.n;i++){
@@ -3452,7 +3553,7 @@ window.RLS = {
     return { atoms:c, species:by, n:mol.n, heat:Math.round(heat), realView, floatFBO:FLOAT_FBO,
              phase:{gas:ph[0],liquid:ph[1],solid:ph[2]},
              where:{flask:w[0],tube:w[1],beaker:w[2],funnel:w[3],room:w[4]},
-             air:nAir, wall:{flask:wallT[W_FLASK+2], tubeIn:wallT[W_TUBE+1],
+             air:nAir, lod:{...lodStats, zoomU:zoomU(), zoom:cam.zoom}, wall:{flask:wallT[W_FLASK+2], tubeIn:wallT[W_TUBE+1],
                              tubeOut:wallT[W_TUBE+WALL_N-2], beaker:wallT[W_BEAKER+2]},
              tap:tap.open,
              field:{ cells:HF.n, room:hfProbe(-3.5,4.5,-2.3,5.0,-3.3,2.0) } };
