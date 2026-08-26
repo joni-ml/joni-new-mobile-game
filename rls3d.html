@@ -1,0 +1,3661 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>RLS — מעבדה</title>
+<style>
+/* ===========================================================================
+   RLS 3D — מעבדה
+
+   שני מצגים לאותו עולם בדיוק:
+     מולקולות — רואים כל אטום. חמצן אדום, מימן לבן, זווית 104.5° אמיתית.
+     אמיתי    — רואים מה שמצלמה הייתה רואה: נוזל, אדים, זכוכית.
+
+   אותן מולקולות. רק דרך אחרת להסתכל עליהן.
+
+   שום חומר לא "יודע" מה לעשות ליד חומר אחר. לשמן אין כלל שאומר לו לעלות
+   מעל מים — יש לו צפיפות, ולמים יש צפיפות, וההפרש הוא שדוחף אותו למעלה.
+   =========================================================================== */
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;background:#0a0b0d;color:#e2e6ec;
+  font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  user-select:none;-webkit-user-select:none;touch-action:none}
+body{display:flex;flex-direction:column}
+button{border:0;color:inherit;font:inherit;background:none}
+
+#stage{position:relative;flex:1;min-height:0}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+
+#atoms{position:absolute;top:calc(10px + env(safe-area-inset-top));left:50%;
+  transform:translateX(-50%);display:flex;gap:2px;
+  background:rgba(10,12,16,.8);border:1px solid rgba(255,255,255,.09);
+  border-radius:11px;padding:3px;backdrop-filter:blur(10px);pointer-events:none}
+#atoms b{display:flex;align-items:baseline;gap:5px;padding:5px 10px;border-radius:8px;
+  font-weight:600;font-size:12px;font-variant-numeric:tabular-nums}
+#atoms b i{font-style:normal;font-size:10px;opacity:.6}
+
+#hint{position:absolute;bottom:11px;left:50%;transform:translateX(-50%);
+  font-size:11px;color:#8b96a6;text-align:center;white-space:nowrap;
+  background:rgba(10,12,16,.75);border:1px solid rgba(255,255,255,.07);
+  border-radius:9px;padding:6px 12px;pointer-events:none;transition:opacity .8s ease 6s}
+#hint.gone{opacity:0}
+#fov{position:absolute;top:calc(56px + env(safe-area-inset-top));left:50%;
+  transform:translateX(-50%);font-size:11px;color:#a8b8cc;white-space:nowrap;
+  background:rgba(10,12,16,.82);border:1px solid rgba(255,255,255,.09);
+  border-radius:8px;padding:4px 11px;pointer-events:none;backdrop-filter:blur(8px)}
+#fov:empty{display:none}
+#fps{position:absolute;bottom:11px;inset-inline-start:12px;font-size:10px;
+  color:#4a5462;font-variant-numeric:tabular-nums;pointer-events:none}
+
+#hud{background:#0d0f13;border-top:1px solid #1b1f26;
+  padding:9px 10px calc(9px + env(safe-area-inset-bottom));
+  display:flex;flex-direction:column;gap:8px;z-index:3}
+.row{display:flex;align-items:center;gap:7px}
+/* שורת הכפתורים ארוכה מהמסך בטלפון — נגללת במקום לבלוע כפתורים */
+.row.tools{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.row.tools::-webkit-scrollbar{display:none}
+.row.tools .btn{flex:0 0 auto;padding:9px 10px}
+.btn{background:#161a21;border:1px solid #262c36;border-radius:10px;
+  padding:9px 12px;font-size:13px;line-height:1;white-space:nowrap;
+  transition:background .15s,border-color .15s}
+.btn:active{background:#1f2530}
+.btn.on{background:#c9822e;border-color:#e8a44f;color:#fff}
+.btn.hot{background:#3a1a12;border-color:#6d3320;color:#ffb99e}
+.btn.hot:active{background:#7a2d15;color:#fff}
+label{font-size:11px;color:#8b96a6;min-width:56px;font-variant-numeric:tabular-nums}
+input[type=range]{flex:1;accent-color:#d4632f;height:26px;direction:ltr}
+
+/* חוגת הגז ומדחום. במעבדה לא בוחרים מעלות — פותחים גז ומודדים מה יצא. */
+#burnRow{gap:11px}
+#knob{width:52px;height:52px;border-radius:50%;flex:0 0 auto;position:relative;
+  background:radial-gradient(circle at 34% 30%,#2b323d,#141920 68%);
+  border:1px solid #333c49;touch-action:none;cursor:grab}
+#knob::after{content:'';position:absolute;inset:7px;border-radius:50%;
+  border:1px solid rgba(255,255,255,.06)}
+#knobDot{position:absolute;left:50%;top:50%;width:3px;height:20px;margin:-20px 0 0 -1.5px;
+  background:linear-gradient(#ff9a4d,#d4632f);border-radius:2px;
+  transform-origin:50% 100%;transform:rotate(-135deg)}
+#knob.cold #knobDot{background:linear-gradient(#8fd2ff,#3f8fd6)}
+#burnPct{font-size:12px;color:#c3cedd;min-width:46px;font-variant-numeric:tabular-nums}
+#thermo{flex:1;height:16px;border-radius:8px;background:#151a21;border:1px solid #283040;
+  position:relative;overflow:hidden;display:flex;align-items:flex-end}
+#merc{display:block;width:100%;height:5%;align-self:flex-end;
+  background:linear-gradient(90deg,#3f7fd6,#d4632f 62%,#ff8a3d);
+  transition:height .18s linear}
+#heatLbl{min-width:52px;text-align:end}
+
+#pickBar{display:flex;align-items:center;gap:9px;background:#151a21;
+  border:1px solid #272e39;border-radius:12px;padding:9px 11px;width:100%}
+#pickDot{width:20px;height:20px;border-radius:50%;flex:0 0 auto;
+  border:1px solid rgba(0,0,0,.45)}
+#pickName{font-size:14px;font-weight:600}
+#pickKey{font-size:12px;color:#94a1b2}
+#pickUp{margin-inline-start:auto;font-size:11px;color:#778392}
+
+#scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);opacity:0;
+  pointer-events:none;transition:opacity .25s;z-index:4}
+#scrim.on{opacity:1;pointer-events:auto}
+#sheet{position:fixed;left:0;right:0;bottom:0;z-index:5;background:#101319;
+  border-top:1px solid #242b35;border-radius:18px 18px 0 0;
+  transform:translateY(102%);transition:transform .32s cubic-bezier(.22,1,.36,1);
+  display:flex;flex-direction:column;max-height:86%;
+  padding-bottom:calc(8px + env(safe-area-inset-bottom))}
+#sheet.open{transform:translateY(0)}
+#grip{padding:9px 0 5px;display:flex;justify-content:center}
+#grip b{width:36px;height:4px;border-radius:2px;background:#333c49;display:block}
+#sheet h2{font-size:15px;font-weight:600;padding:2px 14px 10px}
+
+#ptable{display:grid;grid-template-columns:repeat(18,1fr);gap:2px;
+  direction:ltr;padding:0 12px}
+.pt{aspect-ratio:1;border-radius:3px;display:flex;align-items:center;
+  justify-content:center;font-size:9px;font-weight:700;position:relative}
+.pt.gap{background:transparent}
+.pt.off{background:#141922}
+.pt.live{background:color-mix(in srgb,var(--c) 24%,#181e27);
+  border:1px solid color-mix(in srgb,var(--c) 52%,#262e3a);color:#f2f7ff}
+.pt.live.on{background:var(--c);color:#0a1018;border-color:#fff;
+  box-shadow:0 0 0 2px #c9822e;z-index:1}
+.pt i{position:absolute;top:1px;inset-inline-start:2px;font-style:normal;
+  font-size:6px;font-weight:400;opacity:.7}
+#ask{margin:12px;padding:12px 13px;background:#151a21;border:1px solid #272e39;
+  border-radius:12px;font-size:12px;line-height:1.75;color:#9daabb}
+#ask b{color:#e8eef7;display:block;margin-bottom:5px;font-size:13px}
+#warn{position:absolute;inset:0;display:none;place-items:center;padding:40px;
+  text-align:center;line-height:2;color:#94a1b2}
+#gear{position:absolute;top:calc(12px + env(safe-area-inset-top));inset-inline-start:12px;
+  width:34px;height:34px;border-radius:10px;font-size:16px;color:#b9c6d6;
+  background:rgba(10,12,16,.8);border:1px solid rgba(255,255,255,.09)}
+#langBox{position:absolute;top:calc(52px + env(safe-area-inset-top));inset-inline-start:12px;
+  background:rgba(12,15,20,.95);border:1px solid rgba(255,255,255,.11);border-radius:12px;
+  padding:9px;display:none;flex-direction:column;gap:6px;min-width:132px;
+  backdrop-filter:blur(10px);z-index:6}
+#langBox.on{display:flex}
+#langBox b{font-size:11px;color:#8b96a6;font-weight:500;padding:0 3px 2px}
+#levels{display:flex;flex-direction:column;gap:5px}
+.lvl{background:#171d26;border:1px solid #283040;border-radius:9px;
+  padding:7px 10px;font-size:12px;text-align:start;white-space:nowrap}
+.lvl.on{background:#c9822e;border-color:#e8a44f;color:#fff}
+.lvl i{font-style:normal;opacity:.68;font-size:11px}
+.lang{background:#171d26;border:1px solid #283040;border-radius:9px;
+  padding:8px 11px;font-size:13px;text-align:start}
+.lang.on{background:#c9822e;border-color:#e8a44f;color:#fff}
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <div id="atoms"></div>
+  <div id="fps"></div>
+  <div id="fov"></div>
+  <div id="hint"></div>
+  <div id="warn"></div>
+  <button id="gear">⚙</button>
+  <div id="langBox">
+    <b id="langT"></b>
+    <button class="lang" data-l="he">עברית</button>
+    <button class="lang" data-l="en">English</button>
+    <b id="detT" style="margin-top:6px"></b>
+    <div id="levels"></div>
+    <button class="lang opt" id="airBtn" style="margin-top:6px"></button>
+    <button class="lang opt" id="heatBtn" style="margin-top:6px"></button>
+  </div>
+</div>
+
+<div id="hud">
+  <div class="row tools">
+    <button class="btn on" id="view">👁 אמיתי</button>
+    <button class="btn hot" id="spark">⚡ <b></b></button>
+    <button class="btn" id="tap">🚰 <b></b></button>
+    <button class="btn" id="zoomBtn">🔍 ×1</button>
+    <button class="btn" id="reset"></button>
+    <button class="btn" id="pause">⏸</button>
+  </div>
+  <div class="row" id="burnRow">
+    <div id="knob"><i id="knobDot"></i></div>
+    <span id="burnPct">0%</span>
+    <div id="thermo"><i id="merc"></i></div>
+    <label id="heatLbl">20°</label>
+  </div>
+  <div class="row">
+    <label id="cutLbl">חתך 0%</label>
+    <input type="range" id="cut" min="0" max="100" step="1" value="0">
+  </div>
+  <div class="row">
+    <button id="pickBar">
+      <i id="pickDot"></i>
+      <span id="pickName">מימן</span><span id="pickKey">H₂</span>
+      <span id="pickUp"></span>
+    </button>
+  </div>
+</div>
+
+<div id="scrim"></div>
+<div id="sheet">
+  <div id="grip"><b></b></div>
+  <h2 id="sheetH"></h2>
+  <div id="ptable"></div>
+  <div id="ask"><b id="askT"></b><span id="askB"></span><br><br><span id="askQ"></span></div>
+</div>
+
+<script>
+'use strict';
+/* ===========================================================================
+   1) מתמטיקה
+   =========================================================================== */
+const v3 = {
+  sub:(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],
+  add:(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]],
+  scale:(a,s)=>[a[0]*s,a[1]*s,a[2]*s],
+  dot:(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],
+  cross:(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],
+  len:a=>Math.hypot(a[0],a[1],a[2]),
+  norm(a){ const l=v3.len(a)||1; return [a[0]/l,a[1]/l,a[2]/l]; },
+};
+const m4 = {
+  mul(a,b,o=new Float32Array(16)){
+    for(let c=0;c<4;c++) for(let r=0;r<4;r++){
+      let s=0; for(let k=0;k<4;k++) s+=a[k*4+r]*b[c*4+k];
+      o[c*4+r]=s;
+    }
+    return o;
+  },
+  perspective(f,asp,n,fa){
+    const t=1/Math.tan(f/2), o=new Float32Array(16);
+    o[0]=t/asp; o[5]=t; o[11]=-1; o[10]=(fa+n)/(n-fa); o[14]=2*fa*n/(n-fa);
+    return o;
+  },
+  lookAt(eye,ctr,up){
+    const z=v3.norm(v3.sub(eye,ctr)), x=v3.norm(v3.cross(up,z)), y=v3.cross(z,x);
+    return new Float32Array([
+      x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0,
+      -v3.dot(x,eye),-v3.dot(y,eye),-v3.dot(z,eye),1]);
+  },
+};
+/* ---- שתי שפות ----
+   כל מחרוזת שהמשתמש רואה יושבת כאן. הדף מתהפך בין ימין-לשמאל
+   לשמאל-לימין, חוץ מהטבלה המחזורית — הסדר שלה הוא המספר האטומי,
+   והוא לא מתהפך בשום שפה. */
+const STR = {
+  he:{ real:'אמיתי', molecules:'מולקולות', microscope:'מיקרוסקופ', exit:'יציאה',
+       spark:'ניצוץ', tap:'ברז', reset:'אתחל', cut:'חתך', table:'טבלה',
+       ptable:'הטבלה המחזורית', settings:'הגדרות', language:'שפה',
+       askT:'שני יסודות. זה הכל.',
+       askB:'מימן וחמצן — ומהם אפשר לבנות מים, להרתיח, לזקק, להקפיא ולשרוף. כל שאר המשבצות כבויות כי עוד לא בניתי אותן.',
+       askQ:'איזה יסוד להוסיף הבא? תכתבו לי בתגובות ואני אוסיף אותו בפרק הבא.',
+       hint:'שתי אצבעות לסובב · צביטה להגדיל · הקשה למעלה מוסיפה לקערה',
+       fov:'שדה ראייה', nm:'ננומטר', mm:'מ״מ', mag:'הגדלה',
+       realSize:'מולקולות בגודל אמיתי', mols:'מולקולות',
+       per:'מולקולות אמיתיות בכל כדור',
+       K:'K', mil:' מיליון', bil:' מיליארד',
+       detail:'גודל מולקולה', smaller:'קטן יותר', heavy:'כבד',
+       air:'הצג מולקולות אוויר', heat:'מפת חום', room:'חדר',
+       noGL:'הדפדפן הזה לא תומך ב-WebGL2. נסה כרום או ספארי מעודכן.' },
+  en:{ real:'Real', molecules:'Molecules', microscope:'Microscope', exit:'Exit',
+       spark:'Spark', tap:'Tap', reset:'Reset', cut:'Cut', table:'Table',
+       ptable:'The periodic table', settings:'Settings', language:'Language',
+       askT:'Two elements. That is all.',
+       askB:'Hydrogen and oxygen — enough to build water, boil it, distil it, freeze it and burn it. Every other square is dark because I have not built it yet.',
+       askQ:'Which element should come next? Tell me in the comments and I will add it in the next episode.',
+       hint:'Two fingers to rotate · pinch to magnify · tap up top to fill the bowl',
+       fov:'Field of view', nm:'nm', mm:'mm', mag:'magnification',
+       realSize:'molecules at real size', mols:'molecules',
+       per:'real molecules per sphere',
+       K:'K', mil:'M', bil:'B',
+       detail:'Molecule size', smaller:'smaller', heavy:'heavy',
+       air:'Show air molecules', heat:'Heat map', room:'room',
+       noGL:'This browser does not support WebGL2. Try an up-to-date Chrome or Safari.' },
+};
+let lang = 'en';
+try { const v=localStorage.getItem('rls.lang'); if (v==='he'||v==='en') lang=v; } catch(e){}
+const T  = k => STR[lang][k];
+const nm = o => typeof o==='string' ? o : o[lang];
+
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const IDENT=new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+const rand=(a,b)=>a+Math.random()*(b-a);
+
+/* ===========================================================================
+   2) חומר
+
+   לכל חומר יש מספרים אמיתיים, ומהם נגזר הכל: מה צף, מה שוקע, מה נמס,
+   באיזה צבע הוא נראה ובאיזה עומק הוא מפסיק להיות שקוף.
+   =========================================================================== */
+const ELEM = {
+  H:{ name:{he:'מימן',en:'Hydrogen'}, col:[0.94,0.96,0.99], r:0.052, m:1.008 },
+  O:{ name:{he:'חמצן',en:'Oxygen'}, col:[0.86,0.35,0.22], r:0.082, m:16.00 },
+  N:{ name:{he:'חנקן',en:'Nitrogen'}, col:[0.32,0.50,0.86], r:0.075, m:14.007 },
+};
+
+/* ---- כמה קטנה מולקולה ----
+   במציאות היחס בין מולקולה לבקבוק הוא בערך פי 10⁸, כלומר משהו כמו 10²⁵
+   מולקולות בכלי אחד. הגבול כאן הוא כמה זוגות שכנים המעבד מספיק לפתור
+   בכל פריים: כל הקטנה פי k דורשת פי k³ מולקולות כדי למלא אותו נפח. */
+/* רמות פירוט. הקטנה פי k דורשת פי k³ מולקולות כדי למלא אותו נפח,
+   ולכן העלות עולה בחזקת שלוש. המספרים כאן נמדדו, לא נוחשו — והבחירה
+   היא של מי שמריץ, לא שלי. */
+const LEVELS = [2.2, 3.0, 3.7, 4.4];
+const MSCALE_MAX = LEVELS[LEVELS.length-1];
+let MSCALE = 2.2;
+let NMOL = Math.round(240 * MSCALE * MSCALE * MSCALE);
+try { const v=+localStorage.getItem('rls.scale'); if (LEVELS.includes(v)) MSCALE=v; } catch(e){}
+
+const A = 0.911;      /* חצי מזווית הקשר במים, 104.5° */
+const SPECIES = {
+  H2: { key:'H₂', name:{he:'מימן',en:'Hydrogen'}, boil:-253, melt:-259, liq:0.071,
+        /* מימן נוזלי חסר צבע לגמרי */
+        absorb:[0.10,0.10,0.11],
+        atoms:[['H',[-0.065,0,0]],['H',[0.065,0,0]]] },
+  O2: { key:'O₂', name:{he:'חמצן',en:'Oxygen'}, boil:-183, melt:-218, liq:1.141,
+        /* חמצן נוזלי הוא תכלת. זה לא סגנון — זה הצבע שלו */
+        absorb:[1.35,0.42,0.10],
+        atoms:[['O',[-0.080,0,0]],['O',[0.080,0,0]]] },
+  /* חנקן הוא 78% מהאוויר, ובלעדיו אין מה שיוליך חום מהכלי החוצה.
+     הוא גם אינרטי לחלוטין כאן — אין סידור אטומים עם H או O שמשחרר
+     אנרגיה — ולכן הוא יושב באוויר ולא עושה כלום, בדיוק כמו במציאות. */
+  N2: { key:'N₂', name:{he:'חנקן',en:'Nitrogen'}, boil:-196, melt:-210, liq:0.807,
+        absorb:[0.09,0.09,0.10],
+        atoms:[['N',[-0.055,0,0]],['N',[0.055,0,0]]] },
+  H2O:{ key:'H₂O', name:{he:'מים',en:'Water'}, boil:100, melt:0, liq:1.000,
+        /* מים בולעים אדום. בכוס הם שקופים, בבריכה הם כחולים */
+        absorb:[0.62,0.13,0.07],
+        atoms:[['O',[0,0,0]],
+               ['H',[ 0.114*Math.sin(A), 0.114*Math.cos(A),0]],
+               ['H',[-0.114*Math.sin(A), 0.114*Math.cos(A),0]]] },
+};
+/* כל האורכים בסקאלת המולקולה מתכווצים יחד — רדיוסי אטומים ואורכי קשר.
+   שומרים את ערכי הבסיס, כי הסקאלה משתנה בזמן ריצה. */
+for (const e of Object.values(ELEM)) e.r0 = e.r;
+for (const sp of Object.values(SPECIES))
+  for (const a of sp.atoms) a[2] = a[1];
+
+for (const s of Object.values(SPECIES)){
+  s.mass  = s.atoms.reduce((t,[e])=>t+ELEM[e].m,0);
+  s.count = s.atoms.reduce((t,[e])=>(t[e]=(t[e]||0)+1,t),{});
+  s.gasRho = s.mass / 24000;     /* גז אידאלי בטמפרטורת החדר, g/cm³ */
+}
+
+/* ===========================================================================
+   3) גאומטריה — הכל נבנה מסיבוב פרופיל דו-ממדי סביב ציר
+   =========================================================================== */
+const BEAKER_X = 1.95;
+/* משפך טפטוף מעל הבקבוק: קערה שאפשר לשים בה חומר, ברז שסוגר, וגזע
+   שיורד לתוך הצוואר. הגזע יושב בצד אחד של הצוואר והמעבה יוצא מהצד
+   השני, כמו בראש זיקוק אמיתי. */
+const FX = -0.085;
+const BOWL_Y0=3.76, BOWL_Y1=4.20, BOWL_R0=0.075, BOWL_R1=0.40;
+const TAP_Y=3.62, STEM_R=0.058, STEM_Y0=2.30;
+/* הגבולות כוללים גם את המעמדים. בלי זה המוטות נשארים מחוץ לפריים
+   והמלחציים נראים תלויים באוויר — בדיוק מה שבאו לתקן. */
+const BOUNDS = { cx:0.87, cy:1.98, hx:1.98, hy:2.30, hz:0.78 };
+
+function lathe(profile, segs=52){
+  const P=[],N=[],I=[];
+  for (let i=0;i<profile.length;i++){
+    const [r,y]=profile[i];
+    const p=profile[Math.max(0,i-1)], n=profile[Math.min(profile.length-1,i+1)];
+    const tr=n[0]-p[0], ty=n[1]-p[1], l=Math.hypot(tr,ty)||1;
+    const nr=-ty/l, ny=tr/l;
+    const pole = r<1e-6;
+    for (let s=0;s<=segs;s++){
+      const a=s/segs*Math.PI*2, c=Math.cos(a), si=Math.sin(a);
+      P.push(r*c,y,r*si);
+      if (pole) N.push(0,Math.sign(ny)||-1,0);
+      else N.push(nr*c,ny,nr*si);
+    }
+  }
+  const rw=segs+1;
+  for (let i=0;i<profile.length-1;i++) for (let s=0;s<segs;s++){
+    const a=i*rw+s,b=a+1,c=a+rw,d=c+1;
+    I.push(a,c,b,b,c,d);
+  }
+  return { pos:new Float32Array(P), nrm:new Float32Array(N), idx:new Uint16Array(I) };
+}
+
+/* ---- זכוכית חלולה ----
+   כלי אמיתי הוא לא משטח, יש לו עובי דופן. מזיזים את הפרופיל פנימה לאורך
+   הנורמל, ותופרים שפה מעוגלת בין השניים. זה מה שנותן לזכוכית את הכובד
+   שלה: מהצד המבט חוצה ארבע דפנות במקום שתיים, ולשפה יש עובי שרואים. */
+function profileNormal(profile,i){
+  const p=profile[Math.max(0,i-1)], n=profile[Math.min(profile.length-1,i+1)];
+  const tr=n[0]-p[0], ty=n[1]-p[1], l=Math.hypot(tr,ty)||1;
+  return [-ty/l, tr/l];
+}
+function flipNormals(m){
+  const n=new Float32Array(m.nrm);
+  for (let i=0;i<n.length;i++) n[i]=-n[i];
+  return { pos:m.pos, nrm:n, idx:m.idx };
+}
+function merge(...ms){
+  let np=0, ni=0, anyCol=false;
+  for (const m of ms){ np+=m.pos.length; ni+=m.idx.length; if (m.col) anyCol=true; }
+  const pos=new Float32Array(np), nrm=new Float32Array(np);
+  const col=anyCol?new Float32Array(np):null;
+  /* מעל 65536 קודקודים המפתחות לא נכנסים ל-16 סיביות ונגלשים בשקט */
+  const idx = np/3 > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
+  let po=0, io=0, vo=0;
+  for (const m of ms){
+    pos.set(m.pos,po); nrm.set(m.nrm,po);
+    if (col && m.col) col.set(m.col,po);
+    for (let i=0;i<m.idx.length;i++) idx[io+i]=m.idx[i]+vo;
+    vo+=m.pos.length/3; po+=m.pos.length; io+=m.idx.length;
+  }
+  return col ? { pos,nrm,idx,col } : { pos,nrm,idx };
+}
+/* השפה המגולגלת. עוברים מהדופן הפנימית מעל הקצה אל החיצונית — הפרופיל
+   נקרא עם y יורד, וזה מה שמכוון את הנורמלים החוצה. */
+function rimBead(rO,rI,y,steps=6){
+  const cr=(rO+rI)/2, rad=Math.abs(rO-rI)/2, p=[];
+  for (let i=0;i<=steps;i++){
+    const a=Math.PI - i/steps*Math.PI;
+    p.push([cr+rad*Math.cos(a), y+rad*Math.sin(a)]);
+  }
+  return p;
+}
+function hollow(profile, t, segs=52){
+  const inner=profile.map((pt,i)=>{
+    const [nr,ny]=profileNormal(profile,i);
+    return [Math.max(0, pt[0]-nr*t), pt[1]-ny*t];
+  });
+  return merge(
+    lathe(profile,segs),
+    flipNormals(lathe(inner,segs)),
+    lathe(rimBead(profile[0][0], inner[0][0], profile[0][1]), segs),
+  );
+}
+
+function flaskProfile(){
+  const p=[[0.21,2.42],[0.21,2.00],[0.245,1.91],[0.32,1.82],[0.44,1.72],[0.56,1.62]];
+  const R=0.90, cy=0.90;
+  for (let a=0.80; a<=Math.PI+1e-6; a+=(Math.PI-0.80)/24) p.push([R*Math.sin(a), cy+R*Math.cos(a)]);
+  return p;
+}
+/* לכוס יש בסיס עבה יותר מהדופן, בדיוק כמו לכוס מעבדה */
+const beakerProfile = () => [[0.68,1.48],[0.68,0.12],[0.655,0.055],[0.60,0.015],
+                             [0.52,0.0],[0.0,0.0]];
+
+/* ראש זיקוק אמיתי: עלייה קצרה מהצוואר, ומשם ירידה רצופה עד הכוס.
+   הגרסה הקודמת טיפסה ל-3.5 ואז ירדה — עם תנועה מוסעת זה לא הפריע,
+   אבל ברגע שהתעבית זזה מכוח כובד היא נתקעה בפסגה ולא יכלה לעבור.
+   מעבה לא מכיל מלכודת. */
+function condenserPath(){
+  const ctrl=[[0.115,2.42,0],[0.13,2.72,0],[0.28,2.92,0],[0.72,2.98,0]];
+  const HR=0.46, turns=2, steps=64;
+  for (let i=0;i<=steps;i++){
+    const u=i/steps, a=Math.PI+u*turns*Math.PI*2;
+    ctrl.push([BEAKER_X+HR*Math.cos(a), 2.93-u*1.10, HR*Math.sin(a)]);
+  }
+  ctrl.push([BEAKER_X-0.24,1.76,0],[BEAKER_X,1.66,0]);
+  return catmull(ctrl,5);
+}
+function catmull(pts,per){
+  const out=[];
+  for (let i=0;i<pts.length-1;i++){
+    const p0=pts[Math.max(0,i-1)],p1=pts[i],p2=pts[i+1],p3=pts[Math.min(pts.length-1,i+2)];
+    for (let s=0;s<per;s++){
+      const t=s/per,t2=t*t,t3=t2*t,q=[];
+      for (let k=0;k<3;k++) q.push(0.5*((2*p1[k])+(-p0[k]+p2[k])*t+
+        (2*p0[k]-5*p1[k]+4*p2[k]-p3[k])*t2+(-p0[k]+3*p1[k]-3*p2[k]+p3[k])*t3));
+      out.push(q);
+    }
+  }
+  out.push(pts[pts.length-1]);
+  return out;
+}
+function tubeMesh(path,radius,segs=16){
+  const P=[],N=[],I=[];
+  let up=[0,0,1];
+  for (let i=0;i<path.length;i++){
+    const a=path[Math.max(0,i-1)], b=path[Math.min(path.length-1,i+1)];
+    const T=v3.norm(v3.sub(b,a));
+    let side=v3.cross(up,T);
+    if (v3.len(side)<1e-4) side=v3.cross([1,0,0],T);
+    side=v3.norm(side); up=v3.norm(v3.cross(T,side));
+    for (let s=0;s<=segs;s++){
+      const ang=s/segs*Math.PI*2,c=Math.cos(ang),si=Math.sin(ang);
+      const n=[side[0]*c+up[0]*si, side[1]*c+up[1]*si, side[2]*c+up[2]*si];
+      P.push(path[i][0]+n[0]*radius, path[i][1]+n[1]*radius, path[i][2]+n[2]*radius);
+      N.push(n[0],n[1],n[2]);
+    }
+  }
+  const rw=segs+1;
+  for (let i=0;i<path.length-1;i++) for (let s=0;s<segs;s++){
+    const a=i*rw+s,b=a+1,c=a+rw,d=c+1;
+    I.push(a,c,b,b,c,d);
+  }
+  return { pos:new Float32Array(P), nrm:new Float32Array(N), idx:new Uint16Array(I) };
+}
+/* ---- ריהוט ----
+   השולחן, המדפים והבקבוקים הם גופים תלת-ממדיים אמיתיים, לא ציור על
+   משטח שטוח. אפשר לעבור מאחוריהם ולראות אותם מהצד. */
+function box(w,h,d,cx=0,cy=0,cz=0){
+  const x=w/2,y=h/2,z=d/2, P=[],N=[],I=[];
+  const face=(n,...q)=>{
+    const o=P.length/3;
+    for (const p of q){ P.push(cx+p[0],cy+p[1],cz+p[2]); N.push(n[0],n[1],n[2]); }
+    I.push(o,o+1,o+2,o,o+2,o+3);
+  };
+  face([0,0,1],  [-x,-y,z],[x,-y,z],[x,y,z],[-x,y,z]);
+  face([0,0,-1], [x,-y,-z],[-x,-y,-z],[-x,y,-z],[x,y,-z]);
+  face([1,0,0],  [x,-y,z],[x,-y,-z],[x,y,-z],[x,y,z]);
+  face([-1,0,0], [-x,-y,-z],[-x,-y,z],[-x,y,z],[-x,y,-z]);
+  face([0,1,0],  [-x,y,z],[x,y,z],[x,y,-z],[-x,y,-z]);
+  face([0,-1,0], [-x,-y,-z],[x,-y,-z],[x,-y,z],[-x,-y,z]);
+  return { pos:new Float32Array(P), nrm:new Float32Array(N), idx:new Uint16Array(I) };
+}
+function colored(m,rgb){
+  const c=new Float32Array(m.pos.length);
+  for (let i=0;i<c.length;i+=3){ c[i]=rgb[0]; c[i+1]=rgb[1]; c[i+2]=rgb[2]; }
+  return { pos:m.pos, nrm:m.nrm, idx:m.idx, col:c };
+}
+function place(m,dx,dy,dz){
+  const p=new Float32Array(m.pos);
+  for (let i=0;i<p.length;i+=3){ p[i]+=dx; p[i+1]+=dy; p[i+2]+=dz; }
+  return { pos:p, nrm:m.nrm, idx:m.idx, col:m.col };
+}
+
+/* בקבוקי ריאגנט על המדפים. פרופיל נקרא מלמעלה למטה, כמו כל הכלים כאן. */
+const BOTTLE = {
+  reagent:[[0,0.60],[0.055,0.60],[0.055,0.46],[0.075,0.40],[0.115,0.33],
+           [0.125,0.05],[0.105,0.0],[0,0.0]],
+  jar:    [[0,0.34],[0.105,0.34],[0.105,0.28],[0.135,0.25],[0.14,0.03],
+           [0.12,0.0],[0,0.0]],
+  tall:   [[0,0.82],[0.045,0.82],[0.048,0.70],[0.085,0.60],[0.09,0.04],
+           [0.075,0.0],[0,0.0]],
+  flat:   [[0,0.44],[0.07,0.44],[0.07,0.37],[0.16,0.32],[0.165,0.03],
+           [0.145,0.0],[0,0.0]],
+};
+
+function quadMesh(y,hx,hz,cx=0,cz=0){
+  return { pos:new Float32Array([cx-hx,y,cz-hz, cx+hx,y,cz-hz, cx+hx,y,cz+hz, cx-hx,y,cz+hz]),
+           nrm:new Float32Array([0,1,0, 0,1,0, 0,1,0, 0,1,0]),
+           idx:new Uint16Array([0,1,2, 0,2,3]) };
+}
+/* קופסה שרואים מבפנים — החדר */
+function roomMesh(w,h,d,cy){
+  const x=w/2, z=d/2, y0=cy-h/2, y1=cy+h/2, P=[],N=[],I=[];
+  const face=(a,b,c,dd,n)=>{
+    const o=P.length/3;
+    for (const p of [a,b,c,dd]){ P.push(...p); N.push(...n); }
+    I.push(o,o+1,o+2,o,o+2,o+3);
+  };
+  face([-x,y0,-z],[-x,y1,-z],[x,y1,-z],[x,y0,-z],[0,0,1]);      /* אחורי */
+  face([ x,y0, z],[ x,y1, z],[-x,y1, z],[-x,y0, z],[0,0,-1]);   /* קדמי  */
+  face([-x,y0, z],[-x,y0,-z],[-x,y1,-z],[-x,y1, z],[1,0,0]);    /* שמאל  */
+  face([ x,y0,-z],[ x,y0, z],[ x,y1, z],[ x,y1,-z],[-1,0,0]);   /* ימין  */
+  face([-x,y1,-z],[-x,y1, z],[ x,y1, z],[ x,y1,-z],[0,-1,0]);   /* תקרה  */
+  face([-x,y0, z],[ x,y0, z],[ x,y0,-z],[-x,y0,-z],[0,1,0]);    /* רצפה  */
+  return { pos:new Float32Array(P), nrm:new Float32Array(N), idx:new Uint16Array(I) };
+}
+function sphereMesh(seg=16,ring=12){
+  const P=[],I=[];
+  for (let r=0;r<=ring;r++){
+    const phi=r/ring*Math.PI;
+    for (let s=0;s<=seg;s++){
+      const th=s/seg*Math.PI*2;
+      P.push(Math.sin(phi)*Math.cos(th), Math.cos(phi), Math.sin(phi)*Math.sin(th));
+    }
+  }
+  const rw=seg+1;
+  for (let r=0;r<ring;r++) for (let s=0;s<seg;s++){
+    const a=r*rw+s,b=a+1,c=a+rw,d=c+1;
+    I.push(a,c,b,b,c,d);
+  }
+  return { pos:new Float32Array(P), idx:new Uint16Array(I) };
+}
+
+/* ===========================================================================
+   4) WebGL
+   =========================================================================== */
+const cv = document.getElementById('cv');
+/* בלי antialias על הקנבס: כל הגאומטריה מצוירת ל-FBO מרובה־דגימות משלנו
+   ונפתרת החוצה בסוף. אם גם ברירת המחדל הייתה מרובת־דגימות, ההעתקה אליה
+   הייתה פעולה לא חוקית — והמסך היה נשאר שחור. */
+const gl = cv.getContext('webgl2',{antialias:false,alpha:false});
+function fail(msg){
+  const w=document.getElementById('warn');
+  w.style.display='grid'; w.textContent=msg; throw new Error(msg);
+}
+if (!gl) fail('This browser does not support WebGL2 / הדפדפן לא תומך ב-WebGL2');
+const FLOAT_FBO = !!gl.getExtension('EXT_color_buffer_float');
+gl.getExtension('OES_texture_float_linear');
+
+function shader(t,src){
+  const s=gl.createShader(t); gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)+'\n'+src);
+  return s;
+}
+function program(vs,fs){
+  const p=gl.createProgram();
+  gl.attachShader(p,shader(gl.VERTEX_SHADER,vs));
+  gl.attachShader(p,shader(gl.FRAGMENT_SHADER,fs));
+  /* מיקומי תכונות קבועים בכל התוכניות. בלי זה כל VAO קשור לתוכנית
+     שבנתה אותו, ומעבר הצללים לא יכול לצייר את אותם משטחים. */
+  for (const [n,i] of Object.entries({aPos:0,aCorner:0,aNrm:1,aCol:2,aOff:3,aRad:4,aKind:5}))
+    gl.bindAttribLocation(p,i,n);
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  p.u = new Proxy({},{ get:(c,n)=> n in c ? c[n] : (c[n]=gl.getUniformLocation(p,n)) });
+  return p;
+}
+
+/* פונקציות משותפות לכל השיידרים */
+const LIB = `
+  const vec3 KEY = vec3(0.38, 0.86, 0.34);       // אור ראשי מלמעלה־קדימה
+  const vec3 FILL = vec3(-0.6, 0.25, -0.5);      // אור מילוי חלש מהצד
+  uniform vec4 uClip;
+  bool clipped(vec3 p){ return dot(p, uClip.xyz) < uClip.w; }
+  float hash21(vec2 p){
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+  float vnoise(vec2 p){
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash21(i), hash21(i + vec2(1,0)), f.x),
+               mix(hash21(i + vec2(0,1)), hash21(i + vec2(1,1)), f.x), f.y);
+  }
+  float fbm(vec2 p){
+    float s = 0.0, a = 0.5;
+    for (int i = 0; i < 4; i++){ s += a * vnoise(p); p *= 2.03; a *= 0.5; }
+    return s;
+  }
+  // האור בחדר: בהיר מלמעלה, כהה מלמטה. משמש גם להשתקפויות בזכוכית ובנוזל.
+  vec3 sky(vec3 d){
+    float up = d.y * 0.5 + 0.5;
+    // מעבדה לבנה: הרצפה מחזירה אור, התקרה היא גוף תאורה, והקירות ביניהם
+    vec3 c = mix(vec3(0.30,0.31,0.33), vec3(0.86,0.88,0.93), up * up);
+    c += vec3(1.0,0.98,0.92) * pow(max(dot(d, normalize(KEY)), 0.0), 16.0) * 1.3;
+    return c;
+  }
+`;
+
+/* מפת צללים. זה ההבדל הגדול בין "מואר" ל"מצולם": בלי צל שנופל מהכלים
+   על השולחן, שום כמות של הבהקות לא תשכנע את העין. */
+const SHADOW = `
+  uniform highp sampler2DShadow uShadow;
+  uniform mat4 uLVP;
+  uniform float uSTexel;
+  float lit(vec3 wp, float ndl){
+    vec4 lp = uLVP * vec4(wp, 1.0);
+    vec3 q = lp.xyz / lp.w * 0.5 + 0.5;
+    if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0 || q.z > 1.0) return 1.0;
+    /* ההטיה גדלה ככל שהמשטח משופע יותר ביחס לאור, אחרת משטחים
+       כמעט מקבילים לקרן מכתימים את עצמם בפסים */
+    float bias = mix(0.0045, 0.0009, clamp(ndl, 0.0, 1.0));
+    float s = 0.0;
+    for (int y = -1; y <= 1; y++)
+      for (int x = -1; x <= 1; x++)
+        s += texture(uShadow, vec3(q.xy + vec2(x, y) * uSTexel, q.z - bias));
+    return s / 9.0;
+  }
+`;
+const shadowProg = program(`#version 300 es
+  in vec3 aPos;
+  uniform mat4 uLVP;
+  void main(){ gl_Position = uLVP * vec4(aPos, 1.0); }`,
+  `#version 300 es
+  precision highp float;
+  void main(){}`);
+
+/* ---- החדר ---- */
+const roomProg = program(`#version 300 es
+  in vec3 aPos; in vec3 aNrm;
+  uniform mat4 uVP;
+  out vec3 vW, vN;
+  void main(){ vW=aPos; vN=aNrm; gl_Position=uVP*vec4(aPos,1.0); }`,
+  `#version 300 es
+  precision highp float;
+  in vec3 vW, vN;
+  ${LIB}
+  ${SHADOW}
+  out vec4 o;
+  void main(){
+    if (clipped(vW)) discard;
+    vec3 N = normalize(vN);
+    vec3 c;
+
+    if (N.y > 0.5){
+      /* רצפת אריחי מעבדה, אפורה, עם פוגות */
+      vec2 t = vW.xz / 1.1;
+      vec2 g = abs(fract(t) - 0.5);
+      float grout = smoothstep(0.47, 0.499, max(g.x, g.y));
+      float shade = 0.86 + hash21(floor(t)) * 0.14;
+      c = mix(vec3(0.435,0.442,0.452) * shade, vec3(0.295,0.302,0.312), grout);
+      c *= 0.62 + 0.38 * (1.0 - smoothstep(2.5, 13.0, length(vW.xz - vec2(0.9,0.0))));
+    } else if (N.y < -0.5){
+      /* התקרה היא גוף התאורה. בלי מקור אור שרואים בפריים אין מה
+         שישתקף בזכוכית ובמים, והכל יוצא שטוח. */
+      float panel = 1.0 - smoothstep(1.0, 4.2, length(vW.xz - vec2(0.9, 0.0)));
+      c = mix(vec3(0.60,0.61,0.64), vec3(1.0,0.99,0.96), panel);
+    } else {
+      /* קיר צבוע לבן: חיפוי תחתון, פס הפרדה, ומרקם צבע דק */
+      float grain = fbm(vW.xy * 2.6 + vW.zz * 1.4) * 0.055;
+      vec3 upper = vec3(0.900,0.905,0.912);
+      vec3 lower = vec3(0.735,0.768,0.772);          /* חיפוי אפור-ירקרק */
+      float rail = smoothstep(0.02, 0.0, abs(vW.y - 0.72));
+      c = mix(lower, upper, smoothstep(0.66, 0.78, vW.y));
+      c = mix(c, vec3(0.55,0.58,0.59), rail * 0.8);
+      c *= 0.92 + grain;
+      /* נפילת אור מהתקרה, ולכלוך קל בפינות */
+      c *= 0.62 + 0.52 * smoothstep(-2.4, 5.2, vW.y);
+      c *= 0.80 + 0.20 * (1.0 - smoothstep(5.0, 15.0, length(vW.xz - vec2(0.9,0.0))));
+    }
+    /* גם הרצפה והקירות מקבלים את הצל של הריהוט */
+    float ndl = max(dot(N, normalize(KEY)), 0.0);
+    c *= 0.42 + 0.58 * lit(vW, ndl);
+    o = vec4(c, 1.0);
+  }`);
+
+/* ---- שולחן העץ ---- */
+const woodProg = program(`#version 300 es
+  in vec3 aPos; in vec3 aNrm;
+  uniform mat4 uVP;
+  out vec3 vW, vN;
+  void main(){ vW=aPos; vN=aNrm; gl_Position=uVP*vec4(aPos,1.0); }`,
+  `#version 300 es
+  precision highp float;
+  in vec3 vW, vN;
+  ${LIB}
+  ${SHADOW}
+  uniform vec3 uEye;
+  uniform vec2 uOccA, uOccB;
+  out vec4 o;
+  void main(){
+    if (clipped(vW)) discard;
+    vec3 N = normalize(vN);
+    /* השולחן הוא תיבה, לא מישור. הסיב נמתח לאורך הלוח, אז כל פאה
+       דוגמת אותו עץ במישור אחר — אחרת הצדדים יוצאים מרוחים. */
+    vec2 p = abs(N.y) > 0.5 ? vW.xz : (abs(N.x) > 0.5 ? vW.zy : vW.xy);
+    /* טבעות שנתיות: קווי גובה של רעש מתוח לאורך סיב אחד */
+    float warp = fbm(p * vec2(0.55, 3.1)) * 1.5;
+    float rings = fract((p.x * 0.85 + warp) * 3.4);
+    rings = smoothstep(0.0, 0.42, rings) * smoothstep(1.0, 0.62, rings);
+    float fade = 1.0 - smoothstep(1.2, 4.2, distance(uEye.xz, p));
+    float fine = fbm(p * vec2(2.0, 22.0)) * 0.26 * fade;    /* סיב דק לאורך הלוח */
+    vec3 dark = vec3(0.168, 0.101, 0.056);
+    vec3 lite = vec3(0.352, 0.223, 0.126);
+    vec3 c = mix(dark, lite, rings * 0.75 + fine);
+    /* מפגשי לוחות */
+    float seam = smoothstep(0.010, 0.0, abs(fract(p.y * 0.0 + p.x * 0.30 + 0.5) - 0.5) - 0.485);
+    c *= 1.0 - seam * 0.55;
+
+    vec3 V = normalize(uEye - vW);
+    float ndl = max(dot(N, normalize(KEY)), 0.0);
+    float sh = lit(vW, ndl);
+    float d = ndl * sh + max(dot(N, normalize(FILL)), 0.0) * 0.25;
+    float sp = pow(max(dot(reflect(-normalize(KEY), N), V), 0.0), 30.0);
+    c *= 0.30 + d * 1.05;
+    c += sp * 0.05 * (0.4 + rings);                  /* לכה */
+
+    /* צל מגע — רק על פני השולחן, שם הכלים באמת עומדים */
+    if (N.y > 0.5){
+      float sh = clamp((1.0 - smoothstep(0.30, 1.25, distance(vW.xz, uOccA))) +
+                       (1.0 - smoothstep(0.24, 0.98, distance(vW.xz, uOccB))), 0.0, 1.0);
+      c *= 1.0 - sh * 0.72;
+    } else {
+      c *= 0.74;                                   /* הצדדים בצל */
+    }
+    o = vec4(c, 1.0);
+  }`);
+
+/* ---- ריהוט וכלים ברקע ----
+   מדפים, בקבוקי ריאגנט וצנצנות. כולם גופים אמיתיים עם צבע משלהם,
+   ממוזגים למש אחד כדי שכל הרקע יעלה קריאת ציור אחת. */
+const solidProg = program(`#version 300 es
+  in vec3 aPos; in vec3 aNrm; in vec3 aCol;
+  uniform mat4 uVP, uModel;
+  out vec3 vW, vN, vC;
+  void main(){
+    vW=(uModel*vec4(aPos,1.0)).xyz;
+    vN=mat3(uModel)*aNrm;
+    vC=aCol;
+    gl_Position=uVP*vec4(vW,1.0);
+  }`,
+  `#version 300 es
+  precision highp float;
+  in vec3 vW, vN, vC;
+  ${LIB}
+  ${SHADOW}
+  uniform vec3 uEye;
+  uniform float uEmissive;
+  uniform vec3 uEmCol;
+  out vec4 o;
+  void main(){
+    if (clipped(vW)) discard;
+    vec3 N=normalize(vN), V=normalize(uEye-vW), L=normalize(KEY);
+    float ndl = max(dot(N,L),0.0);
+    float sh = lit(vW, ndl);
+    float d = ndl * sh + max(dot(N,normalize(FILL)),0.0)*0.30;
+    float sp = pow(max(dot(normalize(L+V),N),0.0), 34.0) * sh;
+    /* אור מוחזר מהרצפה הבהירה — בלי זה התחתונים יוצאים שחורים */
+    vec3 amb = mix(vec3(0.20,0.21,0.22), vec3(0.42,0.44,0.48), N.y*0.5+0.5);
+    vec3 base = vC * (amb + d*0.80) + vec3(sp*0.22);
+    o = vec4(mix(base, uEmCol * (0.45 + uEmissive*1.7), uEmissive), 1.0);
+  }`);
+
+/* ---- הלהבה ----
+   מצוירת בחיבור, בלי כתיבה לעומק: אש היא אור שנוסף למה שמאחוריה,
+   לא גוף שמסתיר אותו. */
+const flameProg = program(`#version 300 es
+  in vec3 aPos;
+  uniform mat4 uVP;
+  out vec3 vW;
+  void main(){ vW=aPos; gl_Position=uVP*vec4(aPos,1.0); }`,
+  `#version 300 es
+  precision highp float;
+  in vec3 vW;
+  ${LIB}
+  uniform float uTime, uOn, uY0, uY1;
+  out vec4 o;
+  void main(){
+    if (clipped(vW)) discard;
+    float t = clamp((vW.y - uY0) / (uY1 - uY0), 0.0, 1.0);
+    /* חרוט פנימי כחול, מעטפת חיצונית כתומה — כמו בלהבת בונזן */
+    vec3 c = mix(vec3(0.30,0.60,1.00), vec3(1.00,0.62,0.16), smoothstep(0.10,0.62,t));
+    c = mix(c, vec3(1.0,0.88,0.55), smoothstep(0.72,1.0,t));
+    float flick = 0.80 + 0.20*sin(uTime*23.0 + vW.y*11.0)
+                       + 0.12*sin(uTime*13.7 - vW.y*7.0);
+    float a = pow(1.0 - t, 1.4) * flick * uOn;
+    o = vec4(c * a * 1.45, 1.0);
+  }`);
+
+/* ---- אטומים (מצג מולקולות) ---- */
+const atomProg = program(`#version 300 es
+  in vec3 aPos; in vec3 aOff; in vec3 aCol; in float aRad;
+  uniform mat4 uVP;
+  out vec3 vN, vW, vC;
+  void main(){ vN=aPos; vW=aOff+aPos*aRad; vC=aCol; gl_Position=uVP*vec4(vW,1.0); }`,
+  `#version 300 es
+  precision highp float;
+  in vec3 vN, vW, vC;
+  ${LIB}
+  uniform vec3 uEye;
+  out vec4 o;
+  void main(){
+    if (clipped(vW)) discard;
+    vec3 N=normalize(vN), V=normalize(uEye-vW), L=normalize(KEY);
+    float d = max(dot(N,L),0.0) + max(dot(N,normalize(FILL)),0.0)*0.22;
+    float sp = pow(max(dot(reflect(-L,N),V),0.0), 46.0);
+    o = vec4(vC * (sky(N)*0.9 + d*0.85) + vec3(sp*0.7), 1.0);
+  }`);
+
+/* ---- זכוכית, עם מדים כמו על כלי אמיתי ---- */
+const glassProg = program(`#version 300 es
+  in vec3 aPos; in vec3 aNrm;
+  uniform mat4 uVP;
+  out vec3 vW, vN;
+  void main(){ vW=aPos; vN=aNrm; gl_Position=uVP*vec4(aPos,1.0); }`,
+  `#version 300 es
+  precision highp float;
+  in vec3 vW, vN;
+  ${LIB}
+  uniform vec3 uEye;
+  uniform float uGlow, uAxisX, uMarkAng;
+  uniform vec4 uMark;                 /* y0, y1, מרווח, 0=בלי מדים */
+  out vec4 o;
+  void main(){
+    if (clipped(vW)) discard;
+    vec3 N=normalize(vN), V=normalize(uEye-vW);
+    float ndv = abs(dot(N,V));
+    float f = pow(1.0 - ndv, 2.6);
+
+    vec3 refl = sky(reflect(-V, N));
+    vec3 L = normalize(KEY);
+    /* שתי הבהקות: אחת צרה מהנורה בתקרה, ואחת רחבה כי גוף התאורה הוא
+       משטח ולא נקודה. זה מה שמבדיל בין זכוכית לפלסטיק אפור. */
+    float hard = pow(max(dot(normalize(L+V), N), 0.0), 400.0);
+    float soft = pow(max(dot(normalize(L+V), N), 0.0), 22.0);
+
+    /* הדופן כבר לא משטח יחיד — הזכוכית חלולה, והמבט חוצה ארבע פאות.
+       לכן הבסיס נמוך יותר: כל פאה מוסיפה משלה. */
+    float a = 0.052 + f * 0.50;
+    /* זכוכית סודה-ליים ירקרקה כשמסתכלים דרך הקצה שלה, שם הדרך ארוכה */
+    vec3 edge = mix(vec3(0.62,0.80,0.74), vec3(0.88,0.94,1.0), ndv);
+    vec3 c = mix(vec3(0.14,0.18,0.22), edge, f) * 0.60 + refl * 0.80;
+    c += vec3(1.0,0.99,0.95) * hard * 1.6 + vec3(0.55,0.60,0.66) * soft * 0.30;
+    a += hard * 0.55 + soft * 0.10;
+
+    /* מדים חרוטים על גזרה אחת בהיקף, ארוכים כל חמישה — בדיוק כמו
+       שקוראים נפח מכוס מדידה אמיתית */
+    if (uMark.w > 0.5){
+      float ang = atan(vW.z, vW.x - uAxisX);
+      float k   = (vW.y - uMark.x) / uMark.z;
+      float idx = floor(k + 0.5);
+      float dist = abs(k - idx);
+      bool major = abs(mod(idx, 5.0)) < 0.5;
+      float reach = major ? 0.50 : 0.26;              /* אורך הקו */
+      float band = smoothstep(reach, reach * 0.45, abs(ang - uMarkAng));
+      float line = smoothstep(0.085, 0.015, dist);
+      float inRange = step(uMark.x, vW.y) * step(vW.y, uMark.y);
+      float m = line * band * inRange * (major ? 1.0 : 0.72);
+      c += vec3(0.92,0.95,1.0) * m * 1.25;
+      a += m * 0.62;
+    }
+
+    c += uGlow * vec3(1.0,0.45,0.16);
+    o = vec4(c, clamp(a,0.0,1.0));
+  }`);
+
+/* ---- נוזל: עומק, עובי, טשטוש, הרכבה ----
+   הרעיון: לא מנסים לבנות משטח גאומטרי מהמולקולות. מציירים אותן ככדורים
+   לתוך מפת עומק, מטשטשים אותה — והטשטוש הופך אלף כדורים לפני נוזל אחד.
+   העובי המצטבר קובע כמה אור נבלע, ומזה יוצא הצבע האמיתי של החומר.        */
+const BILLBOARD = `#version 300 es
+  in vec2 aCorner;
+  in vec3 aOff; in vec3 aCol; in float aRad; in float aKind;
+  uniform mat4 uProj, uView;
+  out vec3 vCol; out float vKind, vRad;
+  out vec3 vCenterView; out vec2 vLocal;
+  void main(){
+    vec3 cv = (uView * vec4(aOff,1.0)).xyz;
+    vCenterView = cv; vLocal = aCorner; vCol = aCol; vKind = aKind; vRad = aRad;
+    gl_Position = uProj * vec4(cv + vec3(aCorner * aRad, 0.0), 1.0);
+  }`;
+
+/* ---- אטומים כאימפוסטורים ----
+   כדור אמיתי הוא כ-400 משולשים. עשרים אלף אטומים כאלה זה עשרה מיליון
+   משולשים בפריים, וזה נופל. במקום זה מרובע אחד לכל אטום, והכדור נפתר
+   אנליטית בשיידר: שני משולשים, כדור מושלם בכל הגדלה. */
+const impostorProg = program(BILLBOARD, `#version 300 es
+  precision highp float;
+  in vec3 vCol; in float vKind, vRad;
+  in vec3 vCenterView; in vec2 vLocal;
+  uniform mat4 uProj;
+  uniform vec4 uClipView;
+  uniform vec3 uLightView;
+  /* הבזק לבן שאינו מוכפל בצבע. על אטום זה נכון — זכוכית מבריקה —
+     אבל שכבת חום מצוירת בחיבור, ואז אלפי הבזקים לבנים מסתכמים
+     לשלג שמוחק את המעבדה. */
+  uniform float uSpec;
+  out vec4 o;
+  void main(){
+    float r2 = dot(vLocal, vLocal);
+    if (r2 > 1.0) discard;
+    vec3 N = vec3(vLocal, sqrt(1.0 - r2));
+    vec3 p = vCenterView + N * vRad;
+    if (dot(p, uClipView.xyz) < uClipView.w) discard;
+    vec4 cp = uProj * vec4(p, 1.0);
+    gl_FragDepth = cp.z / cp.w * 0.5 + 0.5;
+
+    vec3 V = normalize(-p), L = normalize(uLightView);
+    float d = max(dot(N, L), 0.0);
+    float sp = pow(max(dot(normalize(L + V), N), 0.0), 44.0);
+    /* חצי עליון בהיר יותר — אור מפוזר מלמעלה, כמו בחדר */
+    vec3 amb = mix(vec3(0.10,0.12,0.16), vec3(0.30,0.33,0.39), N.y * 0.5 + 0.5);
+    o = vec4(vCol * (amb + d * 0.92) + vec3(sp * 0.75 * uSpec), 1.0);
+  }`);
+
+const fluidDepthProg = program(BILLBOARD, `#version 300 es
+  precision highp float;
+  in vec3 vCol; in float vKind, vRad;
+  in vec3 vCenterView; in vec2 vLocal;
+  uniform mat4 uProj;
+  uniform vec4 uClipView;
+  out vec4 o;
+  void main(){
+    if (vKind < 0.5) discard;                       /* גז לא יוצר פני שטח */
+    float r2 = dot(vLocal, vLocal);
+    if (r2 > 1.0) discard;
+    vec3 p = vCenterView + vec3(vLocal * vRad, sqrt(1.0 - r2) * vRad);
+    if (dot(p, uClipView.xyz) < uClipView.w) discard;
+    vec4 cp = uProj * vec4(p, 1.0);
+    gl_FragDepth = (cp.z / cp.w) * 0.5 + 0.5;
+    o = vec4(-p.z, 0.0, 0.0, 1.0);
+  }`);
+
+const fluidThickProg = program(BILLBOARD, `#version 300 es
+  precision highp float;
+  in vec3 vCol; in float vKind, vRad;
+  in vec3 vCenterView; in vec2 vLocal;
+  uniform vec4 uClipView;
+  out vec4 o;
+  void main(){
+    float r2 = dot(vLocal, vLocal);
+    if (r2 > 1.0) discard;
+    vec3 p = vCenterView + vec3(vLocal * vRad, 0.0);
+    if (dot(p, uClipView.xyz) < uClipView.w) discard;
+    /* גז תורם מעט מאוד עובי — כך אדים נראים כערפל ולא כנוזל */
+    float w = (1.0 - r2) * vRad * (vKind > 0.5 ? 2.6 : 0.42);
+    o = vec4(vCol * w, w);
+  }`);
+
+/* בועה נראית כטבעת: בשפה שכבת הנוזל שהאור חוצה היא הכי עבה, ובמרכז
+   כמעט אין מה לראות. בלי זה גז בתוך נוזל פשוט נעלם. */
+const bubbleProg = program(BILLBOARD, `#version 300 es
+  precision highp float;
+  in vec3 vCol; in float vKind, vRad;
+  in vec3 vCenterView; in vec2 vLocal;
+  uniform vec4 uClipView;
+  out vec4 o;
+  void main(){
+    if (vKind > 0.5) discard;                     /* רק גז */
+    float r2 = dot(vLocal, vLocal);
+    if (r2 > 1.0) discard;
+    vec3 p = vCenterView + vec3(vLocal * vRad, 0.0);
+    if (dot(p, uClipView.xyz) < uClipView.w) discard;
+    float r = sqrt(r2);
+    float rim  = smoothstep(0.58, 0.95, r) * (1.0 - smoothstep(0.93, 1.0, r));
+    float body = (1.0 - r2) * 0.09;
+    float hi   = smoothstep(0.42, 0.0, distance(vLocal, vec2(-0.33, 0.33))) * 0.55;
+    o = vec4(vec3(0.82,0.90,1.0) * (rim * 0.62 + body * 0.45 + hi * 0.55), 1.0);
+  }`);
+
+const FSTRI = `#version 300 es
+  out vec2 vUV;
+  void main(){
+    vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+    vUV = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+  }`;
+
+const blurProg = program(FSTRI, `#version 300 es
+  precision highp float;
+  in vec2 vUV;
+  uniform sampler2D uTex;
+  uniform vec2 uDir;
+  uniform float uDepthFalloff;
+  out vec4 o;
+  void main(){
+    float c = texture(uTex, vUV).r;
+    if (c <= 0.0){ o = vec4(0.0); return; }
+    float sum = c, wsum = 1.0;
+    for (int i = 1; i <= 10; i++){
+      float fi = float(i);
+      float w = exp(-fi * fi / 42.0);
+      for (float s = -1.0; s <= 1.0; s += 2.0){
+        float t = texture(uTex, vUV + uDir * fi * s).r;
+        /* דו-צדדי: לא מטשטשים מעבר לשפה, אחרת הנוזל "נמרח" על הרקע */
+        if (t <= 0.0) continue;
+        float wd = w * exp(-abs(t - c) * uDepthFalloff);
+        sum += t * wd; wsum += wd;
+      }
+    }
+    o = vec4(sum / wsum, 0.0, 0.0, 1.0);
+  }`);
+
+/* ההצגה למסך היא ציור של מרובע, לא העתקה. העתקה מחוצץ מרובה־דגימות
+   דורשת שהפורמטים יתאימו בדיוק, וחוצץ ברירת המחדל של הקנבס הוא RGB8
+   בזמן שלנו יש RGBA8 — ההעתקה נכשלת בשקט והמסך נשאר שחור. */
+const presentProg = program(FSTRI, `#version 300 es
+  precision highp float;
+  in vec2 vUV;
+  uniform sampler2D uTex;
+  out vec4 o;
+  void main(){ o = vec4(texture(uTex, vUV).rgb, 1.0); }`);
+
+const compositeProg = program(FSTRI, `#version 300 es
+  precision highp float;
+  in vec2 vUV;
+  ${LIB}
+  uniform sampler2D uScene, uDepth, uThick;
+  uniform vec2 uTan;                  /* חצי שדה ראייה, אופקי ואנכי */
+  uniform vec2 uTexel;
+  uniform mat4 uInvView;
+  out vec4 o;
+
+  vec3 viewFrom(vec2 uv, float d){
+    return vec3((uv * 2.0 - 1.0) * uTan * d, -d);
+  }
+  void main(){
+    vec3 bg = texture(uScene, vUV).rgb;
+    float d = texture(uDepth, vUV).r;
+    vec4 th0 = texture(uThick, vUV);
+    /* השפה נקבעת לפי העובי ולא לפי "יש עומק / אין עומק" — סף בינארי
+       על מפת חצי־רזולוציה נותן קצוות מדורגים במקום פני נוזל */
+    float cover = smoothstep(0.018, 0.13, th0.a);
+    if (d <= 0.0 || cover <= 0.001){ o = vec4(bg, 1.0); return; }
+
+    vec3 P = viewFrom(vUV, d);
+    /* נורמל מנגזרות העומק, עם בחירת ההפרש הקטן — אחרת נוצר קו שחור בשפה */
+    vec3 ddxP = viewFrom(vUV + vec2(uTexel.x,0.0), texture(uDepth, vUV+vec2(uTexel.x,0.0)).r) - P;
+    vec3 ddxN = P - viewFrom(vUV - vec2(uTexel.x,0.0), texture(uDepth, vUV-vec2(uTexel.x,0.0)).r);
+    vec3 ddyP = viewFrom(vUV + vec2(0.0,uTexel.y), texture(uDepth, vUV+vec2(0.0,uTexel.y)).r) - P;
+    vec3 ddyN = P - viewFrom(vUV - vec2(0.0,uTexel.y), texture(uDepth, vUV-vec2(0.0,uTexel.y)).r);
+    vec3 dx = abs(ddxP.z) < abs(ddxN.z) ? ddxP : ddxN;
+    vec3 dy = abs(ddyP.z) < abs(ddyN.z) ? ddyP : ddyN;
+    vec3 N = normalize(cross(dx, dy));
+    if (N.z < 0.0) N = -N;
+
+    float thick = th0.a;
+    vec3 tint = th0.a > 1e-5 ? th0.rgb / th0.a : vec3(0.4);
+
+    vec3 V = normalize(-P);
+    /* שבירה: דוחפים את הדגימה של הרקע לפי הנורמל. ככה רואים את השולחן
+       מתעקם מבעד למים, וזה מה שגורם לעין להאמין שיש שם נוזל.            */
+    vec2 ruv = clamp(vUV + N.xy * 0.055 / max(d, 0.6), vec2(0.0), vec2(1.0));
+    vec3 refr = texture(uScene, ruv).rgb;
+
+    /* בלימת אור לפי עובי — חוק בר־למברט. עומק גדול = צבע רווי יותר.
+       המקדם מכויל כך ששכבה טיפוסית בכלי נותנת תכלת, לא שחור. */
+    vec3 absorbed = exp(-tint * thick * 1.15);
+    vec3 through = refr * absorbed;
+
+    vec3 Nw = normalize((uInvView * vec4(N, 0.0)).xyz);
+    vec3 Vw = normalize((uInvView * vec4(V, 0.0)).xyz);
+    float fres = 0.028 + 0.972 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+    vec3 refl = sky(reflect(-Vw, Nw));
+
+    vec3 L = normalize(KEY);
+    float spec = pow(max(dot(normalize(L + V), N), 0.0), 220.0);
+
+    vec3 col = mix(through, refl, fres * 0.80) + spec * 1.1;
+    /* בוהק דק בשפה, שם שכבת הנוזל מתקרבת לאפס */
+    col += vec3(0.13,0.145,0.16) * smoothstep(0.55, 0.05, thick);
+    o = vec4(mix(bg, col, cover), 1.0);
+  }`);
+
+/* ---- כלי עזר ל-VAO ו-FBO ---- */
+function buildMesh(prog,m,instanced){
+  const vao=gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  const put=(data,name,size)=>{
+    const loc=gl.getAttribLocation(prog,name);
+    if (loc<0) return null;
+    const b=gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER,b);
+    gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc,size,gl.FLOAT,false,0,0);
+    return b;
+  };
+  put(m.pos, m.corner?'aCorner':'aPos', m.corner?2:3);
+  if (m.nrm) put(m.nrm,'aNrm',3);
+  if (m.col) put(m.col,'aCol',3);
+  const eb=gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,eb);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,m.idx,gl.STATIC_DRAW);
+  const out={ vao, n:m.idx.length,
+              type: m.idx instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT };
+  if (instanced){
+    out.inst={};
+    for (const [name,size] of [['aOff',3],['aCol',3],['aRad',1],['aKind',1]]){
+      const loc=gl.getAttribLocation(prog,name);
+      if (loc<0) continue;
+      const b=gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER,b);
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc,size,gl.FLOAT,false,0,0);
+      gl.vertexAttribDivisor(loc,1);
+      out.inst[name]=b;
+    }
+  }
+  gl.bindVertexArray(null);
+  return out;
+}
+
+function makeTex(w,h,internal,format,type,filter){
+  const t=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texImage2D(gl.TEXTURE_2D,0,internal,w,h,0,format,type,null);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,filter);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,filter);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  return t;
+}
+function makeFBO(tex,depthRB){
+  const f=gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER,f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
+  if (depthRB) gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,depthRB);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  return f;
+}
+
+/* ---- מש-ים ---- */
+const PATH = condenserPath();
+const TUBE_IN = 0.112 - 0.02;   /* רדיוס פנימי פחות רדיוס מולקולה */
+const billboard = buildMesh(fluidDepthProg,
+  { pos:new Float32Array([-1,-1, 1,-1, 1,1, -1,1]), idx:new Uint16Array([0,1,2,0,2,3]), corner:true }, true);
+const billboard2 = buildMesh(fluidThickProg,
+  { pos:new Float32Array([-1,-1, 1,-1, 1,1, -1,1]), idx:new Uint16Array([0,1,2,0,2,3]), corner:true }, true);
+const sphere = buildMesh(atomProg, sphereMesh(), true);
+const atomQuad = buildMesh(impostorProg,
+  { pos:new Float32Array([-1,-1, 1,-1, 1,1, -1,1]), idx:new Uint16Array([0,1,2,0,2,3]), corner:true }, true);
+/* החדר חייב להכיל את מסלול המצלמה — היא מקיפה את השולחן ברדיוס ~8,
+   ואם הקירות קרובים מזה היא יוצאת מהחדר ורואה אותו מבחוץ. */
+const FLOOR_Y = -2.30;
+const room = buildMesh(roomProg, roomMesh(26,10,26,2.70), false);
+
+/* ---- שולחן המעבדה ----
+   פלטה עבה, סינר, ארבע רגליים, מדף תחתון וגב. הכל תיבות אמיתיות:
+   אפשר להסתובב מאחורי השולחן ולראות את הרגליים. */
+/* פני השולחן יורדים: בין המבער לבקבוק חייב להיות מקום ללהבה */
+const BENCH_Y = -0.95;
+const BX=0.9, BZ=0, TOP_T=0.15;
+const bench = buildMesh(woodProg, merge(
+  /* מעט מתחת ל-0: תחתית הכלים יושבת על y=0 בדיוק, ומשטח באותו גובה
+     נותן ריב-עומק שנראה ככוכב שחור בתחתית הכוס */
+  box(6.0, TOP_T, 3.0, BX, BENCH_Y-TOP_T/2, BZ),
+  box(5.7, 0.13, 2.7, BX, BENCH_Y-0.22, BZ),                /* סינר */
+  ...[[-2.6,-1.25],[2.6,-1.25],[-2.6,1.25],[2.6,1.25]].map(([dx,dz])=>
+     box(0.20, BENCH_Y-TOP_T-FLOOR_Y, 0.20, BX+dx,
+         (FLOOR_Y+BENCH_Y-TOP_T)/2, BZ+dz)),               /* רגליים */
+  box(5.6, 0.10, 2.5, BX, BENCH_Y-1.30, BZ),                /* מדף תחתון */
+  box(6.0, 0.55, 0.12, BX, BENCH_Y+0.28, BZ-1.50),          /* גב */
+), false);
+
+/* ---- מדף קיר עם בקבוקי ריאגנט ---- */
+const SHELF_Z = -2.75;
+const WHITE=[0.80,0.81,0.83], STEEL=[0.46,0.48,0.52];
+const BOTTLE_COL = [
+  [0.52,0.31,0.10], [0.16,0.32,0.20], [0.74,0.76,0.78], [0.20,0.28,0.46],
+  [0.62,0.46,0.14], [0.30,0.16,0.22], [0.70,0.70,0.66], [0.14,0.34,0.38],
+];
+function shelfUnit(){
+  /* מדף מעבדה מאחורי השולחן. החדר גדול מספיק כדי שהמצלמה תוכל להקיף
+     אותו, ולכן הקיר האמיתי רחוק — המדף הוא מה שסוגר את התמונה מאחור,
+     והבקבוקים עליו הם מה שאומר לעין "זו מעבדה". */
+  const parts=[];
+  const levels=[FLOOR_Y+0.55, FLOOR_Y+1.45, FLOOR_Y+2.35, FLOOR_Y+3.25, FLOOR_Y+4.15];
+  const top=levels[levels.length-1]+0.30;
+
+  /* זקפים וקורות אופקיות — מדף מתכת מתועש */
+  for (const dx of [-3.15, -1.05, 1.05, 3.15])
+    parts.push(colored(box(0.075, top-FLOOR_Y, 0.075, BX+dx, (FLOOR_Y+top)/2, SHELF_Z-0.24),
+                       STEEL),
+               colored(box(0.075, top-FLOOR_Y, 0.075, BX+dx, (FLOOR_Y+top)/2, SHELF_Z+0.24),
+                       STEEL));
+  for (const y of levels){
+    parts.push(colored(box(6.65, 0.055, 0.60, BX, y, SHELF_Z), WHITE));
+    parts.push(colored(box(6.70, 0.075, 0.05, BX, y-0.05, SHELF_Z-0.30), STEEL));
+  }
+
+  /* הבקבוקים. גדלים, צורות וצבעים מעורבים — מדף מסודר מדי נראה מזויף. */
+  const kinds=Object.values(BOTTLE);
+  let seed=7;
+  const rnd=()=>{ seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; };
+  levels.forEach((y,li)=>{
+    let x=BX-3.05;
+    while (x < BX+3.05){
+      if (rnd() < 0.12){ x += 0.28; continue; }        /* פערים */
+      const k=kinds[(rnd()*kinds.length)|0];
+      const sc=0.46+rnd()*0.30;
+      const m=lathe(k.map(([r,h])=>[r*sc, h*sc]), 16);
+      parts.push(colored(place(m, x, y+0.028, SHELF_Z+(rnd()-0.5)*0.22),
+                         BOTTLE_COL[(rnd()*BOTTLE_COL.length)|0]));
+      x += 0.20 + rnd()*0.20;
+    }
+  });
+
+  /* כמה כלים על השולחן עצמו — מאחור בלבד. בקצה הקדמי הם קרובים
+     למצלמה ותופסים חצי פריים. */
+  [[-2.30,-1.05],[-1.85,-0.80],[2.90,-1.02],[2.45,-0.78]].forEach(([dx,dz],i)=>{
+    const k=Object.values(BOTTLE)[i%4], sc=0.52+((i*7)%3)*0.10;
+    parts.push(colored(place(lathe(k.map(([r,h])=>[r*sc,h*sc]),20), BX+dx, BENCH_Y, BZ+dz),
+                       BOTTLE_COL[(i*3+1)%BOTTLE_COL.length]));
+  });
+  return merge(...parts);
+}
+const props = buildMesh(solidProg, shelfUnit(), false);
+
+/* ---- מה שמחזיק את הכלים ----
+   בקבוק תחתית עגולה לא עומד לבד — הוא מתגלגל. וסליל מעבה באוויר בלי
+   מלחציים הוא בלתי אפשרי. אלה החלקים שהיו חסרים, ובלעדיהם כל המערכת
+   ריחפה: מעטפת חימום שהבקבוק יושב בתוכה, ושני מעמדים עם זרועות. */
+function cyl(r,y0,y1,cx=0,cz=0,segs=16){
+  return place(lathe([[0,y1],[r,y1],[r,y0],[0,y0]], segs), cx, 0, cz);
+}
+const IRON=[0.105,0.108,0.115], ALLOY=[0.380,0.390,0.405], CORK=[0.44,0.33,0.20];
+
+/* המעטפת נבנית סביב הבקבוק: השפה הפנימית חייבת להיות רחבה מרדיוס
+   הבועה באותו גובה, אחרת המתכת בוקעת דרך הזכוכית. */
+/* ---- מבער, חצובה ומגבה ----
+   הבקבוק נשען על רשת מעל חצובה, והמבער בוער מתחתיה. בשביל שיהיה מקום
+   ללהבה, פני השולחן יורדים — ולכן גם הכוס צריכה מגבה משלה, בדיוק כמו
+   שמרימים כלי קליטה במעבדה אמיתית. */
+const GAUZE_Y = -0.012;
+const FLAME_Y0 = BENCH_Y + 0.40, FLAME_Y1 = -0.06;
+
+const burnerMesh = merge(
+  /* חצובה: טבעת ושלוש רגליים שמתפשקות החוצה */
+  colored(lathe([[0.62,GAUZE_Y+0.03],[0.66,GAUZE_Y+0.03],[0.66,GAUZE_Y-0.02],[0.62,GAUZE_Y-0.02]], 34), IRON),
+  ...[0,1,2].map(i=>{
+    const a=i*Math.PI*2/3 + 0.5;
+    const x0=0.63*Math.cos(a), z0=0.63*Math.sin(a);
+    const x1=0.80*Math.cos(a), z1=0.80*Math.sin(a);
+    return colored(rotY(box(0.055, GAUZE_Y-BENCH_Y, 0.055,
+      (x0+x1)/2, (GAUZE_Y+BENCH_Y)/2, (z0+z1)/2), 0), IRON);
+  }),
+  /* רשת האסבסט שהבקבוק יושב עליה */
+  colored(lathe([[0.58,GAUZE_Y],[0.58,GAUZE_Y-0.018],[0,GAUZE_Y-0.018]], 30), [0.30,0.30,0.31]),
+  colored(lathe([[0.34,GAUZE_Y+0.004],[0.34,GAUZE_Y-0.004],[0,GAUZE_Y-0.004]], 26), [0.78,0.76,0.71]),
+  /* מבער בונזן */
+  colored(lathe([[0.09,BENCH_Y+0.05],[0.26,BENCH_Y+0.03],[0.26,BENCH_Y],[0,BENCH_Y]], 26), IRON),
+  colored(cyl(0.072, BENCH_Y+0.04, FLAME_Y0, 0, 0, 18), ALLOY),
+  colored(cyl(0.095, BENCH_Y+0.16, BENCH_Y+0.24, 0, 0, 18), IRON),   /* טבעת אוויר */
+);
+const burner = buildMesh(solidProg, burnerMesh, false);
+
+/* המגבה שמרים את הכוס בחזרה לגובה שממנו הצינור מטפטף */
+const jackMesh = merge(
+  colored(box(1.10,0.055,1.00, BEAKER_X, BENCH_Y+0.028, 0), IRON),   /* לוח תחתון */
+  colored(box(1.02,0.050,0.92, BEAKER_X, -0.026, 0), ALLOY),         /* לוח עליון */
+  /* שתי צלבות מספריים בין הלוחות */
+  ...[-1,1].map(d=>merge(
+    colored(rotY(box(0.94,0.045,0.05, 0,0,0),  0.72), ALLOY),
+    colored(rotY(box(0.94,0.045,0.05, 0,0,0), -0.72), ALLOY),
+  )).map((m,i)=>place(m, BEAKER_X, (BENCH_Y+0.03-0.05)/2, (i?1:-1)*0.34)),
+  colored(cyl(0.030, BENCH_Y+0.06, -0.05, BEAKER_X+0.60, 0, 10), ALLOY),  /* בורג */
+);
+const jack = buildMesh(solidProg, jackMesh, false);
+
+const flameMesh = (()=>{
+  const p=[], H=FLAME_Y1-FLAME_Y0;
+  for (let i=0;i<=18;i++){
+    const t=1-i/18;                       /* מלמעלה למטה, כמו כל פרופיל כאן */
+    const r=0.165*Math.pow(Math.sin(Math.PI*Math.min(t*1.12,1.0)),0.62)*(1.0-t*0.20);
+    p.push([Math.max(r,0.001), FLAME_Y0+t*H]);
+  }
+  return lathe(p, 26);
+})();
+const flame = buildMesh(flameProg, flameMesh, false);
+
+/* סיבוב סביב ציר אנכי. בלי זה זרוע מלחציים יכולה לצאת רק לאורך ציר X,
+   וזה בדיוק למה הלסתות עצרו ליד המעמד במקום להגיע לזכוכית. */
+function rotY(m,a,cx=0,cz=0){
+  const c=Math.cos(a), s=Math.sin(a);
+  const pos=new Float32Array(m.pos), nrm=new Float32Array(m.nrm);
+  for (let i=0;i<pos.length;i+=3){
+    const x=pos[i]-cx, z=pos[i+2]-cz;
+    pos[i]=cx+x*c-z*s; pos[i+2]=cz+x*s+z*c;
+    const nx=nrm[i], nz=nrm[i+2];
+    nrm[i]=nx*c-nz*s; nrm[i+2]=nx*s+nz*c;
+  }
+  return { pos, nrm, idx:m.idx, col:m.col };
+}
+
+/* זרוע שנסגרת על משהו. מקבלת את הנקודה שצריך לאחוז בה ואת רדיוס
+   הגוף שם, ומכוונת את עצמה אליה — כולל הלסתות שמתפצלות סביבו. */
+function clampTo(rodX, rodZ, target, gripR){
+  const dx=target[0]-rodX, dz=target[2]-rodZ;
+  const ang=Math.atan2(dz,dx), len=Math.hypot(dx,dz);
+  const pad=gripR+0.055;                    /* מרכז הפקק נוגע בזכוכית */
+  const parts=[
+    colored(box(0.11,0.14,0.11, 0,0,0), IRON),                      /* ראש */
+    colored(box(len-0.08,0.048,0.048, (len-0.08)/2+0.04,0,0), ALLOY),
+    colored(box(0.10,0.05, pad*2+0.10, len-0.10,  0.085, 0), IRON),  /* לסת עליונה */
+    colored(box(0.10,0.05, pad*2+0.10, len-0.10, -0.085, 0), IRON),  /* לסת תחתונה */
+    colored(cyl(0.055,-0.085,0.085, len-0.05,  pad, 10), CORK),
+    colored(cyl(0.055,-0.085,0.085, len-0.05, -pad, 10), CORK),
+  ];
+  return place(rotY(merge(...parts), ang), rodX, target[1], rodZ);
+}
+
+function stands(){
+  const p=[];
+  const rig=(bx,bz,rodH,grips)=>{
+    p.push(colored(box(0.82,0.052,0.62, bx,BENCH_Y+0.026,bz), IRON));
+    p.push(colored(cyl(0.040,BENCH_Y+0.05,rodH, bx,bz,14), ALLOY));
+    for (const [t,gr] of grips) p.push(clampTo(bx,bz,t,gr));
+  };
+  /* שמאל אוחז את צוואר הבקבוק. הבסיס מפנה מקום לחצובה שמתחת לבקבוק. */
+  rig(-1.62, 0.0, 2.62, [[[0, 2.16, 0], 0.21]]);
+  /* ימין אוחז את המעבה בשתי נקודות. הבסיס נסוג ב-z כדי לא להתנגש
+     בכוס, ולכן הזרועות מגיעות באלכסון — מה שהן עושות גם במציאות. */
+  const HR=0.46;
+  rig(3.16, -1.34, 3.20, [
+    [[BEAKER_X, 2.78, -HR], 0.135],
+    [[BEAKER_X, 2.12, -HR], 0.135],
+  ]);
+  return merge(...p);
+}
+const rigMesh = buildMesh(solidProg, stands(), false);
+
+/* ידית הברז. נבנית סביב הראשית כדי שאפשר יהיה לסובב אותה. */
+const handleMesh = buildMesh(solidProg, merge(
+  colored(box(0.46,0.055,0.075, 0.13,0,0), [0.86,0.86,0.88]),
+  colored(box(0.09,0.10,0.10, 0,0,0), [0.80,0.80,0.83]),
+), false);
+
+const shiftX = (m,dx)=>{ for(let i=0;i<m.pos.length;i+=3) m.pos[i]+=dx; return m; };
+const tube2 = (r,y0,y1,t,segs=26)=>merge(
+  lathe([[r,y1],[r,y0]], segs), flipNormals(lathe([[r-t,y1],[r-t,y0]], segs)));
+const funnelGlass = shiftX(merge(
+  hollow([[BOWL_R1,BOWL_Y1],[BOWL_R1*0.97,BOWL_Y1-0.06],[0.21,BOWL_Y0+0.11],[BOWL_R0,BOWL_Y0]], 0.020, 40),
+  tube2(STEM_R, STEM_Y0, BOWL_Y0, 0.016),
+  lathe([[0.125,TAP_Y+0.09],[0.125,TAP_Y-0.09],[0,TAP_Y-0.09]], 26),   /* גוף הברז */
+), FX);
+const GLASS = [
+  /* לבקבוק תחתית עגולה אין מדים — לא במציאות ולא כאן. על בועה
+     כדורית קו בגובה קבוע מתעקל ונראה כמו צלע, לא כמו סימון. */
+  { mesh:buildMesh(glassProg, hollow(flaskProfile(), 0.024)), ox:0,
+    mark:[0,0,1,0], axis:0, glow:true },
+  { mesh:buildMesh(glassProg, shiftX(hollow(beakerProfile(), 0.028), BEAKER_X)),
+    ox:BEAKER_X, mark:[0.20,1.30,0.11,1], axis:BEAKER_X, markAng:0.45, glow:false },
+  { mesh:buildMesh(glassProg, funnelGlass), ox:FX,
+    mark:[0,0,1,0], axis:FX, glow:false },
+  /* הצינור חלול גם הוא, ובלי מדים — אף אחד לא מודד נפח בצינור מעבה */
+  { mesh:buildMesh(glassProg, merge(tubeMesh(PATH,0.135),
+                                    flipNormals(tubeMesh(PATH,0.112)))), ox:1.4,
+    mark:[0,0,1,0], axis:0, glow:false },
+];
+
+/* ===========================================================================
+   5) העולם
+   =========================================================================== */
+/* אוויר תופס מקום כמו כל דבר אחר, ולכן הוא מתרבה עם הסקאלה בדיוק
+   כמו המים: אותו נפח חדר, מולקולות קטנות יותר. */
+const AIR_BASE = 112;
+/* שלושה פיצולים מהרמה הבסיסית מכפילים את המספר פי שמונה, והאוויר
+   מתפצל יחד עם השאר. בלי המקום הזה הצעד האחרון פשוט לא קורה. */
+const MAX = Math.round((240+AIR_BASE)*MSCALE_MAX**3) + 6000;
+const IN_FLASK=0, IN_TUBE=1, IN_BEAKER=2, IN_FUNNEL=3, IN_ROOM=4;
+const GAS=0, LIQ=1, SOL=2;
+
+/* התיבה שבה מדמים אוויר. מעבר לה יש עוד מעבדה, והיא גדולה מספיק
+   כדי לא להתחמם — לכן היא נכנסת כאן כשוליים בטמפרטורת החדר ולא
+   כמיליון מולקולות שאיש לא רואה. */
+const ROOM = { x0:-1.10, x1:2.95, y0:0.03, y1:4.55, z0:-0.92, z1:0.92 };
+
+const mol = {
+  n:0, sp:new Array(MAX),
+  x:new Float32Array(MAX), y:new Float32Array(MAX), z:new Float32Array(MAX),
+  vx:new Float32Array(MAX), vy:new Float32Array(MAX), vz:new Float32Array(MAX),
+  spin:new Float32Array(MAX), axis:new Float32Array(MAX*3),
+  where:new Uint8Array(MAX), t:new Float32Array(MAX), T:new Float32Array(MAX),
+  phase:new Uint8Array(MAX), rho:new Float32Array(MAX), around:new Float32Array(MAX),
+  /* כמה שכנות לא-גז. זה מה שמבדיל בועה מאדים: בועה עטופה נוזל. */
+  wet:new Float32Array(MAX),
+  /* מסומן כאוויר. לא לפי מין החומר — חנקן שהשחקן מוסיף בעצמו הוא
+     חומר לכל דבר, והאוויר של החדר הוא רקע. */
+  air:new Uint8Array(MAX),
+};
+
+function spawn(sp,x,y,z,where=IN_FLASK){
+  if (mol.n>=MAX) return -1;
+  const i=mol.n++;
+  mol.sp[i]=sp; mol.x[i]=x; mol.y[i]=y; mol.z[i]=z;
+  mol.vx[i]=rand(-.3,.3); mol.vy[i]=rand(-.3,.3); mol.vz[i]=rand(-.3,.3);
+  mol.spin[i]=rand(0,6.28);
+  const a=v3.norm([rand(-1,1),rand(-1,1),rand(-1,1)]);
+  mol.axis[i*3]=a[0]; mol.axis[i*3+1]=a[1]; mol.axis[i*3+2]=a[2];
+  mol.where[i]=where; mol.t[i]=0; mol.phase[i]=LIQ; mol.around[i]=0;
+  mol.air[i]=0;
+  mol.T[i]=AMBIENT;
+  return i;
+}
+function kill(i){
+  const j=--mol.n;
+  if (i!==j){
+    for (const k of ['sp','x','y','z','vx','vy','vz','spin','where','t','phase','rho','around','T','air']) mol[k][i]=mol[k][j];
+    for (let c=0;c<3;c++) mol.axis[i*3+c]=mol.axis[j*3+c];
+  }
+}
+
+const FLASK_R=0.86, FLASK_CY=0.90, NECK_R=0.17, NECK_TOP=2.40;
+function flaskRadiusAt(y){
+  if (y>=1.95) return NECK_R;
+  if (y<=1.62){ const d=y-FLASK_CY; return Math.sqrt(Math.max(0,FLASK_R*FLASK_R-d*d)); }
+  const u=(y-1.62)/0.33;
+  return 0.52*(1-u)+NECK_R*u;
+}
+
+let gasTap=0, paused=false;      /* 0..1 — כמה פתוח ברז הגז של המבער */
+let heat=20;                     /* טמפרטורת הנוזל בבקבוק, לתצוגה בלבד */
+/* הברז: 0 סגור, 1 פתוח. הזווית רודפת אחרי היעד כדי שהסיבוב ייראה. */
+const tap={ open:false, a:0 };
+function funnelRadiusAt(y){
+  if (y >= BOWL_Y0) return BOWL_R0 + (y-BOWL_Y0)/(BOWL_Y1-BOWL_Y0)*(BOWL_R1-BOWL_R0) - 0.03;
+  return STEM_R - 0.018;
+}
+const AMBIENT=20;
+/* אין יותר "טמפרטורת הבקבוק". לכל מולקולה יש טמפרטורה משלה, והיא
+   עוברת רק לשכנות. המספר שמוצג במדחום הוא ממוצע הנוזל שבבקבוק. */
+function flaskTemp(){
+  let sum=0, n=0;
+  for (let i=0;i<mol.n;i++)
+    if (mol.where[i]===IN_FLASK && !mol.air[i]){ sum+=mol.T[i]; n++; }
+  return n ? sum/n : AMBIENT;
+}
+
+/* ---------------------------------------------------------------------------
+   זכוכית, מבחוץ. אוויר החדר לא יכול להיכנס דרך הדופן, ולכן צריך את
+   אותם משטחים שמכילים את מה שבפנים — רק מהצד השני.
+   מחזיר 0 אם הנקודה באוויר החופשי, ואחרת דוחף אותה החוצה במקום.
+   --------------------------------------------------------------------------- */
+const GLASS_T = 0.030;
+/* תיבה חוסמת סביב הסליל, כדי לא לסרוק מאות נקודות מסלול לכל מולקולה */
+const COIL_BOX = { x0:-0.25, x1:2.70, y0:1.45, y1:3.20, z0:-0.75, z1:0.75 };
+
+/* הנקודה הקרובה על ציר הצינור. סורקים כל שמינית ואז מדייקים סביבה —
+   המסלול חלק, ולכן זה מוצא את אותו מינימום בעשירית מהעבודה. */
+let nearestPathD2=0;
+function nearestPath(x,y,z){
+  let best=0, bd=1e9;
+  for (let k=0;k<PATH.length;k+=8){
+    const q=PATH[k], ax=x-q[0], ay=y-q[1], az=z-q[2];
+    const dd=ax*ax+ay*ay+az*az;
+    if (dd<bd){ bd=dd; best=k; }
+  }
+  const lo=Math.max(0,best-8), hi=Math.min(PATH.length-1,best+8);
+  for (let k=lo;k<=hi;k++){
+    const q=PATH[k], ax=x-q[0], ay=y-q[1], az=z-q[2];
+    const dd=ax*ax+ay*ay+az*az;
+    if (dd<bd){ bd=dd; best=k; }
+  }
+  nearestPathD2=bd;
+  return best;
+}
+
+function pushOutOfGlass(i){
+  const y=mol.y[i];
+  let hit=false;
+  /* הבקבוק: כדור עם צוואר. אותו פרופיל של הפנים, ועוד עובי דופן */
+  if (y>-0.02 && y<NECK_TOP+0.06){
+    const R=flaskRadiusAt(y)+GLASS_T, r=Math.hypot(mol.x[i],mol.z[i]);
+    if (r<R){
+      if (r>1e-6){ const s=R/r; mol.x[i]*=s; mol.z[i]*=s; }
+      else mol.x[i]=R;
+      mol.vx[i]*=0.4; mol.vz[i]*=0.4; hit=true;
+    }
+  }
+  /* הכוס */
+  if (y<1.50){
+    const R=0.68+GLASS_T, dx=mol.x[i]-BEAKER_X, r=Math.hypot(dx,mol.z[i]);
+    if (r<R){
+      /* מעל השפה עדיף להעלות מאשר להעיף הצידה — אחרת אוויר "נורה"
+         החוצה מפתח הכוס במקום לשבת מעליו */
+      if (y>1.40){ mol.y[i]=1.50; mol.vy[i]=Math.max(mol.vy[i],0); }
+      else if (r>1e-6){ const s=R/r; mol.x[i]=BEAKER_X+dx*s; mol.z[i]*=s; mol.vx[i]*=0.4; mol.vz[i]*=0.4; }
+      hit=true;
+    }
+  }
+  /* המשפך: קערה למעלה, גזע למטה */
+  if (y>STEM_Y0-0.02 && y<BOWL_Y1+0.04){
+    const R=(y>=BOWL_Y0 ? BOWL_R0+(y-BOWL_Y0)/(BOWL_Y1-BOWL_Y0)*(BOWL_R1-BOWL_R0)
+                        : STEM_R) + GLASS_T;
+    const dx=mol.x[i]-FX, r=Math.hypot(dx,mol.z[i]);
+    if (r<R){
+      if (r>1e-6){ const s=R/r; mol.x[i]=FX+dx*s; mol.z[i]*=s; }
+      else mol.x[i]=FX+R;
+      mol.vx[i]*=0.4; mol.vz[i]*=0.4; hit=true;
+    }
+  }
+  /* המעבה. סורקים את המסלול רק אם בכלל קרובים אליו */
+  if (mol.x[i]>COIL_BOX.x0 && mol.x[i]<COIL_BOX.x1 && y>COIL_BOX.y0 && y<COIL_BOX.y1 &&
+      mol.z[i]>COIL_BOX.z0 && mol.z[i]<COIL_BOX.z1){
+    const best=nearestPath(mol.x[i], y, mol.z[i]);
+    const bd=nearestPathD2;
+    const R=0.135+GLASS_T*0.5;
+    if (best>=0 && bd<R*R){
+      const q=PATH[best], d=Math.sqrt(bd);
+      if (d>1e-6){
+        const s=R/d;
+        mol.x[i]=q[0]+(mol.x[i]-q[0])*s;
+        mol.y[i]=q[1]+(y-q[1])*s;
+        mol.z[i]=q[2]+(mol.z[i]-q[2])*s;
+      } else mol.y[i]=q[1]+R;
+      mol.vx[i]*=0.4; mol.vy[i]*=0.4; mol.vz[i]*=0.4; hit=true;
+    }
+  }
+  return hit;
+}
+
+/* איזה פלח דופן המולקולה נוגעת בו, או 1- אם היא רחוקה מכל זכוכית.
+   בפנים: רק מה שקרוב לדופן מעביר אליה חום. בחוץ: אותו דבר מהצד השני. */
+/* "נוגע בדופן" הוא שכבה בעובי מולקולה, ולכן הוא מתכווץ עם הסקאלה.
+   מה שרחוק יותר מוסר את החום דרך שכנות, כמו בכל מקום אחר. */
+const touch = () => 1.4*R0;
+function patchOf(i){
+  const TOUCH = touch();
+  const x=mol.x[i], y=mol.y[i], z=mol.z[i], w=mol.where[i];
+  if (w===IN_TUBE) return band(mol.t[i]/PATH.length, W_TUBE);
+  if (w===IN_FLASK){
+    const R=flaskRadiusAt(y), r=Math.hypot(x,z);
+    return (R-r<TOUCH || y<0.10) ? band(y/NECK_TOP, W_FLASK) : -1;
+  }
+  if (w===IN_BEAKER){
+    const r=Math.hypot(x-BEAKER_X,z);
+    return (0.60-r<TOUCH || y<0.10) ? band(y/1.48, W_BEAKER) : -1;
+  }
+  if (w!==IN_ROOM) return -1;
+  /* מצד האוויר השכבה עבה יותר, פשוט כי אוויר דליל יותר: המרווח בין
+     שתי מולקולות אוויר הוא הסקאלה הקטנה ביותר שיש שם. */
+  const TA = AIR_R;
+  if (y>0 && y<NECK_TOP){
+    const d=Math.hypot(x,z)-(flaskRadiusAt(y)+GLASS_T);
+    if (d<TA) return band(y/NECK_TOP, W_FLASK);
+  }
+  if (y<1.50){
+    const d=Math.hypot(x-BEAKER_X,z)-(0.68+GLASS_T);
+    if (d<TA && d>-TA) return band(y/1.48, W_BEAKER);
+    if (y>1.36 && d<0) return band(1, W_BEAKER);
+  }
+  if (x>COIL_BOX.x0 && x<COIL_BOX.x1 && y>COIL_BOX.y0 && y<COIL_BOX.y1 &&
+      z>COIL_BOX.z0 && z<COIL_BOX.z1){
+    const k=nearestPath(x,y,z);
+    if (nearestPathD2 < (0.135+TA)*(0.135+TA)) return band(k/PATH.length, W_TUBE);
+  }
+  return -1;
+}
+
+/* מעבר החום דרך הזכוכית, בשלושה שלבים: אוספים מה נוגע בכל פלח משני
+   הצדדים, מזיזים את הדופן לכיוון שניהם, ואז מחזירים אל המולקולות. */
+function walls(dt){
+  wIn.fill(0); wInN.fill(0); wOut.fill(0); wOutN.fill(0);
+  for (let i=0;i<mol.n;i++){
+    const p=patchOf(i);
+    patch[i]=p;
+    if (p<0) continue;
+    if (mol.where[i]===IN_ROOM){ wOut[p]+=mol.T[i]; wOutN[p]++; }
+    else                       { wIn[p] +=mol.T[i]; wInN[p]++;  }
+  }
+  for (let p=0;p<NWALL;p++){
+    /* פלח שאין מולקולת אוויר לידו נשען על שאר החדר. זה לא קיצור דרך:
+       מעבר לתיבה באמת יש מעבדה, והיא באמת בטמפרטורת החדר. */
+    /* כמה אוויר באמת נוגע בפלח. זה לא פרט טכני: זכוכית בלי אוויר
+       מסביבה לא מתקררת בכלל, וזו בדיוק הסיבה שתרמוס שומר על חום —
+       שואבים משם את האוויר ולא נשאר מי שייקח אותו. */
+    const kOut = kOutOf(p) * Math.min(1, wOutN[p]/AIR_COVER);
+    const To = wOutN[p] ? wOut[p]/wOutN[p] : wallT[p];
+    const hasIn = wInN[p] > 0;
+    const Ti = hasIn ? wIn[p]/wInN[p] : wallT[p];
+    const kIn = hasIn ? K_IN : 0;
+    /* חוסם את הצעד ביחידה אחת: מעל זה הדופן מגיבה יותר מדי חזק לצעד
+       זמן גדול ומתנדנדת סביב הטמפרטורה במקום להתכנס אליה. */
+    const s = Math.min(1, (kIn+kOut)*dt) / Math.max(kIn+kOut, 1e-6);
+    wallT[p] += ((Ti-wallT[p])*kIn + (To-wallT[p])*kOut) * s;
+    if (wallT[p]<BATH) wallT[p]=BATH;
+  }
+  for (let i=0;i<mol.n;i++){
+    const p=patch[i];
+    if (p<0) continue;
+    /* האוויר נצמד לדופן מהר — לגז יש כמעט אפס קיבול חום, ומעט מאוד
+       אנרגיה משנה את הטמפרטורה שלו הרבה. */
+    const k = mol.where[i]===IN_ROOM ? K_AIR : K_IN;
+    mol.T[i] += (wallT[p]-mol.T[i]) * Math.min(0.9, k*dt);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   הולכה בתוך האוויר עצמו. גז מוליך על פני המרווח שלו ולא במגע: מולקולה
+   חוצה את הדרך בין שני משטחים ונושאת אתה אנרגיה. לכן לאוויר יש כאן
+   רשת גסה משלו, רחבה מטווח המגע של הנוזל.
+   --------------------------------------------------------------------------- */
+let AIR_R=0.34, AIR_R2=AIR_R*AIR_R, rhoRoom=0;
+const airIdx = new Int32Array(MAX);
+let airStart=new Int32Array(1), airCur=new Int32Array(1);
+const airOrder=new Int32Array(MAX), airCellOf=new Int32Array(MAX);
+let ANX=0, ANY=0, ANZ=0;
+
+function airHeat(dt){
+  ANX=Math.ceil((ROOM.x1-ROOM.x0+1.2)/AIR_R);
+  ANY=Math.ceil((ROOM.y1-ROOM.y0+1.6)/AIR_R);
+  ANZ=Math.ceil((ROOM.z1-ROOM.z0+1.2)/AIR_R);
+  const nc=ANX*ANY*ANZ;
+  if (airStart.length<nc+1){ airStart=new Int32Array(nc+1); airCur=new Int32Array(nc+1); }
+  else airStart.fill(0,0,nc+1);
+  const ax0=ROOM.x0-0.6, ay0=ROOM.y0-0.8, az0=ROOM.z0-0.6;
+  const ci=(v,lo,n)=>{ const k=((v-lo)/AIR_R)|0; return k<0?0:k>=n?n-1:k; };
+
+  let na=0;
+  for (let i=0;i<mol.n;i++) if (mol.air[i]) airIdx[na++]=i;
+  for (let a=0;a<na;a++){
+    const i=airIdx[a];
+    const c=(ci(mol.z[i],az0,ANZ)*ANY + ci(mol.y[i],ay0,ANY))*ANX + ci(mol.x[i],ax0,ANX);
+    airCellOf[a]=c; airStart[c+1]++;
+  }
+  for (let c=0;c<nc;c++) airStart[c+1]+=airStart[c];
+  airCur.set(airStart.subarray(0,nc));
+  for (let a=0;a<na;a++) airOrder[airCur[airCellOf[a]]++]=airIdx[a];
+
+  const kc = dt*1.9;
+  let rhoSum=0, rhoN=0;
+  for (let a=0;a<na;a++){
+    const i=airIdx[a], c=airCellOf[a];
+    const cx=c%ANX, cy=((c/ANX)|0)%ANY, cz=(c/(ANX*ANY))|0;
+    let sum=0, cnt=0;
+    for (let dz=-1;dz<=1;dz++){
+      const z=cz+dz; if (z<0||z>=ANZ) continue;
+      for (let dy=-1;dy<=1;dy++){
+        const y=cy+dy; if (y<0||y>=ANY) continue;
+        const row=(z*ANY+y)*ANX;
+        const lo=cx>0?cx-1:0, hi=cx<ANX-1?cx+1:ANX-1;
+        for (let q=airStart[row+lo];q<airStart[row+hi+1];q++){
+          const j=airOrder[q];
+          if (j<=i) continue;
+          /* לא מוליכים דרך זכוכית. את זה עושים הפלחים, ובקצב אחר. */
+          if ((mol.where[i]===IN_ROOM) !== (mol.where[j]===IN_ROOM)) continue;
+          const ex=mol.x[i]-mol.x[j], ey=mol.y[i]-mol.y[j], ez=mol.z[i]-mol.z[j];
+          if (ex*ex+ey*ey+ez*ez > AIR_R2) continue;
+          const dT=(mol.T[j]-mol.T[i])*kc;
+          mol.T[i]+=dT; mol.T[j]-=dT;
+          sum+=densityOf(j); cnt++;
+        }
+      }
+    }
+    /* אוויר החדר לא נכנס לרשת הצפופה, ולכן בלי זה אין לו סביבה
+       להשוות אליה — הוא לא היה מרגיש ציפה ופשוט שוקע לרצפה. */
+    if (mol.where[i]===IN_ROOM && cnt>0){ mol.rho[i]+=sum; mol.around[i]+=cnt; }
+    if (mol.where[i]===IN_ROOM){ rhoSum+=densityOf(i); rhoN++; }
+  }
+  /* הצפיפות הממוצעת של אוויר החדר. הציפה של אוויר נמדדת מולה ולא מול
+     השכנות הקרובות: שכבה שהתקררה בתקרה שווה בצפיפותה לעצמה, ולכן היא
+     לא יודעת שמתחתיה יש אוויר חם וקל ממנה — ואז היא לא יורדת, האוויר
+     נערם למעלה, ואין מחזור אלא משאבה בכיוון אחד. */
+  rhoRoom = rhoN ? rhoSum/rhoN : 0;
+}
+
+/* מצב הצבירה נגזר מהטמפרטורה בלבד. אין "קרח" ו"אדים" כחומרים נפרדים.
+   אבל המעבר לוקח זמן: מולקולה בודדת הופכת לגז בהסתברות שגדלה עם החום,
+   ולא כולן יחד ברגע שעוברים 100°. עם סף חד כל הנוזל נעלם בפריים אחד
+   ואין שום דבר לראות — לא בעבוע, לא אדים, רק כלי שהתרוקן. */
+function updatePhase(i, dt){
+  const S=SPECIES[mol.sp[i]], T=mol.T[i];
+  const ph=mol.phase[i];
+  if (ph===SOL){ if (T > S.melt) mol.phase[i]=LIQ; return; }
+  if (ph===LIQ){
+    if (T < S.melt){ mol.phase[i]=SOL; return; }
+    if (T > S.boil){
+      /* בועות נולדות בתחתית, ליד הלהבה — ומשם עולות */
+      const depth = clamp((0.95 - mol.y[i]) / 0.95, 0, 1);
+      if (Math.random() < (T-S.boil) * 0.0035 * (0.3 + depth*1.5) * dt){
+        mol.phase[i]=GAS;
+        mol.T[i]=S.boil;
+        cool[i]=LATENT[mol.sp[i]] || 300;
+      }
+    }
+    return;
+  }
+  if (T < S.boil && Math.random() < (0.7 + (S.boil-T)*0.02) * dt){
+    /* התעבות היא ההפך: היא משחררת את החום הזה לסביבה */
+    mol.phase[i]=LIQ; mol.T[i]=S.boil;
+    cool[i] = -(LATENT[mol.sp[i]] || 300);
+  }
+}
+/* צפיפות גז תלויה בטמפרטורה — אדים חמים קלים מאוויר קר, וזו הסיבה
+   האמיתית שהם עולים. קודם הצפיפות הייתה קבועה, ולכן אדים בתוך אדים
+   הרגישו ציפה אפס ופשוט שקעו. */
+const densityOf = i => mol.phase[i]===GAS
+  ? SPECIES[mol.sp[i]].gasRho * 293 / Math.max(mol.T[i]+273.15, 60)
+  : SPECIES[mol.sp[i]].liq;
+
+/* ---- שכנים: דחייה, לכידות, וצפיפות מקומית ----
+   רשת שטוחה עם מיון מנייה. הגרסה הקודמת השתמשה ב-Map, וזה יצא כתשעים
+   אלף חיפושים בכל צעד — שלושה רבעים מכל זמן הפיזיקה. כאן הכל אינדוקס
+   ישיר במערכים מוקצים מראש, בלי גיבוב ובלי הקצאה בכלל. */
+let STIFF=1.0, COH_L=4, COH_S=12, ITERS=3;
+const COND=[0.20, 1.0, 1.35];   /* גז, נוזל, מוצק */
+/* חום כמוס בשווה-ערך מעלות: כמה החומר היה מתחמם אילו אותה אנרגיה
+   הייתה הולכת לטמפרטורה במקום לשינוי מצב. במים זה 540 מעלות —
+   ולכן קומקום נתקע על 100 ולא ממשיך לטפס. */
+const LATENT = { H2O:540, O2:232, N2:191, H2:31 };
+const BATH = -205;      /* אמבט חנקן נוזלי */
+const cool = new Float32Array(MAX);
+
+/* ---------------------------------------------------------------------------
+   הדופן. קודם היה כאן מספר שכתבתי ביד — "בצינור מאבדים 1.8 מעלות
+   לשנייה" — וזה עבד אבל לא היה נכון: הקירור לא היה תלוי בכלום.
+   עכשיו הזכוכית היא גוף עם טמפרטורה משלה. החומר שבפנים מחמם אותה,
+   האוויר שבחוץ מקרר אותה, והיא באמצע. אם האוויר סביב הסליל מתחמם
+   ולא מתחלף, הסליל מפסיק לעבות — כמו במציאות.
+   --------------------------------------------------------------------------- */
+const WALL_N=20;
+const W_FLASK=0, W_TUBE=WALL_N, W_BEAKER=WALL_N*2, NWALL=WALL_N*3;
+const wallT   = new Float32Array(NWALL).fill(AMBIENT);
+const wIn     = new Float32Array(NWALL), wInN  = new Float32Array(NWALL);
+const wOut    = new Float32Array(NWALL), wOutN = new Float32Array(NWALL);
+const patch   = new Int16Array(MAX);
+/* מגע החומר בזכוכית טוב פי כמה מאות מהמעבר של הזכוכית לאוויר. זה לא
+   פרט: זה הצוואר הצר של כל המערכת, ולכן מה שקובע כמה כלי מקרר הוא
+   שטח הפנים שלו ולא הנפח. הבקבוק הכדורי מאבד לאט; הצינור הדק, עם
+   פי שישה שטח ליחידת נפח, מאבד מהר — וזו כל הסיבה שמזקקים בסליל. */
+const K_IN=2.6, K_AIR=0.9;
+const K_OUT=[0.026, 0.62, 0.034];      /* בקבוק, מעבה, כוס */
+const kOutOf = p => K_OUT[(p/WALL_N)|0];
+const AIR_COVER = 6;      /* מספר מולקולות שמעליו הדופן "עטופה" אוויר */
+const band=(u,base)=>base+(u<0?0:u>0.999?WALL_N-1:(u*WALL_N)|0);
+
+/* מחשב מחדש כל אורך שתלוי בסקאלה */
+function applyScale(k){
+  MSCALE = k;
+  NMOL   = Math.round(240 * k * k * k);
+  RANGE  = 0.25/k; RANGE2 = RANGE*RANGE;
+  CELL   = 0.26/k; R0 = 0.155/k;
+  /* טווח ההולכה באוויר הוא המרווח שלו, והמרווח קטן ככל שיש יותר
+     מולקולות באותו חדר */
+  AIR_R  = 0.34*2.2/k; AIR_R2 = AIR_R*AIR_R;
+  GNX=Math.ceil(4.6/CELL); GNY=Math.ceil(4.9/CELL); GNZ=Math.ceil(2.4/CELL);
+  NCELL=GNX*GNY*GNZ;
+  for (const e of Object.values(ELEM)) e.r = e.r0 / k;
+  for (const sp of Object.values(SPECIES))
+    for (const a of sp.atoms) a[1] = a[2].map(v => v / k);
+}
+let RANGE, RANGE2, CELL, R0;
+
+const GX0=-1.5, GY0=-0.35, GZ0=-1.2;
+let GNX, GNY, GNZ, NCELL;
+/* הרשת מוקצית לתא הקטן ביותר האפשרי, כדי שהחלפת רמה לא תקצה מחדש */
+const CELL_MIN=0.26/MSCALE_MAX;
+const NCELL_MAX=Math.ceil(4.6/CELL_MIN)*Math.ceil(4.9/CELL_MIN)*Math.ceil(2.4/CELL_MIN);
+const cellStart =new Int32Array(NCELL_MAX+1);
+const cellCursor=new Int32Array(NCELL_MAX);
+const cellOfMol =new Int32Array(MAX);
+const order     =new Int32Array(MAX);
+const gi=(v,lo,n)=>{ const k=((v-lo)/CELL)|0; return k<0?0:k>=n?n-1:k; };
+
+let pairs = new Int32Array(1 << 16), nPairs = 0;
+
+function buildPairs(){
+  cellStart.fill(0,0,NCELL+1);
+  for (let i=0;i<mol.n;i++){
+    mol.rho[i]=0; mol.around[i]=0; mol.wet[i]=0;
+    const c=(gi(mol.z[i],GZ0,GNZ)*GNY + gi(mol.y[i],GY0,GNY))*GNX + gi(mol.x[i],GX0,GNX);
+    cellOfMol[i]=c; cellStart[c+1]++;
+  }
+  for (let c=0;c<NCELL;c++) cellStart[c+1]+=cellStart[c];
+  cellCursor.set(cellStart.subarray(0,NCELL));
+  for (let i=0;i<mol.n;i++){
+    const c=cellOfMol[i];
+    if (c>=0) order[cellCursor[c]++]=i;
+  }
+
+  nPairs=0;
+  for (let i=0;i<mol.n;i++){
+    const c=cellOfMol[i];
+    if (c<0) continue;
+    const cx=c%GNX, cy=((c/GNX)|0)%GNY, cz=(c/(GNX*GNY))|0;
+    const xi=mol.x[i], yi=mol.y[i], zi=mol.z[i];
+    for (let dz=-1;dz<=1;dz++){
+      const z=cz+dz; if (z<0||z>=GNZ) continue;
+      for (let dy=-1;dy<=1;dy++){
+        const y=cy+dy; if (y<0||y>=GNY) continue;
+        const row=(z*GNY+y)*GNX;
+        const lo=cx>0?cx-1:0, hi=cx<GNX-1?cx+1:GNX-1;
+        const q0=cellStart[row+lo], q1=cellStart[row+hi+1];
+        for (let q=q0;q<q1;q++){
+          const j=order[q];
+          if (j<=i) continue;
+          const ex=xi-mol.x[j], ey=yi-mol.y[j], ez=zi-mol.z[j];
+          if (ex*ex+ey*ey+ez*ez > RANGE2) continue;
+          if (nPairs*2+2 > pairs.length){
+            const g=new Int32Array(pairs.length*2); g.set(pairs); pairs=g;
+          }
+          pairs[nPairs*2]=i; pairs[nPairs*2+1]=j; nPairs++;
+        }
+      }
+    }
+  }
+}
+
+
+function separate(){
+  for (let k=0;k<nPairs;k++){
+    const i=pairs[k*2], j=pairs[k*2+1];
+    const ex=mol.x[i]-mol.x[j], ey=mol.y[i]-mol.y[j], ez=mol.z[i]-mol.z[j];
+    let d=Math.sqrt(ex*ex+ey*ey+ez*ez), ux,uy,uz;
+    if (d<1e-6){                    /* בדיוק באותה נקודה — אין כיוון להיפרד
+                                       אליו, ובלי דחיפה אקראית הן נתקעות */
+      ux=Math.random()-.5; uy=Math.random()-.5; uz=Math.random()-.5;
+      const l=Math.hypot(ux,uy,uz)||1; ux/=l; uy/=l; uz/=l; d=0;
+    } else if (d<R0){ ux=ex/d; uy=ey/d; uz=ez/d; }
+    else continue;
+    const push=(R0-d)*0.5*STIFF;
+    mol.x[i]+=ux*push; mol.y[i]+=uy*push; mol.z[i]+=uz*push;
+    mol.x[j]-=ux*push; mol.y[j]-=uy*push; mol.z[j]-=uz*push;
+    const rel=((mol.vx[i]-mol.vx[j])*ux+(mol.vy[i]-mol.vy[j])*uy+(mol.vz[i]-mol.vz[j])*uz)*0.16;
+    mol.vx[i]-=ux*rel; mol.vy[i]-=uy*rel; mol.vz[i]-=uz*rel;
+    mol.vx[j]+=ux*rel; mol.vy[j]+=uy*rel; mol.vz[j]+=uz*rel;
+  }
+}
+
+/* צילום מיקומים לפני הפתרון, כדי שאפשר יהיה לגזור ממנו מהירות */
+const px=new Float32Array(MAX), py=new Float32Array(MAX), pz=new Float32Array(MAX);
+
+function neighbours(dt){
+  buildPairs();
+  for (let i=0;i<mol.n;i++){ px[i]=mol.x[i]; py[i]=mol.y[i]; pz[i]=mol.z[i]; }
+  for (let it=0;it<ITERS;it++) separate();
+
+  /* המהירות חייבת ללמוד על התיקון. בלי זה מולקולה שנחה על הערימה
+     נדחפת למעלה במיקום אבל ממשיכה לצבור מהירות כלפי מטה — הפיזיקה
+     צוברת אנרגיה עד שהנוזל רותח בלי חום. */
+  const inv=1/dt;
+  for (let i=0;i<mol.n;i++){
+    if (mol.where[i]===IN_TUBE) continue;
+    let cx=(mol.x[i]-px[i])*inv, cy=(mol.y[i]-py[i])*inv, cz=(mol.z[i]-pz[i])*inv;
+    const l=Math.hypot(cx,cy,cz);
+    if (l>6){ const s=6/l; cx*=s; cy*=s; cz*=s; }
+    mol.vx[i]=mol.vx[i]*0.55+cx*0.45;
+    mol.vy[i]=mol.vy[i]*0.55+cy*0.45;
+    mol.vz[i]=mol.vz[i]*0.55+cz*0.45;
+  }
+
+  /* צפיפות מקומית, לכידות, והולכת חום — מעבר אחד אחרי שהמיקומים
+     התייצבו. החום עובר רק בין מולקולות ששכנות ממש: אין דרך שנר בפינה
+     אחת של החדר יחמם את הפינה השנייה, אלא שכנה אחרי שכנה. */
+  const kCond = dt * 2.6;
+  for (let k=0;k<nPairs;k++){
+    const i=pairs[k*2], j=pairs[k*2+1];
+    const ex=mol.x[i]-mol.x[j], ey=mol.y[i]-mol.y[j], ez=mol.z[i]-mol.z[j];
+    const d=Math.sqrt(ex*ex+ey*ey+ez*ez);
+    if (d<1e-6) continue;
+    mol.rho[i]+=densityOf(j); mol.around[i]++;
+    mol.rho[j]+=densityOf(i); mol.around[j]++;
+    if (mol.phase[j]!==GAS) mol.wet[i]++;
+    if (mol.phase[i]!==GAS) mol.wet[j]++;
+    /* גז מוליך גרוע — זו הסיבה שאוויר הוא מבודד ולא מוליך */
+    const cw = Math.min(COND[mol.phase[i]], COND[mol.phase[j]]) * kCond;
+    const dT = (mol.T[j]-mol.T[i]) * cw;
+    mol.T[i]+=dT; mol.T[j]-=dT;
+    /* בועה שנולדה גובה את החום הכמוס שלה מהשכנות. זה מה שמחזיק נוזל
+       רותח על נקודת הרתיחה: כל מולקולה שעוזבת מקררת את מי שנשאר. */
+    if (cool[i]>0) mol.T[j] -= cool[i]/Math.max(6, mol.around[i]);
+    if (cool[j]>0) mol.T[i] -= cool[j]/Math.max(6, mol.around[j]);
+    if (d<=R0 || mol.phase[i]===GAS || mol.phase[j]===GAS) continue;
+    const f=-(d-R0)/R0*(mol.phase[i]===SOL?COH_S:COH_L)*dt;
+    const nx=ex/d*f, ny=ey/d*f, nz=ez/d*f;
+    mol.vx[i]+=nx; mol.vy[i]+=ny; mol.vz[i]+=nz;
+    mol.vx[j]-=nx; mol.vy[j]-=ny; mol.vz[j]-=nz;
+  }
+}
+
+const IGNITION=560;
+let flash=0;
+
+function react(){
+  if (flash<=0){
+    let hot=false;
+    for (let i=0;i<mol.n && !hot;i++) if (mol.T[i]>=IGNITION) hot=true;
+    if (!hot) return;
+  }
+  const h=[],o=[];
+  for (let i=0;i<mol.n;i++){
+    if (mol.where[i]===IN_TUBE) continue;
+    if (mol.sp[i]==='H2') h.push(i); else if (mol.sp[i]==='O2') o.push(i);
+  }
+  let made=0;
+  for (const oi of o){
+    if (h.length<2 || made>6) break;
+    const near=[];
+    for (const hi of h){
+      if (Math.hypot(mol.x[hi]-mol.x[oi],mol.y[hi]-mol.y[oi],mol.z[hi]-mol.z[oi])<2.2*R0) near.push(hi);
+      if (near.length===2) break;
+    }
+    if (near.length<2) continue;
+    /* שני H₂ הופכים לשני H₂O, וה-O₂ נבלע. ארבעה H ושני O — לפני ואחרי. */
+    /* התגובה משחררת אנרגיה במקום שבו היא קרתה, לא לכל הכלי */
+    for (const hi of near){ mol.sp[hi]='H2O'; mol.vy[hi]+=rand(1.5,3.4); mol.T[hi]+=900; }
+    mol.T[oi]=mol.T[oi];
+    h.splice(h.indexOf(near[0]),1);
+    h.splice(h.indexOf(near[1]),1);
+    kill(oi);
+    made++; flash=0.45;
+  }
+}
+
+/* ===========================================================================
+   5.7) שדה החום
+
+   עד עכשיו רק למולקולות הייתה טמפרטורה, ולכן נר יכול היה לחמם רק את מה
+   שנגע בו. אבל אם מדליקים נר בחדר, כל החדר מתחמם — לא רק מה שמולו.
+   מה שהיה חסר זה שגם למרחב עצמו תהיה טמפרטורה.
+
+   החדר מחולק לתאים. לכל תא יש טמפרטורה וחומר: אוויר, עץ, אבן, מתכת,
+   זכוכית. החום עובר בין תאים שכנים לפי המוליכות של שניהם, ולכן הוא
+   באמת עובר רק במקומות מסוימים — רגל מתכת מוליכה את החום למטה מהר,
+   פלטת עץ מוליכה אותו לאט והצידה, ואוויר כמעט לא מוליך בכלל אלא נושא
+   את החום למעלה בזרימה.
+
+   המעבר בין תאים נעשה באנרגיה ולא בטמפרטורה: Q = G·ΔT·dt, ואז כל צד
+   משנה טמפרטורה לפי קיבול החום שלו. בלי זה גרם מתכת וקוב אוויר היו
+   מתנהגים כאילו יש להם אותה כמות חום, וזה ההבדל בין להיכוות לבין
+   לשים יד בתנור.
+   =========================================================================== */
+const MAT_AIR=0, MAT_WOOD=1, MAT_STONE=2, MAT_METAL=3, MAT_GLASS=4;
+/* מוליכות, וקיבול חום לנפח. היחסים אמיתיים: מתכת מוליכה פי אלפיים
+   מאוויר, ולאוויר יש כמעט אפס קיבול — לכן הוא מתחמם מיד ומצטנן מיד. */
+/* אוויר כמעט לא מוליך. זו לא בחירה נוחה אלא המספר האמיתי: מעבירות
+   החום של אוויר קטנה פי אלפים מזו של מתכת, והדרך שבה אוויר מזיז חום
+   היא זרימה ולא הולכה. נתתי לו קודם מוליכות גבוהה מדי, וכל מה שהלהבה
+   הזרימה התפזר מיד על כל החדר במקום לעלות כעמוד. */
+const MAT_K = [0.0009, 0.15, 1.4, 45.0, 1.05];
+const MAT_C = [0.0012, 0.85, 1.90, 3.50, 1.65];
+
+const HF = (()=>{
+  const cs=0.26;
+  const x0=-3.65, y0=FLOOR_Y, z0=-3.35;
+  const nx=Math.ceil(8.4/cs), ny=Math.ceil(7.6/cs), nz=Math.ceil(5.6/cs);
+  const n=nx*ny*nz;
+  return { cs, x0, y0, z0, nx, ny, nz, n,
+           T:new Float32Array(n).fill(AMBIENT),
+           mat:new Uint8Array(n) };
+})();
+const hfIdx = (ix,iy,iz) => (iz*HF.ny + iy)*HF.nx + ix;
+const hfCellOf = (x,y,z) => {
+  const ix=(x-HF.x0)/HF.cs|0, iy=(y-HF.y0)/HF.cs|0, iz=(z-HF.z0)/HF.cs|0;
+  if (ix<0||iy<0||iz<0||ix>=HF.nx||iy>=HF.ny||iz>=HF.nz) return -1;
+  return hfIdx(ix,iy,iz);
+};
+
+/* מסמנים מה עשוי ממה. פעם אחת, בטעינה. */
+function hfPaint(){
+  const {cs,x0,y0,z0,nx,ny,nz}=HF;
+  const inBox=(x,y,z, cx,cy,cz, w,h,d)=>
+    Math.abs(x-cx)<=w/2 && Math.abs(y-cy)<=h/2 && Math.abs(z-cz)<=d/2;
+  for (let iz=0;iz<nz;iz++) for (let iy=0;iy<ny;iy++) for (let ix=0;ix<nx;ix++){
+    const x=x0+(ix+0.5)*cs, y=y0+(iy+0.5)*cs, z=z0+(iz+0.5)*cs;
+    let m=MAT_AIR;
+    if (y < FLOOR_Y+cs) m=MAT_STONE;                                  /* רצפה */
+    else if (inBox(x,y,z, BX,BENCH_Y-TOP_T/2,BZ, 6.0,TOP_T,3.0)) m=MAT_WOOD;
+    else if (inBox(x,y,z, BX,BENCH_Y-0.22,BZ, 5.7,0.13,2.7)) m=MAT_WOOD;
+    else if (inBox(x,y,z, BX,BENCH_Y-1.30,BZ, 5.6,0.10,2.5)) m=MAT_WOOD;
+    else {
+      /* רגלי השולחן */
+      for (const [dx,dz] of [[-2.6,-1.25],[2.6,-1.25],[-2.6,1.25],[2.6,1.25]])
+        if (inBox(x,y,z, BX+dx,(FLOOR_Y+BENCH_Y-TOP_T)/2,BZ+dz,
+                  0.20,BENCH_Y-TOP_T-FLOOR_Y,0.20)) { m=MAT_WOOD; break; }
+      /* חצובה ומעמדים: מתכת, וזו הסיבה שהחום מטפס בהם מהר */
+      if (m===MAT_AIR && y>BENCH_Y-0.05 && y<GAUZE_Y+0.10 &&
+          Math.hypot(x,z)<0.30) m=MAT_METAL;
+      /* דפנות הכלים */
+      if (m===MAT_AIR && y>-0.05 && y<NECK_TOP &&
+          Math.abs(Math.hypot(x,z)-flaskRadiusAt(Math.max(0,y)))<cs*0.9) m=MAT_GLASS;
+      if (m===MAT_AIR && y>-0.05 && y<1.50 &&
+          Math.abs(Math.hypot(x-BEAKER_X,z)-0.68)<cs*0.9) m=MAT_GLASS;
+    }
+    HF.mat[hfIdx(ix,iy,iz)]=m;
+  }
+}
+
+/* מוליכות המעבר בין שני תאים: ממוצע הרמוני, כמו שתי התנגדויות בטור.
+   תא מבודד ליד תא מוליך נותן מעבר איטי — הגרוע מביניהם קובע. */
+const hfG = new Float32Array(25);
+for (let a=0;a<5;a++) for (let b=0;b<5;b++)
+  hfG[a*5+b] = 2*MAT_K[a]*MAT_K[b] / (MAT_K[a]+MAT_K[b]);
+
+function hfStep(dt){
+  const {nx,ny,nz,T,mat}=HF;
+  const rowY=nx, rowZ=nx*ny;
+
+  /* הולכה. עוברים על שלושת הצירים ומעבירים אנרגיה בין כל זוג שכנים. */
+  for (let axis=0; axis<3; axis++){
+    const stride = axis===0 ? 1 : axis===1 ? rowY : rowZ;
+    const lim    = axis===0 ? nx : axis===1 ? ny : nz;
+    for (let iz=0;iz<nz;iz++) for (let iy=0;iy<ny;iy++) for (let ix=0;ix<nx;ix++){
+      const cur = axis===0?ix : axis===1?iy : iz;
+      if (cur >= lim-1) continue;
+      const a = (iz*ny+iy)*nx+ix, b = a+stride;
+      const ma=mat[a], mb=mat[b];
+      const diff = T[a]-T[b];
+      if (diff>-1e-4 && diff<1e-4) continue;
+      const q = hfG[ma*5+mb]*diff*dt;      /* אנרגיה, לא מעלות */
+      let dA = q/MAT_C[ma], dB = q/MAT_C[mb];
+      /* שני הצדדים יחד לא יעברו את הפער ביניהם. בלי החסם הזה תא מתכת
+         עם קיבול קטן קופץ מעבר לשכן שלו, ובצעד הבא חוזר — הסכמה
+         המפורשת מתנדנדת במקום להתכנס, והמתכת מהבהבת בין חם לקר. */
+      const tot = Math.abs(dA)+Math.abs(dB), room = Math.abs(diff)*0.9;
+      if (tot > room){ const f = room/tot; dA*=f; dB*=f; }
+      T[a] -= dA; T[b] += dB;
+    }
+  }
+
+  /* הסעה: אוויר חם קל מהאוויר שמעליו והם מתחלפים. זה מה שמעלה את
+     החום מהלהבה אל התקרה במקום להשאיר אותו כדור סביב הלהבה. */
+  const mix = Math.min(0.5, dt*3.4);
+  for (let iz=0;iz<nz;iz++) for (let iy=0;iy<ny-1;iy++) for (let ix=0;ix<nx;ix++){
+    const a=(iz*ny+iy)*nx+ix, b=a+rowY;
+    if (mat[a]!==MAT_AIR || mat[b]!==MAT_AIR) continue;
+    const d=T[a]-T[b];
+    if (d<=0.05) continue;
+    const t=d*mix*0.5;
+    T[a]-=t; T[b]+=t;
+  }
+
+  /* שאר המעבדה. התיבה איננה כל החדר, ומעברים לגבול נשענים על מרחב
+     גדול מכדי להתחמם. */
+  const edge = Math.min(1, dt*0.55);
+  for (let iz=0;iz<nz;iz++) for (let iy=0;iy<ny;iy++){
+    for (const ix of [0,nx-1]){ const c=(iz*ny+iy)*nx+ix; T[c]+=(AMBIENT-T[c])*edge; }
+  }
+  for (let iy=0;iy<ny;iy++) for (let ix=0;ix<nx;ix++){
+    for (const iz of [0,nz-1]){ const c=(iz*ny+iy)*nx+ix; T[c]+=(AMBIENT-T[c])*edge; }
+  }
+  for (let iz=0;iz<nz;iz++) for (let ix=0;ix<nx;ix++){
+    const c=((iz*ny+(ny-1))*nx)+ix; T[c]+=(AMBIENT-T[c])*edge;
+  }
+}
+
+/* הלהבה מזרימה הספק אל התאים שמעליה, ומשם זה כבר עניין של השדה */
+const FLAME_W = 1.15;      /* הספק הלהבה, ביחידות אנרגיה לשנייה לתא */
+function hfFlame(dt){
+  if (Math.abs(gasTap)<0.001) return;
+  const {cs}=HF;
+  for (let y=FLAME_Y0; y<FLAME_Y1+0.30; y+=cs*0.6)
+    for (let dx=-cs; dx<=cs; dx+=cs) for (let dz=-cs; dz<=cs; dz+=cs){
+      const c=hfCellOf(dx,y,dz);
+      if (c<0) continue;
+      const m = HF.mat[c];
+      /* הספק, לא טמפרטורה. כמה מעלות זה מעלה תלוי במה שיש שם: אוויר
+         קופץ מיד, המתכת של החצובה כמעט לא זזה מאותו הספק. */
+      if (gasTap>0) HF.T[c] += gasTap * FLAME_W * dt / MAT_C[m];
+      else          HF.T[c] += (BATH-HF.T[c]) * (-gasTap) * Math.min(1, dt*2.2);
+    }
+}
+
+/* חיבור בין המולקולות לשדה. שני הכיוונים, ומה שמולקולה לוקחת התא
+   מאבד — אחרת הלהבה מייצרת אנרגיה יש מאין. */
+/* קיבול החום של מולקולת אוויר מצוירת. היא מייצגת מנת אוויר בגודל
+   תא, ולכן הקיבול שלה חייב להיות בסדר הגודל של תא אוויר. נתתי לה
+   קודם 0.055 מול 0.0012 של התא — פי ארבעים וחמש — וכל מולקולה
+   שיכולה לקבע תא שלם קיבעה אותו. הלהבה הזרימה מאות מעלות לשנייה
+   והשדה נשאר על עשרים ותשע, כי הסימון של האוויר בלע הכל. */
+const MOL_C = 0.0010;
+function hfCouple(dt){
+  const k = Math.min(0.85, dt*1.8);
+  for (let i=0;i<mol.n;i++){
+    /* רק אוויר החדר. מה שבתוך כלי מופרד מהחדר בזכוכית, ומי שמעביר
+       לו חום הוא הדופן — walls() כבר עושה את זה, ובקצב הנכון.
+       כשחיברתי גם את מה שבפנים ישירות לשדה, השדה גרר את המים חזרה
+       לטמפרטורת החדר מהר יותר משהמבער חימם אותם, והזיקוק פשוט נעצר:
+       הכוס קיבלה אפס במקום חמש מאות. שתי מערכות שמושכות לשני כיוונים
+       על אותה מולקולה. */
+    if (mol.where[i] !== IN_ROOM) continue;
+    const c = hfCellOf(mol.x[i], mol.y[i], mol.z[i]);
+    if (c<0) continue;
+    const d = (HF.T[c]-mol.T[i]) * k;
+    mol.T[i] += d;
+    HF.T[c]  -= d * MOL_C / Math.max(MAT_C[HF.mat[c]], 1e-4);
+  }
+}
+
+function hfReset(){ HF.T.fill(AMBIENT); }
+
+/* לאיזה תא בשדה נוגע כל פלח דופן. קבוע, ולכן מחושב פעם אחת. */
+const wallCell = new Int32Array(NWALL).fill(-1);
+function hfWallCells(){
+  for (let i=0;i<WALL_N;i++){
+    const y=(i+0.5)/WALL_N*NECK_TOP;
+    wallCell[W_FLASK+i]=hfCellOf(flaskRadiusAt(y)+0.16, y, 0);
+    const k=Math.min(PATH.length-1, ((i+0.5)/WALL_N*PATH.length)|0), q=PATH[k];
+    wallCell[W_TUBE+i]=hfCellOf(q[0], q[1]+0.20, q[2]);
+    wallCell[W_BEAKER+i]=hfCellOf(BEAKER_X+0.80, (i+0.5)/WALL_N*1.48, 0);
+  }
+}
+
+/* זו הדרך שבה המעבדה מחממת את החדר. החומר שבפנים מחמם את הזכוכית,
+   והזכוכית מחממת את האוויר שנוגע בה מבחוץ. בלי החוליה הזאת בקבוק
+   רותח יכול לעמוד שעה ליד ראשך ולא לחמם כלום. */
+function hfWalls(dt){
+  for (let p=0;p<NWALL;p++){
+    const c=wallCell[p];
+    if (c<0) continue;
+    const m=HF.mat[c], diff=wallT[p]-HF.T[c];
+    if (diff>-1e-4 && diff<1e-4) continue;
+    const q=hfG[MAT_GLASS*5+m]*diff*dt;
+    let dW=q/MAT_C[MAT_GLASS], dF=q/MAT_C[m];
+    const tot=Math.abs(dW)+Math.abs(dF), room=Math.abs(diff)*0.9;
+    if (tot>room){ const f=room/tot; dW*=f; dF*=f; }
+    wallT[p]-=dW; HF.T[c]+=dF;
+  }
+}
+
+/* מדידה לבדיקות: הטמפרטורה הממוצעת של האוויר בתיבה, ובאזור נתון */
+function hfProbe(x0,x1,y0,y1,z0,z1){
+  let s=0,n=0;
+  for (let iz=0;iz<HF.nz;iz++) for (let iy=0;iy<HF.ny;iy++) for (let ix=0;ix<HF.nx;ix++){
+    const x=HF.x0+(ix+0.5)*HF.cs, y=HF.y0+(iy+0.5)*HF.cs, z=HF.z0+(iz+0.5)*HF.cs;
+    if (x<x0||x>x1||y<y0||y>y1||z<z0||z>z1) continue;
+    s+=HF.T[hfIdx(ix,iy,iz)]; n++;
+  }
+  return n ? s/n : AMBIENT;
+}
+
+
+/* ===========================================================================
+   5.8) רזולוציה שנגררת אחרי המצלמה
+
+   ככל שמתקרבים רואים יותר מולקולות, קטנות יותר, עד לגודל האמיתי.
+   כל צעד פנימה מפצל כל מולקולה לשתיים, וכל צעד החוצה מאחד בחזרה.
+   הכמות החומרית לא משתנה: מה שמשתנה הוא כמה נקודות מתארות אותה,
+   ולכן המרווח מתכווץ בשורש שלישי של 2 והנוזל ממלא בדיוק את אותו נפח.
+
+   כמה רחוקים מהאמת: כל כדור כאן מייצג מספר עצום של מולקולות אמיתיות,
+   והמספר הזה מוצג. הוא יורד עם כל פיצול, אבל אי אפשר להביא אותו ל-1
+   בבקבוק שלם — לזה צריך 10²¹ נקודות. שם נכנס המיקרוסקופ, שהוא קופסה
+   של ננומטרים ספורים שבה כל כדור באמת מולקולה אחת.
+   =========================================================================== */
+/* קנה המידה כבר מוגדר בקובץ — M_PER_UNIT, בקבוק 250 מ״ל. משתמשים
+   בו ולא בשני קנים לאותו עולם. */
+function repOf(){
+  const t = (R0*M_PER_UNIT*1e9)/NM_OO;
+  return t*t*t;
+}
+function sci(n){
+  if (n<1000) return String(Math.round(n));
+  const e=Math.floor(Math.log10(n));
+  const m=(n/Math.pow(10,e));
+  const SUP='⁰¹²³⁴⁵⁶⁷⁸⁹';
+  return m.toFixed(1)+'×10'+String(e).split('').map(c=>SUP[+c]).join('');
+}
+
+const MOLF = ['sp','x','y','z','vx','vy','vz','spin','where','t','T','phase','rho','around','wet','air'];
+
+/* פיצול: כל מולקולה הופכת לשתיים, והשתיים נדחפות לצדדים מתוך המקום
+   של המקורית. הכל עובר כמו שהוא — טמפרטורה, מצב, מהירות — ולכן מבנה
+   החום והזרימה בכלי נשמר ולא מוגרל מחדש. */
+function splitMolecules(){
+  const n0=mol.n, kNew=MSCALE*Math.cbrt(2);
+  if (kNew>MSCALE_MAX+1e-6) return false;
+  if (n0*2 > MAX) return false;
+  const off=R0*0.26;
+  for (let i=0;i<n0;i++){
+    const j=mol.n++;
+    for (const f of MOLF) mol[f][j]=mol[f][i];
+    for (let c=0;c<3;c++) mol.axis[j*3+c]=mol.axis[i*3+c];
+    mol.spin[j]=rand(0,6.28);
+    const ux=rand(-1,1), uy=rand(-1,1), uz=rand(-1,1);
+    const l=Math.hypot(ux,uy,uz)||1;
+    mol.x[i]+=ux/l*off; mol.y[i]+=uy/l*off; mol.z[i]+=uz/l*off;
+    mol.x[j]-=ux/l*off; mol.y[j]-=uy/l*off; mol.z[j]-=uz/l*off;
+  }
+  applyScale(kNew);
+  syncZoom(); syncAtoms();
+  return true;
+}
+
+/* איחוד: מסירים כל מולקולה שנייה מכל מין ומכל אזור, והמרווח גדל
+   בשורש שלישי של 2. הכמות החומרית נשמרת כי כל כדור שנשאר מייצג
+   פי שניים — וזה בדיוק מה שהמספר שמוצג אומר.
+   לא מיצעתי זוגות שכנים: מולקולות של חומרים שונים אי אפשר למצע,
+   ומי שלא מצא בן זוג היה נשאר עם משקל אחר מכולם, ואז "כל כדור
+   מייצג N" מפסיק להיות נכון. */
+function mergeMolecules(){
+  const kNew=MSCALE/Math.cbrt(2);
+  if (kNew < LEVELS[0]-1e-6) return false;
+  let flip=0;
+  for (let i=mol.n-1;i>=0;i--) if ((flip++ & 1)===0) kill(i);
+  applyScale(kNew);
+  syncZoom(); syncAtoms();
+  return true;
+}
+
+/* איזו רמה מתאימה לזום הנוכחי. הרצועות חופפות בכוונה: בלי זה מספיק
+   רעד קטן על הגבול כדי לפצל ולאחד לסירוגין בכל פריים. */
+const LOD_IN =[0.34, 0.14, 0.055];    /* מתחת לזה — מפצלים */
+const LOD_OUT=[0.46, 0.19, 0.075];    /* מעל לזה — מאחדים */
+/* הרמה נגזרת מהסקאלה עצמה ולא ממונה נפרד. אם מישהו בוחר רמה ידנית
+   בהגדרות, המונה היה יוצא מסנכרון והזום היה מפצל מהמקום הלא נכון. */
+const lodStepOf = () => Math.round(3*Math.log(MSCALE/LEVELS[0])/Math.log(2));
+function lodFollowZoom(){
+  if (MC.on) return;
+  const st=Math.max(0, Math.min(3, lodStepOf()));
+  if (st<3 && cam.zoom < LOD_IN[st]) splitMolecules();
+  else if (st>0 && cam.zoom > LOD_OUT[st-1]) mergeMolecules();
+}
+
+function step(dt){
+  neighbours(dt);
+  airHeat(dt);
+  walls(dt);
+  hfFlame(dt);
+  hfWalls(dt);
+  hfStep(dt);
+  hfCouple(dt);
+  for (let i=0;i<mol.n;i++){
+    const S=SPECIES[mol.sp[i]];
+    updatePhase(i, dt);
+    const ph=mol.phase[i], T=mol.T[i];
+    mol.spin[i]+=dt*(ph===GAS?5:ph===LIQ?1.2:0.15);
+
+    /* כובד וציפה בצעד אחד: מה שדוחף גוף למעלה או למטה הוא ההפרש בין
+       הצפיפות שלו לצפיפות של מה שמקיף אותו. גז בתוך נוזל עולה חזק,
+       נוזל כבד בתוך נוזל קל שוקע, ושני גזים נפרדים לשכבות לפי משקל. */
+    const mine=densityOf(i);
+    const amb = mol.where[i]===IN_ROOM ? (rhoRoom||mine)
+              : mol.around[i]>2 ? mol.rho[i]/mol.around[i] : mine;
+    const lift = clamp((amb-mine)/Math.max(mine,1e-4), -6, 6);
+    /* על גז הכובד כמעט לא משפיע בקנה המידה הזה, ומעל נוזל רותח יש זרם
+       עולה. בלי זה אדים בתוך אדים לא מרגישים שום הפרש צפיפות ופשוט
+       יושבים בבועה — הזיקוק נעצר לפני שהוא מגיע לצוואר. */
+    const G = ph===GAS ? 0.8 : 5.2;
+    /* אוויר חופשי לא נופל. משקלו נישא בידי לחץ האוויר שמתחתיו, וגובה
+       הסקאלה של האטמוספירה הוא שמונה קילומטר — על פני חדר אחד אין שום
+       שקיעה שאפשר למדוד. בלי זה כל האוויר מתנקז לרצפה תוך דקה.
+       המשקל מתבטל, הציפה נשארת: חם עולה, קר יורד. זו ההסעה. */
+    const W = mol.where[i]===IN_ROOM ? 0 : G;
+    /* זרם עולה מעל מקור חום. נמדד מול טמפרטורת החדר ולא מול נקודת
+       הרתיחה: חום כמוס מקבע אדים רותחים בדיוק על 100°, וכל תנאי
+       שדורש "מעל נקודת הרתיחה" מתאפס בשקט בדיוק כשצריך אותו. */
+    /* הדחיפה הזאת היא תיקון לאדים בתוך הבקבוק, שם בועה חמה חייבת
+       לפרוץ מעלה. באוויר החדר אין בה צורך ואסור שתהיה: הציפה לבדה
+       כבר עושה את העבודה, והתוספת רק הופכת אותה למשאבה. */
+    const conv = ph===GAS && mol.where[i]!==IN_ROOM
+      ? clamp((mol.T[i]-AMBIENT)/120,0,1) * 9.0 : 0;
+    mol.vy[i] += (-W + G*lift + conv) * dt;
+
+    /* הלהבה מחממת רק את מה שיושב מעליה — התחתית של הבקבוק. משם
+       החום מטפס פנימה שכנה־שכנה, ולכן הרתיחה מתחילה למטה. */
+    if (gasTap>0 && mol.where[i]===IN_FLASK && mol.y[i]<0.55)
+      /* ההספק מכויל מהמאזן: להרתיח את כל הבקבוק לוקח כדקה בלהבה
+         מלאה. עם 320 מעלות לשנייה הכל התאדה תוך אחת עשרה שניות. */
+      mol.T[i] += gasTap * 62 * (1 - mol.y[i]/0.55) * dt;
+    /* צד שני של החוגה: אמבט קירור מתחת לבקבוק. במעבדה אין "לבחור
+       מינוס מאתיים" — מכניסים את הכלי לאמבט, והחום יוצא ממנו החוצה. */
+    if (gasTap<0 && mol.where[i]===IN_FLASK && mol.y[i]<0.60)
+      mol.T[i] += (BATH - mol.T[i]) * (-gasTap) * 0.85 * (1 - mol.y[i]/0.60) * dt;
+    /* בשוליים של תיבת האוויר מתחילה שאר המעבדה. היא גדולה מכדי
+       להתחמם, ולכן אוויר שמגיע לקצה חוזר לטמפרטורת החדר — וזה מה
+       שסוגר את מחזור ההסעה: חם עולה ויוצא, קר נכנס במקומו. */
+    if (mol.where[i]===IN_ROOM){
+      const e = Math.max(
+        Math.max((ROOM.x0+0.35-mol.x[i]), (mol.x[i]-(ROOM.x1-0.35)))/0.35,
+        Math.max((mol.y[i]-(ROOM.y1-0.40))/0.40,
+                 Math.max((ROOM.z0+0.30-mol.z[i]), (mol.z[i]-(ROOM.z1-0.30)))/0.30));
+      if (e>0) mol.T[i] += (AMBIENT-mol.T[i]) * Math.min(1,e) * 1.9 * dt;
+    }
+
+    const therm = ph===GAS ? clamp((T-S.boil)/260,0.25,3.2) : ph===LIQ ? 0.16 : 0.02;
+    mol.vx[i]+=rand(-1,1)*therm*dt*9;
+    mol.vy[i]+=rand(-1,1)*therm*dt*9;
+    mol.vz[i]+=rand(-1,1)*therm*dt*9;
+
+    const k=Math.exp(-(ph===GAS?0.55:ph===LIQ?3.4:11.0)*dt);
+    mol.vx[i]*=k; mol.vy[i]*=k; mol.vz[i]*=k;
+    mol.x[i]+=mol.vx[i]*dt; mol.y[i]+=mol.vy[i]*dt; mol.z[i]+=mol.vz[i]*dt;
+
+    if (mol.where[i]===IN_ROOM){
+      /* הזכוכית היא קיר גם מבחוץ. בלי זה האוויר פשוט חוצה את הבקבוק
+         ומתערבב עם המים, ואז אין בכלל שני צדדים לדופן. */
+      pushOutOfGlass(i);
+      if (mol.x[i]<ROOM.x0){ mol.x[i]=ROOM.x0; mol.vx[i]*=-.4; }
+      if (mol.x[i]>ROOM.x1){ mol.x[i]=ROOM.x1; mol.vx[i]*=-.4; }
+      if (mol.z[i]<ROOM.z0){ mol.z[i]=ROOM.z0; mol.vz[i]*=-.4; }
+      if (mol.z[i]>ROOM.z1){ mol.z[i]=ROOM.z1; mol.vz[i]*=-.4; }
+      if (mol.y[i]<ROOM.y0){ mol.y[i]=ROOM.y0; mol.vy[i]*=-.4; }
+      if (mol.y[i]>ROOM.y1){ mol.y[i]=ROOM.y1; mol.vy[i]*=-.4; }
+      /* דרך פתח הכוס אפשר להיכנס. זה הכלי היחיד שפתוח לחדר, ולכן
+         הוא היחיד שבו אוויר החדר והאוויר שבפנים הם אותו אוויר. */
+      if (mol.y[i]<1.44 && mol.y[i]>1.30 && Math.hypot(mol.x[i]-BEAKER_X,mol.z[i])<0.58 && mol.vy[i]<0)
+        mol.where[i]=IN_BEAKER;
+      continue;
+    }
+
+    if (mol.where[i]===IN_TUBE){
+      /* המולקולה נעה מכוח עצמה. הכליאה רק מונעת ממנה לצאת דרך הזכוכית:
+         מוצאים את הנקודה הקרובה על ציר הצינור ומחזירים אותה פנימה.
+         קודם היא הוסעה על מסילה לפי פרמטר — זו הייתה אנימציה, לא זרימה. */
+      let hint=mol.t[i]|0, best=hint, bd=1e9;
+      const lo=Math.max(0,hint-14), hi=Math.min(PATH.length-1,hint+14);
+      for (let k=lo;k<=hi;k++){
+        const q=PATH[k];
+        const ax=mol.x[i]-q[0], ay=mol.y[i]-q[1], az=mol.z[i]-q[2];
+        const dd=ax*ax+ay*ay+az*az;
+        if (dd<bd){ bd=dd; best=k; }
+      }
+      mol.t[i]=best;
+      const q=PATH[best];
+      const ax=mol.x[i]-q[0], ay=mol.y[i]-q[1], az=mol.z[i]-q[2];
+      const rr=Math.sqrt(bd);
+      if (rr>TUBE_IN && rr>1e-6){
+        const sc=TUBE_IN/rr;
+        mol.x[i]=q[0]+ax*sc; mol.y[i]=q[1]+ay*sc; mol.z[i]=q[2]+az*sc;
+        const ux=ax/rr, uy=ay/rr, uz=az/rr;
+        const vn=mol.vx[i]*ux+mol.vy[i]*uy+mol.vz[i]*uz;
+        if (vn>0){ mol.vx[i]-=ux*vn*1.35; mol.vy[i]-=uy*vn*1.35; mol.vz[i]-=uz*vn*1.35; }
+      }
+      /* הקצוות: בחזרה לבקבוק רק אם היא באמת יורדת מתחת לפתח, אחרת
+         כל מולקולה שנכנסת נזרקת החוצה באותו צעד ושום דבר לא זורם */
+      if (best<=0 && mol.vy[i]<0 && mol.y[i]<PATH[0][1]-0.02){ mol.where[i]=IN_FLASK; }
+      else if (best>=PATH.length-2){
+        mol.where[i]=IN_BEAKER; mol.vy[i]=Math.min(mol.vy[i],-0.5);
+      }
+      continue;
+    }
+
+    if (mol.where[i]===IN_FUNNEL){
+      const maxR=funnelRadiusAt(mol.y[i]);
+      const r=Math.hypot(mol.x[i]-FX, mol.z[i]);
+      if (r>maxR && r>1e-6){
+        const sc=maxR/r;
+        mol.x[i]=FX+(mol.x[i]-FX)*sc; mol.z[i]*=sc;
+        mol.vx[i]*=-.35; mol.vz[i]*=-.35;
+      }
+      if (mol.y[i]>BOWL_Y1-0.05){ mol.y[i]=BOWL_Y1-0.05; mol.vy[i]*=-.3; }
+      if (tap.a>0.55){
+        /* פתוח: מה שמגיע לתחתית הגזע נכנס לבקבוק */
+        if (mol.y[i]<STEM_Y0+0.04){ mol.where[i]=IN_FLASK; mol.vy[i]=-0.8; }
+      } else if (mol.y[i]<TAP_Y+0.10){
+        mol.y[i]=TAP_Y+0.10; mol.vy[i]*=-0.25;    /* סגור: נחים על הברז */
+      }
+      continue;
+    }
+
+    if (mol.where[i]===IN_FLASK){
+      /* הסף חייב להיות מתחת לתקרת הצוואר, אחרת אדים נצמדים לתקרה
+         בדיוק מתחת לפתח ולא נכנסים לעולם */
+      if (ph===GAS && mol.y[i]>NECK_TOP-0.09 && Math.hypot(mol.x[i],mol.z[i])<NECK_R){
+        /* גז שמוצא את פתח הגזע עולה למשפך — אבל רק אם הברז פתוח */
+        if (tap.a>0.55 && Math.hypot(mol.x[i]-FX,mol.z[i])<STEM_R-0.02){
+          mol.where[i]=IN_FUNNEL; mol.vy[i]=1.2; continue;
+        }
+        /* נכנסת אל תוך הצינור, לא אל השפה שלו */
+        mol.where[i]=IN_TUBE; mol.t[i]=3;
+        const q=PATH[3];
+        mol.x[i]=q[0]+rand(-.03,.03); mol.y[i]=q[1]; mol.z[i]=q[2]+rand(-.03,.03);
+        mol.vy[i]=Math.max(mol.vy[i],0.3);
+        continue;
+      }
+      const maxR=flaskRadiusAt(mol.y[i])-0.06, r=Math.hypot(mol.x[i],mol.z[i]);
+      if (r>maxR && r>1e-6){ const s=maxR/r; mol.x[i]*=s; mol.z[i]*=s; mol.vx[i]*=-.35; mol.vz[i]*=-.35; }
+      if (mol.y[i]>NECK_TOP-0.05){ mol.y[i]=NECK_TOP-0.05; mol.vy[i]*=-.3; }
+      if (mol.y[i]<0.06){ mol.y[i]=0.06; mol.vy[i]*=-.25; }
+    } else {
+      const r=Math.hypot(mol.x[i]-BEAKER_X,mol.z[i]);
+      if (r>0.60){ const s=0.60/r; mol.x[i]=BEAKER_X+(mol.x[i]-BEAKER_X)*s; mol.z[i]*=s;
+                   mol.vx[i]*=-.35; mol.vz[i]*=-.35; }
+      /* הכוס פתוחה למעלה. גז שעולה יוצא ממנה אל החדר — אחרת האוויר
+         נלכד בפנים ולא מתחלף, והכוס הופכת לבקבוק סגור. */
+      if (ph===GAS && mol.y[i]>1.40 && mol.vy[i]>0){ mol.where[i]=IN_ROOM; continue; }
+      if (mol.y[i]>1.42){ mol.y[i]=1.42; mol.vy[i]*=-.3; }
+      if (mol.y[i]<0.06){ mol.y[i]=0.06; mol.vy[i]*=-.25; }
+    }
+  }
+  cool.fill(0, 0, mol.n);
+  react();
+  tap.a += (( tap.open?1:0 ) - tap.a) * Math.min(1, dt*3.2);
+  if (flash>0) flash-=dt;
+  heat = flaskTemp();          /* לתצוגה: מה שהמדחום היה מראה */
+}
+
+/* ===========================================================================
+   5.5) מיקרוסקופ אטומי
+
+   בהגדלה הזאת אין שום טעם לסמלץ בקבוק. מסמלצים קופסה של כמה ננומטרים
+   בצפיפות האמיתית של מים — 33.4 מולקולות לננומטר מעוקב — ורואים אותה
+   מקרוב. זה מה שמאפשר גודל אטום אמיתי: לא כוח גס, אלא לסמלץ רק את מה
+   שנמצא בשדה הראייה. בקבוק שלם באותה רזולוציה הוא 10²⁵ מולקולות.
+
+   כל האורכים כאן בננומטרים, לא ביחידות העולם.
+   =========================================================================== */
+const NM_RHO = 33.4;          /* מולקולות מים לננומטר מעוקב, בצפיפות אמיתית */
+const NM_OO  = 0.290;         /* מרחק חמצן-חמצן במים נוזליים */
+const NM_OH  = 0.0958;        /* אורך קשר חמצן-מימן */
+const R_O    = 0.152;         /* רדיוסי ואן דר ואלס — הגודל שבו אטום "נוגע" */
+const R_H    = 0.110;
+const MICRO_MAX_N = 9000;
+
+const MC = {
+  on:false, L:4.0, n:0, cap:MICRO_MAX_N,
+  x:new Float32Array(MICRO_MAX_N), y:new Float32Array(MICRO_MAX_N), z:new Float32Array(MICRO_MAX_N),
+  vx:new Float32Array(MICRO_MAX_N), vy:new Float32Array(MICRO_MAX_N), vz:new Float32Array(MICRO_MAX_N),
+  spin:new Float32Array(MICRO_MAX_N), axis:new Float32Array(MICRO_MAX_N*3),
+  sp:new Array(MICRO_MAX_N),
+  gs:null, gc:null, gcell:null, gorder:null, gn:0,
+};
+
+/* הרכב הקופסה נלקח מהמצב האמיתי של הסימולציה — אם יש מימן בבקבוק,
+   הוא יופיע גם כאן, באותו יחס. */
+function microMix(){
+  const c={}; let tot=0;
+  for (let i=0;i<mol.n;i++){ c[mol.sp[i]]=(c[mol.sp[i]]||0)+1; tot++; }
+  if (!tot) return [['H2O',1]];
+  return Object.entries(c).map(([k,v])=>[k,v/tot]);
+}
+
+function microFill(L){
+  MC.L=L;
+  const want=Math.min(MICRO_MAX_N, Math.round(NM_RHO*L*L*L));
+  const mix=microMix();
+  /* פריסה על סריג עם רעש: מתחילים מסידור תקין ונותנים לפותר לרפות
+     אותו, אחרת אלפי מולקולות מתחילות חופפות ומתפוצצות */
+  const side=Math.ceil(Math.cbrt(want)), step=L/side;
+  MC.n=0;
+  for (let a=0;a<side && MC.n<want;a++)
+  for (let b=0;b<side && MC.n<want;b++)
+  for (let c=0;c<side && MC.n<want;c++){
+    const i=MC.n++;
+    MC.x[i]=(a+0.5+rand(-.22,.22))*step;
+    MC.y[i]=(b+0.5+rand(-.22,.22))*step;
+    MC.z[i]=(c+0.5+rand(-.22,.22))*step;
+    MC.vx[i]=MC.vy[i]=MC.vz[i]=0;
+    MC.spin[i]=rand(0,6.28);
+    const ax=v3.norm([rand(-1,1),rand(-1,1),rand(-1,1)]);
+    MC.axis[i*3]=ax[0]; MC.axis[i*3+1]=ax[1]; MC.axis[i*3+2]=ax[2];
+    let r=Math.random(), pick='H2O';
+    for (const [k,f] of mix){ if ((r-=f)<=0){ pick=k; break; } }
+    MC.sp[i]=pick;
+  }
+  microGrid();
+}
+
+/* רשת מחזורית: הקופסה נעטפת על עצמה, אחרת נוצרים קירות מלאכותיים
+   באמצע נוזל אינסופי */
+function microGrid(){
+  const g=Math.max(3, Math.floor(MC.L/(NM_OO*1.05)));
+  MC.gn=g;
+  const nc=g*g*g;
+  if (!MC.gs || MC.gs.length!==nc+1){
+    MC.gs=new Int32Array(nc+1); MC.gc=new Int32Array(nc);
+    MC.gcell=new Int32Array(MICRO_MAX_N); MC.gorder=new Int32Array(MICRO_MAX_N);
+  }
+}
+const wrap=(v,L)=>v<0?v+L:v>=L?v-L:v;
+
+function microStep(dt, T){
+  const L=MC.L, g=MC.gn, cs=L/g;
+  const gi=v=>{ let k=(v/cs)|0; return k<0?0:k>=g?g-1:k; };
+
+  MC.gs.fill(0);
+  for (let i=0;i<MC.n;i++){
+    const c=(gi(MC.z[i])*g + gi(MC.y[i]))*g + gi(MC.x[i]);
+    MC.gcell[i]=c; MC.gs[c+1]++;
+  }
+  for (let c=0;c<g*g*g;c++) MC.gs[c+1]+=MC.gs[c];
+  MC.gc.set(MC.gs.subarray(0,g*g*g));
+  for (let i=0;i<MC.n;i++) MC.gorder[MC.gc[MC.gcell[i]]++]=i;
+
+  /* תנועה תרמית: ככל שחם יותר, המולקולות רועדות חזק יותר. זו בדיוק
+     המשמעות של טמפרטורה בקנה המידה הזה. */
+  const jig = Math.sqrt(Math.max(T+273.15, 1)/293) * 0.9;
+  for (let i=0;i<MC.n;i++){
+    MC.vx[i]+=rand(-1,1)*jig*dt*14; MC.vy[i]+=rand(-1,1)*jig*dt*14; MC.vz[i]+=rand(-1,1)*jig*dt*14;
+    const k=Math.exp(-6*dt);
+    MC.vx[i]*=k; MC.vy[i]*=k; MC.vz[i]*=k;
+    MC.x[i]=wrap(MC.x[i]+MC.vx[i]*dt, L);
+    MC.y[i]=wrap(MC.y[i]+MC.vy[i]*dt, L);
+    MC.z[i]=wrap(MC.z[i]+MC.vz[i]*dt, L);
+    MC.spin[i]+=dt*jig*3.0;
+  }
+
+  /* הפרדה: אותו פותר מיקום כמו בסימולציה הגדולה, רק שהמרחק כאן הוא
+     המרחק האמיתי בין מולקולות מים */
+  const half=L/2;
+  for (let it=0;it<3;it++){
+    for (let i=0;i<MC.n;i++){
+      const cx=gi(MC.x[i]), cy=gi(MC.y[i]), cz=gi(MC.z[i]);
+      for (let dz=-1;dz<=1;dz++) for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++){
+        const c=(((cz+dz+g)%g)*g + ((cy+dy+g)%g))*g + ((cx+dx+g)%g);
+        for (let q=MC.gs[c];q<MC.gs[c+1];q++){
+          const j=MC.gorder[q];
+          if (j<=i) continue;
+          let ex=MC.x[i]-MC.x[j], ey=MC.y[i]-MC.y[j], ez=MC.z[i]-MC.z[j];
+          if (ex> half) ex-=L; else if (ex<-half) ex+=L;
+          if (ey> half) ey-=L; else if (ey<-half) ey+=L;
+          if (ez> half) ez-=L; else if (ez<-half) ez+=L;
+          const d2=ex*ex+ey*ey+ez*ez;
+          if (d2>=NM_OO*NM_OO || d2<1e-12) continue;
+          const d=Math.sqrt(d2), push=(NM_OO-d)*0.5*0.9;
+          const ux=ex/d, uy=ey/d, uz=ez/d;
+          MC.x[i]=wrap(MC.x[i]+ux*push,L); MC.y[i]=wrap(MC.y[i]+uy*push,L); MC.z[i]=wrap(MC.z[i]+uz*push,L);
+          MC.x[j]=wrap(MC.x[j]-ux*push,L); MC.y[j]=wrap(MC.y[j]-uy*push,L); MC.z[j]=wrap(MC.z[j]-uz*push,L);
+        }
+      }
+    }
+  }
+}
+
+/* צורת המולקולה בננומטרים, עם הזוויות והאורכים האמיתיים */
+const NM_SHAPE = {
+  H2O:[['O',[0,0,0]],
+       ['H',[ NM_OH*Math.sin(A), NM_OH*Math.cos(A),0]],
+       ['H',[-NM_OH*Math.sin(A), NM_OH*Math.cos(A),0]]],
+  H2: [['H',[-0.037,0,0]],['H',[0.037,0,0]]],
+  O2: [['O',[-0.060,0,0]],['O',[0.060,0,0]]],
+};
+const NM_R = { O:R_O, H:R_H };
+
+function microInstances(){
+  let k=0;
+  for (let i=0;i<MC.n;i++){
+    const shape=NM_SHAPE[MC.sp[i]] || NM_SHAPE.H2O;
+    const a=MC.spin[i], c=Math.cos(a), s=Math.sin(a);
+    const ax=MC.axis[i*3], ay=MC.axis[i*3+1], az=MC.axis[i*3+2];
+    for (const [el,off] of shape){
+      const [ox,oy,oz]=off;
+      const dt=ax*ox+ay*oy+az*oz;
+      const cx=ay*oz-az*oy, cy=az*ox-ax*oz, cz=ax*oy-ay*ox;
+      inst.off[k*3]  =MC.x[i]+ox*c+cx*s+ax*dt*(1-c);
+      inst.off[k*3+1]=MC.y[i]+oy*c+cy*s+ay*dt*(1-c);
+      inst.off[k*3+2]=MC.z[i]+oz*c+cz*s+az*dt*(1-c);
+      const col=ELEM[el].col;
+      inst.col[k*3]=col[0]; inst.col[k*3+1]=col[1]; inst.col[k*3+2]=col[2];
+      inst.rad[k]=NM_R[el]; inst.kind[k]=1;
+      k++;
+    }
+  }
+  return k;
+}
+
+/* ===========================================================================
+   6) מצלמה
+   =========================================================================== */
+const FOV=0.86;
+const cam={ az:1.15, el:0.16, dist:7, target:[BOUNDS.cx,BOUNDS.cy,0], slice:0, zoom:1 };
+/* לאן המצלמה צוללת כשמגדילים: לתוך הנוזל שבבקבוק. בלי זה הזום
+   מתקרב למרכז המערכת, שהוא אוויר. */
+const DIVE=[0, 0.40, 0];
+const MAXZOOM=60;
+function camTarget(){
+  const t=clamp((1-cam.zoom)/0.80, 0, 1);
+  return [BOUNDS.cx+(DIVE[0]-BOUNDS.cx)*t,
+          BOUNDS.cy+(DIVE[1]-BOUNDS.cy)*t,
+          DIVE[2]*t];
+}
+const SCENE_R=3.2;
+const eyePos=()=>{
+  const ce=Math.cos(cam.el);
+  return [cam.target[0]+cam.dist*ce*Math.sin(cam.az),
+          cam.target[1]+cam.dist*Math.sin(cam.el),
+          cam.target[2]+cam.dist*ce*Math.cos(cam.az)];
+};
+function fitDistance(){
+  const asp=(cv.clientWidth||1)/(cv.clientHeight||1);
+  const halfV=Math.tan(FOV/2), halfH=halfV*asp;
+  const ce=Math.cos(cam.el), se=Math.sin(cam.el);
+  const sa=Math.sin(cam.az), ca=Math.cos(cam.az);
+  const f=[-ce*sa,-se,-ce*ca], r=[ca,0,-sa], u=v3.cross(r,f);
+  let d=0;
+  for (const sx of [-1,1]) for (const sy of [-1,1]) for (const sz of [-1,1]){
+    const c=[sx*BOUNDS.hx, sy*BOUNDS.hy, sz*BOUNDS.hz];
+    const need=Math.max(Math.abs(v3.dot(c,r))/halfH, Math.abs(v3.dot(c,u))/halfV) - v3.dot(c,f);
+    if (need>d) d=need;
+  }
+  return d*1.04;
+}
+
+let touches=new Map(), pinch0=0, slice0=0, last2=null;
+cv.addEventListener('pointerdown',e=>{
+  cv.setPointerCapture(e.pointerId);
+  touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if (touches.size===2){
+    const [a,b]=[...touches.values()];
+    pinch0=Math.hypot(a.x-b.x,a.y-b.y); slice0=cam.zoom;
+    last2={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
+  }
+});
+cv.addEventListener('pointermove',e=>{
+  const p=touches.get(e.pointerId); if(!p) return;
+  p.x=e.clientX; p.y=e.clientY;
+  if (touches.size>=2){
+    const [a,b]=[...touches.values()];
+    const d=Math.max(Math.hypot(a.x-b.x,a.y-b.y), 1);
+    const f=pinch0/d;
+    if (MC.on){
+      microFov=clamp(microFov*f, 1.2, 7.5); pinch0=d;
+      if (microFov>=7.45) microExit();
+      else if (microFov*1.5 > MC.L+0.9 || microFov*1.5 < MC.L-0.9) microFill(clamp(microFov*1.5,2.4,6.4));
+      syncZoom();
+    } else {
+      cam.zoom=clamp(slice0*f, 1/(MAXZOOM*1.35), 1.15);
+      if (cam.zoom <= 1/(MAXZOOM*1.3)) microEnter();
+    }
+    const mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
+    if (last2){ cam.az-=(mid.x-last2.x)*0.008; cam.el=clamp(cam.el+(mid.y-last2.y)*0.006,-0.55,1.25); }
+    last2=mid; syncZoom();
+  }
+});
+const release=e=>{ touches.delete(e.pointerId); if (touches.size<2) last2=null; };
+cv.addEventListener('pointerup',release);
+cv.addEventListener('pointercancel',release);
+
+let mdown=false,mx=0,my=0;
+cv.addEventListener('mousedown',e=>{mdown=true;mx=e.clientX;my=e.clientY;});
+addEventListener('mouseup',()=>mdown=false);
+addEventListener('mousemove',e=>{
+  if(!mdown) return;
+  cam.az-=(e.clientX-mx)*0.008; cam.el=clamp(cam.el+(e.clientY-my)*0.006,-0.55,1.25);
+  mx=e.clientX; my=e.clientY;
+});
+cv.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const f=Math.exp(e.deltaY*0.0016);
+  if (MC.on){
+    microFov=clamp(microFov*f, 1.2, 7.5);
+    if (microFov>=7.45) microExit(); else syncZoom();
+  } else {
+    cam.zoom=clamp(cam.zoom*f, 1/(MAXZOOM*1.35), 1.15);
+    if (cam.zoom <= 1/(MAXZOOM*1.3)) microEnter(); else syncZoom();
+  }
+},{passive:false});
+cv.addEventListener('click',e=>{
+  if (touches.size>1) return;
+  const n=Math.round(26*MSCALE*MSCALE*MSCALE);
+  /* שליש עליון של המסך = הקערה שלמעלה */
+  addMolecules(picked, n, e.clientY/innerHeight<0.30 ? IN_FUNNEL
+                        : e.clientX/innerWidth>0.56 ? IN_BEAKER : IN_FLASK);
+});
+
+/* ===========================================================================
+   7) ציור
+   =========================================================================== */
+let W=0,H=0,FW=0,FH=0,SAMPLES=1;
+let msFBO,msColor,msDepth;          /* כל הגאומטריה נכנסת לכאן, עם MSAA */
+let sceneTex,sceneFBO;              /* אותה תמונה אחרי פתירה, כדי שהנוזל ידגום אותה */
+let fdTex,fdRB,fdFBO, b1Tex,b1FBO, thTex,thFBO;
+
+function resize(){
+  const dpr=Math.min(devicePixelRatio||1,1.75);
+  const w=Math.max(1,(cv.clientWidth*dpr)|0), h=Math.max(1,(cv.clientHeight*dpr)|0);
+  if (w===W && h===H) return;
+  W=w; H=h; cv.width=w; cv.height=h;
+  FW=Math.max(1,W>>1); FH=Math.max(1,H>>1);   /* הנוזל בחצי רזולוציה — הטשטוש מסתיר את זה */
+  SAMPLES=Math.min(4, gl.getParameter(gl.MAX_SAMPLES)||1);
+
+  for (const t of [sceneTex,fdTex,b1Tex,thTex]) if (t) gl.deleteTexture(t);
+  for (const f of [msFBO,sceneFBO,fdFBO,b1FBO,thFBO]) if (f) gl.deleteFramebuffer(f);
+  for (const r of [msColor,msDepth,fdRB]) if (r) gl.deleteRenderbuffer(r);
+
+  const rb=(w,h,fmt,samples)=>{
+    const r=gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER,r);
+    if (samples>1) gl.renderbufferStorageMultisample(gl.RENDERBUFFER,samples,fmt,w,h);
+    else gl.renderbufferStorage(gl.RENDERBUFFER,fmt,w,h);
+    return r;
+  };
+
+  msColor=rb(W,H,gl.RGBA8,SAMPLES);
+  msDepth=rb(W,H,gl.DEPTH_COMPONENT24,SAMPLES);
+  msFBO=gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER,msFBO);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.RENDERBUFFER,msColor);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,msDepth);
+
+  sceneTex=makeTex(W,H,gl.RGBA8,gl.RGBA,gl.UNSIGNED_BYTE,gl.LINEAR);
+  sceneFBO=makeFBO(sceneTex,null);
+
+  if (FLOAT_FBO){
+    fdRB =rb(FW,FH,gl.DEPTH_COMPONENT24,1);
+    fdTex=makeTex(FW,FH,gl.R16F,gl.RED,gl.HALF_FLOAT,gl.LINEAR);
+    b1Tex=makeTex(FW,FH,gl.R16F,gl.RED,gl.HALF_FLOAT,gl.LINEAR);
+    thTex=makeTex(FW,FH,gl.RGBA16F,gl.RGBA,gl.HALF_FLOAT,gl.LINEAR);
+    fdFBO=makeFBO(fdTex,fdRB); b1FBO=makeFBO(b1Tex,null); thFBO=makeFBO(thTex,null);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+}
+
+/* ---- מפת הצללים ----
+   מקרינים את הסצנה מכיוון האור לתוך מפת עומק, ואז כל שיידר בודק מולה
+   אם הנקודה שלו רואה את האור. אור מכיוון קבוע, ולכן הטלה אורתוגונלית. */
+const SHADOW_SIZE = 1600;
+let shadowTex, shadowFBO, LVP;
+
+function initShadow(){
+  shadowTex=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,shadowTex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.DEPTH_COMPONENT24,SHADOW_SIZE,SHADOW_SIZE,0,
+                gl.DEPTH_COMPONENT,gl.UNSIGNED_INT,null);
+  /* השוואה בחומרה: הדגימה מחזירה כמה מארבעת הטקסלים עברו את המבחן,
+     כלומר PCF דו-לינארי בחינם */
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_COMPARE_MODE,gl.COMPARE_REF_TO_TEXTURE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_COMPARE_FUNC,gl.LEQUAL);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  shadowFBO=gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER,shadowFBO);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.TEXTURE_2D,shadowTex,0);
+  gl.drawBuffers([gl.NONE]); gl.readBuffer(gl.NONE);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+
+  const ortho=(hw,hh,n,f)=>new Float32Array([
+    1/hw,0,0,0, 0,1/hh,0,0, 0,0,-2/(f-n),0, 0,0,-(f+n)/(f-n),1]);
+  const L=v3.norm([0.38,0.86,0.34]), C=[0.9,0.35,-0.9];
+  LVP=m4.mul(ortho(5.2,5.2,0.1,26), m4.lookAt(v3.add(C,v3.scale(L,13)), C, [0,1,0]));
+}
+
+function renderShadow(){
+  gl.bindFramebuffer(gl.FRAMEBUFFER,shadowFBO);
+  gl.viewport(0,0,SHADOW_SIZE,SHADOW_SIZE);
+  gl.clear(gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND);
+  /* מטילים רק פאות אחוריות: הצל נדחף לצד הרחוק של הגוף ואקנה נעלמת */
+  gl.enable(gl.CULL_FACE); gl.cullFace(gl.FRONT);
+  gl.useProgram(shadowProg);
+  gl.uniformMatrix4fv(shadowProg.u.uLVP,false,LVP);
+  for (const m of [bench, props, rigMesh, burner, jack]){
+    gl.bindVertexArray(m.vao);
+    gl.drawElements(gl.TRIANGLES,m.n,m.type,0);
+  }
+  gl.disable(gl.CULL_FACE);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+}
+function bindShadow(prog){
+  gl.uniformMatrix4fv(prog.u.uLVP,false,LVP);
+  gl.uniform1f(prog.u.uSTexel,1/SHADOW_SIZE);
+  gl.uniform1i(prog.u.uShadow,7);
+  gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D,shadowTex);
+  gl.activeTexture(gl.TEXTURE0);
+}
+
+/* MSAA → דגימה בודדת. זו ההעתקה היחידה שמותרת מחוצץ מרובה־דגימות. */
+function resolveTo(dstFBO){
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER,msFBO);
+  gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER,dstFBO);
+  gl.blitFramebuffer(0,0,W,H, 0,0,W,H, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER,null);
+  gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER,null);
+}
+
+/* מספיק מקום לשני העולמות: הסימולציה הגדולה והקופסה של המיקרוסקופ */
+const ISLOTS = Math.max(MAX*3, MICRO_MAX_N*3);
+const inst={ off:new Float32Array(ISLOTS*3), col:new Float32Array(ISLOTS*3),
+             rad:new Float32Array(ISLOTS),   kind:new Float32Array(ISLOTS) };
+
+/* כמה גדול המודל המצויר ביחס למרווח האריזה. זה לא גודל האטום — זו
+   ההחלטה כמה מקום המולקולה תופסת על המסך, וכך רואים את הרווח שבין
+   מולקולה לשכנתה. במוצק הן צמודות, בנוזל יש רווח, בגז הרבה יותר. */
+/* מולקולת מים היא באותו גודל בקרח, במים ובאדים. מה שמשתנה בין
+   המצבים הוא המרווח ביניהן, ואת זה הפיזיקה כבר עושה. לצייר גז קטן
+   יותר היה פשוט לא נכון.
+   היחס עצמו כבר מדויק: רדיוס החמצן 0.082 חלקי מרווח 0.155 יוצא
+   0.529, והמדידה האמיתית היא 0.152 חלקי 0.290 = 0.524. */
+const MODEL = [1, 1, 1];
+let showAir = false;
+
+/* ---------------------------------------------------------------------------
+   רמת הפירוט, ברצף.
+
+   קודם היו שני מצבים ותו לא: או המעבדה, שבה כל מולקולה היא נקודה זעירה,
+   או המיקרוסקופ, שבו הן כדורים ענקיים שנוגעים זה בזה. או הכל מפורק או
+   הכל מחובר, בלי שום דבר באמצע, והמעבר ביניהם היה קפיצה.
+
+   שני דברים משתנים עכשיו עם הזום, ושניהם ברצף:
+
+   1) גודל המודל. מרחוק המולקולה מצוירת קטנה ויש רווח בין אחת לשנייה,
+      וזה טוב כדי לראות מבנה. ככל שמתקרבים היא גדלה עד שהמולקולות
+      נוגעות — וזה לא סגנון אלא האמת: במים אמיתיים המרחק בין מרכזים
+      הוא 0.29 ננומטר ורדיוס החמצן 0.152, כלומר הן באמת נוגעות
+      וחופפות. ברגע שהמיקרוסקופ נכנס, המעבדה כבר נראית כמוהו.
+
+   2) מיזוג מרחוק. מולקולה שגודלה על המסך קטן מפיקסל אין טעם לצייר
+      בנפרד — אי אפשר לראות אותה ממילא. קבוצות באותו תא מרחבי מתמזגות
+      לכדור אחד גדול יותר, ומספרן יורד. עדיין רואים אותן, אבל לא
+      סופרים כל אחת.
+   --------------------------------------------------------------------------- */
+const CL_CS = 0.30;
+const CL_NX=Math.ceil(4.8/CL_CS), CL_NY=Math.ceil(5.2/CL_CS), CL_NZ=Math.ceil(2.6/CL_CS);
+const CL_N = CL_NX*CL_NY*CL_NZ;
+const clX=new Float32Array(CL_N*4), clY=new Float32Array(CL_N*4),
+      clZ=new Float32Array(CL_N*4), clC=new Float32Array(CL_N*4);
+const clTouched=new Int32Array(CL_N*4);
+const SPI = { H2O:0, O2:1, H2:2, N2:3 };
+const lodStats = { drawn:0, merged:0 };
+
+/* 0 בזום מלא החוצה, 1 בסף המיקרוסקופ. לוגריתמי, כי זום הוא כפלי. */
+function zoomU(){
+  const zOut=1.15, zIn=1/(MAXZOOM*1.3);
+  return clamp(Math.log(zOut/cam.zoom)/Math.log(zOut/zIn), 0, 1);
+}
+
+function buildAtoms(){
+  let k=0;
+  const eye=eyePos();
+  /* פיקסלים לרדיאן — ככה אפשר לשאול "כמה גדולה המולקולה על המסך"
+     במקום "כמה היא רחוקה", והתשובה נכונה בכל מסך ובכל זום */
+  const PXR = (H*0.5)/Math.tan(FOV*0.5);
+
+  let nFar=0;
+  for (let g=0; g<CL_N*4; g++) clTouched[g]=0;
+
+  for (let i=0;i<mol.n;i++){
+    if (!showAir && mol.air[i]) continue;
+    const S=SPECIES[mol.sp[i]];
+    const md = MODEL[mol.phase[i]];
+
+    const dx=mol.x[i]-eye[0], dy=mol.y[i]-eye[1], dz=mol.z[i]-eye[2];
+    const d=Math.sqrt(dx*dx+dy*dy+dz*dz) || 1e-4;
+    /* גודל המולקולה על המסך, ברדיוס פיקסלים */
+    const px = R0*md*PXR/d;
+
+    if (px < 1.6){
+      /* קטנה מכדי להיראות לבדה — נכנסת לאשכול */
+      const cx=((mol.x[i]+1.5)/CL_CS)|0, cy=((mol.y[i]+0.4)/CL_CS)|0, cz=((mol.z[i]+1.3)/CL_CS)|0;
+      if (cx>=0&&cy>=0&&cz>=0&&cx<CL_NX&&cy<CL_NY&&cz<CL_NZ){
+        const sp=SPI[mol.sp[i]]|0;
+        const g=(((cz*CL_NY+cy)*CL_NX+cx)<<2)|sp;
+        if (!clTouched[g]){ clTouched[g]=1; clX[g]=clY[g]=clZ[g]=clC[g]=0; }
+        clX[g]+=mol.x[i]; clY[g]+=mol.y[i]; clZ[g]+=mol.z[i]; clC[g]++;
+        nFar++;
+        continue;
+      }
+    }
+
+    if (px < 3.2){
+      /* נראית, אבל לא מספיק גדולה כדי להבחין באטומים שבתוכה */
+      if (k>=MAX) break;
+      const E=ELEM[S.atoms[0][0]];
+      inst.off[k*3]=mol.x[i]; inst.off[k*3+1]=mol.y[i]; inst.off[k*3+2]=mol.z[i];
+      const g = flash>0 && mol.sp[i]==='H2O' ? flash*1.6 : 0;
+      inst.col[k*3]=Math.min(1,E.col[0]+g);
+      inst.col[k*3+1]=Math.min(1,E.col[1]+g*.8);
+      inst.col[k*3+2]=Math.min(1,E.col[2]+g*.5);
+      inst.rad[k]=R0*md*0.62; inst.kind[k]=1;
+      k++;
+      continue;
+    }
+
+    /* קרובה — כל אטום בנפרד */
+    const a=mol.spin[i], c=Math.cos(a), sn=Math.sin(a);
+    const ax=mol.axis[i*3], ay=mol.axis[i*3+1], az=mol.axis[i*3+2];
+    for (const [el,off] of S.atoms){
+      if (k>=MAX) break;
+      const E=ELEM[el], [ox,oy,oz]=off;
+      const dt=ax*ox+ay*oy+az*oz;
+      const cx=ay*oz-az*oy, cy=az*ox-ax*oz, cz=ax*oy-ay*ox;
+      inst.off[k*3]  =mol.x[i]+(ox*c+cx*sn+ax*dt*(1-c))*md;
+      inst.off[k*3+1]=mol.y[i]+(oy*c+cy*sn+ay*dt*(1-c))*md;
+      inst.off[k*3+2]=mol.z[i]+(oz*c+cz*sn+az*dt*(1-c))*md;
+      const g = flash>0 && mol.sp[i]==='H2O' ? flash*1.6 : 0;
+      inst.col[k*3]  =Math.min(1,E.col[0]+g);
+      inst.col[k*3+1]=Math.min(1,E.col[1]+g*.8);
+      inst.col[k*3+2]=Math.min(1,E.col[2]+g*.5);
+      inst.rad[k]=E.r*md; inst.kind[k]=1;
+      k++;
+    }
+  }
+
+  /* האשכולות. כדור אחד לכל תא, בנפח של כל מי שבתוכו — ולכן הוא
+     תופס בערך את אותו מקום שהם תפסו יחד. */
+  if (nFar){
+    const SPK=['H2O','O2','H2','N2'];
+    for (let g=0; g<CL_N*4; g++){
+      if (!clTouched[g] || clC[g]<1) continue;
+      if (k>=MAX) break;
+      const n=clC[g];
+      const E=ELEM[SPECIES[SPK[g&3]].atoms[0][0]];
+      inst.off[k*3]=clX[g]/n; inst.off[k*3+1]=clY[g]/n; inst.off[k*3+2]=clZ[g]/n;
+      inst.col[k*3]=E.col[0]; inst.col[k*3+1]=E.col[1]; inst.col[k*3+2]=E.col[2];
+      inst.rad[k]=R0*0.62*Math.cbrt(n)*1.05; inst.kind[k]=1;
+      k++;
+    }
+  }
+  lodStats.drawn=k; lodStats.merged=nFar;
+  return k;
+}
+
+function buildBlobs(){
+  let k=0;
+  for (let i=0;i<mol.n;i++){
+    if (mol.air[i]) continue;              /* אוויר שקוף — רואים אותו רק במצג המולקולות */
+    const S=SPECIES[mol.sp[i]];
+    inst.off[k*3]=mol.x[i]; inst.off[k*3+1]=mol.y[i]; inst.off[k*3+2]=mol.z[i];
+    const gas=mol.phase[i]===GAS;
+    /* בועה היא גז שנוזל עוטף אותו — לא סתם גז. קודם צויר ככדור כל
+       מה שהיה גז, ולכן "בועות" רחפו גם מעל פני המים וגם לאורך כל
+       הסליל, במקומות שאין בהם טיפת נוזל. גז שפרץ אל מעל פני הנוזל
+       הוא אדים: ערפל דליל, לא כדור. */
+    const bubble = gas && mol.wet[i]>=4;
+    /* ואדים שיצאו אל החדר הפתוח פשוט מתפזרים ונעלמים */
+    if (gas && !bubble && mol.where[i]===IN_ROOM) continue;
+    /* אדים לא נושאים את צבע הבליעה של החומר — הם ערפל לבן */
+    if (gas){ inst.col[k*3]=0.10; inst.col[k*3+1]=0.11; inst.col[k*3+2]=0.125; }
+    else { inst.col[k*3]=S.absorb[0]; inst.col[k*3+1]=S.absorb[1]; inst.col[k*3+2]=S.absorb[2]; }
+    inst.rad[k]=(bubble?0.150:gas?0.088:0.104)/MSCALE;
+    inst.kind[k]=gas?0:1;
+    k++;
+  }
+  return k;
+}
+function upload(mesh,n,withKind){
+  gl.bindVertexArray(mesh.vao);
+  const put=(name,arr,size)=>{
+    if (!mesh.inst[name]) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER,mesh.inst[name]);
+    gl.bufferData(gl.ARRAY_BUFFER,arr.subarray(0,n*size),gl.DYNAMIC_DRAW);
+  };
+  put('aOff',inst.off,3); put('aCol',inst.col,3); put('aRad',inst.rad,1);
+  if (withKind) put('aKind',inst.kind,1);
+}
+
+
+/* מפת החום. מציירים רק תאים שחורגים מטמפרטורת החדר, ולכן בחדר קר
+   לא מצויר כלום ומעל הלהבה נראית עמודה. הצבע הוא הטמפרטורה: כחול
+   קר, אדום חם, לבן לוהט. */
+let heatView = false;
+
+/* הצבע הוא הטמפרטורה, והבהירות היא כמה היא חורגת מהחדר. זה חשוב
+   בגלל שהשכבה מצוירת בחיבור: תא בטמפרטורת החדר יוצא שחור, ושחור
+   בחיבור לא מוסיף כלום — ולכן הוא לא מסתיר את מה שמאחוריו.
+   ניסיון ראשון צייר כל תא ככדור אטום, וכשכל החדר התחמם ל-33 מעלות
+   כל התאים עברו את הסף והמעבדה נעלמה מאחורי קיר של כדורים. */
+function heatColor(T, out, o){
+  const d = T - AMBIENT;
+  const u = clamp(d/230, -1, 1);
+  /* עקומה תלולה ולא ישרה. השכבה מצטברת בחיבור לאורך קו הראייה, ועם
+     עקומה ישרה אלפי תאים פושרים מסתכמים ללבן ומוחקים את המעבדה.
+     חריגה קטנה כמעט לא נראית, וחריגה גדולה בולטת. */
+  const i = Math.pow(Math.min(1, Math.abs(d)/120), 1.30) * 0.60;
+  let r,g,b;
+  if (u < 0){ const v=-u; r=0.10; g=0.30+0.25*v; b=0.85+0.15*v; }
+  else if (u < 0.45){ const v=u/0.45; r=0.25+0.75*v; g=0.22+0.34*v; b=0.72-0.62*v; }
+  else { const v=(u-0.45)/0.55; r=1; g=0.56+0.44*v; b=0.10+0.85*v; }
+  out[o]=r*i; out[o+1]=g*i; out[o+2]=b*i;
+}
+
+function buildHeat(){
+  let k=0;
+  const {nx,ny,nz,cs,x0,y0,z0,T,mat}=HF;
+  for (let iz=0;iz<nz;iz++) for (let iy=0;iy<ny;iy++) for (let ix=0;ix<nx;ix++){
+    const c=(iz*ny+iy)*nx+ix;
+    const d=T[c]-AMBIENT;
+    if (d>-6 && d<6) continue;              /* קרוב לטמפרטורת החדר — לא מצויר */
+    if (k>=MAX) break;
+    inst.off[k*3]  =x0+(ix+0.5)*cs;
+    inst.off[k*3+1]=y0+(iy+0.5)*cs;
+    inst.off[k*3+2]=z0+(iz+0.5)*cs;
+    heatColor(T[c], inst.col, k*3);
+    /* מוצק מצויר קטן וצפוף, אוויר גדול ורך: ככה רואים את ההבדל בין
+       חום שיושב בחומר לבין חום שנישא באוויר */
+    const hot = Math.min(1, Math.abs(d)/110);
+    inst.rad[k]= (mat[c]===MAT_AIR ? cs*0.24 : cs*0.20) * (0.40+0.60*hot);
+    inst.kind[k]=1;
+    k++;
+  }
+  return k;
+}
+
+/* בחיבור, ובלי לכתוב עומק. השכבה נחסמת על ידי מה שלפניה אבל לא
+   מסתירה אותו — כמו זוהר ולא כמו גוף. */
+function drawHeat(proj, view, cvn, cvd){
+  const n=buildHeat();
+  if (!n) return 0;
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.depthMask(false);
+  specOn = 0;
+  drawAtoms(n, proj, view, cvn, cvd);
+  specOn = 1;
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  return n;
+}
+
+let specOn = 1;
+function drawAtoms(n, proj, view, cvn, cvd){
+  gl.useProgram(impostorProg);
+  gl.uniformMatrix4fv(impostorProg.u.uProj,false,proj);
+  gl.uniformMatrix4fv(impostorProg.u.uView,false,view);
+  gl.uniform4f(impostorProg.u.uClipView,cvn[0],cvn[1],cvn[2],cvd);
+  gl.uniform1f(impostorProg.u.uSpec, specOn);
+  /* כיוון האור מסובב למרחב המצלמה, כי שם חיים האימפוסטורים */
+  const L=v3.norm([0.38,0.86,0.34]);
+  gl.uniform3f(impostorProg.u.uLightView,
+    view[0]*L[0]+view[4]*L[1]+view[8]*L[2],
+    view[1]*L[0]+view[5]*L[1]+view[9]*L[2],
+    view[2]*L[0]+view[6]*L[1]+view[10]*L[2]);
+  upload(atomQuad,n,true);
+  gl.drawElementsInstanced(gl.TRIANGLES,atomQuad.n,atomQuad.type,0,n);
+}
+
+let realView = FLOAT_FBO, wantReal = FLOAT_FBO;
+/* מעבר ×5 המצלמה כבר בתוך הנוזל. שם אין פני שטח לשקף, ומה שכן יש
+   לראות הוא המולקולות עצמן — אז המצג מתחלף לבד. זו כל הנקודה בזום. */
+const MICRO = 0.20;
+
+/* המרה בין יחידות העולם למטרים: בועת הבקבוק היא 0.90 יחידות, ובקבוק
+   250 מ"ל אמיתי הוא כ-3.9 ס"מ רדיוס. */
+const M_PER_UNIT = 0.0433;
+const MACRO_VIEW_M = 0.307;        /* גובה שדה הראייה בזום מלא החוצה */
+let microFov = 4.0;                /* שדה ראייה של המיקרוסקופ, בננומטרים */
+
+function microEnter(){
+  if (MC.on) return;
+  MC.on = true;
+  microFill(clamp(microFov*1.5, 2.4, 6.4));
+  syncZoom();
+}
+function microExit(){
+  if (!MC.on) return;
+  MC.on = false; cam.zoom = 1/MAXZOOM; syncZoom();
+}
+
+/* בקנה מידה של ננומטרים אין חדר, אין זכוכית ואין שולחן — הכל נמצא
+   בתוך הנוזל. מצג נפרד לגמרי, עם מערכת צירים משלו בננומטרים. */
+function drawMicro(){
+  resize();
+  $('view').textContent='↩ '+T('exit');
+  $('view').classList.remove('on');
+  gl.bindFramebuffer(gl.FRAMEBUFFER,msFBO);
+  gl.viewport(0,0,W,H);
+  gl.clearColor(0.030,0.062,0.086,1);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
+
+  const c=MC.L/2, ctr=[c,c,c];
+  const dist=(microFov/2)/Math.tan(FOV/2);
+  const ce=Math.cos(cam.el);
+  const eye=[c+dist*ce*Math.sin(cam.az), c+dist*Math.sin(cam.el), c+dist*ce*Math.cos(cam.az)];
+  const VP=m4.mul(m4.perspective(FOV, W/H, dist*0.02, dist*6), m4.lookAt(eye,ctr,[0,1,0]));
+
+  /* אותו מישור חיתוך, בקנה המידה הזה */
+  const fwd=v3.norm(v3.sub(ctr,eye));
+  const pp=v3.add(ctr, v3.scale(fwd, MC.L*0.9*(2*cam.slice-1)));
+  const clip=[fwd[0],fwd[1],fwd[2], v3.dot(pp,fwd)];
+
+  const view=m4.lookAt(eye,ctr,[0,1,0]);
+  const proj=m4.perspective(FOV, W/H, dist*0.02, dist*6);
+  const cvn=[ view[0]*clip[0]+view[4]*clip[1]+view[8]*clip[2],
+              view[1]*clip[0]+view[5]*clip[1]+view[9]*clip[2],
+              view[2]*clip[0]+view[6]*clip[1]+view[10]*clip[2] ];
+  const cvd=clip[3]-(view[12]*clip[0]+view[13]*clip[1]+view[14]*clip[2]);
+  const n=microInstances();
+  drawAtoms(n, proj, view, cvn, cvd);
+
+  resolveTo(sceneFBO);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.viewport(0,0,W,H);
+  gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.depthMask(false);
+  gl.bindVertexArray(null);
+  gl.useProgram(presentProg);
+  gl.uniform1i(presentProg.u.uTex,0);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,sceneTex);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+  gl.depthMask(true);
+  return n;
+}
+
+function draw(){
+  if (MC.on) return drawMicro();
+  resize();
+  const micro = cam.zoom < MICRO;
+  realView = micro ? false : (wantReal && FLOAT_FBO);
+  $('view').textContent = realView ? '👁 '+T('real')
+                      : (micro ? '⚛ '+T('microscope') : '⚛ '+T('molecules'));
+  $('view').classList.toggle('on', realView);
+  /* האור והריהוט לא זזים לעולם, ולכן מפת הצללים נכונה לתמיד.
+     ציור מחדש שלה בכל פריים הוא מעבר שלם על 1600² בלי שום סיבה. */
+  if (!shadowFBO){ initShadow(); renderShadow(); }
+  const want=fitDistance()*cam.zoom;
+  cam.dist = cam.dist>0 ? cam.dist+(want-cam.dist)*0.16 : want;
+  const tw=camTarget();
+  for (let i=0;i<3;i++) cam.target[i]+=(tw[i]-cam.target[i])*0.16;
+
+  const eye=eyePos();
+  const asp=W/H;
+  /* המישור הקרוב חייב להתכווץ עם הזום, אחרת בהגדלה עמוקה הוא חותך
+     את מה שבאנו לראות */
+  const proj=m4.perspective(FOV,asp,Math.max(0.0015,cam.dist*0.012),60);
+  const view=m4.lookAt(eye,cam.target,[0,1,0]);
+  const VP=m4.mul(proj,view);
+
+  const fwd=v3.norm(v3.sub(cam.target,eye));
+  const pp=v3.add(cam.target,v3.scale(fwd,SCENE_R*(2*cam.slice-1)));
+  const clip=[fwd[0],fwd[1],fwd[2],v3.dot(pp,fwd)];
+  /* אותו מישור, במרחב המצלמה — שם חיים שיידרי הנוזל */
+  const cvn=[ view[0]*clip[0]+view[4]*clip[1]+view[8]*clip[2],
+              view[1]*clip[0]+view[5]*clip[1]+view[9]*clip[2],
+              view[2]*clip[0]+view[6]*clip[1]+view[10]*clip[2] ];
+  const cvd=clip[3] - (view[12]*clip[0]+view[13]*clip[1]+view[14]*clip[2]);
+
+  /* --- 1. החדר והשולחן --- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER,msFBO);
+  gl.viewport(0,0,W,H);
+  gl.clearColor(0.020,0.023,0.030,1);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
+
+  gl.useProgram(roomProg);
+  gl.uniformMatrix4fv(roomProg.u.uVP,false,VP);
+  gl.uniform4fv(roomProg.u.uClip,clip);
+  bindShadow(roomProg);
+  gl.bindVertexArray(room.vao);
+  gl.drawElements(gl.TRIANGLES,room.n,room.type,0);
+
+  gl.useProgram(woodProg);
+  gl.uniformMatrix4fv(woodProg.u.uVP,false,VP);
+  gl.uniform4fv(woodProg.u.uClip,clip);
+  gl.uniform3fv(woodProg.u.uEye,eye);
+  gl.uniform2f(woodProg.u.uOccA,0,0);
+  gl.uniform2f(woodProg.u.uOccB,BEAKER_X,0);
+  bindShadow(woodProg);
+  gl.bindVertexArray(bench.vao);
+  gl.drawElements(gl.TRIANGLES,bench.n,bench.type,0);
+
+  gl.useProgram(solidProg);
+  gl.uniformMatrix4fv(solidProg.u.uVP,false,VP);
+  gl.uniform4fv(solidProg.u.uClip,clip);
+  gl.uniform3fv(solidProg.u.uEye,eye);
+  bindShadow(solidProg);
+  gl.uniform1f(solidProg.u.uEmissive,0);
+  gl.uniformMatrix4fv(solidProg.u.uModel,false,IDENT);
+  for (const m of [props, rigMesh, jack]){
+    gl.bindVertexArray(m.vao);
+    gl.drawElements(gl.TRIANGLES,m.n,m.type,0);
+  }
+  /* הרשת והחצובה מאדימות מעל החום — ברזל מתחיל לזהור סביב 500° */
+  gl.uniform1f(solidProg.u.uEmissive, Math.abs(gasTap)*0.75);
+  gl.uniform3f(solidProg.u.uEmCol, ...(gasTap<0 ? [0.42,0.72,1.0] : [1.0,0.26,0.05]));
+  gl.bindVertexArray(burner.vao);
+  gl.drawElements(gl.TRIANGLES,burner.n,burner.type,0);
+  gl.uniform1f(solidProg.u.uEmissive,0);
+
+  /* ידית הברז, מסובבת לפי מצבה */
+  const ta=tap.a*Math.PI/2, cta=Math.cos(ta), sta=Math.sin(ta);
+  gl.uniformMatrix4fv(solidProg.u.uModel,false,new Float32Array([
+    cta,0,sta,0,  0,1,0,0,  -sta,0,cta,0,  FX,TAP_Y,0,1]));
+  gl.bindVertexArray(handleMesh.vao);
+  gl.drawElements(gl.TRIANGLES,handleMesh.n,handleMesh.type,0);
+  gl.uniformMatrix4fv(solidProg.u.uModel,false,IDENT);
+
+  let shown=0;
+
+  if (realView && FLOAT_FBO){
+    /* --- 2. פותרים את הרקע כדי שהנוזל יוכל לשבור אותו --- */
+    resolveTo(sceneFBO);
+
+    /* --- 3. עומק פני הנוזל --- */
+    const n=buildBlobs(); shown=n;
+    gl.bindFramebuffer(gl.FRAMEBUFFER,fdFBO);
+    gl.viewport(0,0,FW,FH);
+    gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND);
+    gl.useProgram(fluidDepthProg);
+    gl.uniformMatrix4fv(fluidDepthProg.u.uProj,false,proj);
+    gl.uniformMatrix4fv(fluidDepthProg.u.uView,false,view);
+    gl.uniform4f(fluidDepthProg.u.uClipView,cvn[0],cvn[1],cvn[2],cvd);
+    upload(billboard,n,true);
+    gl.drawElementsInstanced(gl.TRIANGLES,billboard.n,billboard.type,0,n);
+
+    /* --- 3. טשטוש דו-צדדי: אלף כדורים → משטח אחד --- */
+    gl.disable(gl.DEPTH_TEST); gl.depthMask(false);
+    gl.useProgram(blurProg);
+    gl.uniform1i(blurProg.u.uTex,0); gl.uniform1f(blurProg.u.uDepthFalloff,5.0);
+    gl.activeTexture(gl.TEXTURE0);
+    for (const [src,dst,dir] of [[fdTex,b1FBO,[1/FW,0]],[b1Tex,fdFBO,[0,1/FH]],
+                                 [fdTex,b1FBO,[1.7/FW,0]],[b1Tex,fdFBO,[0,1.7/FH]]]){
+      gl.bindFramebuffer(gl.FRAMEBUFFER,dst);
+      gl.viewport(0,0,FW,FH);
+      gl.bindTexture(gl.TEXTURE_2D,src);
+      gl.uniform2f(blurProg.u.uDir,dir[0],dir[1]);
+      gl.drawArrays(gl.TRIANGLES,0,3);
+    }
+
+    /* --- 4. עובי: כמה חומר יש בכל פיקסל, ובאיזה צבע --- */
+    gl.bindFramebuffer(gl.FRAMEBUFFER,thFBO);
+    gl.viewport(0,0,FW,FH);
+    gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE);
+    gl.useProgram(fluidThickProg);
+    gl.uniformMatrix4fv(fluidThickProg.u.uProj,false,proj);
+    gl.uniformMatrix4fv(fluidThickProg.u.uView,false,view);
+    gl.uniform4f(fluidThickProg.u.uClipView,cvn[0],cvn[1],cvn[2],cvd);
+    upload(billboard2,n,true);
+    gl.drawElementsInstanced(gl.TRIANGLES,billboard2.n,billboard2.type,0,n);
+    gl.disable(gl.BLEND);
+
+    /* --- 5. הרכבה חזרה לתוך חוצץ הגאומטריה. העומק שם נשאר שלם,
+             ולכן הזכוכית שתצויר אחר כך עדיין תיחסם נכון על ידי השולחן. --- */
+    gl.bindFramebuffer(gl.FRAMEBUFFER,msFBO);
+    gl.viewport(0,0,W,H);
+    gl.disable(gl.DEPTH_TEST); gl.depthMask(false);
+    gl.useProgram(compositeProg);
+    const halfV=Math.tan(FOV/2);
+    gl.uniform2f(compositeProg.u.uTan,halfV*asp,halfV);
+    gl.uniform2f(compositeProg.u.uTexel,1/FW,1/FH);
+    gl.uniform4fv(compositeProg.u.uClip,clip);
+    const iv=m4.lookAt(eye,cam.target,[0,1,0]);
+    gl.uniformMatrix4fv(compositeProg.u.uInvView,false,new Float32Array([
+      iv[0],iv[4],iv[8],0, iv[1],iv[5],iv[9],0, iv[2],iv[6],iv[10],0, 0,0,0,1]));
+    gl.uniform1i(compositeProg.u.uScene,0); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,sceneTex);
+    gl.uniform1i(compositeProg.u.uDepth,1); gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,fdTex);
+    gl.uniform1i(compositeProg.u.uThick,2); gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D,thTex);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+    gl.activeTexture(gl.TEXTURE0);
+
+    /* בועות ואדים, בחיבור מעל הנוזל שכבר הורכב */
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE); gl.depthMask(false);
+    gl.useProgram(bubbleProg);
+    gl.uniformMatrix4fv(bubbleProg.u.uProj,false,proj);
+    gl.uniformMatrix4fv(bubbleProg.u.uView,false,view);
+    gl.uniform4f(bubbleProg.u.uClipView,cvn[0],cvn[1],cvn[2],cvd);
+    gl.bindVertexArray(billboard2.vao);
+    gl.drawElementsInstanced(gl.TRIANGLES,billboard2.n,billboard2.type,0,n);
+    gl.disable(gl.BLEND); gl.depthMask(true);
+  } else {
+    /* מצג מולקולות: כל אטום ככדור */
+    const n=buildAtoms(); shown=n;
+    drawAtoms(n, proj, view, cvn, cvd);
+  }
+  if (heatView) drawHeat(proj, view, cvn, cvd);
+
+  /* --- הלהבה. חיבור, בלי כתיבה לעומק. --- */
+  if (gasTap > 0.02){
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE); gl.depthMask(false);
+    gl.useProgram(flameProg);
+    gl.uniformMatrix4fv(flameProg.u.uVP,false,VP);
+    gl.uniform4fv(flameProg.u.uClip,clip);
+    gl.uniform1f(flameProg.u.uTime,performance.now()/1000);
+    gl.uniform1f(flameProg.u.uY0,FLAME_Y0);
+    gl.uniform1f(flameProg.u.uY1,FLAME_Y1);
+    gl.uniform1f(flameProg.u.uOn, clamp(gasTap*1.15,0,1));
+    gl.bindVertexArray(flame.vao);
+    gl.drawElements(gl.TRIANGLES,flame.n,flame.type,0);
+    gl.depthMask(true); gl.disable(gl.BLEND);
+  }
+
+  /* --- 6. זכוכית מעל הכל --- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER,msFBO);
+  gl.viewport(0,0,W,H);
+  gl.enable(gl.DEPTH_TEST); gl.depthMask(false);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+  gl.useProgram(glassProg);
+  gl.uniformMatrix4fv(glassProg.u.uVP,false,VP);
+  gl.uniform3fv(glassProg.u.uEye,eye);
+  gl.uniform4fv(glassProg.u.uClip,clip);
+  const sorted=[...GLASS].sort((a,b)=>
+    Math.hypot(b.ox-eye[0],eye[2])-Math.hypot(a.ox-eye[0],eye[2]));
+  for (const g of sorted){
+    gl.uniform1f(glassProg.u.uGlow, g.glow?clamp((heat-320)/1500,0,0.30):0);
+    gl.uniform1f(glassProg.u.uAxisX, g.axis);
+    gl.uniform4fv(glassProg.u.uMark, g.mark);
+    gl.uniform1f(glassProg.u.uMarkAng, g.markAng||0);
+    gl.bindVertexArray(g.mesh.vao);
+    gl.drawElements(gl.TRIANGLES,g.mesh.n,g.mesh.type,0);
+  }
+  gl.disable(gl.BLEND); gl.depthMask(true);
+
+  /* --- 7. פותרים את ה-MSAA ומציגים --- */
+  resolveTo(sceneFBO);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.viewport(0,0,W,H);
+  gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.depthMask(false);
+  gl.bindVertexArray(null);
+  gl.useProgram(presentProg);
+  gl.uniform1i(presentProg.u.uTex,0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D,sceneTex);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+  gl.depthMask(true);
+  return shown;
+}
+
+/* ===========================================================================
+   8) הממשק
+   =========================================================================== */
+const PT=[['H',1,1,1],['He',2,1,18],
+  ['Li',3,2,1],['Be',4,2,2],['B',5,2,13],['C',6,2,14],['N',7,2,15],
+  ['O',8,2,16],['F',9,2,17],['Ne',10,2,18],
+  ['Na',11,3,1],['Mg',12,3,2],['Al',13,3,13],['Si',14,3,14],['P',15,3,15],
+  ['S',16,3,16],['Cl',17,3,17],['Ar',18,3,18],
+  ['K',19,4,1],['Ca',20,4,2],['Fe',26,4,8],['Cu',29,4,11],['Zn',30,4,12],
+  ['Ag',47,5,11],['Au',79,6,11]];
+const LIVE={H:'H2', O:'O2'};
+let picked='H2';
+const $=id=>document.getElementById(id);
+
+(function(){
+  const slot=new Map();
+  for (const [sym,z,p,g] of PT) slot.set(p*100+g,[sym,z]);
+  const html=[];
+  for (let p=1;p<=6;p++) for (let g=1;g<=18;g++){
+    const e=slot.get(p*100+g);
+    if (!e){ html.push('<div class="pt gap"></div>'); continue; }
+    const [sym,z]=e, sp=LIVE[sym];
+    if (!sp){ html.push('<div class="pt off"></div>'); continue; }
+    const c=ELEM[sym].col.map(v=>Math.round(v*255)).join(',');
+    html.push(`<button class="pt live" data-sp="${sp}" data-sym="${sym}"
+      style="--c:rgb(${c})"><i>${z}</i>${sym}</button>`);
+  }
+  $('ptable').innerHTML=html.join('');
+  $('ptable').addEventListener('click',e=>{
+    const b=e.target.closest('button[data-sp]');
+    if (b){ picked=b.dataset.sp; syncPick(); closeSheet(); }
+  });
+})();
+
+function syncPick(){
+  const S=SPECIES[picked];
+  $('pickName').textContent=nm(S.name);
+  $('pickKey').textContent=S.key;
+  $('pickDot').style.background='rgb('+ELEM[S.atoms[0][0]].col.map(v=>Math.round(v*255)).join(',')+')';
+  for (const b of document.querySelectorAll('.pt.live')) b.classList.toggle('on', b.dataset.sp===picked);
+}
+/* ניצוץ מקומי: מחמם מעט מולקולות במקום אחד עד מעל סף ההצתה */
+function spark(){
+  flash=.5;
+  let n=0;
+  for (let i=0;i<mol.n && n<40;i++)
+    if (mol.where[i]===IN_FLASK && mol.y[i]<1.1){ mol.T[i]=Math.max(mol.T[i],IGNITION+120); n++; }
+}
+function syncHeat(){
+  const t=Math.round(heat);
+  /* שתי טמפרטורות, ולא אחת: מה שבבקבוק, ולצידו החדר עצמו. הנר מחמם
+     את כל החדר ולא רק את מה שמולו, וזה המספר שמראה את זה. */
+  $('heatLbl').textContent = heatView
+    ? t+'°  ·  '+Math.round(hfProbe(-3.5,4.5,-2.3,5.0,-3.3,2.0))+'° '+T('room')
+    : t+'°';
+  $('merc').style.height=clamp((t+40)/1240*100,0,100)+'%';
+  $('knobDot').style.transform='rotate('+(gasTap*135)+'deg)';
+  const g=Math.round(gasTap*100);
+  $('burnPct').textContent=(g>0?'🔥':g<0?'❄':'')+Math.abs(g)+'%';
+  $('knob').classList.toggle('cold', gasTap<0);
+}
+function syncCut(){
+  $('cut').value=Math.round(cam.slice*100);
+  $('cutLbl').textContent=T('cut')+' '+Math.round(cam.slice*100)+'%';
+}
+const human=v=>v>=1e9?(v/1e9).toFixed(0)+T('bil')
+              :v>=1e6?(v/1e6).toFixed(0)+T('mil')
+              :v>=1e3?(v/1e3).toFixed(0)+T('K'):Math.round(v);
+function syncZoom(){
+  if (MC.on){
+    $('zoomBtn').textContent='⚛ '+microFov.toFixed(1)+' '+T('nm');
+    $('fov').textContent=T('fov')+' '+microFov.toFixed(1)+' '+T('nm')+' · '+T('mag')+' ×'
+      + human(MACRO_VIEW_M/(microFov*1e-9)) + ' · ' + MC.n + ' ' + T('realSize');
+  } else {
+    /* המספר שאומר כמה רחוקים מהאמת: כמה מולקולות אמיתיות כל כדור */
+    const k=1/cam.zoom;
+    $('zoomBtn').textContent='🔍 ×'+(k<9.5?k.toFixed(1):Math.round(k));
+    const m=MACRO_VIEW_M*cam.zoom;
+    const per = T('per')+': '+sci(repOf());
+    $('fov').textContent = k>1.4
+      ? T('fov')+' '+(m*1000).toFixed(m<0.01?2:1)+' '+T('mm')+' · '+per
+      : per;
+  }
+}
+function syncAtoms(){
+  /* נבנה מרשימת היסודות, לא מרשימה קשיחה — חנקן נוסף ונפל ל-NaN */
+  const c={}; for (const k of Object.keys(ELEM)) c[k]=0;
+  for (let i=0;i<mol.n;i++) for (const [el,k] of Object.entries(SPECIES[mol.sp[i]].count)) c[el]+=k;
+  /* כפול כמה מולקולות אמיתיות מייצג כל כדור. בלי זה פיצול לרזולוציה
+     גבוהה יותר נראה כאילו הוא יוצר חומר יש מאין: אותם מים בדיוק,
+     והמונה קופץ מ-5112 ל-20448. מה שהשתנה הוא כמה נקודות מתארות
+     אותם, לא כמה אטומים יש. */
+  const rep=repOf();
+  $('atoms').innerHTML=Object.entries(c).filter(([,n])=>n>0).map(([el,n])=>{
+    const rgb=ELEM[el].col.map(v=>Math.round(v*255)).join(',');
+    return `<b style="background:rgba(${rgb},.13);color:rgb(${rgb})">${sci(n*rep)}<i>${el}</i></b>`;
+  }).join('');
+}
+function addMolecules(sp,count,where){
+  for (let i=0;i<count;i++){
+    if (where===IN_BEAKER) spawn(sp, BEAKER_X+rand(-.4,.4), rand(.9,1.3), rand(-.4,.4), IN_BEAKER);
+    else if (where===IN_FUNNEL) spawn(sp, FX+rand(-.18,.18), rand(BOWL_Y0+0.10,BOWL_Y1-0.12), rand(-.18,.18), IN_FUNNEL);
+    else spawn(sp, rand(-.45,.45), rand(.5,1.5), rand(-.45,.45), IN_FLASK);
+  }
+  syncAtoms();
+}
+/* אוויר בכל חלל פנוי — גם בכלים וגם בחדר שמסביבם. הצפיפות מוגזמת
+   בכוונה: אוויר אמיתי דליל פי אלף ממים, ובבקבוק הזה זה יוצא שתי
+   מולקולות. מה שמדויק כאן הוא ההתנהגות, לא הספירה. */
+function spawnAir(x,y,z,where){
+  const i = spawn(Math.random()<0.78 ? 'N2' : 'O2', x, y, z, where);
+  if (i>=0){ mol.air[i]=1; mol.phase[i]=GAS; }
+  return i;
+}
+function fillAir(){
+  const n = Math.max(60, Math.round(NMOL*0.09));
+  for (let i=0;i<n;i++){
+    const r = Math.random();
+    if (r<0.55)      spawnAir(rand(-.55,.55), rand(1.05,2.25), rand(-.55,.55), IN_FLASK);
+    else if (r<0.85) spawnAir(BEAKER_X+rand(-.45,.45), rand(.2,1.35), rand(-.45,.45), IN_BEAKER);
+    else             spawnAir(FX+rand(-.16,.16), rand(BOWL_Y0+.1,BOWL_Y1-.15), rand(-.16,.16), IN_FUNNEL);
+  }
+  /* אוויר בצינור. בלעדיו האדים מתפשטים אל תוך ריק, וזה משנה גם את
+     קצב המילוי וגם את מה שמעביר את החום אל הדופן. */
+  for (let k=0;k<PATH.length;k+=2){
+    const q=PATH[k];
+    spawnAir(q[0]+rand(-.05,.05), q[1]+rand(-.05,.05), q[2]+rand(-.05,.05), IN_TUBE)
+      >=0 && (mol.t[mol.n-1]=k);
+  }
+  fillRoomAir();
+}
+
+/* החדר עצמו. פרושׂ בהגרלה בתוך התיבה, וכל מה שנפל בתוך זכוכית
+   נדחף החוצה — ככה האוויר יושב על הכלים במקום לחדור אותם. */
+function fillRoomAir(){
+  const target = Math.round(AIR_BASE * MSCALE*MSCALE*MSCALE);
+  for (let k=0, made=0; k<target*6 && made<target; k++){
+    const x=rand(ROOM.x0,ROOM.x1), y=rand(ROOM.y0,ROOM.y1), z=rand(ROOM.z0,ROOM.z1);
+    const i=spawnAir(x,y,z,IN_ROOM);
+    if (i<0) break;
+    /* בפנים הכלי? זורקים ומגרילים שוב, במקום לדחוף ולקבל קליפה צפופה */
+    const saveX=mol.x[i], saveY=mol.y[i], saveZ=mol.z[i];
+    if (pushOutOfGlass(i)){
+      mol.x[i]=saveX; mol.y[i]=saveY; mol.z[i]=saveZ;
+      kill(i); continue;
+    }
+    made++;
+  }
+}
+
+function reset(){
+  mol.n=0; gasTap=0; heat=AMBIENT; flash=0; cam.slice=0;
+  hfReset();
+  /* מספר המולקולות נקבע מהנפח: במרווח אריזה של 0.155 הן ממלאות
+     כשליש מהבועה, ונשארים פני נוזל שאפשר לראות */
+  for (let i=0;i<NMOL;i++) spawn('H2O', rand(-.52,.52), rand(.10,1.02), rand(-.52,.52), IN_FLASK);
+  fillAir();
+  syncAtoms(); syncHeat(); syncCut(); syncZoom();
+}
+
+/* החוגה: גוררים סביבה, והזווית היא עוצמת הלהבה. שני הכיוונים. */
+(function(){
+  const k=$('knob'); let down=false, last=0;
+  const ang=e=>{ const r=k.getBoundingClientRect();
+    return Math.atan2(e.clientY-(r.top+r.height/2), e.clientX-(r.left+r.width/2)); };
+  k.addEventListener('pointerdown',e=>{ down=true; last=ang(e); k.setPointerCapture(e.pointerId); });
+  k.addEventListener('pointermove',e=>{
+    if(!down) return;
+    const a=ang(e); let d=a-last;
+    if (d> Math.PI) d-=Math.PI*2;
+    if (d<-Math.PI) d+=Math.PI*2;
+    last=a;
+    gasTap=clamp(gasTap + d/(Math.PI*1.5), -1, 1);
+    syncHeat();
+  });
+  const up=e=>{ down=false; };
+  k.addEventListener('pointerup',up); k.addEventListener('pointercancel',up);
+})();
+$('spark').addEventListener('click',spark);
+$('cut').addEventListener('input',e=>{ cam.slice=+e.target.value/100; syncCut(); });
+$('zoomBtn').addEventListener('click',()=>{ cam.zoom=cam.zoom<0.9?1:1/12; syncZoom(); });
+$('tap').addEventListener('click',e=>{ tap.open=!tap.open; e.target.classList.toggle('on',tap.open); });
+$('reset').addEventListener('click',reset);
+$('pause').addEventListener('click',e=>{
+  paused=!paused; e.target.textContent=paused?'▶':'⏸'; e.target.classList.toggle('on',paused);
+});
+$('view').addEventListener('click',()=>{
+  if (MC.on){ microExit(); cam.zoom=1; syncZoom(); return; }
+  if (cam.zoom < MICRO){ cam.zoom=1; syncZoom(); return; }   /* חזרה החוצה */
+  if (FLOAT_FBO) wantReal=!wantReal;
+});
+if (!FLOAT_FBO){
+  $('view').textContent='⚛ מולקולות';
+  $('view').classList.remove('on');
+  $('view').style.opacity='.45';
+}
+/* החלפת שפה: מרעננים כל טקסט וגם את כיוון הדף */
+/* החלפת רמת פירוט: מחשבים מחדש את כל האורכים ובונים את העולם מהתחלה */
+function setScale(k){
+  applyScale(k);
+  try { localStorage.setItem('rls.scale', k); } catch(e){}
+  reset(); buildLevels();
+}
+function buildLevels(){
+  $('levels').innerHTML = LEVELS.map(k=>{
+    const n=Math.round(240*k*k*k);
+    return `<button class="lvl${k===MSCALE?' on':''}" data-k="${k}">`
+         + (k/LEVELS[0]).toFixed(1) + '× ' + T('smaller')
+         + ' <i>· ' + n.toLocaleString('en') + '</i></button>';
+  }).join('');
+  for (const b of $('levels').querySelectorAll('.lvl'))
+    b.addEventListener('click',()=>setScale(+b.dataset.k));
+}
+
+function applyLang(){
+  document.documentElement.lang = lang;
+  document.documentElement.dir  = lang==='he' ? 'rtl' : 'ltr';
+  $('spark').querySelector('b').textContent = T('spark');
+  $('tap').querySelector('b').textContent   = T('tap');
+  $('reset').textContent  = T('reset');
+  $('pickUp').textContent = '▲ ' + T('table');
+  $('sheetH').textContent = T('ptable');
+  $('askT').textContent   = T('askT');
+  $('askB').textContent   = T('askB');
+  $('askQ').textContent   = T('askQ');
+  $('hint').textContent   = T('hint');
+  $('langT').textContent  = T('language');
+  $('detT').textContent   = T('detail');
+  $('airBtn').textContent = '💨 ' + T('air');
+  $('heatBtn').textContent = '🌡️ ' + T('heat');
+  buildLevels();
+  for (const b of document.querySelectorAll('.lang:not(.opt)'))
+    b.classList.toggle('on', b.dataset.l===lang);
+  /* אחרי לולאת השפות, לא לפניה: הכפתור חולק איתן מחלקה לצורך עיצוב,
+     והלולאה הייתה מכבה לו את הסימון בכל פעם מחדש. */
+  $('airBtn').classList.toggle('on', showAir);
+  $('heatBtn').classList.toggle('on', heatView);
+  syncPick(); syncCut(); syncZoom(); syncHeat();
+}
+$('gear').addEventListener('click',()=>$('langBox').classList.toggle('on'));
+$('airBtn').addEventListener('click',()=>{ showAir=!showAir; applyLang(); });
+$('heatBtn').addEventListener('click',()=>{ heatView=!heatView; applyLang(); });
+/* .opt הוא כפתור הגדרה רגיל שמתחזה לכפתור שפה כדי לקבל את אותו
+   עיצוב. בלי הסינון הזה לחיצה עליו מציבה lang=undefined, וכל טקסט
+   במשחק נופל בפעם הבאה שמישהו מבקש מחרוזת. */
+for (const b of document.querySelectorAll('.lang:not(.opt)'))
+  b.addEventListener('click',()=>{
+    lang=b.dataset.l;
+    try { localStorage.setItem('rls.lang', lang); } catch(e){}
+    applyLang(); $('langBox').classList.remove('on');
+  });
+
+const openSheet=()=>{ $('sheet').classList.add('open'); $('scrim').classList.add('on'); };
+const closeSheet=()=>{ $('sheet').classList.remove('open'); $('scrim').classList.remove('on'); };
+$('pickBar').addEventListener('click',openSheet);
+$('scrim').addEventListener('click',closeSheet);
+
+/* ===========================================================================
+   9) הלולאה
+   =========================================================================== */
+let last=performance.now(), acc=0, frames=0, fpsT=0, bank=0, speed=1;
+const FIXED=1/60;
+
+function loop(now){
+  const dt=Math.min((now-last)/1000,0.25);
+  last=now;
+  /* צעד קבוע: מכשיר איטי מפיל פריימים, אבל הזמן בעולם ממשיך באותו קצב */
+  if (!paused){
+    bank+=dt*speed;
+    if (MC.on){
+      /* העולם הגדול עוצר: אתה מסתכל על קופסה של ננומטרים, ואין טעם
+         להוציא את התקציב על בקבוק שלא נמצא בפריים */
+      for (let i=0;i<3 && bank>=FIXED;i++){ microStep(FIXED, heat); bank-=FIXED; }
+    } else {
+      for (let i=0;i<5 && bank>=FIXED;i++){ step(FIXED); bank-=FIXED; }
+    }
+    if (bank>FIXED*5) bank=FIXED*5;
+  }
+  const shown=draw();
+  frames++; fpsT+=dt;
+  if (fpsT>0.5){
+    $('fps').textContent=Math.round(frames/fpsT)+' fps · '+(MC.on?MC.n:mol.n)+' '+T('mols');
+    frames=0; fpsT=0;
+  }
+  acc+=dt;
+  /* המדחום צריך להתעדכן מעצמו. קודם הוא נכתב רק כשנגעו בחוגה, ולכן
+     הוא הראה את המעלות של הרגע שבו נגעת ולא של עכשיו. */
+  if (acc>0.25){ syncAtoms(); syncHeat(); acc=0; }
+  lodFollowZoom();
+  requestAnimationFrame(loop);
+}
+
+/* אחרי שכל ההצהרות רצו — קודם לכן הקבועים הנגזרים עוד בתחום המת */
+applyScale(MSCALE);
+hfPaint(); hfWallCells();
+reset(); syncPick(); syncZoom(); applyLang();
+setTimeout(()=>$('hint').classList.add('gone'),100);
+requestAnimationFrame(loop);
+
+/* ווים לבדיקות ולהקלטה */
+window.RLS = {
+  orbit(d,e){ cam.az+=d; cam.el=clamp(cam.el+e,-0.55,1.25); },
+  setSlice(t){ cam.slice=clamp(t,0,1); syncCut(); },
+  setZoom(z){ if (MC.on) microExit(); cam.zoom=clamp(z,1/MAXZOOM,1.15); syncZoom(); },
+  micro(nm){ microFov=clamp(nm,1.2,7.5); microEnter(); microFill(clamp(microFov*1.5,2.4,6.4)); syncZoom(); },
+  macro(){ microExit(); cam.zoom=1; syncZoom(); },
+  setHeat(v){ /* לתאימות: ממפה מעלות לעוצמת להבה */ gasTap = v>=AMBIENT ? clamp((v-AMBIENT)/900,0,1) : clamp((v-AMBIENT)/240,-1,0); syncHeat(); },
+  setView(real){ wantReal=real&&FLOAT_FBO; },
+  setSpeed(v){ speed=v; },
+  tune(st,it){ STIFF=st; ITERS=it; },
+  add(sp,n,where){ addMolecules(sp,n, where==='beaker'?IN_BEAKER
+                                   : where==='funnel'?IN_FUNNEL : IN_FLASK); },
+  spark, setBurner(v){ gasTap=clamp(v,-1,1); syncHeat(); },
+  tap(o){ tap.open=o; $('tap').classList.toggle('on',o); },
+  state(){
+    const c={}; for (const k of Object.keys(ELEM)) c[k]=0;
+    const by={}, ph=[0,0,0], w=[0,0,0,0,0]; let nAir=0;
+    for (let i=0;i<mol.n;i++){
+      by[mol.sp[i]]=(by[mol.sp[i]]||0)+1;
+      ph[mol.phase[i]]++; w[mol.where[i]]++; if (mol.air[i]) nAir++;
+      for (const [el,k] of Object.entries(SPECIES[mol.sp[i]].count)) c[el]+=k;
+    }
+    return { atoms:c, species:by, n:mol.n, heat:Math.round(heat), realView, floatFBO:FLOAT_FBO,
+             phase:{gas:ph[0],liquid:ph[1],solid:ph[2]},
+             where:{flask:w[0],tube:w[1],beaker:w[2],funnel:w[3],room:w[4]},
+             air:nAir, lod:{...lodStats, step:lodStepOf(), mscale:MSCALE, rep:repOf(), zoom:cam.zoom}, wall:{flask:wallT[W_FLASK+2], tubeIn:wallT[W_TUBE+1],
+                             tubeOut:wallT[W_TUBE+WALL_N-2], beaker:wallT[W_BEAKER+2]},
+             tap:tap.open,
+             field:{ cells:HF.n, room:hfProbe(-3.5,4.5,-2.3,5.0,-3.3,2.0) } };
+  },
+};
+</script>
+</body>
+</html>
