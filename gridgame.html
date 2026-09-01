@@ -899,38 +899,41 @@
   }
 
   // ---- RENDER ----
-  function render() {
-    boardEl.innerHTML = '';
-    const selectedChar = characters.find(c => c.id === selectedCharId) || null;
-    const reachable = getReachableCells(selectedChar);
+  // The board is drawn in two layers. The STATIC layer (water + every land
+  // hex background and its coordinate label) is the expensive part — ~900
+  // clip-path tiles — so it is built exactly once by buildStaticBoard() and
+  // never torn down again. The DYNAMIC layer (characters, move-dots, city
+  // border overlays, city names) is the only thing render() rebuilds, which
+  // is a handful of nodes instead of the whole grid on every game action.
+  let staticBoardBuilt = false;
+  let waterLayerEl = null;
+  let dynamicLayerEl = null;
 
+  function tileMetrics() {
     // A tiny overlap on every hex tile so adjacent hexes' edges overlap by
     // a fraction of a pixel instead of leaving hairline gaps (which show
     // the page background through as black slivers) between them.
     const overlap = hexLayout.hexWidth * 0.02;
-    const tileW = hexLayout.hexWidth + overlap;
-    const tileH = hexLayout.hexHeight + overlap;
+    return { w: hexLayout.hexWidth + overlap, h: hexLayout.hexHeight + overlap };
+  }
 
-    // Whichever character is selected (if any) determines whether water
-    // tiles should render crisp instead of blurred. Only matters for a
-    // character that's actually able to move on water; nothing can yet,
-    // so this stays inactive until one exists.
-    const waterShouldBeCrisp = !!(selectedChar && selectedChar.canMoveOnWater);
+  function buildStaticBoard() {
+    boardEl.innerHTML = '';
+    const { w: tileW, h: tileH } = tileMetrics();
+
     // Water tiles' edges are blurred so the hex grid lines dissolve into a
-    // smoother sea, unless waterShouldBeCrisp. Applied ONCE to a single
-    // container holding every water tile — applying `filter: blur()` to
-    // each water tile individually (hundreds of them) forces a separate
-    // compositing layer per tile, which is expensive enough to make a
-    // phone browser choke and fail to paint anything at all.
-    const waterBlurPx = waterShouldBeCrisp ? 0 : hexLayout.hexWidth * 0.07;
-    const waterLayerEl = document.createElement('div');
+    // smoother sea. The blur is applied ONCE to a single container holding
+    // every water tile — applying `filter: blur()` to each water tile
+    // individually (hundreds of them) forces a separate compositing layer
+    // per tile, expensive enough to make a phone browser choke. render()
+    // only toggles this container's blur; it never rebuilds it.
+    waterLayerEl = document.createElement('div');
     waterLayerEl.className = 'water-layer';
     waterLayerEl.style.position = 'absolute';
     waterLayerEl.style.left = '0';
     waterLayerEl.style.top = '0';
     waterLayerEl.style.width = hexLayout.boardW + 'px';
     waterLayerEl.style.height = hexLayout.boardH + 'px';
-    waterLayerEl.style.filter = waterBlurPx > 0 ? `blur(${waterBlurPx}px)` : 'none';
     boardEl.appendChild(waterLayerEl);
 
     for (let y = 0; y < GRID_SIZE; y++) {
@@ -939,9 +942,6 @@
         const pos = hexLayout.positions[y][x];
 
         if (cellData.isWater) {
-          // Water tiles are purely decorative background — no labels,
-          // no city overlays, no characters/move-dots — so they can skip
-          // straight to the cheap path and go into the blurred layer.
           const cell = document.createElement('div');
           cell.className = 'cell cell-water';
           cell.style.width = tileW + 'px';
@@ -954,9 +954,7 @@
         }
 
         const cell = document.createElement('div');
-        cell.className = 'cell'
-          + ' walkable-' + cellData.walkable
-          + (cellData.cityMarked ? ' city-marked' : '');
+        cell.className = 'cell walkable-' + cellData.walkable;
         cell.dataset.x = x;
         cell.dataset.y = y;
         cell.style.width = tileW + 'px';
@@ -972,15 +970,69 @@
           cell.appendChild(label);
         }
 
-        if (cellData.cityMarked) {
-          const externalEdges = getExternalCityEdges(x, y);
-          if (externalEdges.length > 0) {
-            cell.appendChild(buildCityEdgeOverlay(externalEdges));
-          }
-        }
+        boardEl.appendChild(cell);
+      }
+    }
+
+    // The dynamic overlay sits above the tiles but is click-through
+    // (pointer-events:none), so taps still hit the .cell beneath and resolve
+    // to that hex's coordinates; interactive bits inside (city names)
+    // re-enable pointer events on themselves.
+    dynamicLayerEl = document.createElement('div');
+    dynamicLayerEl.className = 'dynamic-layer';
+    dynamicLayerEl.style.position = 'absolute';
+    dynamicLayerEl.style.left = '0';
+    dynamicLayerEl.style.top = '0';
+    dynamicLayerEl.style.width = hexLayout.boardW + 'px';
+    dynamicLayerEl.style.height = hexLayout.boardH + 'px';
+    dynamicLayerEl.style.pointerEvents = 'none';
+    boardEl.appendChild(dynamicLayerEl);
+
+    staticBoardBuilt = true;
+  }
+
+  function render() {
+    if (!staticBoardBuilt) buildStaticBoard();
+    dynamicLayerEl.innerHTML = '';
+
+    const selectedChar = characters.find(c => c.id === selectedCharId) || null;
+    const reachable = getReachableCells(selectedChar);
+    const { w: tileW, h: tileH } = tileMetrics();
+
+    // Whichever character is selected (if any) determines whether water
+    // tiles should render crisp instead of blurred. Only matters for a
+    // character that can actually move on water; nothing can yet, so this
+    // stays inactive until one exists. Toggling the persistent water layer's
+    // blur is cheap — no rebuild.
+    const waterShouldBeCrisp = !!(selectedChar && selectedChar.canMoveOnWater);
+    const waterBlurPx = waterShouldBeCrisp ? 0 : hexLayout.hexWidth * 0.07;
+    waterLayerEl.style.filter = waterBlurPx > 0 ? `blur(${waterBlurPx}px)` : 'none';
+
+    for (let y = 0; y < GRID_SIZE; y++) {
+      for (let x = 0; x < GRID_SIZE; x++) {
+        const cellData = grid[y][x];
+        if (cellData.isWater) continue;
 
         const charsHere = characters.filter(c => c.x === x && c.y === y);
         const isReachable = reachable.some(c => c.x === x && c.y === y);
+        const cityEdges = cellData.cityMarked ? getExternalCityEdges(x, y) : [];
+        if (charsHere.length === 0 && !isReachable && cityEdges.length === 0) continue;
+
+        const pos = hexLayout.positions[y][x];
+        const slot = document.createElement('div');
+        slot.className = 'hex-slot';
+        slot.style.position = 'absolute';
+        slot.style.width = tileW + 'px';
+        slot.style.height = tileH + 'px';
+        slot.style.left = (pos.cx - tileW / 2) + 'px';
+        slot.style.top = (pos.cy - tileH / 2) + 'px';
+        slot.style.display = 'flex';
+        slot.style.alignItems = 'center';
+        slot.style.justifyContent = 'center';
+
+        if (cityEdges.length > 0) {
+          slot.appendChild(buildCityEdgeOverlay(cityEdges));
+        }
 
         if (charsHere.length > 0) {
           const stack = document.createElement('div');
@@ -1014,7 +1066,7 @@
 
             stack.appendChild(charEl);
           });
-          cell.appendChild(stack);
+          slot.appendChild(stack);
         }
 
         // Show the move-dot for any reachable square, even one already
@@ -1024,16 +1076,17 @@
           const dot = document.createElement('div');
           dot.className = 'move-dot';
           if (charsHere.length > 0) dot.classList.add('move-dot-overlay');
-          cell.appendChild(dot);
+          slot.appendChild(dot);
         }
 
-        boardEl.appendChild(cell);
+        dynamicLayerEl.appendChild(slot);
       }
     }
 
-    // City name labels are rendered directly on the board (not inside a
-    // hex cell) so they aren't clipped by the hexagon shape/overflow —
-    // they sit on top of the grid, free to extend past the hex edges.
+    // City name labels are rendered directly on the overlay (not inside a
+    // hex cell) so they aren't clipped by the hexagon shape/overflow — they
+    // sit on top of the grid, free to extend past the hex edges. They opt
+    // back into pointer events since the overlay itself is click-through.
     cities.forEach(city => {
       const pos = hexLayout.positions[city.y][city.x];
       const nameEl = document.createElement('div');
@@ -1041,6 +1094,7 @@
       nameEl.textContent = `${city.name} (${city.population})`;
       nameEl.style.left = pos.cx + 'px';
       nameEl.style.top = pos.cy + 'px';
+      nameEl.style.pointerEvents = 'auto';
       nameEl.addEventListener('click', (e) => {
         e.stopPropagation();
         if (pressedCityId === city.id) {
@@ -1051,7 +1105,7 @@
         }
         render();
       });
-      boardEl.appendChild(nameEl);
+      dynamicLayerEl.appendChild(nameEl);
     });
 
     applyTransform();
