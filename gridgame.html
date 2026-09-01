@@ -1510,6 +1510,27 @@
         });
       },
     },
+    {
+      key: 'worker',
+      title: 'Worker',
+      cost: 17,
+      icon: CHAR_ICON_SRC,
+      // Not placed on the map at startup — a Worker only ever comes into
+      // existence through city production.
+      onComplete(city) {
+        characters.push({
+          id: 'worker' + (nextUnitId++),
+          name: 'Worker',
+          icon: CHAR_ICON_SRC,
+          x: city.x,
+          y: city.y,
+          hasMovedThisTurn: false,
+          moveRange: 1,
+          type: 'worker',
+          categories: [],
+        });
+      },
+    },
   ];
 
   function processCityProduction(city) {
