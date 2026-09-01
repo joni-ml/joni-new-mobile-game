@@ -945,8 +945,12 @@
   // lag can be found by toggling them one at a time and watching the FPS.
   // Persisted so a chosen configuration survives a reload.
   const PERF = {
-    waterBlur: true,      // soft blur over the whole sea (a filtered layer)
-    waterGradient: true,  // the little highlight/shadow dots on each sea tile
+    // Water blur and the sea-tile dots were measured on-device as the two
+    // biggest sources of lag (a full-board filtered layer + a radial gradient
+    // painted on every one of ~576 sea tiles), so they default OFF. The
+    // settings panel can switch them back on for the softer look.
+    waterBlur: false,     // soft blur over the whole sea (a filtered layer)
+    waterGradient: false, // the little highlight/shadow dots on each sea tile
     hexClip: true,        // the hexagon clip-path on every tile
     charShadow: true,     // drop-shadow glow on characters
     charTransition: true, // CSS transition when a character is selected/moves
