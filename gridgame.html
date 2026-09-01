@@ -852,7 +852,9 @@
   // hex distance, not square/diagonal distance). Characters can pass
   // through and land on the same hex as one another.
   function getReachableCells(character) {
-    if (!character || character.hasMovedThisTurn) return [];
+    // A fortified unit stays movable even after its move is "used" by
+    // staying put — moving is the only way to wake it (clears fortify).
+    if (!character || (character.hasMovedThisTurn && !character.fortified)) return [];
     const range = character.moveRange || 1;
     const center = offsetToCube(character.x, character.y);
     const options = [];
@@ -1563,7 +1565,10 @@
   endTurnBtn.addEventListener('click', () => {
     turnNumber += 1;
     characters.forEach(c => {
-      c.hasMovedThisTurn = false;
+      // Staying in a fortified position counts as this turn's move: a unit
+      // that's still fortified begins the new turn having already used its
+      // action (its only way out is to move, which clears fortify below).
+      c.hasMovedThisTurn = !!c.fortified;
       // Any unit that's still fortified (didn't move — moving clears the
       // flag immediately, see the move handler above) advances one more
       // stage, capped at the last defined bonus step.
