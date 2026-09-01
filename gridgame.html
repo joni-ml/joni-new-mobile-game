@@ -860,6 +860,22 @@
     boardEl.style.transform = `translate(-50%, -50%) translate(${panX}px, ${panY}px) scale(${scale}) translateZ(0)`;
   }
 
+  // Touch devices fire pan/pinch events faster than the screen refreshes
+  // (up to 120Hz on modern iPhones), so writing the transform on every event
+  // does redundant work and causes jank. Coalesce them: the state (panX/panY,
+  // cellSize) updates synchronously on each event, but the actual transform
+  // write happens at most once per animation frame.
+  let transformScheduled = false;
+  function scheduleTransform() {
+    if (transformScheduled) return;
+    transformScheduled = true;
+    requestAnimationFrame(() => {
+      transformScheduled = false;
+      clampPan();
+      applyTransform();
+    });
+  }
+
   function centerOnPlayer() {
     // Reset pan so the average position of all characters is centered
     const scale = cellSize / BASE_HEX_SIZE;
@@ -1240,7 +1256,7 @@
     panX = vx - newScale * boardX + hexLayout.boardW / 2;
     panY = vy - newScale * boardY + hexLayout.boardH / 2;
     clampPan();
-    applyTransform();
+    scheduleTransform();
   }
 
   // ---- PAN + PINCH ZOOM (touch) ----
@@ -1332,8 +1348,7 @@
       panY += dy;
       trackVelocity(dx, dy);
       lastPanPoint = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      clampPan();
-      applyTransform();
+      scheduleTransform();
     } else if (e.touches.length === 2) {
       dragMoved = true;
       const d = dist(e.touches[0], e.touches[1]);
@@ -1387,8 +1402,7 @@
     panY += dy;
     trackVelocity(dx, dy);
     lastMouse = { x: e.clientX, y: e.clientY };
-    clampPan();
-    applyTransform();
+    scheduleTransform();
   });
   window.addEventListener('mouseup', () => {
     mouseDown = false;
