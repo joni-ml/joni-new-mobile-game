@@ -64,6 +64,93 @@
     border-radius: 6px;
     letter-spacing: 0.3px;
   }
+
+  /* ---- Performance settings: each class strips one rendering cost ---- */
+  body.perf-no-hexclip .cell { clip-path: none !important; }
+  body.perf-no-watergrad .cell-water { background-image: none !important; }
+  body.perf-no-charshadow .char-body { filter: none !important; }
+  body.perf-no-charshadow .char.char-selected { filter: none !important; }
+  body.perf-no-chartransition .char { transition: none !important; }
+
+  #gearBtn {
+    position: fixed;
+    top: env(safe-area-inset-top, 0px);
+    right: 0;
+    margin: 6px;
+    z-index: 31;
+    width: 34px;
+    height: 34px;
+    border: none;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.55);
+    color: #eee;
+    font-size: 18px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: manipulation;
+  }
+  #settingsPanel {
+    position: fixed;
+    top: 0; right: 0;
+    height: 100%;
+    width: min(82%, 320px);
+    z-index: 40;
+    background: rgba(18, 20, 24, 0.97);
+    backdrop-filter: blur(6px);
+    box-shadow: -4px 0 18px rgba(0, 0, 0, 0.5);
+    padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 16px;
+    overflow-y: auto;
+    transform: translateX(100%);
+    transition: transform 0.22s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  #settingsPanel.open { transform: translateX(0); }
+  #settingsPanel h2 {
+    margin: 0;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  #settingsPanel .panel-close { background: none; border: none; color: #aaa; font-size: 20px; }
+  #settingsPanel .perf-readout {
+    background: #0d0f12;
+    border: 1px solid #2a2e36;
+    border-radius: 8px;
+    padding: 10px;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #4ade80;
+  }
+  #settingsPanel .perf-readout .worst { color: #f87171; }
+  #settingsPanel button.bench {
+    background: #2563eb; color: #fff; border: none;
+    border-radius: 8px; padding: 10px; font-size: 13px; font-weight: 700;
+    touch-action: manipulation;
+  }
+  #settingsPanel button.bench:disabled { opacity: 0.5; }
+  #settingsPanel .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 2px;
+    border-bottom: 1px solid #23262d;
+    font-size: 13px;
+  }
+  #settingsPanel .toggle-row small { display: block; color: #8b909a; font-size: 10px; margin-top: 2px; }
+  #settingsPanel .toggle-row label { flex: 1; }
+  #settingsPanel .row-actions { display: flex; gap: 8px; margin-top: 4px; }
+  #settingsPanel .row-actions button {
+    flex: 1; background: #33373f; color: #eee; border: none;
+    border-radius: 8px; padding: 9px; font-size: 12px; touch-action: manipulation;
+  }
+  #settingsPanel input[type="checkbox"] { width: 20px; height: 20px; flex: none; }
   .cell {
     position: absolute;
     clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
@@ -853,11 +940,44 @@
     panY = Math.max(centerPanY - slackY, Math.min(centerPanY + slackY, panY));
   }
 
+  // ---- PERFORMANCE / QUALITY SETTINGS ----
+  // Each flag turns one rendering cost on/off live, so the biggest source of
+  // lag can be found by toggling them one at a time and watching the FPS.
+  // Persisted so a chosen configuration survives a reload.
+  const PERF = {
+    waterBlur: true,      // soft blur over the whole sea (a filtered layer)
+    waterGradient: true,  // the little highlight/shadow dots on each sea tile
+    hexClip: true,        // the hexagon clip-path on every tile
+    charShadow: true,     // drop-shadow glow on characters
+    charTransition: true, // CSS transition when a character is selected/moves
+    boardLayer: true,     // promote the board to its own GPU layer (translateZ)
+    coalesce: true,       // batch pan/zoom writes to one per frame
+  };
+  try {
+    const saved = JSON.parse(localStorage.getItem('gridgame_perf') || '{}');
+    Object.keys(PERF).forEach(k => { if (typeof saved[k] === 'boolean') PERF[k] = saved[k]; });
+  } catch (e) {}
+
+  function savePerf() {
+    try { localStorage.setItem('gridgame_perf', JSON.stringify(PERF)); } catch (e) {}
+  }
+
+  // Reflect the CSS-driven flags as classes on <body>; the JS-driven ones
+  // (waterBlur, boardLayer, coalesce) are read directly where they apply.
+  function applyPerfClasses() {
+    const b = document.body;
+    b.classList.toggle('perf-no-watergrad', !PERF.waterGradient);
+    b.classList.toggle('perf-no-hexclip', !PERF.hexClip);
+    b.classList.toggle('perf-no-charshadow', !PERF.charShadow);
+    b.classList.toggle('perf-no-chartransition', !PERF.charTransition);
+  }
+
   function applyTransform() {
     const scale = cellSize / BASE_HEX_SIZE;
     // translateZ(0) forces the board onto its own compositor layer so the
     // browser can pan/zoom it on the GPU without repainting the tiles.
-    boardEl.style.transform = `translate(-50%, -50%) translate(${panX}px, ${panY}px) scale(${scale}) translateZ(0)`;
+    const z = PERF.boardLayer ? ' translateZ(0)' : '';
+    boardEl.style.transform = `translate(-50%, -50%) translate(${panX}px, ${panY}px) scale(${scale})${z}`;
   }
 
   // Touch devices fire pan/pinch events faster than the screen refreshes
@@ -867,6 +987,7 @@
   // write happens at most once per animation frame.
   let transformScheduled = false;
   function scheduleTransform() {
+    if (!PERF.coalesce) { clampPan(); applyTransform(); return; }
     if (transformScheduled) return;
     transformScheduled = true;
     requestAnimationFrame(() => {
@@ -958,6 +1079,7 @@
 
   function applyWaterBlur() {
     if (!waterLayerEl) return;
+    if (!PERF.waterBlur) { waterLayerEl.style.filter = 'none'; return; }
     if (interacting) { waterLayerEl.style.filter = 'none'; return; }
     // Water is only crisp for a unit that can actually move on it; none can
     // yet, so at rest the sea is blurred to soften the hex grid lines.
@@ -2006,12 +2128,20 @@
     // Start a bit more zoomed in than the max zoom-out level, centered
     // on the player's characters rather than the land's geometric center.
     cellSize = Math.min(maxCellSize, minCellSize * 1.15);
+    applyPerfClasses();
     render();
     centerOnPlayer();
     applyTransform();
+    applyWaterBlur();
     updateTurnUI();
     startFpsMeter();
+    startSettingsPanel();
   }
+
+  // Live FPS, shared with the settings panel readout. Updated by the meter
+  // loop; fpsMin tracks the worst 500ms window since the last reset.
+  let fpsCurrent = 0;
+  let fpsMin = Infinity;
 
   // ---- FPS / FPM METER ----
   // A small on-screen readout of how smoothly the game is rendering, so
@@ -2032,6 +2162,8 @@
       const elapsed = now - windowStart;
       if (elapsed >= 500) {
         const fps = (frames * 1000) / elapsed;
+        fpsCurrent = fps;
+        if (fps < fpsMin) fpsMin = fps;
         el.textContent = `${Math.round(fps)} FPS · ${Math.round(fps * 60)} FPM`;
         frames = 0;
         windowStart = now;
@@ -2039,6 +2171,126 @@
       requestAnimationFrame(loop);
     }
     requestAnimationFrame(loop);
+  }
+
+  // ---- SETTINGS / PERFORMANCE DIAGNOSTIC PANEL ----
+  // A gear button opens a panel that shows live FPS, runs a repeatable
+  // pan+zoom benchmark, and lets each rendering cost be switched off one at
+  // a time — so the biggest source of lag can be pinned down by comparing
+  // the benchmark score with each feature on vs off.
+  function startSettingsPanel() {
+    const gear = document.createElement('button');
+    gear.id = 'gearBtn';
+    gear.textContent = '⚙️';
+    gear.setAttribute('aria-label', 'Settings');
+    document.body.appendChild(gear);
+
+    const panel = document.createElement('div');
+    panel.id = 'settingsPanel';
+    document.body.appendChild(panel);
+
+    const TOGGLES = [
+      { key: 'waterBlur',      label: 'Water blur',        desc: 'Soft blur over the whole sea' },
+      { key: 'waterGradient',  label: 'Water tile dots',   desc: 'Highlight dots on each sea tile' },
+      { key: 'hexClip',        label: 'Hexagon clipping',  desc: 'clip-path shape on all ~900 tiles' },
+      { key: 'charShadow',     label: 'Character shadows',  desc: 'Drop-shadow glow on units' },
+      { key: 'charTransition', label: 'Character animation',desc: 'Scale transition on select/move' },
+      { key: 'boardLayer',     label: 'GPU board layer',    desc: 'translateZ compositor promotion' },
+      { key: 'coalesce',       label: 'Batch pan writes',   desc: 'One transform write per frame' },
+    ];
+
+    let benchmarking = false;
+
+    panel.innerHTML =
+      '<h2>Performance <button class="panel-close" aria-label="Close">✕</button></h2>' +
+      '<div class="perf-readout" id="perfReadout">—</div>' +
+      '<button class="bench" id="benchBtn">Run 3s benchmark</button>' +
+      '<div class="row-actions">' +
+        '<button id="perfAllOn">All on</button>' +
+        '<button id="perfAllOff">All off (fastest)</button>' +
+      '</div>' +
+      TOGGLES.map(t =>
+        `<div class="toggle-row"><label for="perf_${t.key}">${t.label}<small>${t.desc}</small></label>` +
+        `<input type="checkbox" id="perf_${t.key}" ${PERF[t.key] ? 'checked' : ''}></div>`
+      ).join('');
+
+    const readout = panel.querySelector('#perfReadout');
+    let lastBench = null;
+    function refreshReadout() {
+      const cur = Math.round(fpsCurrent);
+      const mn = fpsMin === Infinity ? '—' : Math.round(fpsMin);
+      let html = `Live: ${cur} FPS · ${cur * 60} FPM<br>Min (session): <span class="worst">${mn} FPS</span>`;
+      if (lastBench) {
+        html += `<br>Benchmark: ${lastBench.fps} FPS avg · worst <span class="worst">${lastBench.worst} ms</span>`;
+      }
+      readout.innerHTML = html;
+    }
+    setInterval(refreshReadout, 400);
+    refreshReadout();
+
+    function syncLive() {
+      applyPerfClasses();
+      applyTransform();
+      applyWaterBlur();
+    }
+
+    TOGGLES.forEach(t => {
+      panel.querySelector('#perf_' + t.key).addEventListener('change', (e) => {
+        PERF[t.key] = e.target.checked;
+        savePerf();
+        syncLive();
+      });
+    });
+
+    function setAll(v) {
+      Object.keys(PERF).forEach(k => { PERF[k] = v; });
+      TOGGLES.forEach(t => { panel.querySelector('#perf_' + t.key).checked = v; });
+      savePerf();
+      syncLive();
+    }
+    panel.querySelector('#perfAllOn').addEventListener('click', () => setAll(true));
+    panel.querySelector('#perfAllOff').addEventListener('click', () => setAll(false));
+
+    gear.addEventListener('click', () => { panel.classList.add('open'); fpsMin = Infinity; });
+    panel.querySelector('.panel-close').addEventListener('click', () => panel.classList.remove('open'));
+
+    // Repeatable benchmark: pan in a circle while zooming in/out for 3s,
+    // driving the real transform path so the current quality flags are
+    // reflected, then report average FPS and the worst single frame.
+    const benchBtn = panel.querySelector('#benchBtn');
+    benchBtn.addEventListener('click', () => {
+      if (benchmarking) return;
+      benchmarking = true;
+      benchBtn.disabled = true;
+      benchBtn.textContent = 'Benchmarking…';
+      const savedPan = { x: panX, y: panY }, savedCell = cellSize;
+      const cx = panX, cy = panY, baseCell = cellSize;
+      let frames = 0, worst = 0, last = performance.now();
+      const start = last;
+      function step(now) {
+        const dt = now - last; last = now; frames++;
+        if (dt > worst) worst = dt;
+        const t = (now - start) / 1000;
+        panX = cx + Math.sin(t * 2) * 90;
+        panY = cy + Math.cos(t * 2) * 90;
+        cellSize = Math.max(minCellSize, Math.min(maxCellSize, baseCell * (1 + 0.22 * Math.sin(t * 3))));
+        clampPan();
+        applyTransform();
+        if (now - start < 3000) {
+          requestAnimationFrame(step);
+        } else {
+          panX = savedPan.x; panY = savedPan.y; cellSize = savedCell;
+          clampPan(); applyTransform();
+          const fps = frames / ((now - start) / 1000);
+          lastBench = { fps: Math.round(fps), worst: Math.round(worst) };
+          benchmarking = false;
+          benchBtn.disabled = false;
+          benchBtn.textContent = 'Run 3s benchmark';
+          refreshReadout();
+        }
+      }
+      requestAnimationFrame(step);
+    });
   }
 
   window.addEventListener('resize', () => {
