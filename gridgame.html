@@ -40,8 +40,29 @@
     background: transparent;
     transform-origin: top left;
     z-index: 2;
+    /* Keep the whole board on its own GPU compositor layer so pan/zoom is a
+       pure transform (no main-thread repaint of the 900 hex tiles). Crucial
+       on mobile Safari, which otherwise repaints on every gesture frame. */
+    will-change: transform;
+    backface-visibility: hidden;
     /* width/height set once by JS to the board's base pixel size;
        transform (translate + scale) set by JS on every pan/zoom */
+  }
+  #fpsmeter {
+    position: fixed;
+    top: env(safe-area-inset-top, 0px);
+    left: 0;
+    margin: 6px;
+    z-index: 30;
+    background: rgba(0, 0, 0, 0.55);
+    color: #4ade80;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.2;
+    padding: 4px 7px;
+    border-radius: 6px;
+    letter-spacing: 0.3px;
   }
   .cell {
     position: absolute;
@@ -834,7 +855,9 @@
 
   function applyTransform() {
     const scale = cellSize / BASE_HEX_SIZE;
-    boardEl.style.transform = `translate(-50%, -50%) translate(${panX}px, ${panY}px) scale(${scale})`;
+    // translateZ(0) forces the board onto its own compositor layer so the
+    // browser can pan/zoom it on the GPU without repainting the tiles.
+    boardEl.style.transform = `translate(-50%, -50%) translate(${panX}px, ${panY}px) scale(${scale}) translateZ(0)`;
   }
 
   function centerOnPlayer() {
@@ -908,6 +931,38 @@
   let staticBoardBuilt = false;
   let waterLayerEl = null;
   let dynamicLayerEl = null;
+
+  // While the player is actively panning/pinching, the whole-board water
+  // blur is the single most expensive thing to keep re-rasterizing (a big
+  // filtered layer that can't stay GPU-composited). So we drop it during a
+  // gesture and restore it a moment after the gesture (and any inertia)
+  // ends — the sea looks identical at rest, but scrolls/zooms smoothly.
+  let interacting = false;
+  let interactEndTimer = null;
+
+  function applyWaterBlur() {
+    if (!waterLayerEl) return;
+    if (interacting) { waterLayerEl.style.filter = 'none'; return; }
+    // Water is only crisp for a unit that can actually move on it; none can
+    // yet, so at rest the sea is blurred to soften the hex grid lines.
+    const sel = characters.find(c => c.id === selectedCharId) || null;
+    const crisp = !!(sel && sel.canMoveOnWater);
+    waterLayerEl.style.filter = crisp ? 'none' : `blur(${hexLayout.hexWidth * 0.07}px)`;
+  }
+
+  function beginInteract() {
+    if (interactEndTimer) { clearTimeout(interactEndTimer); interactEndTimer = null; }
+    if (!interacting) { interacting = true; applyWaterBlur(); }
+  }
+
+  function endInteractSoon() {
+    if (interactEndTimer) clearTimeout(interactEndTimer);
+    interactEndTimer = setTimeout(() => {
+      interactEndTimer = null;
+      interacting = false;
+      applyWaterBlur();
+    }, 180);
+  }
 
   function tileMetrics() {
     // A tiny overlap on every hex tile so adjacent hexes' edges overlap by
@@ -1004,9 +1059,7 @@
     // character that can actually move on water; nothing can yet, so this
     // stays inactive until one exists. Toggling the persistent water layer's
     // blur is cheap — no rebuild.
-    const waterShouldBeCrisp = !!(selectedChar && selectedChar.canMoveOnWater);
-    const waterBlurPx = waterShouldBeCrisp ? 0 : hexLayout.hexWidth * 0.07;
-    waterLayerEl.style.filter = waterBlurPx > 0 ? `blur(${waterBlurPx}px)` : 'none';
+    applyWaterBlur();
 
     for (let y = 0; y < GRID_SIZE; y++) {
       for (let x = 0; x < GRID_SIZE; x++) {
@@ -1234,11 +1287,13 @@
       applyTransform();
       if (Math.abs(velX) < MIN_SPEED && Math.abs(velY) < MIN_SPEED) {
         inertiaFrame = null;
+        endInteractSoon();
         return;
       }
       inertiaFrame = requestAnimationFrame(step);
     }
     stopInertia();
+    beginInteract();
     inertiaFrame = requestAnimationFrame(step);
   }
 
@@ -1254,6 +1309,7 @@
   viewportEl.addEventListener('touchstart', (e) => {
     dragMoved = false;
     stopInertia();
+    beginInteract();
     velX = 0; velY = 0;
     if (e.touches.length === 1) {
       lastPanPoint = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -1300,6 +1356,8 @@
       lastPinchDist = null;
       if (dragMoved && (Math.abs(velX) > 0.02 || Math.abs(velY) > 0.02)) {
         startInertia();
+      } else {
+        endInteractSoon();
       }
     } else if (e.touches.length === 1) {
       lastPanPoint = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -1316,6 +1374,7 @@
     mouseMoved = false;
     lastMouse = { x: e.clientX, y: e.clientY };
     stopInertia();
+    beginInteract();
     velX = 0; velY = 0;
     lastMoveTime = performance.now();
   });
@@ -1337,14 +1396,18 @@
     tapWasDrag = mouseMoved;
     if (mouseMoved && (Math.abs(velX) > 0.02 || Math.abs(velY) > 0.02)) {
       startInertia();
+    } else {
+      endInteractSoon();
     }
   });
 
   viewportEl.addEventListener('wheel', (e) => {
     e.preventDefault();
     stopInertia();
+    beginInteract();
     const factor = e.deltaY < 0 ? 1.18 : 1 / 1.18;
     setZoom(cellSize * factor, e.clientX, e.clientY);
+    endInteractSoon();
   }, { passive: false });
 
   // ---- TURN SYSTEM ----
@@ -1933,6 +1996,35 @@
     centerOnPlayer();
     applyTransform();
     updateTurnUI();
+    startFpsMeter();
+  }
+
+  // ---- FPS / FPM METER ----
+  // A small on-screen readout of how smoothly the game is rendering, so
+  // performance can be judged on the real device. FPS is averaged over a
+  // ~500ms window; FPM (frames per minute) is that rate extrapolated. Tap
+  // the meter to hide it.
+  function startFpsMeter() {
+    const el = document.createElement('div');
+    el.id = 'fpsmeter';
+    el.textContent = '— FPS';
+    el.addEventListener('click', () => { el.style.display = 'none'; });
+    document.body.appendChild(el);
+
+    let frames = 0;
+    let windowStart = performance.now();
+    function loop(now) {
+      frames++;
+      const elapsed = now - windowStart;
+      if (elapsed >= 500) {
+        const fps = (frames * 1000) / elapsed;
+        el.textContent = `${Math.round(fps)} FPS · ${Math.round(fps * 60)} FPM`;
+        frames = 0;
+        windowStart = now;
+      }
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
   }
 
   window.addEventListener('resize', () => {
