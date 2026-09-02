@@ -320,7 +320,6 @@
     moistGrid = blobField([[3, 0.85, 1.0], [3, 0.0, 0.18]], 3.2, 1.25);
 
     tiles = [];
-    let bestC = 0, bestR = 0, bestScore = -Infinity;
     for (let c = 0; c < COLS; c++) {
       const col = [];
       for (let r = 0; r < ROWS; r++) {
@@ -333,7 +332,6 @@
         let t, feature = null;
         if (edge < shore - 1.1) { t = TERRA.ocean; }
         else if (edge < shore)  { t = TERRA.coast; }
-        else if (elev > 0.86) { t = TERRA.mountain; feature = 'mtn'; }
         else {
           if (heat < 0.15)      t = TERRA.snow;
           else if (heat < 0.32) t = TERRA.tundra;
@@ -348,18 +346,100 @@
         const water = (t === TERRA.ocean || t === TERRA.coast);
         col.push({ terrain: t, feature, heat, elev, water,
                    variant: (Math.random() * 6) | 0, fseed: Math.random() });
-
-        // Best start: temperate grassland, no feature, away from the edges.
-        if (!water && t === TERRA.grassland && !feature) {
-          const score = -Math.abs(heat - 0.45) * 4 + Math.min(edge, 5);
-          if (score > bestScore) { bestScore = score; bestC = c; bestR = r; }
-        }
       }
       tiles.push(col);
     }
-    startHex = { c: bestC, r: bestR };
 
-    // A few resource badges scattered on land, like Unciv's tile resources.
+    placeMountainRanges();
+    pickStartHex();
+    placeResources();
+  }
+
+  // Mountains come as RANGES, not lone peaks. A few seeds are dropped on high
+  // ground and each grows into a connected clump: usually 2-3 tiles, sometimes
+  // 4-5, rarely 6, and only very occasionally a single lonely peak.
+  function placeMountainRanges() {
+    const isMtn = (c, r) => tiles[c][r].terrain === TERRA.mountain;
+    // A tile may only join THIS range — never one that already touches a
+    // different range, so two ranges can never merge into one big blob.
+    const touchesOther = (c, r, mine) => {
+      for (const nb of neighbors(c, r)) {
+        if (isMtn(nb.c, nb.r) && !mine.has(nb.c + ',' + nb.r)) return true;
+      }
+      return false;
+    };
+    const usable = (c, r, mine) =>
+      !tiles[c][r].water && !isMtn(c, r) && !touchesOther(c, r, mine);
+
+    const ranges = 7 + ((Math.random() * 4) | 0);
+    for (let n = 0; n < ranges; n++) {
+      const mine = new Set();
+
+      // Scatter the seeds: sample random land tiles and prefer high ground,
+      // rather than always taking the single highest (which would pile every
+      // range into the same mountainous corner).
+      const cands = [];
+      for (let tries = 0; tries < 60; tries++) {
+        const c = (Math.random() * COLS) | 0, r = (Math.random() * ROWS) | 0;
+        if (usable(c, r, mine)) cands.push({ c, r });
+      }
+      if (!cands.length) continue;
+      const high = cands.filter(t => elevGrid[t.c][t.r] > 0.55);
+      const pool = high.length ? high : cands;
+      let cur = pool[(Math.random() * pool.length) | 0];
+
+      const roll = Math.random();
+      const size = roll < 0.05 ? 1 : roll < 0.50 ? 2 : roll < 0.80 ? 3
+                 : roll < 0.92 ? 4 : roll < 0.98 ? 5 : 6;
+
+      const range = [];
+      for (let i = 0; i < size; i++) {
+        tiles[cur.c][cur.r].terrain = TERRA.mountain;
+        tiles[cur.c][cur.r].feature = 'mtn';
+        tiles[cur.c][cur.r].res = null;
+        mine.add(cur.c + ',' + cur.r);
+        range.push(cur);
+
+        // Grow from anywhere along the range, favouring the highest ground so
+        // the chain follows a ridge instead of sprawling randomly.
+        const options = [];
+        for (const m of range) {
+          for (const nb of neighbors(m.c, m.r)) {
+            if (usable(nb.c, nb.r, mine)) options.push(nb);
+          }
+        }
+        if (!options.length) break;
+        options.sort((a, b) => elevGrid[b.c][b.r] - elevGrid[a.c][a.r]);
+        cur = options[(Math.random() * Math.min(3, options.length)) | 0];
+      }
+    }
+  }
+
+  // Start on temperate, open grassland well away from the map edge.
+  function pickStartHex() {
+    let bestC = -1, bestR = -1, bestScore = -Infinity;
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        const tl = tiles[c][r];
+        if (tl.water || tl.feature || tl.terrain !== TERRA.grassland) continue;
+        const edge = Math.min(c, r, COLS - 1 - c, ROWS - 1 - r);
+        const score = -Math.abs(tl.heat - 0.45) * 4 + Math.min(edge, 5);
+        if (score > bestScore) { bestScore = score; bestC = c; bestR = r; }
+      }
+    }
+    if (bestC < 0) {                       // fallback: any open land tile
+      outer:
+      for (let c = 0; c < COLS; c++) {
+        for (let r = 0; r < ROWS; r++) {
+          if (!tiles[c][r].water && tiles[c][r].feature !== 'mtn') { bestC = c; bestR = r; break outer; }
+        }
+      }
+    }
+    startHex = { c: bestC, r: bestR };
+  }
+
+  // A few resource badges scattered on land, like Unciv's tile resources.
+  function placeResources() {
     const RES = ['🐑', '🐄', '🍇', '🪨'];
     let placed = 0, guard = 0;
     while (placed < 14 && guard++ < 600) {
