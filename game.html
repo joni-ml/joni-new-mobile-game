@@ -41,8 +41,13 @@
   }
   /* Terrain decorations drawn on top of the tile color */
   .feat { position: absolute; }
-  .mtn  { clip-path: polygon(50% 0%, 100% 100%, 0% 100%); }
-  .pine { clip-path: polygon(50% 0%, 100% 100%, 0% 100%); }
+  /* A layered conifer with a trunk, drawn as ONE clip-path (1 node/tree) */
+  .pine { clip-path: polygon(50% 0%, 72% 28%, 60% 28%, 80% 56%, 66% 56%, 88% 84%,
+          57% 84%, 57% 100%, 43% 100%, 43% 84%, 12% 84%, 34% 56%, 20% 56%,
+          40% 28%, 28% 28%); }
+  /* A two-peak mountain range silhouette */
+  .mtn  { clip-path: polygon(0% 100%, 22% 42%, 38% 66%, 56% 20%, 76% 60%, 100% 100%); }
+  .cap  { clip-path: polygon(50% 0%, 100% 100%, 0% 100%); }
   .hill { border-radius: 50% 50% 0 0; }
   .rock { border-radius: 40% 45% 35% 50%; }
 
@@ -183,9 +188,9 @@
 </div>
 
 <div id="research">
-  <div class="ricon">🐖</div>
+  <div class="ricon">🏺</div>
   <div>
-    <div class="rname">Animal Husbandry</div>
+    <div class="rname">Pottery</div>
     <div class="rturns">4 turns</div>
   </div>
 </div>
@@ -210,7 +215,7 @@
   "use strict";
 
   // ---- CONFIG ----
-  const COLS = 28, ROWS = 26;
+  const COLS = 30, ROWS = 30;
   const BASE_HEX = 100;
 
   const viewportEl = document.getElementById('viewport');
@@ -240,14 +245,14 @@
 
   // ---- TERRAIN PALETTE (colors sampled from Unciv) ----
   const TERRA = {
-    ocean:     { name: 'Ocean',     col: '#3f8f9c' },
-    coast:     { name: 'Coast',     col: '#5eabb3' },
-    snow:      { name: 'Snow',      col: '#dcf0f0' },
-    tundra:    { name: 'Tundra',    col: '#9aa694' },
-    grassland: { name: 'Grassland', col: '#6f9146' },
-    plains:    { name: 'Plains',    col: '#a89a52' },
-    desert:    { name: 'Desert',    col: '#bd936b' },
-    mountain:  { name: 'Mountains', col: '#859092' },
+    ocean:     { name: 'Ocean',     col: '#3d8a97' },
+    coast:     { name: 'Coast',     col: '#5fb0b8' },
+    snow:      { name: 'Snow',      col: '#e2f2f2' },
+    tundra:    { name: 'Tundra',    col: '#9fa892' },
+    grassland: { name: 'Grassland', col: '#6d9a44' },
+    plains:    { name: 'Plains',    col: '#b0a055' },
+    desert:    { name: 'Desert',    col: '#c69a70' },
+    mountain:  { name: 'Mountains', col: '#8b9698' },
   };
 
   // ---- MAP GENERATION ----
@@ -296,9 +301,14 @@
       const col = [];
       for (let r = 0; r < ROWS; r++) {
         const heat = heatGrid[c][r], elev = elevGrid[c][r];
+        // One solid continent: ocean only rings the outside of the map, so
+        // no lakes or seas ever break up the middle. The shoreline wobbles
+        // with the elevation field so the coast isn't a straight rectangle.
+        const edge = Math.min(c, r, COLS - 1 - c, ROWS - 1 - r);
+        const shore = 2.4 + (elev - 0.5) * 2.2;
         let t, feature = null;
-        if (elev < 0.20)      { t = TERRA.ocean; }
-        else if (elev < 0.28) { t = TERRA.coast; }
+        if (edge < shore - 1.1) { t = TERRA.ocean; }
+        else if (edge < shore)  { t = TERRA.coast; }
         else if (elev > 0.86) { t = TERRA.mountain; feature = 'mtn'; }
         else {
           if (heat < 0.15)      t = TERRA.snow;
@@ -316,7 +326,6 @@
 
         // Best start: temperate grassland, no feature, away from the edges.
         if (!water && t === TERRA.grassland && !feature) {
-          const edge = Math.min(c, r, COLS - 1 - c, ROWS - 1 - r);
           const score = -Math.abs(heat - 0.45) * 4 + Math.min(edge, 5);
           if (score > bestScore) { bestScore = score; bestC = c; bestR = r; }
         }
@@ -326,7 +335,7 @@
     startHex = { c: bestC, r: bestR };
 
     // A few resource badges scattered on land, like Unciv's tile resources.
-    const RES = ['🐑', '🐄', '🍇', '🪨', '🌾', '🐖'];
+    const RES = ['🐑', '🐄', '🍇', '🪨'];
     let placed = 0, guard = 0;
     while (placed < 14 && guard++ < 600) {
       const c = (Math.random() * COLS) | 0, r = (Math.random() * ROWS) | 0;
@@ -386,24 +395,31 @@
 
   function addFeature(hex, tl, w, h) {
     if (tl.feature === 'mtn') {
-      mk('mtn', hex, { left: w * 0.16 + 'px', top: h * 0.22 + 'px',
-        width: w * 0.42 + 'px', height: h * 0.52 + 'px', background: '#6f797b' });
-      mk('mtn', hex, { left: w * 0.44 + 'px', top: h * 0.12 + 'px',
-        width: w * 0.46 + 'px', height: h * 0.66 + 'px', background: '#98a2a4' });
-      mk('mtn', hex, { left: w * 0.56 + 'px', top: h * 0.14 + 'px',
-        width: w * 0.22 + 'px', height: h * 0.22 + 'px', background: '#e6f0f0' });
+      // A back ridge and a lighter front range, with a snow cap on the peak.
+      mk('mtn', hex, { left: w * 0.10 + 'px', top: h * 0.16 + 'px',
+        width: w * 0.58 + 'px', height: h * 0.62 + 'px', background: '#6d777a' });
+      mk('mtn', hex, { left: w * 0.34 + 'px', top: h * 0.24 + 'px',
+        width: w * 0.60 + 'px', height: h * 0.56 + 'px', background: '#9aa4a6' });
+      mk('cap', hex, { left: w * 0.55 + 'px', top: h * 0.245 + 'px',
+        width: w * 0.15 + 'px', height: h * 0.14 + 'px', background: '#eef6f6' });
     } else if (tl.feature === 'hill') {
-      mk('hill', hex, { left: w * 0.20 + 'px', top: h * 0.44 + 'px',
-        width: w * 0.34 + 'px', height: h * 0.26 + 'px', background: 'rgba(0,0,0,0.20)' });
-      mk('hill', hex, { left: w * 0.48 + 'px', top: h * 0.38 + 'px',
-        width: w * 0.36 + 'px', height: h * 0.30 + 'px', background: 'rgba(0,0,0,0.14)' });
+      mk('hill', hex, { left: w * 0.18 + 'px', top: h * 0.46 + 'px',
+        width: w * 0.36 + 'px', height: h * 0.26 + 'px', background: 'rgba(0,0,0,0.20)' });
+      mk('hill', hex, { left: w * 0.46 + 'px', top: h * 0.40 + 'px',
+        width: w * 0.38 + 'px', height: h * 0.30 + 'px', background: 'rgba(0,0,0,0.13)' });
+      mk('hill', hex, { left: w * 0.50 + 'px', top: h * 0.42 + 'px',
+        width: w * 0.16 + 'px', height: h * 0.12 + 'px', background: 'rgba(255,255,255,0.16)' });
     } else if (tl.feature === 'forest') {
-      const spots = [[0.22, 0.42], [0.44, 0.28], [0.62, 0.46], [0.36, 0.58]];
-      spots.forEach((s, i) => {
-        mk('pine', hex, { left: w * s[0] + 'px', top: h * s[1] + 'px',
-          width: w * 0.19 + 'px', height: h * 0.30 + 'px',
-          background: i % 2 ? '#33582c' : '#3f6a33' });
-      });
+      // Three layered conifers, staggered and slightly different sizes/greens.
+      const trees = [
+        { x: 0.18, y: 0.34, s: 0.30, col: '#2f5b2a' },
+        { x: 0.44, y: 0.20, s: 0.36, col: '#3d7034' },
+        { x: 0.60, y: 0.42, s: 0.28, col: '#345f2c' },
+      ];
+      for (const t of trees) {
+        mk('pine', hex, { left: w * t.x + 'px', top: h * t.y + 'px',
+          width: w * t.s + 'px', height: h * (t.s * 1.5) + 'px', background: t.col });
+      }
     } else if (tl.feature === 'rock') {
       mk('rock', hex, { left: w * 0.30 + 'px', top: h * 0.46 + 'px',
         width: w * 0.20 + 'px', height: h * 0.16 + 'px', background: 'rgba(255,255,255,0.30)' });
