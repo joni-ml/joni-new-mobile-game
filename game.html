@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Hex Board</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; width: 100%;
+    background: #0a0b0d; color: #eee;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden; touch-action: none; user-select: none;
+  }
+  #viewport {
+    position: fixed; inset: 0; overflow: hidden;
+    background: #1d2733; touch-action: none;
+  }
+  /* The whole board is one GPU-composited layer, so pan/zoom is a pure
+     transform with no per-tile repaint. Flat tiles, no filters — fast. */
+  #board {
+    position: absolute; top: 50%; left: 50%;
+    transform-origin: top left;
+    will-change: transform;
+    backface-visibility: hidden;
+  }
+  .hex {
+    position: absolute;
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+  }
+  #cursor {
+    position: absolute;
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    background: rgba(255, 255, 255, 0.35);
+    pointer-events: none;
+    display: none;
+    z-index: 5;
+  }
+  #fps {
+    position: fixed; top: env(safe-area-inset-top, 0px); left: 0; margin: 6px;
+    z-index: 20; background: rgba(0,0,0,0.55); color: #4ade80;
+    font-family: ui-monospace, Menlo, monospace; font-size: 11px; font-weight: 700;
+    padding: 4px 7px; border-radius: 6px;
+  }
+  #hint {
+    position: fixed; bottom: env(safe-area-inset-bottom, 0px); left: 0; right: 0;
+    text-align: center; font-size: 11px; opacity: 0.45; padding: 10px; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="viewport">
+  <div id="board"></div>
+</div>
+<div id="fps">— FPS</div>
+<div id="hint">drag to pan · pinch to zoom · tap a hex</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- CONFIG ----
+  const COLS = 24;            // hexes across
+  const ROWS = 24;            // hexes down
+  const BASE_HEX = 100;       // base hex width in board pixels (zoom scales this)
+
+  const viewportEl = document.getElementById('viewport');
+  const boardEl = document.getElementById('board');
+  const cursorEl = document.createElement('div');
+  cursorEl.id = 'cursor';
+
+  // ---- HEX GEOMETRY (flat-top hexagons, odd-q vertical layout) ----
+  // Flat-top hex: width W, height H = W * sqrt(3)/2. Columns step by 0.75*W
+  // horizontally; odd columns are pushed down half a hex.
+  const HEX_H_RATIO = 0.8660254;
+
+  function computeLayout(hexW) {
+    const hexH = hexW * HEX_H_RATIO;
+    const stepX = hexW * 0.75;
+    const positions = [];
+    let maxX = 0, maxY = 0;
+    for (let c = 0; c < COLS; c++) {
+      const col = [];
+      for (let r = 0; r < ROWS; r++) {
+        const cx = c * stepX + hexW / 2;
+        const cy = r * hexH + (c % 2 ? hexH : hexH / 2);
+        col.push({ cx, cy });
+        if (cx + hexW / 2 > maxX) maxX = cx + hexW / 2;
+        if (cy + hexH / 2 > maxY) maxY = cy + hexH / 2;
+      }
+      positions.push(col);
+    }
+    return { hexW, hexH, positions, boardW: maxX, boardH: maxY };
+  }
+
+  const layout = computeLayout(BASE_HEX);
+
+  // Flat tile color — a gentle per-tile variation so the surface isn't a
+  // single flat slab, but each tile is a solid color (no gradients/filters).
+  function tileColor(c, r) {
+    const n = Math.sin(c * 0.9 + r * 0.5) * 0.5
+            + Math.sin(c * 0.35 - r * 0.8) * 0.3
+            + Math.sin((c + r) * 0.6) * 0.2;
+    const t = (n + 1) / 2;                 // 0..1
+    const hue = 120 + t * 30;              // greens
+    const light = 32 + t * 14;
+    return `hsl(${hue.toFixed(1)}, 42%, ${light.toFixed(0)}%)`;
+  }
+
+  // ---- BUILD THE BOARD ONCE ----
+  // A small overlap hides hairline seams between adjacent clipped hexes.
+  function buildBoard() {
+    boardEl.style.width = layout.boardW + 'px';
+    boardEl.style.height = layout.boardH + 'px';
+    boardEl.innerHTML = '';
+    const overlap = layout.hexW * 0.02;
+    const tileW = layout.hexW + overlap;
+    const tileH = layout.hexH + overlap;
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        const p = layout.positions[c][r];
+        const hex = document.createElement('div');
+        hex.className = 'hex';
+        hex.style.width = tileW + 'px';
+        hex.style.height = tileH + 'px';
+        hex.style.left = (p.cx - tileW / 2) + 'px';
+        hex.style.top = (p.cy - tileH / 2) + 'px';
+        hex.style.background = tileColor(c, r);
+        boardEl.appendChild(hex);
+      }
+    }
+    // Selection cursor, sized to one hex, moved into place on tap.
+    cursorEl.style.width = tileW + 'px';
+    cursorEl.style.height = tileH + 'px';
+    boardEl.appendChild(cursorEl);
+  }
+
+  // ---- PAN / ZOOM ----
+  let cellSize = BASE_HEX;   // current hex width (drives scale)
+  let panX = 0, panY = 0;
+  let minCell = 20, maxCell = 200;
+
+  function computeZoomBounds() {
+    const shortSide = Math.min(viewportEl.clientWidth, viewportEl.clientHeight);
+    minCell = shortSide / (Math.min(COLS, ROWS) * 0.9);
+    maxCell = shortSide / 2.5;
+  }
+
+  function clampPan() {
+    const scale = cellSize / BASE_HEX;
+    const renderedW = layout.boardW * scale;
+    const renderedH = layout.boardH * scale;
+    const margin = BASE_HEX * scale;
+    const centerX = (layout.boardW / 2) * (1 - scale);
+    const centerY = (layout.boardH / 2) * (1 - scale);
+    const slackX = Math.max(margin, (renderedW - viewportEl.clientWidth) / 2 + margin);
+    const slackY = Math.max(margin, (renderedH - viewportEl.clientHeight) / 2 + margin);
+    panX = Math.max(centerX - slackX, Math.min(centerX + slackX, panX));
+    panY = Math.max(centerY - slackY, Math.min(centerY + slackY, panY));
+  }
+
+  function applyTransform() {
+    const scale = cellSize / BASE_HEX;
+    boardEl.style.transform =
+      `translate(-50%, -50%) translate(${panX}px, ${panY}px) scale(${scale}) translateZ(0)`;
+  }
+
+  // Coalesce pan/zoom writes to one per animation frame (touch fires faster
+  // than the display refreshes).
+  let scheduled = false;
+  function scheduleTransform() {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(() => { scheduled = false; clampPan(); applyTransform(); });
+  }
+
+  function setZoom(newCell, ax, ay) {
+    newCell = Math.max(minCell, Math.min(maxCell, newCell));
+    const rect = viewportEl.getBoundingClientRect();
+    if (ax === undefined) { ax = rect.left + rect.width / 2; ay = rect.top + rect.height / 2; }
+    const vx = ax - rect.left - rect.width / 2;
+    const vy = ay - rect.top - rect.height / 2;
+    const oldScale = cellSize / BASE_HEX;
+    const bx = (vx - panX + layout.boardW / 2) / oldScale;
+    const by = (vy - panY + layout.boardH / 2) / oldScale;
+    cellSize = newCell;
+    const s = cellSize / BASE_HEX;
+    panX = vx - s * bx + layout.boardW / 2;
+    panY = vy - s * by + layout.boardH / 2;
+    clampPan();
+    scheduleTransform();
+  }
+
+  function centerBoard() {
+    panX = (layout.boardW / 2) * (1 - cellSize / BASE_HEX);
+    panY = (layout.boardH / 2) * (1 - cellSize / BASE_HEX);
+    clampPan();
+  }
+
+  // ---- HIT TESTING (screen point -> hex) ----
+  function hexAtClient(clientX, clientY) {
+    const rect = viewportEl.getBoundingClientRect();
+    const scale = cellSize / BASE_HEX;
+    const vx = clientX - rect.left - rect.width / 2;
+    const vy = clientY - rect.top - rect.height / 2;
+    const bx = (vx - panX + layout.boardW / 2) / scale;
+    const by = (vy - panY + layout.boardH / 2) / scale;
+    let best = null, bestD = Infinity;
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        const p = layout.positions[c][r];
+        const dx = p.cx - bx, dy = p.cy - by, d = dx * dx + dy * dy;
+        if (d < bestD) { bestD = d; best = { c, r }; }
+      }
+    }
+    if (!best || Math.sqrt(bestD) > layout.hexW * 0.6) return null;
+    return best;
+  }
+
+  function selectHex(c, r) {
+    const p = layout.positions[c][r];
+    cursorEl.style.left = (p.cx - parseFloat(cursorEl.style.width) / 2) + 'px';
+    cursorEl.style.top = (p.cy - parseFloat(cursorEl.style.height) / 2) + 'px';
+    cursorEl.style.display = 'block';
+  }
+
+  // ---- INPUT ----
+  let lastPan = null, lastPinch = null, moved = false, downTime = 0, downPt = null;
+
+  viewportEl.addEventListener('touchstart', (e) => {
+    moved = false;
+    if (e.touches.length === 1) {
+      lastPan = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      downPt = lastPan; downTime = Date.now(); lastPinch = null;
+    } else if (e.touches.length === 2) {
+      lastPinch = dist(e.touches[0], e.touches[1]); lastPan = null;
+    }
+  }, { passive: true });
+
+  viewportEl.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 1 && lastPan) {
+      const dx = e.touches[0].clientX - lastPan.x;
+      const dy = e.touches[0].clientY - lastPan.y;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
+      panX += dx; panY += dy;
+      lastPan = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      scheduleTransform();
+    } else if (e.touches.length === 2) {
+      moved = true;
+      const d = dist(e.touches[0], e.touches[1]);
+      const mid = { x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+                    y: (e.touches[0].clientY + e.touches[1].clientY) / 2 };
+      if (lastPinch) setZoom(cellSize * Math.pow(d / lastPinch, 1.4), mid.x, mid.y);
+      lastPinch = d;
+    }
+  }, { passive: true });
+
+  viewportEl.addEventListener('touchend', (e) => {
+    if (e.touches.length === 0) {
+      if (!moved && downPt && Date.now() - downTime < 300) {
+        const hit = hexAtClient(downPt.x, downPt.y);
+        if (hit) selectHex(hit.c, hit.r);
+      }
+      lastPan = null; lastPinch = null;
+    } else if (e.touches.length === 1) {
+      lastPan = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      lastPinch = null;
+    }
+  }, { passive: true });
+
+  // Mouse (desktop)
+  let mouseDown = false, mouseMoved = false, lastMouse = null, mouseDownPt = null;
+  viewportEl.addEventListener('mousedown', (e) => {
+    mouseDown = true; mouseMoved = false;
+    lastMouse = { x: e.clientX, y: e.clientY }; mouseDownPt = lastMouse;
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!mouseDown) return;
+    const dx = e.clientX - lastMouse.x, dy = e.clientY - lastMouse.y;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) mouseMoved = true;
+    panX += dx; panY += dy;
+    lastMouse = { x: e.clientX, y: e.clientY };
+    scheduleTransform();
+  });
+  window.addEventListener('mouseup', (e) => {
+    if (mouseDown && !mouseMoved && mouseDownPt) {
+      const hit = hexAtClient(mouseDownPt.x, mouseDownPt.y);
+      if (hit) selectHex(hit.c, hit.r);
+    }
+    mouseDown = false; lastMouse = null;
+  });
+  viewportEl.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    setZoom(cellSize * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.clientX, e.clientY);
+  }, { passive: false });
+
+  function dist(a, b) {
+    const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  // ---- FPS METER ----
+  function startFps() {
+    const el = document.getElementById('fps');
+    let frames = 0, start = performance.now();
+    function loop(now) {
+      frames++;
+      if (now - start >= 500) {
+        el.textContent = Math.round((frames * 1000) / (now - start)) + ' FPS';
+        frames = 0; start = now;
+      }
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+  }
+
+  // ---- INIT ----
+  function init() {
+    computeZoomBounds();
+    cellSize = Math.min(maxCell, minCell * 1.4);
+    buildBoard();
+    centerBoard();
+    applyTransform();
+    startFps();
+  }
+
+  window.addEventListener('resize', () => {
+    computeZoomBounds();
+    cellSize = Math.max(minCell, Math.min(maxCell, cellSize));
+    clampPan();
+    applyTransform();
+  });
+
+  init();
+})();
+</script>
+</body>
+</html>
