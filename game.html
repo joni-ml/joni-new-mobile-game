@@ -769,8 +769,20 @@
   // Tapping: a reachable tile moves the unit (spending points), the unit's own
   // tile toggles selection, anything else just inspects the tile.
   function onTapHex(c, r) {
-    const k = c + ',' + r;
-    if (unitSelected && reachable.has(k)) {
+    // The unit's own tile toggles selection on and off.
+    if (c === unit.c && r === unit.r) {
+      unitSelected = !unitSelected;
+      if (unitSelected) computeReachable();
+      renderMoves();
+      selectHex(c, r);
+      return;
+    }
+    if (unitSelected) {
+      // While a unit is selected, only reachable tiles do anything. Tapping
+      // anywhere it cannot go is ignored completely, so the selection and its
+      // dots stay on screen instead of being cancelled by a stray tap.
+      const k = c + ',' + r;
+      if (!reachable.has(k)) return;
       unit.moves -= reachable.get(k);
       unit.c = c; unit.r = r;
       placeUnit();
@@ -778,15 +790,10 @@
       renderMoves();
       updateUnitBar();
       if (unit.moves <= 0) { unitSelected = false; renderMoves(); }
-    } else if (c === unit.c && r === unit.r) {
-      unitSelected = !unitSelected;
-      if (unitSelected) computeReachable();
-      renderMoves();
-    } else {
-      unitSelected = false;
-      renderMoves();
+      selectHex(c, r);
+      return;
     }
-    selectHex(c, r);
+    selectHex(c, r);       // nothing selected — just inspect the tile
   }
   function placeUnit() {
     const p = layout.positions[unit.c][unit.r];
@@ -880,9 +887,11 @@
 
   // ---- INPUT ----
   let lastPan = null, lastPinch = null, moved = false, downPt = null, downT = 0;
+  let lastTouchAt = 0;   // guards against tap-synthesised mouse events
   function dist(a, b) { const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY; return Math.hypot(dx, dy); }
 
   viewportEl.addEventListener('touchstart', (e) => {
+    lastTouchAt = Date.now();
     moved = false;
     if (e.touches.length === 1) {
       lastPan = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -908,6 +917,7 @@
   }, { passive: true });
 
   viewportEl.addEventListener('touchend', (e) => {
+    lastTouchAt = Date.now();
     if (e.touches.length === 0) {
       if (!moved && downPt && Date.now() - downT < 300) {
         const h = hexAtClient(downPt.x, downPt.y);
@@ -921,6 +931,7 @@
 
   let mDown = false, mMoved = false, mLast = null, mDownPt = null;
   viewportEl.addEventListener('mousedown', (e) => {
+    if (Date.now() - lastTouchAt < 700) return;   // synthesised from a tap
     mDown = true; mMoved = false; mLast = { x: e.clientX, y: e.clientY }; mDownPt = mLast;
   });
   window.addEventListener('mousemove', (e) => {
@@ -932,6 +943,7 @@
     scheduleTransform();
   });
   window.addEventListener('mouseup', () => {
+    if (Date.now() - lastTouchAt < 700) { mDown = false; mLast = null; return; }
     if (mDown && !mMoved && mDownPt) {
       const h = hexAtClient(mDownPt.x, mDownPt.y);
       if (h) onTapHex(h.c, h.r);
