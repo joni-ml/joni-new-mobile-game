@@ -25,7 +25,9 @@
   /* ---- MAP ---- */
   #viewport {
     position: fixed; inset: 0; overflow: hidden;
-    background: #0d2233;               /* shows between tiles as hex outlines */
+    /* Unexplored world is simply this background showing through, and it
+       also forms the thin outline between tiles. */
+    background: #05090f;
     touch-action: none;
   }
   #board {
@@ -373,7 +375,10 @@
         // One solid continent: ocean only rings the outside of the map, so
         // no lakes or seas ever break up the middle. The shoreline wobbles
         // with the elevation field so the coast isn't a straight rectangle.
-        const edge = Math.min(c, r, COLS - 1 - c, ROWS - 1 - r);
+        // Only north and south have an edge — east-west the world wraps, so
+        // putting ocean there would cut the continent with a strange band of
+        // sea and beach running down the middle of the world.
+        const edge = Math.min(r, ROWS - 1 - r);
         const shore = 2.4 + (elev - 0.5) * 2.2;
         let t, feature = null;
         if (edge < shore - 1.1) { t = TERRA.ocean; }
@@ -468,7 +473,7 @@
       for (let r = 0; r < ROWS; r++) {
         const tl = tiles[c][r];
         if (tl.water || tl.feature || tl.terrain !== TERRA.grassland) continue;
-        const edge = Math.min(c, r, COLS - 1 - c, ROWS - 1 - r);
+        const edge = Math.min(r, ROWS - 1 - r);
         const score = -Math.abs(tl.heat - 0.45) * 4 + Math.min(edge, 5);
         if (score > bestScore) { bestScore = score; bestC = c; bestR = r; }
       }
@@ -661,7 +666,11 @@
     // One wrapper per column. Every element that belongs to a column (tiles,
     // shoreline, fog, units, cities, move dots) goes inside it, so shifting
     // the wrapper wraps that whole strip of the world at once.
-    colWrap = [];
+    colWrap = []; hexEls = []; sandEls = [];
+    for (let c = 0; c < COLS; c++) {
+      hexEls.push(new Array(ROWS).fill(null));
+      sandEls.push(new Array(ROWS).fill(null));
+    }
     for (let c = 0; c < COLS; c++) {
       const w = document.createElement('div');
       Object.assign(w.style, { position: 'absolute', left: '0', top: '0', width: '0', height: '0' });
@@ -687,6 +696,7 @@
           background: '#efd9a4',
         });
         colWrap[c].appendChild(sand);
+        sandEls[c][r] = sand;
       }
     }
 
@@ -705,6 +715,7 @@
         addFeature(hex, tl);
         if (tl.res) addResource(hex, tl.res, tileW, tileH);
         colWrap[c].appendChild(hex);
+        hexEls[c][r] = hex;
       }
     }
     cursorEl.style.width = tileW + 'px';
@@ -915,8 +926,26 @@
       for (let r = 0; r < ROWS; r++) {
         const seenNow = vis.has(c + ',' + r);
         if (seenNow) tiles[c][r].seen = true;
-        const want = seenNow ? 0 : (tiles[c][r].seen ? 0.45 : 1);
         const el = fogEls[c][r];
+
+        // Never-seen tiles are drawn as nothing at all — no terrain, no
+        // shoreline, not even a fog panel. The dark page behind shows through
+        // as unexplored. At the start that is ~97% of the map, so the browser
+        // paints a couple of dozen tiles instead of nine hundred.
+        const known = tiles[c][r].seen;
+        if (el._known !== known) {
+          el._known = known;
+          const show = known ? '' : 'none';
+          if (hexEls[c][r]) hexEls[c][r].style.display = show;
+          if (sandEls[c][r]) sandEls[c][r].style.display = show;
+        }
+        if (!known) {
+          el._o = 1;
+          if (el.style.display !== 'none') el.style.display = 'none';
+          continue;
+        }
+
+        const want = seenNow ? 0 : 0.45;
         if (el._o === want) continue;
         el._o = want;
         if (want === 0) {
@@ -1083,7 +1112,10 @@
     // Because the world wraps with a single copy of each column, you can never
     // zoom out past one full world width — otherwise the world would be
     // narrower than the screen and leave empty strips at the seam.
-    minCell = (BASE_HEX * vw / layout.worldW) * 1.03;
+    // 1.35 so a column only ever jumps to its other copy well outside the
+    // screen — at exactly one world width the jump happens on the edge and
+    // you see tiles popping while panning or zooming.
+    minCell = (BASE_HEX * vw / layout.worldW) * 1.35;
     maxCell = Math.min(vw, vh) / 2.2;
     if (maxCell < minCell * 1.4) maxCell = minCell * 1.4;
   }
@@ -1105,7 +1137,7 @@
   // world to the left, here, or one to the right) is nearest the viewport is
   // the one we draw — so you can keep dragging forever and the map repeats
   // seamlessly, with no visible edge. Only 30 transforms, no cloned tiles.
-  let colWrap = [];
+  let colWrap = [], hexEls = [], sandEls = [];
   function updateWrap() {
     if (!colWrap.length) return;
     const s = cellSize / BASE_HEX;
