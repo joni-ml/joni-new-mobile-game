@@ -3,22 +3,31 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Hex Board</title>
+<title>Hex Empire</title>
 <style>
-  :root { color-scheme: dark; }
+  :root {
+    color-scheme: dark;
+    --bar: #042342;
+    --panel: rgba(12, 38, 68, 0.94);
+    --stroke: #17456f;
+    --accent: #2f6bb3;
+    --accent-hi: #3d82d4;
+    --ink: #eaf1f8;
+  }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
     margin: 0; padding: 0; height: 100%; width: 100%;
-    background: #0a0b0d; color: #eee;
+    background: #061424; color: var(--ink);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     overflow: hidden; touch-action: none; user-select: none;
   }
+
+  /* ---- MAP ---- */
   #viewport {
     position: fixed; inset: 0; overflow: hidden;
-    background: #1d2733; touch-action: none;
+    background: #0d2233;               /* shows between tiles as hex outlines */
+    touch-action: none;
   }
-  /* The whole board is one GPU-composited layer, so pan/zoom is a pure
-     transform with no per-tile repaint. Flat tiles, no filters — fast. */
   #board {
     position: absolute; top: 50%; left: 50%;
     transform-origin: top left;
@@ -28,316 +37,515 @@
   .hex {
     position: absolute;
     clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    overflow: hidden;
+  }
+  /* Terrain decorations drawn on top of the tile color */
+  .feat { position: absolute; }
+  .mtn  { clip-path: polygon(50% 0%, 100% 100%, 0% 100%); }
+  .pine { clip-path: polygon(50% 0%, 100% 100%, 0% 100%); }
+  .hill { border-radius: 50% 50% 0 0; }
+  .rock { border-radius: 40% 45% 35% 50%; }
+
+  /* Resource badge, like Unciv's circular tile icons */
+  .res {
+    position: absolute;
+    border-radius: 50%;
+    background: #10151c;
+    border: 2px solid #f2f4f7;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; line-height: 1;
+  }
+  /* Unit token */
+  .unit {
+    position: absolute;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #4d86d6, #1f4c8f);
+    border: 2px solid #cfe0f5;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; line-height: 1;
+    box-shadow: 0 3px 0 rgba(0,0,0,0.45), 0 6px 7px rgba(0,0,0,0.45);
+    z-index: 6;
   }
   #cursor {
     position: absolute;
     clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
-    background: rgba(255, 255, 255, 0.35);
-    pointer-events: none;
+    background: rgba(255,255,255,0.22);
+    box-shadow: inset 0 0 0 3px rgba(255,255,255,0.75);
+    pointer-events: none; display: none; z-index: 5;
+  }
+
+  /* ---- TOP BAR ---- */
+  #topbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 30;
+    background: var(--bar);
+    border-bottom: 1px solid #0a2f52;
+    padding: calc(env(safe-area-inset-top, 0px) + 6px) 8px 4px;
+  }
+  #toprow { display: flex; align-items: center; gap: 8px; }
+  #menuBtn {
+    background: none; border: none; color: var(--ink); font-size: 18px;
+    padding: 2px 4px; line-height: 1;
+  }
+  #civ { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 14px; }
+  #civ .emblem {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #1e5fa8; display: flex; align-items: center; justify-content: center; font-size: 12px;
+  }
+  #stats {
+    flex: 1; display: flex; justify-content: center; gap: 10px;
+    font-size: 12px; font-weight: 700; white-space: nowrap;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  #stats::-webkit-scrollbar { display: none; }
+  #stats .stat { display: flex; align-items: center; gap: 3px; }
+  #stats .delta { font-size: 10px; opacity: 0.85; }
+  #overviewBtn {
+    background: #123a63; color: var(--ink); border: 1px solid var(--stroke);
+    border-radius: 14px; padding: 5px 12px; font-size: 12px; font-weight: 600;
+  }
+  #turnline { text-align: center; font-size: 11px; opacity: 0.85; padding-top: 2px; }
+
+  /* ---- SIDE PANELS ---- */
+  #research {
+    position: fixed; left: 8px; z-index: 25;
+    background: var(--panel); border: 1px solid var(--stroke); border-radius: 8px;
+    padding: 6px 8px; display: flex; align-items: center; gap: 8px; font-size: 12px;
+  }
+  #research .ricon {
+    width: 26px; height: 26px; border-radius: 6px; background: #0b2c4c;
+    display: flex; align-items: center; justify-content: center; font-size: 15px;
+  }
+  #research .rname { font-weight: 600; }
+  #research .rturns { opacity: 0.75; font-size: 11px; }
+
+  #nextTurn {
+    position: fixed; right: 8px; z-index: 25;
+    background: var(--accent); color: #fff; border: 1px solid var(--accent-hi);
+    border-radius: 10px; padding: 12px 16px; font-size: 15px; font-weight: 700;
+    display: flex; align-items: center; gap: 8px;
+    box-shadow: 0 3px 0 #1b4576;
+  }
+  #nextTurn:active { transform: translateY(2px); box-shadow: 0 1px 0 #1b4576; }
+
+  #notice {
+    position: fixed; right: 8px; z-index: 25; max-width: 62%;
+    background: #f3f6fa; color: #10233a; border-radius: 12px;
+    padding: 6px 10px; font-size: 11px; font-weight: 600;
     display: none;
-    z-index: 5;
   }
+
+  #unitsBar {
+    position: fixed; left: 8px; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    z-index: 25; background: var(--panel); border: 1px solid var(--stroke);
+    border-radius: 12px; padding: 8px 10px; display: flex; align-items: center; gap: 10px;
+    font-size: 13px; font-weight: 600;
+  }
+  #unitsBar .nav { opacity: 0.7; }
+  #unitsBar .uname { min-width: 92px; text-align: center; }
+
+  #minimapWrap {
+    position: fixed; right: 8px; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    z-index: 25; background: var(--panel); border: 1px solid var(--stroke);
+    border-radius: 8px; padding: 4px;
+  }
+  #minimap { display: block; border-radius: 4px; }
+  #mmView {
+    position: absolute; border: 1px solid #fff; border-radius: 2px;
+    pointer-events: none; box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+  }
+
   #fps {
-    position: fixed; top: env(safe-area-inset-top, 0px); left: 0; margin: 6px;
-    z-index: 20; background: rgba(0,0,0,0.55); color: #4ade80;
-    font-family: ui-monospace, Menlo, monospace; font-size: 11px; font-weight: 700;
-    padding: 4px 7px; border-radius: 6px;
+    position: fixed; left: 8px; z-index: 25;
+    background: rgba(0,0,0,0.5); color: #4ade80;
+    font-family: ui-monospace, Menlo, monospace; font-size: 10px; font-weight: 700;
+    padding: 3px 6px; border-radius: 5px;
   }
-  #hint {
-    position: fixed; bottom: env(safe-area-inset-bottom, 0px); left: 0; right: 0;
-    text-align: center; font-size: 11px; opacity: 0.45; padding: 10px; pointer-events: none;
-  }
-  #legend {
-    position: fixed; right: 0; top: env(safe-area-inset-top, 0px); margin: 6px;
-    z-index: 20; background: rgba(0,0,0,0.5); border-radius: 8px; padding: 6px 8px;
-    font-size: 10px; color: #ddd; display: flex; flex-direction: column; gap: 4px; align-items: stretch;
-  }
-  #legend .bar {
-    width: 130px; height: 10px; border-radius: 5px;
-    background: linear-gradient(to right,
-      hsl(205,18%,88%), hsl(150,16%,60%), hsl(110,42%,40%),
-      hsl(80,45%,46%), hsl(52,52%,52%), hsl(40,60%,62%));
-  }
-  #legend .labels { display: flex; justify-content: space-between; opacity: 0.8; }
-  #temp {
-    position: fixed; right: 0; top: calc(env(safe-area-inset-top, 0px) + 54px); margin: 6px;
-    z-index: 20; background: rgba(0,0,0,0.5); border-radius: 8px; padding: 4px 8px;
-    font-size: 11px; color: #fff; display: none;
+  #tileInfo {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+    z-index: 25; background: var(--panel); border: 1px solid var(--stroke);
+    border-radius: 8px; padding: 5px 12px; font-size: 12px; display: none;
   }
 </style>
 </head>
 <body>
-<div id="viewport">
-  <div id="board"></div>
+
+<div id="viewport"><div id="board"></div></div>
+
+<div id="topbar">
+  <div id="toprow">
+    <button id="menuBtn">☰</button>
+    <div id="civ"><span class="emblem">⚜</span><span id="civName">France</span></div>
+    <div id="stats"></div>
+    <button id="overviewBtn">Overview</button>
+  </div>
+  <div id="turnline"><span id="turnText">⏳ 1 | 4000 BC</span></div>
 </div>
+
+<div id="research">
+  <div class="ricon">🐖</div>
+  <div>
+    <div class="rname">Animal Husbandry</div>
+    <div class="rturns">4 turns</div>
+  </div>
+</div>
+
+<button id="nextTurn">✔ Next turn</button>
+<div id="notice"></div>
+
+<div id="unitsBar">
+  <span class="nav">◀</span><span class="uname" id="unitName">Warrior</span><span class="nav">▶</span>
+</div>
+
+<div id="minimapWrap">
+  <canvas id="minimap" width="132" height="112"></canvas>
+  <div id="mmView"></div>
+</div>
+
 <div id="fps">— FPS</div>
-<div id="legend">
-  <div class="bar"></div>
-  <div class="labels"><span>❄ snow</span><span>desert 🏜️</span></div>
-</div>
-<div id="temp"></div>
-<div id="hint">drag to pan · pinch to zoom · tap a hex</div>
+<div id="tileInfo"></div>
 
 <script>
 (function () {
   "use strict";
 
   // ---- CONFIG ----
-  const COLS = 24;            // hexes across
-  const ROWS = 24;            // hexes down
-  const BASE_HEX = 100;       // base hex width in board pixels (zoom scales this)
+  const COLS = 28, ROWS = 26;
+  const BASE_HEX = 100;
 
   const viewportEl = document.getElementById('viewport');
   const boardEl = document.getElementById('board');
   const cursorEl = document.createElement('div');
   cursorEl.id = 'cursor';
 
-  // ---- HEX GEOMETRY (flat-top hexagons, odd-q vertical layout) ----
-  // Flat-top hex: width W, height H = W * sqrt(3)/2. Columns step by 0.75*W
-  // horizontally; odd columns are pushed down half a hex.
-  const HEX_H_RATIO = 0.8660254;
-
+  // ---- HEX GEOMETRY (flat-top, odd-q vertical layout — same as Unciv) ----
+  const H_RATIO = 0.8660254;
   function computeLayout(hexW) {
-    const hexH = hexW * HEX_H_RATIO;
-    const stepX = hexW * 0.75;
-    const positions = [];
-    let maxX = 0, maxY = 0;
+    const hexH = hexW * H_RATIO, stepX = hexW * 0.75;
+    const positions = []; let maxX = 0, maxY = 0;
     for (let c = 0; c < COLS; c++) {
       const col = [];
       for (let r = 0; r < ROWS; r++) {
         const cx = c * stepX + hexW / 2;
         const cy = r * hexH + (c % 2 ? hexH : hexH / 2);
         col.push({ cx, cy });
-        if (cx + hexW / 2 > maxX) maxX = cx + hexW / 2;
-        if (cy + hexH / 2 > maxY) maxY = cy + hexH / 2;
+        maxX = Math.max(maxX, cx + hexW / 2);
+        maxY = Math.max(maxY, cy + hexH / 2);
       }
       positions.push(col);
     }
     return { hexW, hexH, positions, boardW: maxX, boardH: maxY };
   }
-
   const layout = computeLayout(BASE_HEX);
 
-  // ---- HEAT MAP ----
-  // Minecraft-style temperature, NOT latitude/realism: scatter hot, cold and
-  // mild "temperature seeds" at random positions each game. Every hex blends
-  // toward the seeds near it (inverse-distance weighting), so hot hexes
-  // cluster around hot seeds and cold around cold seeds. Re-randomized on
-  // every load. Precomputed into heatGrid so colors and taps agree.
-  let heatGrid = [];
+  // ---- TERRAIN PALETTE (colors sampled from Unciv) ----
+  const TERRA = {
+    ocean:     { name: 'Ocean',     col: '#3f8f9c' },
+    coast:     { name: 'Coast',     col: '#5eabb3' },
+    snow:      { name: 'Snow',      col: '#dcf0f0' },
+    tundra:    { name: 'Tundra',    col: '#9aa694' },
+    grassland: { name: 'Grassland', col: '#6f9146' },
+    plains:    { name: 'Plains',    col: '#a89a52' },
+    desert:    { name: 'Desert',    col: '#bd936b' },
+    mountain:  { name: 'Mountains', col: '#859092' },
+  };
+
+  // ---- MAP GENERATION ----
+  // Two independent random fields, both built from scattered "seeds" that
+  // neighbouring hexes blend toward (inverse-distance), so features come out
+  // as random blobs — Minecraft-style, not latitude bands.
+  //   heat  -> snow / tundra / grassland / plains / desert
+  //   elev  -> water (low), hills, mountains (high)
+  let heatGrid = [], elevGrid = [], tiles = [];
   let startHex = { c: (COLS / 2) | 0, r: (ROWS / 2) | 0 };
 
-  function generateHeat() {
+  function blobField(seedSpecs) {
     const seeds = [];
-    function add(n, lo, hi) {
+    for (const [n, lo, hi] of seedSpecs) {
       for (let i = 0; i < n; i++) {
         seeds.push({ c: Math.random() * (COLS - 1), r: Math.random() * (ROWS - 1),
-                     h: lo + Math.random() * (hi - lo) });
+                     v: lo + Math.random() * (hi - lo) });
       }
     }
-    add(3, 0.85, 1.0);   // hot spots
-    add(3, 0.0,  0.15);  // cold spots
-    add(4, 0.35, 0.65);  // mild regions
-
-    heatGrid = [];
-    let bestC = 0, bestR = 0, bestDiff = Infinity;
+    const grid = [];
     for (let c = 0; c < COLS; c++) {
       const col = [];
       for (let r = 0; r < ROWS; r++) {
-        let wsum = 0, hsum = 0;
+        let ws = 0, vs = 0;
         for (const s of seeds) {
           const dc = s.c - c, dr = s.r - r;
-          const w = 1 / (dc * dc + dr * dr + 1.2); // closer seeds dominate
-          wsum += w; hsum += w * s.h;
+          const w = 1 / (dc * dc + dr * dr + 1.2);
+          ws += w; vs += w * s.v;
         }
-        let h = hsum / wsum;
-        h += (Math.sin(c * 1.7 + r * 0.9) + Math.sin((c - r) * 1.3)) * 0.03; // fine texture
-        h = Math.max(0, Math.min(1, h));
-        col.push(h);
-        const diff = Math.abs(h - 0.5); // remember the most "normal" hex to start on
-        if (diff < bestDiff) { bestDiff = diff; bestC = c; bestR = r; }
+        let v = vs / ws;
+        v += (Math.sin(c * 1.7 + r * 0.9) + Math.sin((c - r) * 1.3)) * 0.025;
+        col.push(Math.max(0, Math.min(1, v)));
       }
-      heatGrid.push(col);
+      grid.push(col);
+    }
+    return grid;
+  }
+
+  function generateMap() {
+    heatGrid = blobField([[3, 0.85, 1.0], [3, 0.0, 0.15], [4, 0.35, 0.65]]);
+    elevGrid = blobField([[3, 0.85, 1.0], [4, 0.0, 0.18], [4, 0.35, 0.6]]);
+
+    tiles = [];
+    let bestC = 0, bestR = 0, bestScore = -Infinity;
+    for (let c = 0; c < COLS; c++) {
+      const col = [];
+      for (let r = 0; r < ROWS; r++) {
+        const heat = heatGrid[c][r], elev = elevGrid[c][r];
+        let t, feature = null;
+        if (elev < 0.20)      { t = TERRA.ocean; }
+        else if (elev < 0.28) { t = TERRA.coast; }
+        else if (elev > 0.86) { t = TERRA.mountain; feature = 'mtn'; }
+        else {
+          if (heat < 0.15)      t = TERRA.snow;
+          else if (heat < 0.32) t = TERRA.tundra;
+          else if (heat < 0.58) t = TERRA.grassland;
+          else if (heat < 0.78) t = TERRA.plains;
+          else                  t = TERRA.desert;
+          if (elev > 0.72) feature = 'hill';
+          // Forests grow on cool-to-mild land, never in desert/snow.
+          else if (heat > 0.22 && heat < 0.62 && Math.random() < 0.22) feature = 'forest';
+          else if (t === TERRA.desert && Math.random() < 0.12) feature = 'rock';
+        }
+        const water = (t === TERRA.ocean || t === TERRA.coast);
+        col.push({ terrain: t, feature, heat, elev, water });
+
+        // Best start: temperate grassland, no feature, away from the edges.
+        if (!water && t === TERRA.grassland && !feature) {
+          const edge = Math.min(c, r, COLS - 1 - c, ROWS - 1 - r);
+          const score = -Math.abs(heat - 0.45) * 4 + Math.min(edge, 5);
+          if (score > bestScore) { bestScore = score; bestC = c; bestR = r; }
+        }
+      }
+      tiles.push(col);
     }
     startHex = { c: bestC, r: bestR };
+
+    // A few resource badges scattered on land, like Unciv's tile resources.
+    const RES = ['🐑', '🐄', '🍇', '🪨', '🌾', '🐖'];
+    let placed = 0, guard = 0;
+    while (placed < 14 && guard++ < 600) {
+      const c = (Math.random() * COLS) | 0, r = (Math.random() * ROWS) | 0;
+      const tl = tiles[c][r];
+      if (tl.water || tl.res || tl.feature === 'mtn') continue;
+      tl.res = RES[(Math.random() * RES.length) | 0];
+      placed++;
+    }
   }
 
-  function heatAt(c, r) { return heatGrid[c][r]; }
-
-  // ---- TERRAIN FROM TEMPERATURE ----
-  // Temperature maps to a terrain type, coldest to hottest: Snow, Tundra,
-  // Grassland, Plains, Savanna, Desert. Each terrain has its own base color;
-  // `max` is the upper heat bound for that band.
-  const TERRAINS = [
-    { name: 'Snow',      max: 0.15, h: 205, s: 18, l: 88 },
-    { name: 'Tundra',    max: 0.30, h: 150, s: 16, l: 60 },
-    { name: 'Grassland', max: 0.52, h: 110, s: 42, l: 40 },
-    { name: 'Plains',    max: 0.70, h: 80,  s: 45, l: 46 },
-    { name: 'Savanna',   max: 0.85, h: 52,  s: 52, l: 52 },
-    { name: 'Desert',    max: 1.01, h: 40,  s: 60, l: 62 },
-  ];
-
-  function terrainAt(c, r) {
-    const heat = heatAt(c, r);
-    for (const t of TERRAINS) { if (heat <= t.max) return t; }
-    return TERRAINS[TERRAINS.length - 1];
-  }
-
-  function tileColor(c, r) {
-    const t = terrainAt(c, r);
-    // Small per-hex lightness jitter so a terrain band isn't a flat slab.
-    const v = (Math.sin(c * 1.3 + r * 0.7) + Math.sin((c - r) * 0.9)) * 3;
-    return `hsl(${t.h}, ${t.s}%, ${Math.max(0, Math.min(100, t.l + v)).toFixed(0)}%)`;
-  }
-
-  // ---- BUILD THE BOARD ONCE ----
-  // A small overlap hides hairline seams between adjacent clipped hexes.
+  // ---- BUILD BOARD (once) ----
+  // Tiles are drawn slightly smaller than their cell so the dark background
+  // shows through as thin hex outlines — Unciv's tile borders, for free.
   function buildBoard() {
     boardEl.style.width = layout.boardW + 'px';
     boardEl.style.height = layout.boardH + 'px';
     boardEl.innerHTML = '';
-    const overlap = layout.hexW * 0.02;
-    const tileW = layout.hexW + overlap;
-    const tileH = layout.hexH + overlap;
+    const tileW = layout.hexW * 0.985, tileH = layout.hexH * 0.985;
+
     for (let c = 0; c < COLS; c++) {
       for (let r = 0; r < ROWS; r++) {
-        const p = layout.positions[c][r];
+        const tl = tiles[c][r], p = layout.positions[c][r];
         const hex = document.createElement('div');
         hex.className = 'hex';
         hex.style.width = tileW + 'px';
         hex.style.height = tileH + 'px';
         hex.style.left = (p.cx - tileW / 2) + 'px';
         hex.style.top = (p.cy - tileH / 2) + 'px';
-        hex.style.background = tileColor(c, r);
+        hex.style.background = shade(tl.terrain.col, c, r);
+        addFeature(hex, tl, tileW, tileH);
+        if (tl.res) addResource(hex, tl.res, tileW, tileH);
         boardEl.appendChild(hex);
       }
     }
-    // Selection cursor, sized to one hex, moved into place on tap.
     cursorEl.style.width = tileW + 'px';
     cursorEl.style.height = tileH + 'px';
     boardEl.appendChild(cursorEl);
+    buildUnit(tileW);
+  }
+
+  // Slight per-tile lightness jitter so a biome isn't a flat slab.
+  function shade(hexCol, c, r) {
+    const v = (Math.sin(c * 1.3 + r * 0.7) + Math.sin((c - r) * 0.9)) * 3.2;
+    const n = parseInt(hexCol.slice(1), 16);
+    const f = 1 + v / 100;
+    const cl = x => Math.max(0, Math.min(255, Math.round(x * f)));
+    return `rgb(${cl((n >> 16) & 255)}, ${cl((n >> 8) & 255)}, ${cl(n & 255)})`;
+  }
+
+  function mk(cls, parent, css) {
+    const d = document.createElement('div');
+    d.className = 'feat ' + cls;
+    Object.assign(d.style, css);
+    parent.appendChild(d);
+    return d;
+  }
+
+  function addFeature(hex, tl, w, h) {
+    if (tl.feature === 'mtn') {
+      mk('mtn', hex, { left: w * 0.16 + 'px', top: h * 0.22 + 'px',
+        width: w * 0.42 + 'px', height: h * 0.52 + 'px', background: '#6f797b' });
+      mk('mtn', hex, { left: w * 0.44 + 'px', top: h * 0.12 + 'px',
+        width: w * 0.46 + 'px', height: h * 0.66 + 'px', background: '#98a2a4' });
+      mk('mtn', hex, { left: w * 0.56 + 'px', top: h * 0.14 + 'px',
+        width: w * 0.22 + 'px', height: h * 0.22 + 'px', background: '#e6f0f0' });
+    } else if (tl.feature === 'hill') {
+      mk('hill', hex, { left: w * 0.20 + 'px', top: h * 0.44 + 'px',
+        width: w * 0.34 + 'px', height: h * 0.26 + 'px', background: 'rgba(0,0,0,0.20)' });
+      mk('hill', hex, { left: w * 0.48 + 'px', top: h * 0.38 + 'px',
+        width: w * 0.36 + 'px', height: h * 0.30 + 'px', background: 'rgba(0,0,0,0.14)' });
+    } else if (tl.feature === 'forest') {
+      const spots = [[0.22, 0.42], [0.44, 0.28], [0.62, 0.46], [0.36, 0.58]];
+      spots.forEach((s, i) => {
+        mk('pine', hex, { left: w * s[0] + 'px', top: h * s[1] + 'px',
+          width: w * 0.19 + 'px', height: h * 0.30 + 'px',
+          background: i % 2 ? '#33582c' : '#3f6a33' });
+      });
+    } else if (tl.feature === 'rock') {
+      mk('rock', hex, { left: w * 0.30 + 'px', top: h * 0.46 + 'px',
+        width: w * 0.20 + 'px', height: h * 0.16 + 'px', background: 'rgba(255,255,255,0.30)' });
+      mk('rock', hex, { left: w * 0.56 + 'px', top: h * 0.54 + 'px',
+        width: w * 0.14 + 'px', height: h * 0.12 + 'px', background: 'rgba(255,255,255,0.22)' });
+    }
+  }
+
+  function addResource(hex, emoji, w, h) {
+    const d = document.createElement('div');
+    d.className = 'res';
+    const size = w * 0.40;
+    Object.assign(d.style, {
+      width: size + 'px', height: size + 'px',
+      left: (w * 0.54) + 'px', top: (h * 0.10) + 'px',
+      fontSize: (size * 0.60) + 'px',
+    });
+    d.textContent = emoji;
+    hex.appendChild(d);
+  }
+
+  // ---- UNIT ----
+  let unit = { c: 0, r: 0, name: 'Warrior', icon: '🗡' };
+  let unitEl = null;
+  function buildUnit(tileW) {
+    unit.c = startHex.c; unit.r = startHex.r;
+    unitEl = document.createElement('div');
+    unitEl.className = 'unit';
+    const size = tileW * 0.40;
+    unitEl.style.width = size + 'px';
+    unitEl.style.height = size + 'px';
+    unitEl.style.fontSize = (size * 0.55) + 'px';
+    unitEl.textContent = unit.icon;
+    boardEl.appendChild(unitEl);
+    placeUnit();
+    document.getElementById('unitName').textContent = unit.name;
+  }
+  function placeUnit() {
+    const p = layout.positions[unit.c][unit.r];
+    const s = parseFloat(unitEl.style.width);
+    unitEl.style.left = (p.cx - s / 2) + 'px';
+    unitEl.style.top = (p.cy - s / 2) + 'px';
   }
 
   // ---- PAN / ZOOM ----
-  let cellSize = BASE_HEX;   // current hex width (drives scale)
-  let panX = 0, panY = 0;
-  let minCell = 20, maxCell = 200;
+  let cellSize = BASE_HEX, panX = 0, panY = 0, minCell = 20, maxCell = 200;
 
   function computeZoomBounds() {
     const shortSide = Math.min(viewportEl.clientWidth, viewportEl.clientHeight);
     minCell = shortSide / (Math.min(COLS, ROWS) * 0.9);
-    maxCell = shortSide / 2.5;
+    maxCell = shortSide / 2.2;
   }
-
   function clampPan() {
-    const scale = cellSize / BASE_HEX;
-    const renderedW = layout.boardW * scale;
-    const renderedH = layout.boardH * scale;
-    const margin = BASE_HEX * scale;
-    const centerX = (layout.boardW / 2) * (1 - scale);
-    const centerY = (layout.boardH / 2) * (1 - scale);
-    const slackX = Math.max(margin, (renderedW - viewportEl.clientWidth) / 2 + margin);
-    const slackY = Math.max(margin, (renderedH - viewportEl.clientHeight) / 2 + margin);
-    panX = Math.max(centerX - slackX, Math.min(centerX + slackX, panX));
-    panY = Math.max(centerY - slackY, Math.min(centerY + slackY, panY));
+    const s = cellSize / BASE_HEX;
+    const margin = BASE_HEX * s;
+    const cX = (layout.boardW / 2) * (1 - s), cY = (layout.boardH / 2) * (1 - s);
+    const sx = Math.max(margin, (layout.boardW * s - viewportEl.clientWidth) / 2 + margin);
+    const sy = Math.max(margin, (layout.boardH * s - viewportEl.clientHeight) / 2 + margin);
+    panX = Math.max(cX - sx, Math.min(cX + sx, panX));
+    panY = Math.max(cY - sy, Math.min(cY + sy, panY));
   }
-
   function applyTransform() {
-    const scale = cellSize / BASE_HEX;
+    const s = cellSize / BASE_HEX;
     boardEl.style.transform =
-      `translate(-50%, -50%) translate(${panX}px, ${panY}px) scale(${scale}) translateZ(0)`;
+      `translate(-50%, -50%) translate(${panX}px, ${panY}px) scale(${s}) translateZ(0)`;
+    updateMinimapView();
   }
-
-  // Coalesce pan/zoom writes to one per animation frame (touch fires faster
-  // than the display refreshes).
   let scheduled = false;
   function scheduleTransform() {
     if (scheduled) return;
     scheduled = true;
     requestAnimationFrame(() => { scheduled = false; clampPan(); applyTransform(); });
   }
-
   function setZoom(newCell, ax, ay) {
     newCell = Math.max(minCell, Math.min(maxCell, newCell));
     const rect = viewportEl.getBoundingClientRect();
     if (ax === undefined) { ax = rect.left + rect.width / 2; ay = rect.top + rect.height / 2; }
-    const vx = ax - rect.left - rect.width / 2;
-    const vy = ay - rect.top - rect.height / 2;
-    const oldScale = cellSize / BASE_HEX;
-    const bx = (vx - panX + layout.boardW / 2) / oldScale;
-    const by = (vy - panY + layout.boardH / 2) / oldScale;
+    const vx = ax - rect.left - rect.width / 2, vy = ay - rect.top - rect.height / 2;
+    const os = cellSize / BASE_HEX;
+    const bx = (vx - panX + layout.boardW / 2) / os, by = (vy - panY + layout.boardH / 2) / os;
     cellSize = newCell;
     const s = cellSize / BASE_HEX;
     panX = vx - s * bx + layout.boardW / 2;
     panY = vy - s * by + layout.boardH / 2;
-    clampPan();
-    scheduleTransform();
+    clampPan(); scheduleTransform();
   }
-
-  function centerBoard() {
-    panX = (layout.boardW / 2) * (1 - cellSize / BASE_HEX);
-    panY = (layout.boardH / 2) * (1 - cellSize / BASE_HEX);
-    clampPan();
-  }
-
-  // Put a specific hex at the center of the viewport.
   function centerOnHex(c, r) {
-    const s = cellSize / BASE_HEX;
-    const p = layout.positions[c][r];
+    const s = cellSize / BASE_HEX, p = layout.positions[c][r];
     panX = layout.boardW / 2 - s * p.cx;
     panY = layout.boardH / 2 - s * p.cy;
     clampPan();
   }
 
-  // ---- HIT TESTING (screen point -> hex) ----
-  function hexAtClient(clientX, clientY) {
+  // ---- HIT TESTING ----
+  function hexAtClient(x, y) {
     const rect = viewportEl.getBoundingClientRect();
-    const scale = cellSize / BASE_HEX;
-    const vx = clientX - rect.left - rect.width / 2;
-    const vy = clientY - rect.top - rect.height / 2;
-    const bx = (vx - panX + layout.boardW / 2) / scale;
-    const by = (vy - panY + layout.boardH / 2) / scale;
-    let best = null, bestD = Infinity;
+    const s = cellSize / BASE_HEX;
+    const vx = x - rect.left - rect.width / 2, vy = y - rect.top - rect.height / 2;
+    const bx = (vx - panX + layout.boardW / 2) / s, by = (vy - panY + layout.boardH / 2) / s;
+    let best = null, bd = Infinity;
     for (let c = 0; c < COLS; c++) {
       for (let r = 0; r < ROWS; r++) {
         const p = layout.positions[c][r];
-        const dx = p.cx - bx, dy = p.cy - by, d = dx * dx + dy * dy;
-        if (d < bestD) { bestD = d; best = { c, r }; }
+        const dc = p.cx - bx, dr = p.cy - by, d = dc * dc + dr * dr;
+        if (d < bd) { bd = d; best = { c, r }; }
       }
     }
-    if (!best || Math.sqrt(bestD) > layout.hexW * 0.6) return null;
+    if (!best || Math.sqrt(bd) > layout.hexW * 0.6) return null;
     return best;
   }
 
-  const tempEl = document.getElementById('temp');
+  const infoEl = document.getElementById('tileInfo');
   function selectHex(c, r) {
     const p = layout.positions[c][r];
     cursorEl.style.left = (p.cx - parseFloat(cursorEl.style.width) / 2) + 'px';
     cursorEl.style.top = (p.cy - parseFloat(cursorEl.style.height) / 2) + 'px';
     cursorEl.style.display = 'block';
-    // Show this hex's terrain type and temperature.
-    const pct = Math.round(heatAt(c, r) * 100);
-    tempEl.textContent = terrainAt(c, r).name + ' · 🌡 ' + pct + '%';
-    tempEl.style.display = 'block';
+    const tl = tiles[c][r];
+    const bits = [tl.terrain.name];
+    if (tl.feature === 'forest') bits.push('Forest');
+    if (tl.feature === 'hill') bits.push('Hills');
+    if (tl.res) bits.push(tl.res);
+    bits.push('🌡 ' + Math.round(tl.heat * 100) + '%');
+    infoEl.textContent = bits.join(' · ');
+    infoEl.style.display = 'block';
   }
 
   // ---- INPUT ----
-  let lastPan = null, lastPinch = null, moved = false, downTime = 0, downPt = null;
+  let lastPan = null, lastPinch = null, moved = false, downPt = null, downT = 0;
+  function dist(a, b) { const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY; return Math.hypot(dx, dy); }
 
   viewportEl.addEventListener('touchstart', (e) => {
     moved = false;
     if (e.touches.length === 1) {
       lastPan = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      downPt = lastPan; downTime = Date.now(); lastPinch = null;
-    } else if (e.touches.length === 2) {
-      lastPinch = dist(e.touches[0], e.touches[1]); lastPan = null;
-    }
+      downPt = lastPan; downT = Date.now(); lastPinch = null;
+    } else if (e.touches.length === 2) { lastPinch = dist(e.touches[0], e.touches[1]); lastPan = null; }
   }, { passive: true });
 
   viewportEl.addEventListener('touchmove', (e) => {
     if (e.touches.length === 1 && lastPan) {
-      const dx = e.touches[0].clientX - lastPan.x;
-      const dy = e.touches[0].clientY - lastPan.y;
+      const dx = e.touches[0].clientX - lastPan.x, dy = e.touches[0].clientY - lastPan.y;
       if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
       panX += dx; panY += dy;
       lastPan = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -354,81 +562,150 @@
 
   viewportEl.addEventListener('touchend', (e) => {
     if (e.touches.length === 0) {
-      if (!moved && downPt && Date.now() - downTime < 300) {
-        const hit = hexAtClient(downPt.x, downPt.y);
-        if (hit) selectHex(hit.c, hit.r);
+      if (!moved && downPt && Date.now() - downT < 300) {
+        const h = hexAtClient(downPt.x, downPt.y);
+        if (h) selectHex(h.c, h.r);
       }
       lastPan = null; lastPinch = null;
     } else if (e.touches.length === 1) {
-      lastPan = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      lastPinch = null;
+      lastPan = { x: e.touches[0].clientX, y: e.touches[0].clientY }; lastPinch = null;
     }
   }, { passive: true });
 
-  // Mouse (desktop)
-  let mouseDown = false, mouseMoved = false, lastMouse = null, mouseDownPt = null;
+  let mDown = false, mMoved = false, mLast = null, mDownPt = null;
   viewportEl.addEventListener('mousedown', (e) => {
-    mouseDown = true; mouseMoved = false;
-    lastMouse = { x: e.clientX, y: e.clientY }; mouseDownPt = lastMouse;
+    mDown = true; mMoved = false; mLast = { x: e.clientX, y: e.clientY }; mDownPt = mLast;
   });
   window.addEventListener('mousemove', (e) => {
-    if (!mouseDown) return;
-    const dx = e.clientX - lastMouse.x, dy = e.clientY - lastMouse.y;
-    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) mouseMoved = true;
+    if (!mDown) return;
+    const dx = e.clientX - mLast.x, dy = e.clientY - mLast.y;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) mMoved = true;
     panX += dx; panY += dy;
-    lastMouse = { x: e.clientX, y: e.clientY };
+    mLast = { x: e.clientX, y: e.clientY };
     scheduleTransform();
   });
-  window.addEventListener('mouseup', (e) => {
-    if (mouseDown && !mouseMoved && mouseDownPt) {
-      const hit = hexAtClient(mouseDownPt.x, mouseDownPt.y);
-      if (hit) selectHex(hit.c, hit.r);
+  window.addEventListener('mouseup', () => {
+    if (mDown && !mMoved && mDownPt) {
+      const h = hexAtClient(mDownPt.x, mDownPt.y);
+      if (h) selectHex(h.c, h.r);
     }
-    mouseDown = false; lastMouse = null;
+    mDown = false; mLast = null;
   });
   viewportEl.addEventListener('wheel', (e) => {
     e.preventDefault();
     setZoom(cellSize * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.clientX, e.clientY);
   }, { passive: false });
 
-  function dist(a, b) {
-    const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
-    return Math.sqrt(dx * dx + dy * dy);
+  // ---- TOP BAR STATS + TURNS ----
+  const STAT_DEFS = [
+    { key: 'gold',    icon: '🪙', color: '#f2c94c' },
+    { key: 'food',    icon: '🍎', color: '#7ec8e3' },
+    { key: 'happy',   icon: '😊', color: '#f2c94c' },
+    { key: 'culture', icon: '🎵', color: '#c58cf5' },
+    { key: 'science', icon: '🔬', color: '#7ec8e3' },
+  ];
+  const state = {
+    turn: 1, year: 4000,
+    gold: 15, goldD: 5, food: 4, happy: 5, culture: 3, science: 0,
+  };
+  function renderStats() {
+    document.getElementById('stats').innerHTML = STAT_DEFS.map(s => {
+      const v = state[s.key];
+      const d = s.key === 'gold' ? ` <span class="delta">+${state.goldD}</span>` : '';
+      return `<span class="stat" style="color:${s.color}">${s.icon} ${v}${d}</span>`;
+    }).join('');
+    document.getElementById('turnText').textContent =
+      `⏳ ${state.turn} | ${state.year > 0 ? state.year + ' BC' : (-state.year) + ' AD'}`;
+  }
+  function showNotice(msg) {
+    const n = document.getElementById('notice');
+    n.textContent = msg; n.style.display = 'block';
+    clearTimeout(showNotice._t);
+    showNotice._t = setTimeout(() => { n.style.display = 'none'; }, 3200);
+  }
+  document.getElementById('nextTurn').addEventListener('click', () => {
+    state.turn++;
+    state.year -= 40;
+    state.gold += state.goldD;
+    state.science += 1;
+    if (state.turn % 4 === 0) state.culture += 1;
+    renderStats();
+    showNotice('Turn ' + state.turn + ' — your empire grows!');
+  });
+
+  // ---- MINIMAP ----
+  const mm = document.getElementById('minimap');
+  const mmView = document.getElementById('mmView');
+  function drawMinimap() {
+    const ctx = mm.getContext('2d');
+    const sx = mm.width / layout.boardW, sy = mm.height / layout.boardH;
+    ctx.fillStyle = '#0d2233';
+    ctx.fillRect(0, 0, mm.width, mm.height);
+    const w = layout.hexW * sx * 1.1, h = layout.hexH * sy * 1.1;
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        const p = layout.positions[c][r];
+        ctx.fillStyle = tiles[c][r].terrain.col;
+        ctx.fillRect(p.cx * sx - w / 2, p.cy * sy - h / 2, w, h);
+      }
+    }
+  }
+  const MM_PAD = 4; // #minimapWrap padding — the canvas's offset inside it
+  function updateMinimapView() {
+    const s = cellSize / BASE_HEX;
+    const sx = mm.width / layout.boardW, sy = mm.height / layout.boardH;
+    // Board-local coords currently at the viewport's top-left corner.
+    const vw = viewportEl.clientWidth, vh = viewportEl.clientHeight;
+    const bx = (-vw / 2 - panX + layout.boardW / 2) / s;
+    const by = (-vh / 2 - panY + layout.boardH / 2) / s;
+    const x0 = Math.max(0, Math.min(mm.width, bx * sx));
+    const y0 = Math.max(0, Math.min(mm.height, by * sy));
+    mmView.style.left = (MM_PAD + x0) + 'px';
+    mmView.style.top = (MM_PAD + y0) + 'px';
+    mmView.style.width = Math.max(4, Math.min(mm.width - x0, (vw / s) * sx)) + 'px';
+    mmView.style.height = Math.max(4, Math.min(mm.height - y0, (vh / s) * sy)) + 'px';
   }
 
-  // ---- FPS METER ----
+  // ---- FPS ----
   function startFps() {
     const el = document.getElementById('fps');
-    let frames = 0, start = performance.now();
-    function loop(now) {
-      frames++;
-      if (now - start >= 500) {
-        el.textContent = Math.round((frames * 1000) / (now - start)) + ' FPS';
-        frames = 0; start = now;
-      }
+    let f = 0, t0 = performance.now();
+    (function loop(now) {
+      f++;
+      if (now - t0 >= 500) { el.textContent = Math.round(f * 1000 / (now - t0)) + ' FPS'; f = 0; t0 = now; }
       requestAnimationFrame(loop);
-    }
-    requestAnimationFrame(loop);
+    })(performance.now());
+  }
+
+  // Keep the floating panels clear of the top bar.
+  function layoutPanels() {
+    const barH = document.getElementById('topbar').offsetHeight;
+    document.getElementById('research').style.top = (barH + 8) + 'px';
+    document.getElementById('nextTurn').style.top = (barH + 8) + 'px';
+    document.getElementById('notice').style.top = (barH + 74) + 'px';
+    document.getElementById('fps').style.top = (barH + 62) + 'px';
   }
 
   // ---- INIT ----
   function init() {
     computeZoomBounds();
-    cellSize = Math.min(maxCell, minCell * 1.4);
-    generateHeat();       // random hot/cold blobs, and pick a normal start hex
+    cellSize = Math.min(maxCell, minCell * 2.2);   // start zoomed in, Unciv-like
+    generateMap();
     buildBoard();
-    // Start on a temperate ("normal") hex and mark it.
     centerOnHex(startHex.c, startHex.r);
     selectHex(startHex.c, startHex.r);
     applyTransform();
+    renderStats();
+    drawMinimap();
+    layoutPanels();
+    updateMinimapView();
     startFps();
+    showNotice('Your Warrior stands on fertile Grassland.');
   }
-
   window.addEventListener('resize', () => {
     computeZoomBounds();
     cellSize = Math.max(minCell, Math.min(maxCell, cellSize));
-    clampPan();
-    applyTransform();
+    clampPan(); applyTransform(); layoutPanels();
   });
 
   init();
