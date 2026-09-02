@@ -293,7 +293,7 @@
     // worldW is the horizontal wrap period: column c+COLS sits exactly
     // worldW to the right of column c, so shifting by it is seamless.
     return { hexW, hexH, positions, boardW: maxX, boardH: maxY,
-             worldW: COLS * hexW * 0.75 };
+             worldW: COLS * hexW * 0.75, worldH: ROWS * hexH };
   }
   const layout = computeLayout(BASE_HEX);
 
@@ -647,9 +647,10 @@
       : [[0,-1],[0,1],[-1,-1],[-1,0],[1,-1],[1,0]];
     const out = [];
     for (const [dc, dr] of d) {
-      const nc = ((c + dc) % COLS + COLS) % COLS;   // the world wraps east-west
-      const nr = r + dr;
-      if (nr >= 0 && nr < ROWS) out.push({ c: nc, r: nr });
+      // The world is a torus: it wraps both east-west and north-south.
+      const nc = ((c + dc) % COLS + COLS) % COLS;
+      const nr = ((r + dr) % ROWS + ROWS) % ROWS;
+      out.push({ c: nc, r: nr });
     }
     return out;
   }
@@ -667,6 +668,8 @@
     // shoreline, fog, units, cities, move dots) goes inside it, so shifting
     // the wrapper wraps that whole strip of the world at once.
     colWrap = []; hexEls = []; sandEls = [];
+    rowEls = []; rowM = [];
+    for (let r = 0; r < ROWS; r++) { rowEls.push([]); rowM.push(0); }
     for (let c = 0; c < COLS; c++) {
       hexEls.push(new Array(ROWS).fill(null));
       sandEls.push(new Array(ROWS).fill(null));
@@ -697,6 +700,7 @@
         });
         colWrap[c].appendChild(sand);
         sandEls[c][r] = sand;
+        setRow(sand, r);
       }
     }
 
@@ -716,6 +720,7 @@
         if (tl.res) addResource(hex, tl.res, tileW, tileH);
         colWrap[c].appendChild(hex);
         hexEls[c][r] = hex;
+        setRow(hex, r);
       }
     }
     cursorEl.style.width = tileW + 'px';
@@ -811,10 +816,12 @@
     // offset->cube conversion stays valid. Take the shortest way round.
     const a = offsetToCube(ac, ar);
     let best = Infinity;
-    for (const shift of [-COLS, 0, COLS]) {
-      const b = offsetToCube(bc + shift, br);
-      const d = Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.z - b.z));
-      if (d < best) best = d;
+    for (const dcs of [-COLS, 0, COLS]) {
+      for (const drs of [-ROWS, 0, ROWS]) {
+        const b = offsetToCube(bc + dcs, br + drs);
+        const d = Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.z - b.z));
+        if (d < best) best = d;
+      }
     }
     return best;
   }
@@ -864,6 +871,7 @@
     u.el.style.left = (p.cx - unitSize / 2) + 'px';
     u.el.style.top = (p.cy - unitSize / 2) + 'px';
     if (u.el.parentNode !== colWrap[u.c]) colWrap[u.c].appendChild(u.el);
+    setRow(u.el, u.r);
   }
 
   function updateUnitBar() {
@@ -902,6 +910,7 @@
           left: (p.cx - w / 2) + 'px', top: (p.cy - h / 2) + 'px', opacity: 1 });
         d._o = 1;
         colWrap[c].appendChild(d);
+        setRow(d, r);
         col.push(d);
         tiles[c][r].seen = false;
       }
@@ -912,7 +921,8 @@
   function markVisible(cc, rr, radius, set) {
     for (let dc = -radius - 1; dc <= radius + 1; dc++) {
       const c = ((cc + dc) % COLS + COLS) % COLS;
-      for (let r = Math.max(0, rr - radius - 1); r <= Math.min(ROWS - 1, rr + radius + 1); r++) {
+      for (let dr = -radius - 1; dr <= radius + 1; dr++) {
+        const r = ((rr + dr) % ROWS + ROWS) % ROWS;
         if (hexDist(cc, rr, c, r) <= radius) set.add(c + ',' + r);
       }
     }
@@ -1006,6 +1016,7 @@
       left: (p.cx - s / 2) + 'px', top: (p.cy - s / 2) + 'px', fontSize: (s * 0.55) + 'px' });
     m.textContent = '🏠';
     colWrap[city.c].appendChild(m);
+    setRow(m, city.r);
     const lab = document.createElement('div');
     lab.className = 'cityname';
     lab.textContent = city.name;
@@ -1013,6 +1024,7 @@
     lab.style.top = (p.cy + layout.hexH * 0.34) + 'px';
     lab.style.fontSize = (layout.hexW * 0.16) + 'px';
     colWrap[city.c].appendChild(lab);
+    setRow(lab, city.r);
   }
 
   // ---- MOVEMENT ----
@@ -1054,7 +1066,7 @@
 
   let dotEls = [];
   function renderMoves() {
-    for (const d of dotEls) d.remove();
+    for (const d of dotEls) { dropRow(d); d.remove(); }
     dotEls = [];
     if (!colWrap.length || !unitSelected) return;
     const size = layout.hexW * 0.26;
@@ -1068,6 +1080,7 @@
         left: (p.cx - size / 2) + 'px', top: (p.cy - size / 2) + 'px',
       });
       colWrap[c].appendChild(d);
+      setRow(d, r);
       dotEls.push(d);
     }
   }
@@ -1115,22 +1128,19 @@
     // 1.35 so a column only ever jumps to its other copy well outside the
     // screen — at exactly one world width the jump happens on the edge and
     // you see tiles popping while panning or zooming.
-    minCell = (BASE_HEX * vw / layout.worldW) * 1.35;
+    minCell = Math.max(BASE_HEX * vw / layout.worldW,
+                       BASE_HEX * vh / layout.worldH) * 1.35;
     maxCell = Math.min(vw, vh) / 2.2;
     if (maxCell < minCell * 1.4) maxCell = minCell * 1.4;
   }
   function clampPan() {
     const s = cellSize / BASE_HEX;
     const margin = BASE_HEX * s;
-    const cY = (layout.boardH / 2) * (1 - s);
-    // North-south there are poles rather than a wrap, so the pan stops exactly
-    // at the edge — you can never scroll past it into empty space.
-    const sy = Math.max(0, (layout.boardH * s - viewportEl.clientHeight) / 2);
-    panY = Math.max(cY - sy, Math.min(cY + sy, panY));
-    // East-west the world is a cylinder: pan is never clamped, only kept
-    // inside one world width so the numbers can't drift.
-    const worldPx = layout.worldW * s;
-    panX = ((panX % worldPx) + worldPx) % worldPx;
+    // The world is a torus — neither axis is clamped. Pan is only kept inside
+    // one world so the numbers can't drift.
+    const wpx = layout.worldW * s, hpx = layout.worldH * s;
+    panX = ((panX % wpx) + wpx) % wpx;
+    panY = ((panY % hpx) + hpx) % hpx;
   }
 
   // Each column lives in its own wrapper. Whichever copy of a column (one
@@ -1138,21 +1148,58 @@
   // the one we draw — so you can keep dragging forever and the map repeats
   // seamlessly, with no visible edge. Only 30 transforms, no cloned tiles.
   let colWrap = [], hexEls = [], sandEls = [];
+  // Horizontal wrap is done by shifting a whole column wrapper. Vertical wrap
+  // can't use the same trick (a column spans every row), so instead every
+  // element remembers which ROW it belongs to and gets its own translateY.
+  // Rows only flip when the seam is crossed, so this writes very rarely.
+  let rowEls = [], rowM = [];
+
+  function setRow(el, r) {
+    if (el._row !== undefined && rowEls[el._row]) {
+      const arr = rowEls[el._row], i = arr.indexOf(el);
+      if (i >= 0) arr.splice(i, 1);
+    }
+    el._row = r;
+    if (!rowEls[r]) rowEls[r] = [];
+    rowEls[r].push(el);
+    el.style.transform = rowM[r] ? 'translateY(' + (rowM[r] * layout.worldH) + 'px)' : '';
+  }
+  function dropRow(el) {
+    if (el._row !== undefined && rowEls[el._row]) {
+      const arr = rowEls[el._row], i = arr.indexOf(el);
+      if (i >= 0) arr.splice(i, 1);
+    }
+    el._row = undefined;
+  }
+
   function updateWrap() {
     if (!colWrap.length) return;
     const s = cellSize / BASE_HEX;
-    const half = layout.boardW / 2;
     for (let c = 0; c < COLS; c++) {
       const cx = layout.positions[c][0].cx;
       let bestK = 0, bestD = Infinity;
       for (let k = -1; k <= 1; k++) {
-        const d = Math.abs((cx + k * layout.worldW) * s + panX - half);
+        const d = Math.abs((cx + k * layout.worldW) * s + panX - layout.boardW / 2);
         if (d < bestD) { bestD = d; bestK = k; }
       }
       const w = colWrap[c];
       if (w._k !== bestK) {
         w._k = bestK;
         w.style.transform = bestK ? 'translateX(' + (bestK * layout.worldW) + 'px)' : '';
+      }
+    }
+    for (let r = 0; r < ROWS; r++) {
+      const cy = layout.positions[0][r].cy;
+      let bestM = 0, bestD = Infinity;
+      for (let m = -1; m <= 1; m++) {
+        const d = Math.abs((cy + m * layout.worldH) * s + panY - layout.boardH / 2);
+        if (d < bestD) { bestD = d; bestM = m; }
+      }
+      if (rowM[r] !== bestM) {
+        rowM[r] = bestM;
+        const t = bestM ? 'translateY(' + (bestM * layout.worldH) + 'px)' : '';
+        const arr = rowEls[r];
+        if (arr) for (const el of arr) el.style.transform = t;
       }
     }
   }
@@ -1195,8 +1242,9 @@
     const s = cellSize / BASE_HEX;
     const vx = x - rect.left - rect.width / 2, vy = y - rect.top - rect.height / 2;
     let bx = (vx - panX + layout.boardW / 2) / s;
-    const by = (vy - panY + layout.boardH / 2) / s;
+    let by = (vy - panY + layout.boardH / 2) / s;
     bx = ((bx % layout.worldW) + layout.worldW) % layout.worldW;   // wrap the tap
+    by = ((by % layout.worldH) + layout.worldH) % layout.worldH;
     let best = null, bd = Infinity;
     for (let c = 0; c < COLS; c++) {
       for (let r = 0; r < ROWS; r++) {
@@ -1204,7 +1252,10 @@
         let dc = p.cx - bx;
         if (dc >  layout.worldW / 2) dc -= layout.worldW;
         if (dc < -layout.worldW / 2) dc += layout.worldW;
-        const dr = p.cy - by, d = dc * dc + dr * dr;
+        let dr = p.cy - by;
+        if (dr >  layout.worldH / 2) dr -= layout.worldH;
+        if (dr < -layout.worldH / 2) dr += layout.worldH;
+        const d = dc * dc + dr * dr;
         if (d < bd) { bd = d; best = { c, r }; }
       }
     }
@@ -1219,6 +1270,7 @@
     cursorEl.style.top = (p.cy - parseFloat(cursorEl.style.height) / 2) + 'px';
     cursorEl.style.display = 'block';
     if (cursorEl.parentNode !== colWrap[c]) colWrap[c].appendChild(cursorEl);
+    setRow(cursorEl, r);
     const tl = tiles[c][r];
     const bits = [tl.terrain.name];
     if (tl.feature === 'forest') bits.push('Forest');
