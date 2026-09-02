@@ -69,8 +69,38 @@
     display: flex; align-items: center; justify-content: center;
     font-size: 15px; line-height: 1;
     box-shadow: 0 3px 0 rgba(0,0,0,0.45), 0 6px 7px rgba(0,0,0,0.45);
+    z-index: 7;
+  }
+  /* Unexplored land is blacked out; land you've seen but can't currently see
+     stays visible but dimmed. */
+  .fog {
+    position: absolute; background: #04101d; pointer-events: none; z-index: 4;
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    transition: opacity 0.25s ease;
+  }
+  .city {
+    position: absolute; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #f0d9a0, #b8873c);
+    border: 2px solid #fff3d6;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 3px 0 rgba(0,0,0,0.45), 0 6px 8px rgba(0,0,0,0.45);
     z-index: 6;
   }
+  .cityname {
+    position: absolute; transform: translate(-50%, 0);
+    font-size: 11px; font-weight: 700; white-space: nowrap; z-index: 6;
+    color: #fff; text-shadow: 0 1px 3px #000, 0 0 6px #000;
+    pointer-events: none;
+  }
+  #foundCity {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 56px);
+    z-index: 26; display: none;
+    background: #b8873c; color: #fff; border: 1px solid #f0d9a0;
+    border-radius: 10px; padding: 10px 16px; font-size: 14px; font-weight: 700;
+    box-shadow: 0 3px 0 #7d5a22;
+  }
+  #unitsBar .nav { opacity: 0.85; padding: 0 4px; }
   .movedot {
     position: absolute; border-radius: 50%;
     background: rgba(255,255,255,0.82);
@@ -205,7 +235,7 @@
 <div id="notice"></div>
 
 <div id="unitsBar">
-  <span class="nav">◀</span><span class="uname" id="unitName">Warrior</span><span class="nav">▶</span>
+  <span class="nav" id="prevUnit">◀</span><span class="uname" id="unitName">Warrior</span><span class="nav" id="nextUnit">▶</span>
 </div>
 
 <div id="minimapWrap">
@@ -213,6 +243,7 @@
   <div id="mmView"></div>
 </div>
 
+<button id="foundCity">🏛 Found city</button>
 <div id="fps">— FPS</div>
 <div id="tileInfo"></div>
 
@@ -607,14 +638,18 @@
     cursorEl.style.width = tileW + 'px';
     cursorEl.style.height = tileH + 'px';
     boardEl.appendChild(cursorEl);
-    movesLayer = document.createElement('div');
-    movesLayer.style.position = 'absolute';
-    movesLayer.style.left = '0'; movesLayer.style.top = '0';
-    movesLayer.style.width = layout.boardW + 'px';
-    movesLayer.style.height = layout.boardH + 'px';
-    movesLayer.style.pointerEvents = 'none';
-    boardEl.appendChild(movesLayer);
-    buildUnit(tileW);
+    const mkLayer = () => {
+      const d = document.createElement('div');
+      Object.assign(d.style, { position: 'absolute', left: '0', top: '0',
+        width: layout.boardW + 'px', height: layout.boardH + 'px', pointerEvents: 'none' });
+      boardEl.appendChild(d);
+      return d;
+    };
+    fogLayer = mkLayer();
+    movesLayer = mkLayer();
+    cityLayer = mkLayer();
+    unitsLayer = mkLayer();
+    buildUnits(tileW);
   }
 
   // Slight per-tile lightness jitter so a biome isn't a flat slab.
@@ -691,29 +726,178 @@
     hex.appendChild(d);
   }
 
-  // ---- UNIT ----
-  const UNIT_MAX_MOVES = 2;
-  let unit = { c: 0, r: 0, name: 'Warrior', icon: '🗡', moves: UNIT_MAX_MOVES };
-  let unitEl = null, movesLayer = null;
+  // ---- HEX DISTANCE (odd-q offset -> cube) ----
+  function offsetToCube(c, r) {
+    const x = c, z = r - ((c - (c & 1)) / 2);
+    return { x, y: -x - z, z };
+  }
+  function hexDist(ac, ar, bc, br) {
+    const a = offsetToCube(ac, ar), b = offsetToCube(bc, br);
+    return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.z - b.z));
+  }
+
+  // ---- UNITS ----
+  const UNIT_TYPES = {
+    warrior: { name: 'Warrior', icon: '🗡', moves: 2, sight: 2 },
+    settler: { name: 'Settler', icon: '⛺', moves: 2, sight: 2 },
+  };
+  let units = [], cities = [], sel = 0;
   let unitSelected = false;
   let reachable = new Map();   // "c,r" -> movement points spent to get there
-  function buildUnit(tileW) {
-    unit.c = startHex.c; unit.r = startHex.r;
-    unitEl = document.createElement('div');
-    unitEl.className = 'unit';
-    const size = tileW * 0.40;
-    unitEl.style.width = size + 'px';
-    unitEl.style.height = size + 'px';
-    unitEl.style.fontSize = (size * 0.55) + 'px';
-    unitEl.textContent = unit.icon;
-    boardEl.appendChild(unitEl);
-    placeUnit();
+  let unitsLayer = null, movesLayer = null, fogLayer = null, cityLayer = null;
+  let unitSize = 20;
+
+  function curUnit() { return units[sel]; }
+
+  function buildUnits(tileW) {
+    unitSize = tileW * 0.40;
+    units = []; cities = [];
+    addUnit('warrior', startHex.c, startHex.r);
+    // The settler starts on the first open tile beside the warrior.
+    const spot = neighbors(startHex.c, startHex.r)
+      .find(n => isFinite(moveCost(tiles[n.c][n.r])));
+    addUnit('settler', spot ? spot.c : startHex.c, spot ? spot.r : startHex.r);
+    sel = 0;
     updateUnitBar();
   }
 
+  function addUnit(type, c, r) {
+    const def = UNIT_TYPES[type];
+    const el = document.createElement('div');
+    el.className = 'unit';
+    el.style.width = unitSize + 'px';
+    el.style.height = unitSize + 'px';
+    el.style.fontSize = (unitSize * 0.55) + 'px';
+    el.textContent = def.icon;
+    unitsLayer.appendChild(el);
+    const u = { type, c, r, name: def.name, icon: def.icon,
+                max: def.moves, moves: def.moves, sight: def.sight, el };
+    units.push(u);
+    placeUnit(u);
+    return u;
+  }
+
+  function placeUnit(u) {
+    const p = layout.positions[u.c][u.r];
+    u.el.style.left = (p.cx - unitSize / 2) + 'px';
+    u.el.style.top = (p.cy - unitSize / 2) + 'px';
+  }
+
   function updateUnitBar() {
+    const u = curUnit();
     document.getElementById('unitName').textContent =
-      unit.name + '  ' + unit.moves + '/' + UNIT_MAX_MOVES;
+      u ? u.icon + ' ' + u.name + '  ' + u.moves + '/' + u.max : '—';
+    const btn = document.getElementById('foundCity');
+    btn.style.display = (u && u.type === 'settler' && canFoundCity(u.c, u.r)) ? 'block' : 'none';
+  }
+
+  function cycleUnit(dir) {
+    if (!units.length) return;
+    sel = (sel + dir + units.length) % units.length;
+    unitSelected = false;
+    renderMoves();
+    updateUnitBar();
+    centerOnHex(curUnit().c, curUnit().r);
+    applyTransform();
+    selectHex(curUnit().c, curUnit().r);
+  }
+
+  // ---- FOG OF WAR ----
+  // Every tile starts hidden. Units and cities reveal what's around them; a
+  // tile you have seen before but cannot currently see stays dimmed.
+  let fogEls = [];
+  function buildFog() {
+    fogLayer.innerHTML = '';
+    fogEls = [];
+    const w = layout.hexW, h = layout.hexH;
+    for (let c = 0; c < COLS; c++) {
+      const col = [];
+      for (let r = 0; r < ROWS; r++) {
+        const p = layout.positions[c][r];
+        const d = document.createElement('div');
+        d.className = 'fog';
+        Object.assign(d.style, { width: w + 'px', height: h + 'px',
+          left: (p.cx - w / 2) + 'px', top: (p.cy - h / 2) + 'px', opacity: 1 });
+        d._o = 1;
+        fogLayer.appendChild(d);
+        col.push(d);
+        tiles[c][r].seen = false;
+      }
+      fogEls.push(col);
+    }
+  }
+
+  function markVisible(cc, rr, radius, set) {
+    for (let c = Math.max(0, cc - radius - 1); c <= Math.min(COLS - 1, cc + radius + 1); c++) {
+      for (let r = Math.max(0, rr - radius - 1); r <= Math.min(ROWS - 1, rr + radius + 1); r++) {
+        if (hexDist(cc, rr, c, r) <= radius) set.add(c + ',' + r);
+      }
+    }
+  }
+
+  function updateFog() {
+    const vis = new Set();
+    for (const u of units) markVisible(u.c, u.r, u.sight, vis);
+    for (const ct of cities) markVisible(ct.c, ct.r, 2, vis);
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        const seenNow = vis.has(c + ',' + r);
+        if (seenNow) tiles[c][r].seen = true;
+        const want = seenNow ? 0 : (tiles[c][r].seen ? 0.45 : 1);
+        const el = fogEls[c][r];
+        if (el._o !== want) { el.style.opacity = want; el._o = want; }
+      }
+    }
+    drawMinimap();
+  }
+
+  // ---- CITIES ----
+  const CITY_NAMES = ['Paris', 'Orleans', 'Lyon', 'Tours', 'Reims', 'Marseille', 'Rouen', 'Nantes'];
+
+  function canFoundCity(c, r) {
+    const tl = tiles[c][r];
+    if (tl.water || tl.feature === 'mtn') return false;
+    for (const ct of cities) if (hexDist(ct.c, ct.r, c, r) < 3) return false;
+    return true;
+  }
+
+  function foundCity(u) {
+    const city = { c: u.c, r: u.r, name: CITY_NAMES[cities.length % CITY_NAMES.length] };
+    cities.push(city);
+    // The city claims the ring of tiles around it.
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        if (hexDist(city.c, city.r, c, r) <= 1 && !tiles[c][r].water) tiles[c][r].owned = true;
+      }
+    }
+    drawCity(city);
+    u.el.remove();
+    units.splice(units.indexOf(u), 1);
+    sel = Math.max(0, Math.min(sel, units.length - 1));
+    unitSelected = false;
+    renderMoves();
+    updateFog();
+    updateUnitBar();
+    renderStats();
+    showNotice(city.name + ' has been founded! +2 gold, +1 science per turn.');
+  }
+
+  function drawCity(city) {
+    const p = layout.positions[city.c][city.r];
+    const s = layout.hexW * 0.46;
+    const m = document.createElement('div');
+    m.className = 'city';
+    Object.assign(m.style, { width: s + 'px', height: s + 'px',
+      left: (p.cx - s / 2) + 'px', top: (p.cy - s / 2) + 'px', fontSize: (s * 0.55) + 'px' });
+    m.textContent = '🏛';
+    cityLayer.appendChild(m);
+    const lab = document.createElement('div');
+    lab.className = 'cityname';
+    lab.textContent = city.name;
+    lab.style.left = p.cx + 'px';
+    lab.style.top = (p.cy + layout.hexH * 0.34) + 'px';
+    lab.style.fontSize = (layout.hexW * 0.16) + 'px';
+    cityLayer.appendChild(lab);
   }
 
   // ---- MOVEMENT ----
@@ -723,22 +907,27 @@
     if (tl.feature === 'forest' || tl.feature === 'hill') return 2;
     return 1;
   }
+  function occupied(c, r, self) {
+    return units.some(u => u !== self && u.c === c && u.r === r);
+  }
 
   // Cheapest-first search out from the unit, stopping at its remaining points.
   function computeReachable() {
     reachable = new Map();
-    if (unit.moves <= 0) return;
+    const u = curUnit();
+    if (!u || u.moves <= 0) return;
     const key = (c, r) => c + ',' + r;
-    const best = new Map([[key(unit.c, unit.r), 0]]);
-    const queue = [{ c: unit.c, r: unit.r, cost: 0 }];
+    const best = new Map([[key(u.c, u.r), 0]]);
+    const queue = [{ c: u.c, r: u.r, cost: 0 }];
     while (queue.length) {
       queue.sort((a, b) => a.cost - b.cost);
       const cur = queue.shift();
       for (const n of neighbors(cur.c, cur.r)) {
         const step = moveCost(tiles[n.c][n.r]);
         if (!isFinite(step)) continue;
+        if (occupied(n.c, n.r, u)) continue;
         const cost = cur.cost + step;
-        if (cost > unit.moves) continue;
+        if (cost > u.moves) continue;
         const k = key(n.c, n.r);
         if (best.has(k) && best.get(k) <= cost) continue;
         best.set(k, cost);
@@ -766,40 +955,36 @@
     }
   }
 
-  // Tapping: a reachable tile moves the unit (spending points), the unit's own
-  // tile toggles selection, anything else just inspects the tile.
+  // Tapping: a unit's tile selects it (or toggles it off), a reachable tile
+  // moves the selected unit, and anything else is ignored while one is
+  // selected so the dots never get cancelled by a stray tap.
   function onTapHex(c, r) {
-    // The unit's own tile toggles selection on and off.
-    if (c === unit.c && r === unit.r) {
-      unitSelected = !unitSelected;
+    const idx = units.findIndex(u => u.c === c && u.r === r);
+    if (idx >= 0) {
+      if (idx === sel) unitSelected = !unitSelected;
+      else { sel = idx; unitSelected = true; }
       if (unitSelected) computeReachable();
       renderMoves();
+      updateUnitBar();
       selectHex(c, r);
       return;
     }
     if (unitSelected) {
-      // While a unit is selected, only reachable tiles do anything. Tapping
-      // anywhere it cannot go is ignored completely, so the selection and its
-      // dots stay on screen instead of being cancelled by a stray tap.
       const k = c + ',' + r;
       if (!reachable.has(k)) return;
-      unit.moves -= reachable.get(k);
-      unit.c = c; unit.r = r;
-      placeUnit();
+      const u = curUnit();
+      u.moves -= reachable.get(k);
+      u.c = c; u.r = r;
+      placeUnit(u);
+      updateFog();
       computeReachable();
       renderMoves();
       updateUnitBar();
-      if (unit.moves <= 0) { unitSelected = false; renderMoves(); }
+      if (u.moves <= 0) { unitSelected = false; renderMoves(); }
       selectHex(c, r);
       return;
     }
     selectHex(c, r);       // nothing selected — just inspect the tile
-  }
-  function placeUnit() {
-    const p = layout.positions[unit.c][unit.r];
-    const s = parseFloat(unitEl.style.width);
-    unitEl.style.left = (p.cx - s / 2) + 'px';
-    unitEl.style.top = (p.cy - s / 2) + 'px';
   }
 
   // ---- PAN / ZOOM ----
@@ -985,15 +1170,22 @@
   document.getElementById('nextTurn').addEventListener('click', () => {
     state.turn++;
     state.year -= 40;
-    state.gold += state.goldD;
-    state.science += 1;
+    state.gold += state.goldD + cities.length * 2;
+    state.science += 1 + cities.length;
     if (state.turn % 4 === 0) state.culture += 1;
-    unit.moves = UNIT_MAX_MOVES;
+    for (const u of units) u.moves = u.max;
     if (unitSelected) computeReachable();
     renderMoves();
     updateUnitBar();
     renderStats();
-    showNotice('Turn ' + state.turn + ' — your Warrior is ready to move.');
+    showNotice('Turn ' + state.turn + ' — all units refreshed.');
+  });
+
+  document.getElementById('prevUnit').addEventListener('click', () => cycleUnit(-1));
+  document.getElementById('nextUnit').addEventListener('click', () => cycleUnit(1));
+  document.getElementById('foundCity').addEventListener('click', () => {
+    const u = curUnit();
+    if (u && u.type === 'settler' && canFoundCity(u.c, u.r)) foundCity(u);
   });
 
   // ---- MINIMAP ----
@@ -1008,7 +1200,7 @@
     for (let c = 0; c < COLS; c++) {
       for (let r = 0; r < ROWS; r++) {
         const p = layout.positions[c][r];
-        ctx.fillStyle = tiles[c][r].terrain.col;
+        ctx.fillStyle = tiles[c][r].seen ? tiles[c][r].terrain.col : '#0a1a29';
         ctx.fillRect(p.cx * sx - w / 2, p.cy * sy - h / 2, w, h);
       }
     }
@@ -1056,6 +1248,8 @@
     generateMap();
     buildTextures();
     buildBoard();
+    buildFog();
+    updateFog();
     centerOnHex(startHex.c, startHex.r);
     selectHex(startHex.c, startHex.r);
     applyTransform();
@@ -1064,7 +1258,7 @@
     layoutPanels();
     updateMinimapView();
     startFps();
-    showNotice('Tap your Warrior, then tap a dot to move.');
+    showNotice('Explore with your units, then found a city with the Settler.');
   }
   window.addEventListener('resize', () => {
     computeZoomBounds();
