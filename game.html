@@ -346,6 +346,103 @@
     }
   }
 
+  // ---- PROCEDURAL TILE TEXTURES ----
+  // Each terrain gets three small canvas-drawn textures. They become data
+  // URIs reused as background images by every hex of that terrain, so the
+  // browser decodes one bitmap and shares it across hundreds of tiles —
+  // real texture, no per-tile paint cost.
+  function rng(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a += 0x6D2B79F5; let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  const TEX_KIND = { ocean: 'water', coast: 'water', snow: 'snow', tundra: 'tundra',
+                     grassland: 'grass', plains: 'dry', desert: 'sand', mountain: 'rock' };
+
+  function makeTexture(kind, base, variant) {
+    const S = 96, cv = document.createElement('canvas');
+    cv.width = cv.height = S;
+    const x = cv.getContext('2d');
+    const R = rng(kind.length * 7919 + variant * 104729 + 17);
+    x.fillStyle = base; x.fillRect(0, 0, S, S);
+    const dot = (cx, cy, rad, col) => { x.fillStyle = col; x.beginPath(); x.arc(cx, cy, rad, 0, 6.2832); x.fill(); };
+    const blob = (cx, cy, w, h, col) => { x.fillStyle = col; x.beginPath(); x.ellipse(cx, cy, w, h, R() * 3, 0, 6.2832); x.fill(); };
+    const wave = (col, lw) => {
+      const y = R() * S, w = 20 + R() * 30, cx = R() * S;
+      x.strokeStyle = col; x.lineWidth = lw; x.lineCap = 'round';
+      x.beginPath(); x.moveTo(cx - w / 2, y);
+      x.quadraticCurveTo(cx, y - 4 - R() * 5, cx + w / 2, y); x.stroke();
+    };
+
+    if (kind === 'water') {
+      for (let i = 0; i < 5; i++) blob(R()*S, R()*S, 16+R()*18, 8+R()*9, 'rgba(255,255,255,0.07)');
+      for (let i = 0; i < 4; i++) blob(R()*S, R()*S, 14+R()*16, 7+R()*8, 'rgba(0,55,75,0.11)');
+      for (let i = 0; i < 8; i++) wave('rgba(255,255,255,' + (0.15 + R()*0.15).toFixed(2) + ')', 2);
+    } else if (kind === 'grass') {
+      for (let i = 0; i < 5; i++) blob(R()*S, R()*S, 11+R()*13, 6+R()*8, 'rgba(0,0,0,0.06)');
+      for (let i = 0; i < 100; i++) {              // grass tufts
+        const gx = R()*S, gy = R()*S, h = 3 + R()*4;
+        x.strokeStyle = R() < 0.5 ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.14)';
+        x.lineWidth = 1.4; x.beginPath(); x.moveTo(gx, gy);
+        x.lineTo(gx + (R()-0.5)*2.5, gy - h); x.stroke();
+      }
+    } else if (kind === 'dry') {
+      for (let i = 0; i < 70; i++) dot(R()*S, R()*S, 0.8+R()*1.2, R()<0.5 ? 'rgba(0,0,0,0.13)' : 'rgba(255,255,255,0.16)');
+      for (let i = 0; i < 26; i++) {               // dry stalks
+        const gx = R()*S, gy = R()*S;
+        x.strokeStyle = 'rgba(95,84,32,0.32)'; x.lineWidth = 1.2;
+        x.beginPath(); x.moveTo(gx, gy); x.lineTo(gx + (R()-0.5)*3, gy - 3 - R()*3); x.stroke();
+      }
+    } else if (kind === 'sand') {
+      for (let i = 0; i < 130; i++) dot(R()*S, R()*S, 0.7+R()*1.1, R()<0.5 ? 'rgba(255,255,255,0.20)' : 'rgba(120,85,50,0.16)');
+      for (let i = 0; i < 4; i++) wave('rgba(255,255,255,0.13)', 2);   // dune ripples
+      for (let i = 0; i < 5; i++) dot(R()*S, R()*S, 1.8+R()*2, 'rgba(150,138,116,0.55)'); // pebbles
+      for (let i = 0; i < 6; i++) {                // sparse desert scrub
+        const gx = R()*S, gy = R()*S;
+        x.strokeStyle = 'rgba(110,120,60,0.45)'; x.lineWidth = 1.2;
+        x.beginPath(); x.moveTo(gx-2, gy); x.lineTo(gx, gy-4); x.lineTo(gx+2, gy); x.stroke();
+      }
+    } else if (kind === 'snow') {
+      for (let i = 0; i < 8; i++) blob(R()*S, R()*S, 12+R()*17, 8+R()*10, 'rgba(150,185,205,0.20)');
+      for (let i = 0; i < 45; i++) dot(R()*S, R()*S, 0.8+R(), 'rgba(255,255,255,0.55)');
+    } else if (kind === 'tundra') {
+      for (let i = 0; i < 80; i++) dot(R()*S, R()*S, 0.8+R()*1.3, R()<0.5 ? 'rgba(58,68,48,0.22)' : 'rgba(232,238,228,0.18)');
+      for (let i = 0; i < 5; i++) blob(R()*S, R()*S, 10+R()*13, 6+R()*8, 'rgba(255,255,255,0.10)');
+    } else if (kind === 'rock') {
+      for (let i = 0; i < 9; i++) blob(R()*S, R()*S, 12+R()*16, 6+R()*10, R()<0.5 ? 'rgba(0,0,0,0.17)' : 'rgba(255,255,255,0.14)');
+      for (let i = 0; i < 18; i++) {               // rock striations
+        const gx = R()*S, gy = R()*S;
+        x.strokeStyle = 'rgba(0,0,0,0.17)'; x.lineWidth = 1.6;
+        x.beginPath(); x.moveTo(gx, gy); x.lineTo(gx + 5 + R()*8, gy + 3 + R()*5); x.stroke();
+      }
+    }
+    return cv.toDataURL('image/png');
+  }
+
+  function buildTextures() {
+    for (const key in TERRA) {
+      TERRA[key].tex = [0, 1, 2].map(v => makeTexture(TEX_KIND[key], TERRA[key].col, v));
+    }
+  }
+
+  // Neighbours in this flat-top odd-q layout (odd columns sit half a hex lower).
+  function neighbors(c, r) {
+    const d = (c % 2 === 1)
+      ? [[0,-1],[0,1],[-1,0],[-1,1],[1,0],[1,1]]
+      : [[0,-1],[0,1],[-1,-1],[-1,0],[1,-1],[1,0]];
+    const out = [];
+    for (const [dc, dr] of d) {
+      const nc = c + dc, nr = r + dr;
+      if (nc >= 0 && nc < COLS && nr >= 0 && nr < ROWS) out.push({ c: nc, r: nr });
+    }
+    return out;
+  }
+
   // ---- BUILD BOARD (once) ----
   // Tiles are drawn slightly smaller than their cell so the dark background
   // shows through as thin hex outlines — Unciv's tile borders, for free.
@@ -354,6 +451,26 @@
     boardEl.style.height = layout.boardH + 'px';
     boardEl.innerHTML = '';
     const tileW = layout.hexW * 0.985, tileH = layout.hexH * 0.985;
+
+    // Sandy shoreline: every land tile touching water gets a slightly larger
+    // sand hex behind it, so the continent is ringed by a beach like the
+    // reference art. Its own pass, so later tiles never cover it.
+    const sw = layout.hexW * 1.13, sh = layout.hexH * 1.13;
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        if (tiles[c][r].water) continue;
+        if (!neighbors(c, r).some(n => tiles[n.c][n.r].water)) continue;
+        const p = layout.positions[c][r];
+        const sand = document.createElement('div');
+        sand.className = 'hex';
+        Object.assign(sand.style, {
+          width: sw + 'px', height: sh + 'px',
+          left: (p.cx - sw / 2) + 'px', top: (p.cy - sh / 2) + 'px',
+          background: '#efd9a4',
+        });
+        boardEl.appendChild(sand);
+      }
+    }
 
     for (let c = 0; c < COLS; c++) {
       for (let r = 0; r < ROWS; r++) {
@@ -364,7 +481,9 @@
         hex.style.height = tileH + 'px';
         hex.style.left = (p.cx - tileW / 2) + 'px';
         hex.style.top = (p.cy - tileH / 2) + 'px';
-        hex.style.background = shade(tl.terrain.col, c, r);
+        hex.style.backgroundColor = tl.terrain.col;
+        hex.style.backgroundImage = 'url(' + tl.terrain.tex[(c * 7 + r * 13) % 3] + ')';
+        hex.style.backgroundSize = '100% 100%';
         addFeature(hex, tl, tileW, tileH);
         if (tl.res) addResource(hex, tl.res, tileW, tileH);
         boardEl.appendChild(hex);
@@ -707,6 +826,7 @@
     computeZoomBounds();
     cellSize = Math.min(maxCell, minCell * 2.2);   // start zoomed in, Unciv-like
     generateMap();
+    buildTextures();
     buildBoard();
     centerOnHex(startHex.c, startHex.r);
     selectHex(startHex.c, startHex.r);
