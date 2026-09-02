@@ -48,7 +48,7 @@
   /* A two-peak mountain range silhouette */
   .mtn  { clip-path: polygon(0% 100%, 22% 42%, 38% 66%, 56% 20%, 76% 60%, 100% 100%); }
   .cap  { clip-path: polygon(50% 0%, 100% 100%, 0% 100%); }
-  .hill { border-radius: 50% 50% 0 0; }
+  .hill { border-radius: 50% 50% 12% 12% / 80% 80% 20% 20%; }
   .rock { border-radius: 40% 45% 35% 50%; }
 
   /* Resource badge, like Unciv's circular tile icons */
@@ -507,7 +507,23 @@
     const R = rng(kind.length * 7919 + variant * 104729 + 17);
     x.fillStyle = base; x.fillRect(0, 0, S, S);
     const dot = (cx, cy, rad, col) => { x.fillStyle = col; x.beginPath(); x.arc(cx, cy, rad, 0, 6.2832); x.fill(); };
-    const blob = (cx, cy, w, h, col) => { x.fillStyle = col; x.beginPath(); x.ellipse(cx, cy, w, h, R() * 3, 0, 6.2832); x.fill(); };
+    // A long, shallow band sweeping across the tile — used for currents,
+    // dune lines and snow drifts. Replaces the old big ellipse blobs, which
+    // read as random giant circles sitting on the ground.
+    const band = (col, lw) => {
+      const y = R() * S;
+      x.strokeStyle = col; x.lineWidth = lw; x.lineCap = 'round';
+      x.beginPath(); x.moveTo(-6, y);
+      x.bezierCurveTo(S * 0.3, y - 4 - R() * 4, S * 0.7, y + 4 + R() * 4, S + 6, y);
+      x.stroke();
+    };
+    // One blade / stalk: a short stroke curving up with a slight lean.
+    const blade = (bx, by, len, lean, col, lw) => {
+      x.strokeStyle = col; x.lineWidth = lw; x.lineCap = 'round';
+      x.beginPath(); x.moveTo(bx, by);
+      x.quadraticCurveTo(bx + lean * 0.4, by - len * 0.6, bx + lean, by - len);
+      x.stroke();
+    };
     const wave = (col, lw) => {
       const y = R() * S, w = 20 + R() * 30, cx = R() * S;
       x.strokeStyle = col; x.lineWidth = lw; x.lineCap = 'round';
@@ -516,45 +532,58 @@
     };
 
     if (kind === 'water') {
-      for (let i = 0; i < 5; i++) blob(R()*S, R()*S, 16+R()*18, 8+R()*9, 'rgba(255,255,255,0.07)');
-      for (let i = 0; i < 4; i++) blob(R()*S, R()*S, 14+R()*16, 7+R()*8, 'rgba(0,55,75,0.11)');
-      for (let i = 0; i < 8; i++) wave('rgba(255,255,255,' + (0.15 + R()*0.15).toFixed(2) + ')', 2);
+      for (let i = 0; i < 9; i++) band('rgba(255,255,255,0.05)', 4 + R() * 5);
+      for (let i = 0; i < 14; i++) wave('rgba(255,255,255,' + (0.13 + R() * 0.16).toFixed(2) + ')', 1.6);
     } else if (kind === 'grass') {
-      for (let i = 0; i < 5; i++) blob(R()*S, R()*S, 11+R()*13, 6+R()*8, 'rgba(0,0,0,0.06)');
-      for (let i = 0; i < 100; i++) {              // grass tufts
-        const gx = R()*S, gy = R()*S, h = 3 + R()*4;
-        x.strokeStyle = R() < 0.5 ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.14)';
-        x.lineWidth = 1.4; x.beginPath(); x.moveTo(gx, gy);
-        x.lineTo(gx + (R()-0.5)*2.5, gy - h); x.stroke();
+      // Real grass reads from fine detail, not big shapes: hundreds of short
+      // blades leaning different ways, in a spread of greens.
+      for (let i = 0; i < 330; i++) {
+        const t = R();
+        const col = t < 0.38 ? 'rgba(22,48,16,0.30)'
+                  : t < 0.78 ? 'rgba(255,255,255,0.12)'
+                             : 'rgba(196,228,144,0.26)';
+        blade(R() * S, R() * S, 3 + R() * 5, (R() - 0.5) * 3.5, col, 1 + R() * 0.6);
+      }
+      // A few denser tufts so the field isn't perfectly even.
+      for (let t = 0; t < 16; t++) {
+        const tx = R() * S, ty = R() * S;
+        for (let i = 0; i < 6; i++) {
+          blade(tx + (R() - 0.5) * 7, ty + (R() - 0.5) * 5,
+                4 + R() * 5, (R() - 0.5) * 3, 'rgba(28,58,20,0.32)', 1.2);
+        }
       }
     } else if (kind === 'dry') {
-      for (let i = 0; i < 70; i++) dot(R()*S, R()*S, 0.8+R()*1.2, R()<0.5 ? 'rgba(0,0,0,0.13)' : 'rgba(255,255,255,0.16)');
-      for (let i = 0; i < 26; i++) {               // dry stalks
-        const gx = R()*S, gy = R()*S;
-        x.strokeStyle = 'rgba(95,84,32,0.32)'; x.lineWidth = 1.2;
-        x.beginPath(); x.moveTo(gx, gy); x.lineTo(gx + (R()-0.5)*3, gy - 3 - R()*3); x.stroke();
+      for (let i = 0; i < 90; i++) dot(R()*S, R()*S, 0.6 + R()*0.9,
+        R() < 0.5 ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.13)');
+      for (let i = 0; i < 150; i++) {
+        blade(R()*S, R()*S, 3 + R()*4, (R()-0.5)*3.5,
+          R() < 0.5 ? 'rgba(120,105,45,0.30)' : 'rgba(214,202,124,0.26)', 1.1);
       }
     } else if (kind === 'sand') {
-      for (let i = 0; i < 130; i++) dot(R()*S, R()*S, 0.7+R()*1.1, R()<0.5 ? 'rgba(255,255,255,0.20)' : 'rgba(120,85,50,0.16)');
-      for (let i = 0; i < 4; i++) wave('rgba(255,255,255,0.13)', 2);   // dune ripples
-      for (let i = 0; i < 5; i++) dot(R()*S, R()*S, 1.8+R()*2, 'rgba(150,138,116,0.55)'); // pebbles
-      for (let i = 0; i < 6; i++) {                // sparse desert scrub
+      for (let i = 0; i < 220; i++) dot(R()*S, R()*S, 0.5 + R()*0.9,
+        R() < 0.5 ? 'rgba(255,255,255,0.16)' : 'rgba(120,85,50,0.14)');
+      for (let i = 0; i < 6; i++) band('rgba(255,255,255,0.09)', 2);   // dune lines
+      for (let i = 0; i < 6; i++) dot(R()*S, R()*S, 1 + R()*1.2, 'rgba(150,138,116,0.45)');
+      for (let i = 0; i < 7; i++) {                                    // sparse scrub
         const gx = R()*S, gy = R()*S;
-        x.strokeStyle = 'rgba(110,120,60,0.45)'; x.lineWidth = 1.2;
-        x.beginPath(); x.moveTo(gx-2, gy); x.lineTo(gx, gy-4); x.lineTo(gx+2, gy); x.stroke();
+        x.strokeStyle = 'rgba(110,120,60,0.42)'; x.lineWidth = 1.1;
+        x.beginPath(); x.moveTo(gx - 2, gy); x.lineTo(gx, gy - 4); x.lineTo(gx + 2, gy); x.stroke();
       }
     } else if (kind === 'snow') {
-      for (let i = 0; i < 8; i++) blob(R()*S, R()*S, 12+R()*17, 8+R()*10, 'rgba(150,185,205,0.20)');
-      for (let i = 0; i < 45; i++) dot(R()*S, R()*S, 0.8+R(), 'rgba(255,255,255,0.55)');
+      for (let i = 0; i < 9; i++) band('rgba(150,182,206,0.15)', 5 + R()*6);  // drifts
+      for (let i = 0; i < 70; i++) dot(R()*S, R()*S, 0.6 + R()*0.9, 'rgba(255,255,255,0.55)');
     } else if (kind === 'tundra') {
-      for (let i = 0; i < 80; i++) dot(R()*S, R()*S, 0.8+R()*1.3, R()<0.5 ? 'rgba(58,68,48,0.22)' : 'rgba(232,238,228,0.18)');
-      for (let i = 0; i < 5; i++) blob(R()*S, R()*S, 10+R()*13, 6+R()*8, 'rgba(255,255,255,0.10)');
+      for (let i = 0; i < 150; i++) dot(R()*S, R()*S, 0.6 + R()*1.0,
+        R() < 0.5 ? 'rgba(58,68,48,0.22)' : 'rgba(232,238,228,0.18)');
+      for (let i = 0; i < 70; i++) {
+        blade(R()*S, R()*S, 2 + R()*3, (R()-0.5)*2, 'rgba(92,102,76,0.30)', 1);
+      }
     } else if (kind === 'rock') {
-      for (let i = 0; i < 9; i++) blob(R()*S, R()*S, 12+R()*16, 6+R()*10, R()<0.5 ? 'rgba(0,0,0,0.17)' : 'rgba(255,255,255,0.14)');
-      for (let i = 0; i < 18; i++) {               // rock striations
+      for (let i = 0; i < 44; i++) {
         const gx = R()*S, gy = R()*S;
-        x.strokeStyle = 'rgba(0,0,0,0.17)'; x.lineWidth = 1.6;
-        x.beginPath(); x.moveTo(gx, gy); x.lineTo(gx + 5 + R()*8, gy + 3 + R()*5); x.stroke();
+        x.strokeStyle = R() < 0.5 ? 'rgba(0,0,0,0.16)' : 'rgba(255,255,255,0.10)';
+        x.lineWidth = 1 + R(); x.lineCap = 'round';
+        x.beginPath(); x.moveTo(gx, gy); x.lineTo(gx + 4 + R()*9, gy + 2 + R()*6); x.stroke();
       }
     }
     return cv.toDataURL('image/png');
@@ -684,12 +713,16 @@
       mk('cap', hex, { left: pc(32 + R() * 16), top: pc(12 + R() * 6), width: pc(26), height: pc(24),
         background: '#eff7f7' });
     } else if (tl.feature === 'hill') {
-      mk('hill', hex, { left: pc(-10), top: pc(36 + R() * 8), width: pc(70), height: pc(54),
-        background: 'rgba(0,0,0,0.20)' });
-      mk('hill', hex, { left: pc(36 + R() * 10), top: pc(28 + R() * 8), width: pc(76), height: pc(62),
-        background: 'rgba(0,0,0,0.14)' });
-      mk('hill', hex, { left: pc(48 + R() * 8), top: pc(32), width: pc(30), height: pc(24),
-        background: 'rgba(255,255,255,0.16)' });
+      // Wide, low ridges: a shaded body with a lit crest, so they read as
+      // rolling ground rather than dark circles pasted on the tile.
+      mk('hill', hex, { left: pc(-14), top: pc(44 + R() * 6), width: pc(78), height: pc(34),
+        background: 'rgba(0,0,0,0.16)' });
+      mk('hill', hex, { left: pc(-10), top: pc(43 + R() * 6), width: pc(60), height: pc(12),
+        background: 'rgba(255,255,255,0.13)' });
+      mk('hill', hex, { left: pc(34 + R() * 10), top: pc(34 + R() * 6), width: pc(84), height: pc(40),
+        background: 'rgba(0,0,0,0.12)' });
+      mk('hill', hex, { left: pc(38 + R() * 10), top: pc(33 + R() * 6), width: pc(64), height: pc(13),
+        background: 'rgba(255,255,255,0.11)' });
     } else if (tl.feature === 'forest') {
       const greens = ['#2c5527', '#3a6b31', '#31602b', '#42763a', '#274d23'];
       const spots = [
@@ -845,7 +878,20 @@
         if (seenNow) tiles[c][r].seen = true;
         const want = seenNow ? 0 : (tiles[c][r].seen ? 0.45 : 1);
         const el = fogEls[c][r];
-        if (el._o !== want) { el.style.opacity = want; el._o = want; }
+        if (el._o === want) continue;
+        el._o = want;
+        if (want === 0) {
+          // A fully revealed tile is faded out and then taken out of the
+          // layout entirely — a transparent element is still composited every
+          // frame, which made the map get SLOWER the more you explored.
+          el.style.opacity = 0;
+          clearTimeout(el._t);
+          el._t = setTimeout(() => { if (el._o === 0) el.style.display = 'none'; }, 280);
+        } else {
+          clearTimeout(el._t);
+          el.style.display = '';
+          el.style.opacity = want;
+        }
       }
     }
     drawMinimap();
