@@ -71,6 +71,12 @@
     box-shadow: 0 3px 0 rgba(0,0,0,0.45), 0 6px 7px rgba(0,0,0,0.45);
     z-index: 6;
   }
+  .movedot {
+    position: absolute; border-radius: 50%;
+    background: rgba(255,255,255,0.82);
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.35), 0 0 8px rgba(255,255,255,0.55);
+    pointer-events: none; z-index: 5;
+  }
   #cursor {
     position: absolute;
     clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
@@ -340,7 +346,8 @@
           else if (t === TERRA.desert && Math.random() < 0.12) feature = 'rock';
         }
         const water = (t === TERRA.ocean || t === TERRA.coast);
-        col.push({ terrain: t, feature, heat, elev, water });
+        col.push({ terrain: t, feature, heat, elev, water,
+                   variant: (Math.random() * 6) | 0, fseed: Math.random() });
 
         // Best start: temperate grassland, no feature, away from the edges.
         if (!water && t === TERRA.grassland && !feature) {
@@ -442,9 +449,19 @@
     return cv.toDataURL('image/png');
   }
 
+  // Shift a hex colour's brightness, so each texture variant is tinted a
+  // little differently and neighbouring tiles of one terrain never match.
+  function adjustHex(hex, pct) {
+    const n = parseInt(hex.slice(1), 16), f = 1 + pct / 100;
+    const cl = v => Math.max(0, Math.min(255, Math.round(v * f)));
+    return `rgb(${cl((n >> 16) & 255)}, ${cl((n >> 8) & 255)}, ${cl(n & 255)})`;
+  }
+
+  const TEX_TINTS = [-9, -5, -2, 2, 6, 10];
   function buildTextures() {
     for (const key in TERRA) {
-      TERRA[key].tex = [0, 1, 2].map(v => makeTexture(TEX_KIND[key], TERRA[key].col, v));
+      TERRA[key].tex = TEX_TINTS.map((tint, v) =>
+        makeTexture(TEX_KIND[key], adjustHex(TERRA[key].col, tint), v));
     }
   }
 
@@ -500,9 +517,9 @@
         hex.style.left = (p.cx - tileW / 2) + 'px';
         hex.style.top = (p.cy - tileH / 2) + 'px';
         hex.style.backgroundColor = tl.terrain.col;
-        hex.style.backgroundImage = 'url(' + tl.terrain.tex[(c * 7 + r * 13) % 3] + ')';
+        hex.style.backgroundImage = 'url(' + tl.terrain.tex[tl.variant] + ')';
         hex.style.backgroundSize = '100% 100%';
-        addFeature(hex, tl, tileW, tileH);
+        addFeature(hex, tl);
         if (tl.res) addResource(hex, tl.res, tileW, tileH);
         boardEl.appendChild(hex);
       }
@@ -510,6 +527,13 @@
     cursorEl.style.width = tileW + 'px';
     cursorEl.style.height = tileH + 'px';
     boardEl.appendChild(cursorEl);
+    movesLayer = document.createElement('div');
+    movesLayer.style.position = 'absolute';
+    movesLayer.style.left = '0'; movesLayer.style.top = '0';
+    movesLayer.style.width = layout.boardW + 'px';
+    movesLayer.style.height = layout.boardH + 'px';
+    movesLayer.style.pointerEvents = 'none';
+    boardEl.appendChild(movesLayer);
     buildUnit(tileW);
   }
 
@@ -530,38 +554,47 @@
     return d;
   }
 
-  function addFeature(hex, tl, w, h) {
+  // Terrain art now fills the ENTIRE hex — the hexagon's own clip/overflow
+  // trims it, so mountains, forests and hills read as full tile artwork like
+  // the reference. Every tile randomises its own layout from `fseed`, so no
+  // two mountains or woods look identical.
+  function addFeature(hex, tl) {
+    const R = rng((((tl.fseed * 1e9) | 0) >>> 0) + 13);
+    const pc = v => v.toFixed(1) + '%';
     if (tl.feature === 'mtn') {
-      // A back ridge and a lighter front range, with a snow cap on the peak.
-      mk('mtn', hex, { left: w * 0.10 + 'px', top: h * 0.16 + 'px',
-        width: w * 0.58 + 'px', height: h * 0.62 + 'px', background: '#6d777a' });
-      mk('mtn', hex, { left: w * 0.34 + 'px', top: h * 0.24 + 'px',
-        width: w * 0.60 + 'px', height: h * 0.56 + 'px', background: '#9aa4a6' });
-      mk('cap', hex, { left: w * 0.55 + 'px', top: h * 0.245 + 'px',
-        width: w * 0.15 + 'px', height: h * 0.14 + 'px', background: '#eef6f6' });
+      mk('mtn', hex, { left: pc(-6), top: pc(2 + R() * 6), width: pc(112), height: pc(96),
+        background: '#6e797c' });
+      mk('mtn', hex, { left: pc(4 + R() * 12), top: pc(10 + R() * 8), width: pc(86), height: pc(88),
+        background: '#9ba5a7' });
+      mk('cap', hex, { left: pc(32 + R() * 16), top: pc(12 + R() * 6), width: pc(26), height: pc(24),
+        background: '#eff7f7' });
     } else if (tl.feature === 'hill') {
-      mk('hill', hex, { left: w * 0.18 + 'px', top: h * 0.46 + 'px',
-        width: w * 0.36 + 'px', height: h * 0.26 + 'px', background: 'rgba(0,0,0,0.20)' });
-      mk('hill', hex, { left: w * 0.46 + 'px', top: h * 0.40 + 'px',
-        width: w * 0.38 + 'px', height: h * 0.30 + 'px', background: 'rgba(0,0,0,0.13)' });
-      mk('hill', hex, { left: w * 0.50 + 'px', top: h * 0.42 + 'px',
-        width: w * 0.16 + 'px', height: h * 0.12 + 'px', background: 'rgba(255,255,255,0.16)' });
+      mk('hill', hex, { left: pc(-10), top: pc(36 + R() * 8), width: pc(70), height: pc(54),
+        background: 'rgba(0,0,0,0.20)' });
+      mk('hill', hex, { left: pc(36 + R() * 10), top: pc(28 + R() * 8), width: pc(76), height: pc(62),
+        background: 'rgba(0,0,0,0.14)' });
+      mk('hill', hex, { left: pc(48 + R() * 8), top: pc(32), width: pc(30), height: pc(24),
+        background: 'rgba(255,255,255,0.16)' });
     } else if (tl.feature === 'forest') {
-      // Three layered conifers, staggered and slightly different sizes/greens.
-      const trees = [
-        { x: 0.18, y: 0.34, s: 0.30, col: '#2f5b2a' },
-        { x: 0.44, y: 0.20, s: 0.36, col: '#3d7034' },
-        { x: 0.60, y: 0.42, s: 0.28, col: '#345f2c' },
+      const greens = ['#2c5527', '#3a6b31', '#31602b', '#42763a', '#274d23'];
+      const spots = [
+        { x: -4, y: 20, s: 46 }, { x: 26, y: -2, s: 54 },
+        { x: 56, y: 20, s: 48 }, { x: 20, y: 44, s: 44 },
       ];
-      for (const t of trees) {
-        mk('pine', hex, { left: w * t.x + 'px', top: h * t.y + 'px',
-          width: w * t.s + 'px', height: h * (t.s * 1.5) + 'px', background: t.col });
-      }
+      const off = (tl.fseed * 10) | 0;
+      spots.forEach((sp, i) => {
+        const size = sp.s + R() * 10 - 5;
+        mk('pine', hex, {
+          left: pc(sp.x + R() * 8 - 4), top: pc(sp.y + R() * 8 - 4),
+          width: pc(size), height: pc(size * 1.45),
+          background: greens[(i + off) % greens.length],
+        });
+      });
     } else if (tl.feature === 'rock') {
-      mk('rock', hex, { left: w * 0.30 + 'px', top: h * 0.46 + 'px',
-        width: w * 0.20 + 'px', height: h * 0.16 + 'px', background: 'rgba(255,255,255,0.30)' });
-      mk('rock', hex, { left: w * 0.56 + 'px', top: h * 0.54 + 'px',
-        width: w * 0.14 + 'px', height: h * 0.12 + 'px', background: 'rgba(255,255,255,0.22)' });
+      mk('rock', hex, { left: pc(12 + R() * 12), top: pc(38 + R() * 10), width: pc(38), height: pc(30),
+        background: 'rgba(255,255,255,0.28)' });
+      mk('rock', hex, { left: pc(50 + R() * 12), top: pc(50 + R() * 10), width: pc(30), height: pc(24),
+        background: 'rgba(255,255,255,0.20)' });
     }
   }
 
@@ -579,8 +612,11 @@
   }
 
   // ---- UNIT ----
-  let unit = { c: 0, r: 0, name: 'Warrior', icon: '🗡' };
-  let unitEl = null;
+  const UNIT_MAX_MOVES = 2;
+  let unit = { c: 0, r: 0, name: 'Warrior', icon: '🗡', moves: UNIT_MAX_MOVES };
+  let unitEl = null, movesLayer = null;
+  let unitSelected = false;
+  let reachable = new Map();   // "c,r" -> movement points spent to get there
   function buildUnit(tileW) {
     unit.c = startHex.c; unit.r = startHex.r;
     unitEl = document.createElement('div');
@@ -592,7 +628,85 @@
     unitEl.textContent = unit.icon;
     boardEl.appendChild(unitEl);
     placeUnit();
-    document.getElementById('unitName').textContent = unit.name;
+    updateUnitBar();
+  }
+
+  function updateUnitBar() {
+    document.getElementById('unitName').textContent =
+      unit.name + '  ' + unit.moves + '/' + UNIT_MAX_MOVES;
+  }
+
+  // ---- MOVEMENT ----
+  // Terrain costs movement points; mountains and water can't be entered.
+  function moveCost(tl) {
+    if (tl.water || tl.feature === 'mtn') return Infinity;
+    if (tl.feature === 'forest' || tl.feature === 'hill') return 2;
+    return 1;
+  }
+
+  // Cheapest-first search out from the unit, stopping at its remaining points.
+  function computeReachable() {
+    reachable = new Map();
+    if (unit.moves <= 0) return;
+    const key = (c, r) => c + ',' + r;
+    const best = new Map([[key(unit.c, unit.r), 0]]);
+    const queue = [{ c: unit.c, r: unit.r, cost: 0 }];
+    while (queue.length) {
+      queue.sort((a, b) => a.cost - b.cost);
+      const cur = queue.shift();
+      for (const n of neighbors(cur.c, cur.r)) {
+        const step = moveCost(tiles[n.c][n.r]);
+        if (!isFinite(step)) continue;
+        const cost = cur.cost + step;
+        if (cost > unit.moves) continue;
+        const k = key(n.c, n.r);
+        if (best.has(k) && best.get(k) <= cost) continue;
+        best.set(k, cost);
+        reachable.set(k, cost);
+        queue.push({ c: n.c, r: n.r, cost });
+      }
+    }
+  }
+
+  function renderMoves() {
+    if (!movesLayer) return;
+    movesLayer.innerHTML = '';
+    if (!unitSelected) return;
+    const size = layout.hexW * 0.26;
+    for (const k of reachable.keys()) {
+      const [c, r] = k.split(',').map(Number);
+      const p = layout.positions[c][r];
+      const d = document.createElement('div');
+      d.className = 'movedot';
+      Object.assign(d.style, {
+        width: size + 'px', height: size + 'px',
+        left: (p.cx - size / 2) + 'px', top: (p.cy - size / 2) + 'px',
+      });
+      movesLayer.appendChild(d);
+    }
+  }
+
+  // Tapping: a reachable tile moves the unit (spending points), the unit's own
+  // tile toggles selection, anything else just inspects the tile.
+  function onTapHex(c, r) {
+    const k = c + ',' + r;
+    if (unitSelected && reachable.has(k)) {
+      unit.moves -= reachable.get(k);
+      unit.c = c; unit.r = r;
+      placeUnit();
+      computeReachable();
+      renderMoves();
+      updateUnitBar();
+      if (unit.moves <= 0) { unitSelected = false; renderMoves(); }
+    } else if (c === unit.c && r === unit.r) {
+      unitSelected = !unitSelected;
+      if (unitSelected) computeReachable();
+      renderMoves();
+    } else {
+      unitSelected = false;
+      renderMoves();
+    }
+    selectHex(c, r);
   }
   function placeUnit() {
     const p = layout.positions[unit.c][unit.r];
@@ -717,7 +831,7 @@
     if (e.touches.length === 0) {
       if (!moved && downPt && Date.now() - downT < 300) {
         const h = hexAtClient(downPt.x, downPt.y);
-        if (h) selectHex(h.c, h.r);
+        if (h) onTapHex(h.c, h.r);
       }
       lastPan = null; lastPinch = null;
     } else if (e.touches.length === 1) {
@@ -740,7 +854,7 @@
   window.addEventListener('mouseup', () => {
     if (mDown && !mMoved && mDownPt) {
       const h = hexAtClient(mDownPt.x, mDownPt.y);
-      if (h) selectHex(h.c, h.r);
+      if (h) onTapHex(h.c, h.r);
     }
     mDown = false; mLast = null;
   });
@@ -782,8 +896,12 @@
     state.gold += state.goldD;
     state.science += 1;
     if (state.turn % 4 === 0) state.culture += 1;
+    unit.moves = UNIT_MAX_MOVES;
+    if (unitSelected) computeReachable();
+    renderMoves();
+    updateUnitBar();
     renderStats();
-    showNotice('Turn ' + state.turn + ' — your empire grows!');
+    showNotice('Turn ' + state.turn + ' — your Warrior is ready to move.');
   });
 
   // ---- MINIMAP ----
@@ -854,7 +972,7 @@
     layoutPanels();
     updateMinimapView();
     startFps();
-    showNotice('Your Warrior stands on fertile Grassland.');
+    showNotice('Tap your Warrior, then tap a dot to move.');
   }
   window.addEventListener('resize', () => {
     computeZoomBounds();
