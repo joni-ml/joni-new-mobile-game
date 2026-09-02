@@ -47,6 +47,23 @@
     position: fixed; bottom: env(safe-area-inset-bottom, 0px); left: 0; right: 0;
     text-align: center; font-size: 11px; opacity: 0.45; padding: 10px; pointer-events: none;
   }
+  #legend {
+    position: fixed; right: 0; top: env(safe-area-inset-top, 0px); margin: 6px;
+    z-index: 20; background: rgba(0,0,0,0.5); border-radius: 8px; padding: 6px 8px;
+    font-size: 10px; color: #ddd; display: flex; flex-direction: column; gap: 4px; align-items: stretch;
+  }
+  #legend .bar {
+    width: 120px; height: 10px; border-radius: 5px;
+    background: linear-gradient(to right,
+      hsl(205,30%,90%), hsl(200,55%,70%), hsl(165,45%,52%), hsl(110,45%,44%),
+      hsl(55,58%,52%), hsl(30,68%,50%), hsl(8,72%,47%));
+  }
+  #legend .labels { display: flex; justify-content: space-between; opacity: 0.8; }
+  #temp {
+    position: fixed; right: 0; top: calc(env(safe-area-inset-top, 0px) + 54px); margin: 6px;
+    z-index: 20; background: rgba(0,0,0,0.5); border-radius: 8px; padding: 4px 8px;
+    font-size: 11px; color: #fff; display: none;
+  }
 </style>
 </head>
 <body>
@@ -54,6 +71,11 @@
   <div id="board"></div>
 </div>
 <div id="fps">— FPS</div>
+<div id="legend">
+  <div class="bar"></div>
+  <div class="labels"><span>❄ cold</span><span>hot 🔥</span></div>
+</div>
+<div id="temp"></div>
 <div id="hint">drag to pan · pinch to zoom · tap a hex</div>
 
 <script>
@@ -96,16 +118,49 @@
 
   const layout = computeLayout(BASE_HEX);
 
-  // Flat tile color — a gentle per-tile variation so the surface isn't a
-  // single flat slab, but each tile is a solid color (no gradients/filters).
+  // ---- HEAT MAP ----
+  // Each hex has a temperature 0 (freezing) .. 1 (scorching). It is driven
+  // mainly by latitude — the equator (vertical middle of the map) is hot and
+  // the poles (top/bottom rows) are cold — plus smooth low-frequency noise so
+  // there are warmer and colder pockets rather than perfect bands. Hot hexes
+  // are colored with warm colors, cold hexes with cold colors.
+  function heatAt(c, r) {
+    const lat = 1 - Math.abs(r - (ROWS - 1) / 2) / ((ROWS - 1) / 2); // 1 eq, 0 pole
+    const noise = Math.sin(c * 0.55 + r * 0.3) * 0.5
+                + Math.sin(c * 0.2 - r * 0.45) * 0.3
+                + Math.sin((c + r) * 0.35) * 0.2;                     // -1..1
+    let h = lat * 0.75 + ((noise + 1) / 2) * 0.25;
+    return Math.max(0, Math.min(1, h));
+  }
+
+  // Heat -> color ramp (cold to hot), interpolated in HSL. Stops go from icy
+  // white-blue through teal/green to yellow, orange and red.
+  const HEAT_STOPS = [
+    { t: 0.00, h: 205, s: 30, l: 90 }, // ice
+    { t: 0.18, h: 200, s: 55, l: 70 }, // cold blue
+    { t: 0.38, h: 165, s: 45, l: 52 }, // cool teal
+    { t: 0.55, h: 110, s: 45, l: 44 }, // temperate green
+    { t: 0.72, h: 55,  s: 58, l: 52 }, // warm yellow
+    { t: 0.87, h: 30,  s: 68, l: 50 }, // hot orange
+    { t: 1.00, h: 8,   s: 72, l: 47 }, // scorching red
+  ];
+
+  function heatColor(t) {
+    let a = HEAT_STOPS[0], b = HEAT_STOPS[HEAT_STOPS.length - 1];
+    for (let i = 0; i < HEAT_STOPS.length - 1; i++) {
+      if (t >= HEAT_STOPS[i].t && t <= HEAT_STOPS[i + 1].t) {
+        a = HEAT_STOPS[i]; b = HEAT_STOPS[i + 1]; break;
+      }
+    }
+    const f = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t);
+    const h = a.h + (b.h - a.h) * f;
+    const s = a.s + (b.s - a.s) * f;
+    const l = a.l + (b.l - a.l) * f;
+    return `hsl(${h.toFixed(1)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
+  }
+
   function tileColor(c, r) {
-    const n = Math.sin(c * 0.9 + r * 0.5) * 0.5
-            + Math.sin(c * 0.35 - r * 0.8) * 0.3
-            + Math.sin((c + r) * 0.6) * 0.2;
-    const t = (n + 1) / 2;                 // 0..1
-    const hue = 120 + t * 30;              // greens
-    const light = 32 + t * 14;
-    return `hsl(${hue.toFixed(1)}, 42%, ${light.toFixed(0)}%)`;
+    return heatColor(heatAt(c, r));
   }
 
   // ---- BUILD THE BOARD ONCE ----
@@ -218,11 +273,16 @@
     return best;
   }
 
+  const tempEl = document.getElementById('temp');
   function selectHex(c, r) {
     const p = layout.positions[c][r];
     cursorEl.style.left = (p.cx - parseFloat(cursorEl.style.width) / 2) + 'px';
     cursorEl.style.top = (p.cy - parseFloat(cursorEl.style.height) / 2) + 'px';
     cursorEl.style.display = 'block';
+    // Show this hex's temperature (0..100%) — hotter hexes read warmer.
+    const pct = Math.round(heatAt(c, r) * 100);
+    tempEl.textContent = '🌡 ' + pct + '%  (' + c + ',' + r + ')';
+    tempEl.style.display = 'block';
   }
 
   // ---- INPUT ----
