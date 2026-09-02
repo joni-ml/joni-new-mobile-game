@@ -53,10 +53,10 @@
     font-size: 10px; color: #ddd; display: flex; flex-direction: column; gap: 4px; align-items: stretch;
   }
   #legend .bar {
-    width: 120px; height: 10px; border-radius: 5px;
+    width: 130px; height: 10px; border-radius: 5px;
     background: linear-gradient(to right,
-      hsl(205,30%,90%), hsl(200,55%,70%), hsl(165,45%,52%), hsl(110,45%,44%),
-      hsl(55,58%,52%), hsl(30,68%,50%), hsl(8,72%,47%));
+      hsl(205,18%,88%), hsl(150,16%,60%), hsl(110,42%,40%),
+      hsl(80,45%,46%), hsl(52,52%,52%), hsl(40,60%,62%));
   }
   #legend .labels { display: flex; justify-content: space-between; opacity: 0.8; }
   #temp {
@@ -73,7 +73,7 @@
 <div id="fps">— FPS</div>
 <div id="legend">
   <div class="bar"></div>
-  <div class="labels"><span>❄ cold</span><span>hot 🔥</span></div>
+  <div class="labels"><span>❄ snow</span><span>desert 🏜️</span></div>
 </div>
 <div id="temp"></div>
 <div id="hint">drag to pan · pinch to zoom · tap a hex</div>
@@ -164,34 +164,30 @@
 
   function heatAt(c, r) { return heatGrid[c][r]; }
 
-  // Heat -> color ramp (cold to hot), interpolated in HSL. Stops go from icy
-  // white-blue through teal/green to yellow, orange and red.
-  const HEAT_STOPS = [
-    { t: 0.00, h: 205, s: 30, l: 90 }, // ice
-    { t: 0.18, h: 200, s: 55, l: 70 }, // cold blue
-    { t: 0.38, h: 165, s: 45, l: 52 }, // cool teal
-    { t: 0.55, h: 110, s: 45, l: 44 }, // temperate green
-    { t: 0.72, h: 55,  s: 58, l: 52 }, // warm yellow
-    { t: 0.87, h: 30,  s: 68, l: 50 }, // hot orange
-    { t: 1.00, h: 8,   s: 72, l: 47 }, // scorching red
+  // ---- TERRAIN FROM TEMPERATURE ----
+  // Temperature maps to a terrain type, coldest to hottest: Snow, Tundra,
+  // Grassland, Plains, Savanna, Desert. Each terrain has its own base color;
+  // `max` is the upper heat bound for that band.
+  const TERRAINS = [
+    { name: 'Snow',      max: 0.15, h: 205, s: 18, l: 88 },
+    { name: 'Tundra',    max: 0.30, h: 150, s: 16, l: 60 },
+    { name: 'Grassland', max: 0.52, h: 110, s: 42, l: 40 },
+    { name: 'Plains',    max: 0.70, h: 80,  s: 45, l: 46 },
+    { name: 'Savanna',   max: 0.85, h: 52,  s: 52, l: 52 },
+    { name: 'Desert',    max: 1.01, h: 40,  s: 60, l: 62 },
   ];
 
-  function heatColor(t) {
-    let a = HEAT_STOPS[0], b = HEAT_STOPS[HEAT_STOPS.length - 1];
-    for (let i = 0; i < HEAT_STOPS.length - 1; i++) {
-      if (t >= HEAT_STOPS[i].t && t <= HEAT_STOPS[i + 1].t) {
-        a = HEAT_STOPS[i]; b = HEAT_STOPS[i + 1]; break;
-      }
-    }
-    const f = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t);
-    const h = a.h + (b.h - a.h) * f;
-    const s = a.s + (b.s - a.s) * f;
-    const l = a.l + (b.l - a.l) * f;
-    return `hsl(${h.toFixed(1)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
+  function terrainAt(c, r) {
+    const heat = heatAt(c, r);
+    for (const t of TERRAINS) { if (heat <= t.max) return t; }
+    return TERRAINS[TERRAINS.length - 1];
   }
 
   function tileColor(c, r) {
-    return heatColor(heatAt(c, r));
+    const t = terrainAt(c, r);
+    // Small per-hex lightness jitter so a terrain band isn't a flat slab.
+    const v = (Math.sin(c * 1.3 + r * 0.7) + Math.sin((c - r) * 0.9)) * 3;
+    return `hsl(${t.h}, ${t.s}%, ${Math.max(0, Math.min(100, t.l + v)).toFixed(0)}%)`;
   }
 
   // ---- BUILD THE BOARD ONCE ----
@@ -319,9 +315,9 @@
     cursorEl.style.left = (p.cx - parseFloat(cursorEl.style.width) / 2) + 'px';
     cursorEl.style.top = (p.cy - parseFloat(cursorEl.style.height) / 2) + 'px';
     cursorEl.style.display = 'block';
-    // Show this hex's temperature (0..100%) — hotter hexes read warmer.
+    // Show this hex's terrain type and temperature.
     const pct = Math.round(heatAt(c, r) * 100);
-    tempEl.textContent = '🌡 ' + pct + '%  (' + c + ',' + r + ')';
+    tempEl.textContent = terrainAt(c, r).name + ' · 🌡 ' + pct + '%';
     tempEl.style.display = 'block';
   }
 
