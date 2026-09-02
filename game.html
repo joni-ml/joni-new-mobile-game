@@ -286,8 +286,8 @@
     coast:     { name: 'Coast',     col: '#5fb0b8' },
     snow:      { name: 'Snow',      col: '#e2f2f2' },
     tundra:    { name: 'Tundra',    col: '#9fa892' },
-    grassland: { name: 'Grassland', col: '#6d9a44' },
-    plains:    { name: 'Plains',    col: '#b0a055' },
+    grassland: { name: 'Grassland', col: '#66933c' },
+    plains:    { name: 'Plains',    col: '#ac9b4e' },
     desert:    { name: 'Desert',    col: '#c69a70' },
     mountain:  { name: 'Mountains', col: '#8b9698' },
   };
@@ -535,29 +535,44 @@
       for (let i = 0; i < 9; i++) band('rgba(255,255,255,0.05)', 4 + R() * 5);
       for (let i = 0; i < 14; i++) wave('rgba(255,255,255,' + (0.13 + R() * 0.16).toFixed(2) + ')', 1.6);
     } else if (kind === 'grass') {
-      // Real grass reads from fine detail, not big shapes: hundreds of short
-      // blades leaning different ways, in a spread of greens.
-      for (let i = 0; i < 330; i++) {
-        const t = R();
-        const col = t < 0.38 ? 'rgba(22,48,16,0.30)'
-                  : t < 0.78 ? 'rgba(255,255,255,0.12)'
-                             : 'rgba(196,228,144,0.26)';
-        blade(R() * S, R() * S, 3 + R() * 5, (R() - 0.5) * 3.5, col, 1 + R() * 0.6);
+      // Grass is built in three passes so it has depth: a dark under-layer,
+      // the main body, then a few bright tips catching the light. Every blade
+      // jitters its OWN hue across yellow-green to deep green — that colour
+      // variation is what stops a field of grass reading as flat paint.
+      const g = (h, sat, l, a) => 'hsla(' + h.toFixed(0) + ',' + sat + '%,' + l.toFixed(0) + '%,' + a + ')';
+      const hue = () => 84 + (R() - 0.5) * 30;
+      for (let i = 0; i < 150; i++) {                       // shadow under-layer
+        blade(R()*S, R()*S, 4 + R()*5, (R()-0.5)*3,
+              g(hue(), 48, 19 + R()*9, 0.30), 1.7);
       }
-      // A few denser tufts so the field isn't perfectly even.
-      for (let t = 0; t < 16; t++) {
-        const tx = R() * S, ty = R() * S;
-        for (let i = 0; i < 6; i++) {
-          blade(tx + (R() - 0.5) * 7, ty + (R() - 0.5) * 5,
-                4 + R() * 5, (R() - 0.5) * 3, 'rgba(28,58,20,0.32)', 1.2);
+      for (let i = 0; i < 240; i++) {                       // main body
+        blade(R()*S, R()*S, 3 + R()*5, (R()-0.5)*3.5,
+              g(hue(), 46, 33 + R()*15, 0.30), 1.2);
+      }
+      for (let i = 0; i < 120; i++) {                       // sunlit tips
+        blade(R()*S, R()*S, 2.5 + R()*4, (R()-0.5)*3,
+              g(hue() - 12, 60, 55 + R()*13, 0.30), 0.9);
+      }
+      for (let t = 0; t < 14; t++) {                        // denser tufts
+        const tx = R()*S, ty = R()*S;
+        for (let i = 0; i < 7; i++) {
+          blade(tx + (R()-0.5)*8, ty + (R()-0.5)*6, 4 + R()*5, (R()-0.5)*3,
+                g(hue(), 52, 23 + R()*11, 0.34), 1.3);
         }
       }
     } else if (kind === 'dry') {
+      const g = (h, sat, l, a) => 'hsla(' + h.toFixed(0) + ',' + sat + '%,' + l.toFixed(0) + '%,' + a + ')';
+      const hue = () => 52 + (R() - 0.5) * 26;              // straw .. olive
       for (let i = 0; i < 90; i++) dot(R()*S, R()*S, 0.6 + R()*0.9,
-        R() < 0.5 ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.13)');
+        R() < 0.5 ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.12)');
+      for (let i = 0; i < 110; i++) {
+        blade(R()*S, R()*S, 3 + R()*5, (R()-0.5)*3, g(hue(), 40, 24 + R()*10, 0.28), 1.5);
+      }
       for (let i = 0; i < 150; i++) {
-        blade(R()*S, R()*S, 3 + R()*4, (R()-0.5)*3.5,
-          R() < 0.5 ? 'rgba(120,105,45,0.30)' : 'rgba(214,202,124,0.26)', 1.1);
+        blade(R()*S, R()*S, 3 + R()*4, (R()-0.5)*3.5, g(hue(), 45, 42 + R()*16, 0.28), 1.1);
+      }
+      for (let i = 0; i < 80; i++) {
+        blade(R()*S, R()*S, 2.5 + R()*3.5, (R()-0.5)*3, g(hue() + 8, 58, 62 + R()*12, 0.26), 0.9);
       }
     } else if (kind === 'sand') {
       for (let i = 0; i < 220; i++) dot(R()*S, R()*S, 0.5 + R()*0.9,
@@ -597,7 +612,7 @@
     return `rgb(${cl((n >> 16) & 255)}, ${cl((n >> 8) & 255)}, ${cl(n & 255)})`;
   }
 
-  const TEX_TINTS = [-9, -5, -2, 2, 6, 10];
+  const TEX_TINTS = [-11, -6, -2, 2, 7, 12];
   function buildTextures() {
     for (const key in TERRA) {
       TERRA[key].tex = TEX_TINTS.map((tint, v) =>
