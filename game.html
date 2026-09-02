@@ -119,19 +119,50 @@
   const layout = computeLayout(BASE_HEX);
 
   // ---- HEAT MAP ----
-  // Each hex has a temperature 0 (freezing) .. 1 (scorching). It is driven
-  // mainly by latitude — the equator (vertical middle of the map) is hot and
-  // the poles (top/bottom rows) are cold — plus smooth low-frequency noise so
-  // there are warmer and colder pockets rather than perfect bands. Hot hexes
-  // are colored with warm colors, cold hexes with cold colors.
-  function heatAt(c, r) {
-    const lat = 1 - Math.abs(r - (ROWS - 1) / 2) / ((ROWS - 1) / 2); // 1 eq, 0 pole
-    const noise = Math.sin(c * 0.55 + r * 0.3) * 0.5
-                + Math.sin(c * 0.2 - r * 0.45) * 0.3
-                + Math.sin((c + r) * 0.35) * 0.2;                     // -1..1
-    let h = lat * 0.75 + ((noise + 1) / 2) * 0.25;
-    return Math.max(0, Math.min(1, h));
+  // Minecraft-style temperature, NOT latitude/realism: scatter hot, cold and
+  // mild "temperature seeds" at random positions each game. Every hex blends
+  // toward the seeds near it (inverse-distance weighting), so hot hexes
+  // cluster around hot seeds and cold around cold seeds. Re-randomized on
+  // every load. Precomputed into heatGrid so colors and taps agree.
+  let heatGrid = [];
+  let startHex = { c: (COLS / 2) | 0, r: (ROWS / 2) | 0 };
+
+  function generateHeat() {
+    const seeds = [];
+    function add(n, lo, hi) {
+      for (let i = 0; i < n; i++) {
+        seeds.push({ c: Math.random() * (COLS - 1), r: Math.random() * (ROWS - 1),
+                     h: lo + Math.random() * (hi - lo) });
+      }
+    }
+    add(3, 0.85, 1.0);   // hot spots
+    add(3, 0.0,  0.15);  // cold spots
+    add(4, 0.35, 0.65);  // mild regions
+
+    heatGrid = [];
+    let bestC = 0, bestR = 0, bestDiff = Infinity;
+    for (let c = 0; c < COLS; c++) {
+      const col = [];
+      for (let r = 0; r < ROWS; r++) {
+        let wsum = 0, hsum = 0;
+        for (const s of seeds) {
+          const dc = s.c - c, dr = s.r - r;
+          const w = 1 / (dc * dc + dr * dr + 1.2); // closer seeds dominate
+          wsum += w; hsum += w * s.h;
+        }
+        let h = hsum / wsum;
+        h += (Math.sin(c * 1.7 + r * 0.9) + Math.sin((c - r) * 1.3)) * 0.03; // fine texture
+        h = Math.max(0, Math.min(1, h));
+        col.push(h);
+        const diff = Math.abs(h - 0.5); // remember the most "normal" hex to start on
+        if (diff < bestDiff) { bestDiff = diff; bestC = c; bestR = r; }
+      }
+      heatGrid.push(col);
+    }
+    startHex = { c: bestC, r: bestR };
   }
+
+  function heatAt(c, r) { return heatGrid[c][r]; }
 
   // Heat -> color ramp (cold to hot), interpolated in HSL. Stops go from icy
   // white-blue through teal/green to yellow, orange and red.
@@ -250,6 +281,15 @@
   function centerBoard() {
     panX = (layout.boardW / 2) * (1 - cellSize / BASE_HEX);
     panY = (layout.boardH / 2) * (1 - cellSize / BASE_HEX);
+    clampPan();
+  }
+
+  // Put a specific hex at the center of the viewport.
+  function centerOnHex(c, r) {
+    const s = cellSize / BASE_HEX;
+    const p = layout.positions[c][r];
+    panX = layout.boardW / 2 - s * p.cx;
+    panY = layout.boardH / 2 - s * p.cy;
     clampPan();
   }
 
@@ -379,8 +419,11 @@
   function init() {
     computeZoomBounds();
     cellSize = Math.min(maxCell, minCell * 1.4);
+    generateHeat();       // random hot/cold blobs, and pick a normal start hex
     buildBoard();
-    centerBoard();
+    // Start on a temperate ("normal") hex and mark it.
+    centerOnHex(startHex.c, startHex.r);
+    selectHex(startHex.c, startHex.r);
     applyTransform();
     startFps();
   }
