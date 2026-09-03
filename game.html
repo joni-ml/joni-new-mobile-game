@@ -51,6 +51,13 @@
   .mtn  { clip-path: polygon(0% 100%, 22% 42%, 38% 66%, 56% 20%, 76% 60%, 100% 100%); }
   .cap  { clip-path: polygon(50% 0%, 100% 100%, 0% 100%); }
   .hill { border-radius: 50% 50% 12% 12% / 80% 80% 20% 20%; }
+  /* A river running across the tile — walkable, and the only place rice grows */
+  .river {
+    position: absolute; left: -12%; width: 124%; height: 26%;
+    border-radius: 50%;
+    background: linear-gradient(#8fd3e6, #4f9fb5 60%, #3d8a97);
+    box-shadow: 0 0 0 2px rgba(120, 200, 220, 0.35);
+  }
   .rock { border-radius: 40% 45% 35% 50%; }
 
   /* Anything unknown, or anything whose artwork hasn't been made yet, gets
@@ -442,6 +449,7 @@
     }
 
     placeMountainRanges();
+    carveRivers();
     pickStartHex();
     placeResources();
   }
@@ -506,6 +514,40 @@
     }
   }
 
+  // Rivers start high and run downhill, so they wander across the land the
+  // way real ones do. They stay walkable — you need to stand on one to farm
+  // rice — and they are what makes a tile count as a river tile.
+  function carveRivers() {
+    const count = Math.round((COLS * ROWS) / 180) + ((Math.random() * 3) | 0);
+    for (let n = 0; n < count; n++) {
+      // Begin on the highest of a few sampled land tiles.
+      let c = -1, r = -1, best = -1;
+      for (let t = 0; t < 30; t++) {
+        const cc = (Math.random() * COLS) | 0, rr = (Math.random() * ROWS) | 0;
+        const tl = tiles[cc][rr];
+        if (tl.water || tl.feature === 'mtn') continue;
+        if (elevGrid[cc][rr] > best) { best = elevGrid[cc][rr]; c = cc; r = rr; }
+      }
+      if (c < 0) continue;
+      const len = 8 + ((Math.random() * 10) | 0);
+      for (let step = 0; step < len; step++) {
+        const tl = tiles[c][r];
+        if (tl.water) break;
+        if (tl.feature !== 'mtn') tl.river = true;
+        // Flow to the lowest neighbour that isn't already river.
+        let nc = -1, nr = -1, low = Infinity;
+        for (const nb of neighbors(c, r)) {
+          const t2 = tiles[nb.c][nb.r];
+          if (t2.river || t2.feature === 'mtn') continue;
+          const e = elevGrid[nb.c][nb.r] + Math.random() * 0.08;   // a little wander
+          if (e < low) { low = e; nc = nb.c; nr = nb.r; }
+        }
+        if (nc < 0) break;
+        c = nc; r = nr;
+      }
+    }
+  }
+
   // Start on temperate, open grassland well away from the map edge.
   function pickStartHex() {
     let bestC = -1, bestR = -1, bestScore = -Infinity;
@@ -564,15 +606,106 @@
   function resDef(key) { return RESOURCES.find(r => r.key === key); }
   function isKnown(key) { return !!(resInfo[key] && resInfo[key].known); }
 
+  // Where each crop may grow. Rice needs a river; the others want grass.
+  function cropFits(key, c, r) {
+    const tl = tiles[c][r];
+    if (tl.water || tl.res || tl.feature === 'mtn') return false;
+    if (key === 'rice') return !!tl.river;
+    if (tl.river) return false;                    // keep riverbanks for rice
+    return tl.terrain === TERRA.grassland || tl.terrain === TERRA.plains;
+  }
+
+  // Each crop gets its OWN region of the world, and the four regions are
+  // pushed as far apart as the map allows. That is what makes stumbling on
+  // all four close together rare while finding two together stays common.
+  function cropCentres(keys) {
+    const spots = [];
+    for (let t = 0; t < 200; t++) {
+      spots.push({ c: (Math.random() * COLS) | 0, r: (Math.random() * ROWS) | 0 });
+    }
+    const centres = [spots[(Math.random() * spots.length) | 0]];
+    while (centres.length < keys.length) {
+      let bestSpot = null, bestMin = -1;
+      for (const s2 of spots) {
+        let mn = Infinity;
+        for (const cen of centres) mn = Math.min(mn, hexDist(cen.c, cen.r, s2.c, s2.r));
+        if (mn > bestMin) { bestMin = mn; bestSpot = s2; }
+      }
+      centres.push(bestSpot);
+    }
+    const out = {};
+    keys.forEach((k, i) => { out[k] = centres[i]; });
+    return out;
+  }
+
+  const CROP_SPREAD = 5;   // how far a crop may stray from its region's centre
+
   function placeResources() {
     resetKnowledge();
+    const crops = ['wheat', 'rice', 'corn', 'potato'];
+    const centres = cropCentres(crops);
+
+    let land = 0;
+    for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++) if (!tiles[c][r].water) land++;
+    // Roughly one and a half crop tiles for every 7x7 patch of land.
+    const target = Math.round((land / 49) * 1.5);
+
+    const counts = {}; crops.forEach(k => counts[k] = 0);
+    const spacedOk = (key, c, r) => {
+      for (let cc = 0; cc < COLS; cc++) {
+        for (let rr = 0; rr < ROWS; rr++) {
+          if (tiles[cc][rr].res === key && hexDist(cc, rr, c, r) < 2) return false;
+        }
+      }
+      return true;
+    };
+
     let placed = 0, guard = 0;
-    while (placed < 18 && guard++ < 800) {
+    while (placed < target && guard++ < 4000) {
+      const c = (Math.random() * COLS) | 0, r = (Math.random() * ROWS) | 0;
+      // Whichever crop's region this tile falls in, with a little slack so
+      // regions blur into each other at their edges instead of hard borders.
+      let key = null, bestD = Infinity;
+      for (const k of crops) {
+        const d = hexDist(centres[k].c, centres[k].r, c, r) + Math.random() * 3;
+        if (d < bestD) { bestD = d; key = k; }
+      }
+      // A crop only grows inside its own region, which is what keeps the four
+      // of them apart instead of letting them blur together everywhere.
+      if (hexDist(centres[key].c, centres[key].r, c, r) > CROP_SPREAD) continue;
+      if (!cropFits(key, c, r) || !spacedOk(key, c, r)) continue;
+      tiles[c][r].res = key; counts[key]++; placed++;
+    }
+
+    // Guarantee at least four of every crop. This scans EVERY eligible tile
+    // and takes the ones closest to that crop's region, rather than sampling
+    // a few at random — on a large map, or for rice which needs a river, a
+    // random sample can easily miss and leave a crop below its minimum.
+    for (const k of crops) {
+      if (counts[k] >= 4) continue;
+      const options = [];
+      for (let c = 0; c < COLS; c++) {
+        for (let r = 0; r < ROWS; r++) {
+          if (cropFits(k, c, r)) options.push({ c, r, d: hexDist(centres[k].c, centres[k].r, c, r) });
+        }
+      }
+      options.sort((a, b) => a.d - b.d);
+      for (const o of options) {
+        if (counts[k] >= 4) break;
+        if (tiles[o.c][o.r].res) continue;
+        tiles[o.c][o.r].res = k; counts[k]++;
+      }
+    }
+
+    // The other resources stay sparse and scattered as before.
+    const others = ['sheep', 'cattle', 'grapes', 'stone'];
+    let n = 0, guard3 = 0;
+    while (n < 10 && guard3++ < 600) {
       const c = (Math.random() * COLS) | 0, r = (Math.random() * ROWS) | 0;
       const tl = tiles[c][r];
       if (tl.water || tl.res || tl.feature === 'mtn') continue;
-      tl.res = RESOURCES[(Math.random() * RESOURCES.length) | 0].key;
-      placed++;
+      tl.res = others[(Math.random() * others.length) | 0];
+      n++;
     }
   }
 
@@ -852,6 +985,13 @@
   function addFeature(hex, tl) {
     const R = rng((((tl.fseed * 1e9) | 0) >>> 0) + 13);
     const pc = v => v.toFixed(1) + '%';
+    if (tl.river) {
+      const band = document.createElement('div');
+      band.className = 'river';
+      band.style.top = (34 + R() * 14).toFixed(1) + '%';
+      band.style.transform = 'rotate(' + ((R() * 120 - 60).toFixed(1)) + 'deg)';
+      hex.appendChild(band);
+    }
     if (tl.feature === 'mtn') {
       mk('mtn', hex, { left: pc(-6), top: pc(2 + R() * 6), width: pc(112), height: pc(96),
         background: '#6e797c' });
@@ -1428,6 +1568,7 @@
     const bits = [tl.terrain.name];
     if (tl.feature === 'forest') bits.push('Forest');
     if (tl.feature === 'hill') bits.push('Hills');
+    if (tl.river) bits.push('River');
     if (tl.res) {
       if (isKnown(tl.res)) {
         const d = resDef(tl.res);
@@ -1682,6 +1823,25 @@
     cellSize = Math.max(minCell, Math.min(maxCell, cellSize));
     clampPan(); applyTransform(); layoutPanels();
   });
+
+  // Read-only snapshot of the generated world, used to check the resource
+  // distribution rules from a test harness.
+  window.__mapStats = () => {
+    const out = { crops: [], rivers: 0, land: 0 };
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        const tl = tiles[c][r];
+        if (!tl.water) out.land++;
+        if (tl.river) out.rivers++;
+        if (tl.res) out.crops.push({ c, r, key: tl.res, river: !!tl.river,
+                                     terrain: tl.terrain.name });
+      }
+    }
+    out.dist = (a, b, x, y) => 0;
+    return out;
+  };
+  window.__hexDist = hexDist;
+  window.__dims = { COLS, ROWS };
 
   init();
 })();
