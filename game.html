@@ -61,6 +61,20 @@
     text-shadow: 0 0 3px #000, 0 1px 2px #000;
     font-weight: 900;
   }
+  /* The name written under a missing-texture badge, so it is obvious what
+     the missing art is meant to be. */
+  .reslabel {
+    position: absolute; transform: translate(-50%, 0);
+    font-size: 9px; font-weight: 800; white-space: nowrap; z-index: 6;
+    color: #fff; background: #14001a; border: 1px solid #f000f0;
+    border-radius: 4px; padding: 1px 4px; pointer-events: none;
+  }
+  #labelsBtn {
+    position: fixed; left: 8px; z-index: 26;
+    background: rgba(0,0,0,0.5); color: #f0a; border: 1px solid #f000f0;
+    border-radius: 6px; padding: 3px 7px; font-size: 11px; font-weight: 700;
+  }
+  #labelsBtn.on { background: #f000f0; color: #fff; }
   /* Resource badge, like Unciv's circular tile icons */
   .res {
     position: absolute;
@@ -275,6 +289,7 @@
 
 <button id="foundCity">🏠 Build here</button>
 <button id="examineBtn">🔍 Study this</button>
+<button id="labelsBtn" title="Show the name of every missing texture">🏷 names</button>
 <div id="fps">— FPS</div>
 <div id="tileInfo"></div>
 
@@ -858,6 +873,12 @@
     }
   }
 
+  // When devLabels is on, EVERY missing-texture badge is named, including
+  // ones you have not identified yet. That is a build aid for choosing which
+  // artwork to draw next; it is off during play because naming an
+  // unidentified resource would give away the thing you are meant to discover.
+  let devLabels = false;
+
   function paintResource(d, key) {
     const def = resDef(key);
     // Unknown, or known but with no artwork yet -> missing-texture + question
@@ -866,6 +887,15 @@
     d.classList.toggle('missing', !showIcon);
     d.textContent = showIcon ? def.icon : '?';
     d.style.borderColor = showIcon ? '#f2f4f7' : '#f000f0';
+
+    // Name it when the art is missing: always once you have identified it,
+    // and for everything while the dev label toggle is on.
+    const label = d._label;
+    if (label) {
+      const nameIt = !showIcon && (devLabels || isKnown(key));
+      label.style.display = nameIt ? 'block' : 'none';
+      if (nameIt) label.textContent = def.name;
+    }
   }
   function addResource(hex, key, w, h) {
     const d = document.createElement('div');
@@ -876,9 +906,26 @@
       left: (w * 0.54) + 'px', top: (h * 0.10) + 'px',
       fontSize: (size * 0.60) + 'px',
     });
+    const label = document.createElement('div');
+    label.className = 'reslabel';
+    label.style.left = (w * 0.54 + size / 2) + 'px';
+    label.style.top = (h * 0.10 + size + 2) + 'px';
+    label.style.display = 'none';
+    hex.appendChild(label);
+    d._label = label;
+
     paintResource(d, key);
     hex.appendChild(d);
     return d;
+  }
+
+  function repaintAllResources() {
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        const el = resEls[c] && resEls[c][r];
+        if (el) paintResource(el, tiles[c][r].res);
+      }
+    }
   }
 
   // ---- HEX DISTANCE (odd-q offset -> cube) ----
@@ -1515,6 +1562,13 @@
 
   document.getElementById('prevUnit').addEventListener('click', () => cycleUnit(-1));
   document.getElementById('nextUnit').addEventListener('click', () => cycleUnit(1));
+  document.getElementById('labelsBtn').addEventListener('click', (e) => {
+    devLabels = !devLabels;
+    e.currentTarget.classList.toggle('on', devLabels);
+    repaintAllResources();
+    showNotice(devLabels ? 'Names shown on every missing texture (build aid).'
+                         : 'Names hidden again — unknown resources stay a mystery.');
+  });
   document.getElementById('examineBtn').addEventListener('click', examineResource);
   document.getElementById('foundCity').addEventListener('click', () => {
     const u = curUnit();
@@ -1572,6 +1626,7 @@
     document.getElementById('nextTurn').style.top = (barH + 8) + 'px';
     document.getElementById('notice').style.top = (barH + 74) + 'px';
     document.getElementById('fps').style.top = (barH + 62) + 'px';
+    document.getElementById('labelsBtn').style.top = (barH + 88) + 'px';
   }
 
   // ---- INIT ----
