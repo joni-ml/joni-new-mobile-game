@@ -53,6 +53,14 @@
   .hill { border-radius: 50% 50% 12% 12% / 80% 80% 20% 20%; }
   .rock { border-radius: 40% 45% 35% 50%; }
 
+  /* Anything unknown, or anything whose artwork hasn't been made yet, gets
+     the classic missing-texture look: black and magenta checks with a ? */
+  .res.missing {
+    background: conic-gradient(#f000f0 0 25%, #000 0 50%, #f000f0 0 75%, #000 0) 0 0 / 50% 50%;
+    color: #fff;
+    text-shadow: 0 0 3px #000, 0 1px 2px #000;
+    font-weight: 900;
+  }
   /* Resource badge, like Unciv's circular tile icons */
   .res {
     position: absolute;
@@ -513,27 +521,17 @@
     { key: 'apples',  name: 'Apples',   icon: '🍎', food: 2, prod: 0, gold: 2 },
     { key: 'potato',  name: 'Potatoes', icon: '🥔', food: 3, prod: 1, gold: 0 },
   ];
-  // Neutral markers: shape and colour carry no hint about what they hide.
-  const DISGUISES = [
-    { g: '◆', col: '#7fb2ff' }, { g: '▲', col: '#ffcf6b' }, { g: '●', col: '#8ce39a' },
-    { g: '■', col: '#ff9d8a' }, { g: '✦', col: '#d7a2ff' }, { g: '⬟', col: '#8fe6e0' },
-  ];
-  const resInfo = {};        // key -> { disguise, known }
+  const resInfo = {};        // key -> { known }
   let resEls = [];           // per-tile badge element, so identifying updates them
 
-  function shuffleDisguises() {
-    const pool = DISGUISES.slice();
-    for (let i = pool.length - 1; i > 0; i--) {
-      const j = (Math.random() * (i + 1)) | 0;
-      const t = pool[i]; pool[i] = pool[j]; pool[j] = t;
-    }
-    RESOURCES.forEach((res, i) => { resInfo[res.key] = { disguise: pool[i % pool.length], known: false }; });
+  function resetKnowledge() {
+    RESOURCES.forEach(res => { resInfo[res.key] = { known: false }; });
   }
   function resDef(key) { return RESOURCES.find(r => r.key === key); }
   function isKnown(key) { return !!(resInfo[key] && resInfo[key].known); }
 
   function placeResources() {
-    shuffleDisguises();
+    resetKnowledge();
     let placed = 0, guard = 0;
     while (placed < 18 && guard++ < 800) {
       const c = (Math.random() * COLS) | 0, r = (Math.random() * ROWS) | 0;
@@ -564,7 +562,7 @@
     updateUnitBar();
     renderStats();
     selectHex(u.c, u.r);
-    showNotice('You studied it: ' + def.icon + ' ' + def.name +
+    showNotice('You studied it: ' + (def.icon || '❓') + ' ' + def.name +
                '  (+' + def.food + ' food, +' + def.prod + ' prod, +' + def.gold + ' gold)');
   }
 
@@ -861,16 +859,13 @@
   }
 
   function paintResource(d, key) {
-    if (isKnown(key)) {
-      d.textContent = resDef(key).icon;
-      d.style.color = '#fff';
-      d.style.borderColor = '#f2f4f7';
-    } else {
-      const dis = resInfo[key].disguise;
-      d.textContent = dis.g;
-      d.style.color = dis.col;
-      d.style.borderColor = dis.col;
-    }
+    const def = resDef(key);
+    // Unknown, or known but with no artwork yet -> missing-texture + question
+    // mark. That way anything still waiting on a texture is obvious on sight.
+    const showIcon = isKnown(key) && def.icon;
+    d.classList.toggle('missing', !showIcon);
+    d.textContent = showIcon ? def.icon : '?';
+    d.style.borderColor = showIcon ? '#f2f4f7' : '#f000f0';
   }
   function addResource(hex, key, w, h) {
     const d = document.createElement('div');
@@ -1361,9 +1356,10 @@
     if (tl.res) {
       if (isKnown(tl.res)) {
         const d = resDef(tl.res);
-        bits.push(d.icon + ' ' + d.name + ' (+' + d.food + '🍎 +' + d.prod + '⚒ +' + d.gold + '🪙)');
+        bits.push((d.icon || '❓') + ' ' + d.name +
+                  ' (+' + d.food + '🍎 +' + d.prod + '⚒ +' + d.gold + '🪙)');
       } else {
-        bits.push(resInfo[tl.res].disguise.g + ' unidentified');
+        bits.push('❓ unidentified');
       }
     }
     bits.push('🌡 ' + Math.round(tl.heat * 100) + '%');
