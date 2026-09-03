@@ -94,6 +94,14 @@
     color: #fff; text-shadow: 0 1px 3px #000, 0 0 6px #000;
     pointer-events: none;
   }
+  #examineBtn {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 100px);
+    z-index: 26; display: none;
+    background: #2f6bb3; color: #fff; border: 1px solid #7fb2ff;
+    border-radius: 10px; padding: 10px 16px; font-size: 14px; font-weight: 700;
+    box-shadow: 0 3px 0 #1b4576;
+  }
   #foundCity {
     position: fixed; left: 50%; transform: translateX(-50%);
     bottom: calc(env(safe-area-inset-bottom, 0px) + 56px);
@@ -258,6 +266,7 @@
 </div>
 
 <button id="foundCity">🏠 Build here</button>
+<button id="examineBtn">🔍 Study this</button>
 <div id="fps">— FPS</div>
 <div id="tileInfo"></div>
 
@@ -489,17 +498,74 @@
     startHex = { c: bestC, r: bestR };
   }
 
-  // A few resource badges scattered on land, like Unciv's tile resources.
+  // ---- RESOURCES YOU HAVE TO IDENTIFY ----
+  // Nothing on the map tells you what a resource IS. Each one shows only an
+  // anonymous marker until a unit stands on it and studies it. The marker
+  // shown for each resource is SHUFFLED EVERY GAME, so knowing about sheep or
+  // potatoes in real life is worth nothing here — a 15 year old and a 30 year
+  // old start from exactly the same ignorance, and the only way to learn is
+  // to go and look, which is the medieval position.
+  const RESOURCES = [
+    { key: 'sheep',   name: 'Sheep',    icon: '🐑', food: 2, prod: 0, gold: 1 },
+    { key: 'cattle',  name: 'Cattle',   icon: '🐄', food: 3, prod: 0, gold: 1 },
+    { key: 'grapes',  name: 'Grapes',   icon: '🍇', food: 1, prod: 0, gold: 3 },
+    { key: 'stone',   name: 'Stone',    icon: '🪨', food: 0, prod: 3, gold: 0 },
+    { key: 'apples',  name: 'Apples',   icon: '🍎', food: 2, prod: 0, gold: 2 },
+    { key: 'potato',  name: 'Potatoes', icon: '🥔', food: 3, prod: 1, gold: 0 },
+  ];
+  // Neutral markers: shape and colour carry no hint about what they hide.
+  const DISGUISES = [
+    { g: '◆', col: '#7fb2ff' }, { g: '▲', col: '#ffcf6b' }, { g: '●', col: '#8ce39a' },
+    { g: '■', col: '#ff9d8a' }, { g: '✦', col: '#d7a2ff' }, { g: '⬟', col: '#8fe6e0' },
+  ];
+  const resInfo = {};        // key -> { disguise, known }
+  let resEls = [];           // per-tile badge element, so identifying updates them
+
+  function shuffleDisguises() {
+    const pool = DISGUISES.slice();
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = (Math.random() * (i + 1)) | 0;
+      const t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+    }
+    RESOURCES.forEach((res, i) => { resInfo[res.key] = { disguise: pool[i % pool.length], known: false }; });
+  }
+  function resDef(key) { return RESOURCES.find(r => r.key === key); }
+  function isKnown(key) { return !!(resInfo[key] && resInfo[key].known); }
+
   function placeResources() {
-    const RES = ['🐑', '🐄', '🍇', '🪨'];
+    shuffleDisguises();
     let placed = 0, guard = 0;
-    while (placed < 14 && guard++ < 600) {
+    while (placed < 18 && guard++ < 800) {
       const c = (Math.random() * COLS) | 0, r = (Math.random() * ROWS) | 0;
       const tl = tiles[c][r];
       if (tl.water || tl.res || tl.feature === 'mtn') continue;
-      tl.res = RES[(Math.random() * RES.length) | 0];
+      tl.res = RESOURCES[(Math.random() * RESOURCES.length) | 0].key;
       placed++;
     }
+  }
+
+  // Studying costs the unit the rest of its turn, and identifies that
+  // resource everywhere at once — you learned what the thing is.
+  function examineResource() {
+    const u = curUnit();
+    if (!u) return;
+    const tl = tiles[u.c][u.r];
+    if (!tl.res || isKnown(tl.res)) return;
+    resInfo[tl.res].known = true;
+    u.moves = 0;
+    const def = resDef(tl.res);
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        if (tiles[c][r].res === tl.res && resEls[c] && resEls[c][r]) paintResource(resEls[c][r], tl.res);
+      }
+    }
+    unitSelected = false;
+    renderMoves();
+    updateUnitBar();
+    renderStats();
+    selectHex(u.c, u.r);
+    showNotice('You studied it: ' + def.icon + ' ' + def.name +
+               '  (+' + def.food + ' food, +' + def.prod + ' prod, +' + def.gold + ' gold)');
   }
 
   // ---- PROCEDURAL TILE TEXTURES ----
@@ -667,12 +733,13 @@
     // One wrapper per column. Every element that belongs to a column (tiles,
     // shoreline, fog, units, cities, move dots) goes inside it, so shifting
     // the wrapper wraps that whole strip of the world at once.
-    colWrap = []; hexEls = []; sandEls = [];
+    colWrap = []; hexEls = []; sandEls = []; resEls = [];
     rowEls = []; rowM = [];
     for (let r = 0; r < ROWS; r++) { rowEls.push([]); rowM.push(0); }
     for (let c = 0; c < COLS; c++) {
       hexEls.push(new Array(ROWS).fill(null));
       sandEls.push(new Array(ROWS).fill(null));
+      resEls.push(new Array(ROWS).fill(null));
     }
     for (let c = 0; c < COLS; c++) {
       const w = document.createElement('div');
@@ -717,7 +784,7 @@
         hex.style.backgroundImage = 'url(' + tl.terrain.tex[tl.variant] + ')';
         hex.style.backgroundSize = '100% 100%';
         addFeature(hex, tl);
-        if (tl.res) addResource(hex, tl.res, tileW, tileH);
+        if (tl.res) resEls[c][r] = addResource(hex, tl.res, tileW, tileH);
         colWrap[c].appendChild(hex);
         hexEls[c][r] = hex;
         setRow(hex, r);
@@ -793,7 +860,19 @@
     }
   }
 
-  function addResource(hex, emoji, w, h) {
+  function paintResource(d, key) {
+    if (isKnown(key)) {
+      d.textContent = resDef(key).icon;
+      d.style.color = '#fff';
+      d.style.borderColor = '#f2f4f7';
+    } else {
+      const dis = resInfo[key].disguise;
+      d.textContent = dis.g;
+      d.style.color = dis.col;
+      d.style.borderColor = dis.col;
+    }
+  }
+  function addResource(hex, key, w, h) {
     const d = document.createElement('div');
     d.className = 'res';
     const size = w * 0.40;
@@ -802,8 +881,9 @@
       left: (w * 0.54) + 'px', top: (h * 0.10) + 'px',
       fontSize: (size * 0.60) + 'px',
     });
-    d.textContent = emoji;
+    paintResource(d, key);
     hex.appendChild(d);
+    return d;
   }
 
   // ---- HEX DISTANCE (odd-q offset -> cube) ----
@@ -880,6 +960,9 @@
       u ? u.icon + ' ' + u.name + '  ' + u.moves + '/' + u.max : '—';
     const btn = document.getElementById('foundCity');
     btn.style.display = (u && u.type === 'settler' && canFoundCity(u.c, u.r)) ? 'block' : 'none';
+    const ex = document.getElementById('examineBtn');
+    const onUnknown = u && tiles[u.c][u.r].res && !isKnown(tiles[u.c][u.r].res) && u.moves > 0;
+    ex.style.display = onUnknown ? 'block' : 'none';
   }
 
   function cycleUnit(dir) {
@@ -1275,7 +1358,14 @@
     const bits = [tl.terrain.name];
     if (tl.feature === 'forest') bits.push('Forest');
     if (tl.feature === 'hill') bits.push('Hills');
-    if (tl.res) bits.push(tl.res);
+    if (tl.res) {
+      if (isKnown(tl.res)) {
+        const d = resDef(tl.res);
+        bits.push(d.icon + ' ' + d.name + ' (+' + d.food + '🍎 +' + d.prod + '⚒ +' + d.gold + '🪙)');
+      } else {
+        bits.push(resInfo[tl.res].disguise.g + ' unidentified');
+      }
+    }
     bits.push('🌡 ' + Math.round(tl.heat * 100) + '%');
     infoEl.textContent = bits.join(' · ');
     infoEl.style.display = 'block';
@@ -1381,7 +1471,22 @@
   document.getElementById('nextTurn').addEventListener('click', () => {
     state.turn++;
     state.year -= 40;
-    state.gold += state.goldD + cities.length * 2;
+    // Only resources you have identified are worth anything — an unknown
+    // thing sitting in your borders earns you nothing until you study it.
+    let resGold = 0, resFood = 0;
+    for (const ct of cities) {
+      for (let c = 0; c < COLS; c++) {
+        for (let r = 0; r < ROWS; r++) {
+          const tl = tiles[c][r];
+          if (!tl.res || !isKnown(tl.res)) continue;
+          if (hexDist(ct.c, ct.r, c, r) > 1) continue;
+          resGold += resDef(tl.res).gold;
+          resFood += resDef(tl.res).food;
+        }
+      }
+    }
+    state.gold += state.goldD + cities.length * 2 + resGold;
+    state.food = 4 + resFood;
     state.science += 1 + cities.length;
     if (state.turn % 4 === 0) state.culture += 1;
     for (const u of units) u.moves = u.max;
@@ -1414,6 +1519,7 @@
 
   document.getElementById('prevUnit').addEventListener('click', () => cycleUnit(-1));
   document.getElementById('nextUnit').addEventListener('click', () => cycleUnit(1));
+  document.getElementById('examineBtn').addEventListener('click', examineResource);
   document.getElementById('foundCity').addEventListener('click', () => {
     const u = curUnit();
     if (u && u.type === 'settler' && canFoundCity(u.c, u.r)) foundCity(u);
@@ -1489,7 +1595,7 @@
     layoutPanels();
     updateMinimapView();
     startFps();
-    showNotice('Move the 🎒 pack where you want your home, then tap Build here.');
+    showNotice('Nothing is labelled. Stand on a marker and tap Study this to learn what it is.');
   }
   window.addEventListener('resize', () => {
     computeZoomBounds();
