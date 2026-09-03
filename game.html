@@ -313,7 +313,12 @@
   "use strict";
 
   // ---- CONFIG ----
-  const COLS = 30, ROWS = 30;
+  const COLS = 200, ROWS = 200;
+  // Everything below was tuned on a 30x30 world. AREA_SCALE lets counts that
+  // describe "how much of this per world" (biome seeds, mountain ranges, crop
+  // regions) grow with the map instead of staying at their 900-tile values,
+  // which on a 200x200 map would leave the world almost empty.
+  const AREA_SCALE = (COLS * ROWS) / 900;
   const BASE_HEX = 100;
 
   const viewportEl = document.getElementById('viewport');
@@ -383,10 +388,24 @@
   function blobField(seedSpecs, warp, contrast) {
     const seeds = [];
     for (const [n, lo, hi] of seedSpecs) {
-      for (let i = 0; i < n; i++) {
+      // Seed COUNT scales with the map so a biome stays the same size in
+      // tiles. Keeping n fixed would stretch a handful of regions across the
+      // whole 200x200 world and flatten it into a few enormous slabs.
+      const count = Math.max(1, Math.round(n * AREA_SCALE));
+      for (let i = 0; i < count; i++) {
         seeds.push({ c: Math.random() * (COLS - 1), r: Math.random() * (ROWS - 1),
                      v: lo + Math.random() * (hi - lo) });
       }
+    }
+    // With hundreds of seeds, weighing every tile against every seed is
+    // millions of operations. A seed 25 tiles away carries under 1% of a
+    // near one's weight, so bucket the seeds and only read the buckets
+    // around each tile — same field, a fraction of the work.
+    const CUT = 25, bw = Math.ceil(COLS / CUT), bh = Math.ceil(ROWS / CUT);
+    const buckets = [];
+    for (let i = 0; i < bw * bh; i++) buckets.push([]);
+    for (const sd of seeds) {
+      buckets[((sd.r / CUT) | 0) * bw + ((sd.c / CUT) | 0)].push(sd);
     }
     const s1 = Math.random() * 10, s2 = Math.random() * 10;
     const grid = [];
@@ -396,10 +415,19 @@
         const wc = c + smoothNoise(c, r, s1) * warp;
         const wr = r + smoothNoise(c, r, s2) * warp;
         let ws = 0, vs = 0;
-        for (const s of seeds) {
-          const dc = s.c - wc, dr = s.r - wr;
-          const w = 1 / (dc * dc + dr * dr + 6);   // wide falloff = big regions
-          ws += w; vs += w * s.v;
+        // Widen the bucket ring until something is in range, so a tile in an
+        // empty corner still gets a value instead of dividing by zero.
+        for (let ring = 1; ring <= Math.max(bw, bh) && ws === 0; ring++) {
+          const bc = (c / CUT) | 0, br = (r / CUT) | 0;
+          for (let bx = Math.max(0, bc - ring); bx <= Math.min(bw - 1, bc + ring); bx++) {
+            for (let by = Math.max(0, br - ring); by <= Math.min(bh - 1, br + ring); by++) {
+              for (const sd of buckets[by * bw + bx]) {
+                const dc = sd.c - wc, dr = sd.r - wr;
+                const w = 1 / (dc * dc + dr * dr + 6);   // wide falloff = big regions
+                ws += w; vs += w * sd.v;
+              }
+            }
+          }
         }
         let v = (vs / ws - 0.5) * contrast + 0.5;
         col.push(Math.max(0, Math.min(1, v)));
@@ -470,7 +498,7 @@
     const usable = (c, r, mine) =>
       !tiles[c][r].water && !isMtn(c, r) && !touchesOther(c, r, mine);
 
-    const ranges = 7 + ((Math.random() * 4) | 0);
+    const ranges = Math.round((7 + Math.random() * 4) * AREA_SCALE);
     for (let n = 0; n < ranges; n++) {
       const mine = new Set();
 
@@ -615,92 +643,110 @@
     return tl.terrain === TERRA.grassland || tl.terrain === TERRA.plains;
   }
 
-  // Each crop gets its OWN region of the world, and the four regions are
-  // pushed as far apart as the map allows. That is what makes stumbling on
-  // all four close together rare while finding two together stays common.
-  function cropCentres(keys) {
-    const spots = [];
-    for (let t = 0; t < 200; t++) {
-      spots.push({ c: (Math.random() * COLS) | 0, r: (Math.random() * ROWS) | 0 });
-    }
-    const centres = [spots[(Math.random() * spots.length) | 0]];
-    while (centres.length < keys.length) {
-      let bestSpot = null, bestMin = -1;
-      for (const s2 of spots) {
-        let mn = Infinity;
-        for (const cen of centres) mn = Math.min(mn, hexDist(cen.c, cen.r, s2.c, s2.r));
-        if (mn > bestMin) { bestMin = mn; bestSpot = s2; }
-      }
-      centres.push(bestSpot);
-    }
-    const out = {};
-    keys.forEach((k, i) => { out[k] = centres[i]; });
-    return out;
-  }
+  // The world is carved into crop TERRITORIES — big Voronoi patches, each one
+  // belonging to a single crop. Two crops meet all along a border, so running
+  // into two of them together is normal; all four only meet where several
+  // borders converge, which the geometry makes rare. Same-crop territories are
+  // pushed apart so a patch is never next to another patch of itself.
+  const TERRITORY = 26;   // roughly how many tiles across one territory is
 
-  const CROP_SPREAD = 5;   // how far a crop may stray from its region's centre
+  function cropTerritories(keys) {
+    const n = Math.max(keys.length, Math.round((COLS * ROWS) / (TERRITORY * TERRITORY)));
+    const seeds = [];
+    for (let i = 0; i < n; i++) {
+      const s = { c: (Math.random() * COLS) | 0, r: (Math.random() * ROWS) | 0, key: null };
+      // Take whichever crop is currently furthest away, so the same crop's
+      // patches stay apart instead of merging into one huge blob.
+      let bestK = keys[0], bestD = -1;
+      for (const k of keys) {
+        let d = Infinity;
+        for (const o of seeds) if (o.key === k) d = Math.min(d, hexDist(o.c, o.r, s.c, s.r));
+        if (d > bestD) { bestD = d; bestK = k; }
+      }
+      s.key = bestK;
+      seeds.push(s);
+    }
+    return seeds;
+  }
 
   function placeResources() {
     resetKnowledge();
     const crops = ['wheat', 'rice', 'corn', 'potato'];
-    const centres = cropCentres(crops);
+    const seeds = cropTerritories(crops);
 
+    // Which crop owns each tile: whichever territory seed is nearest.
+    const owner = [];
     let land = 0;
-    for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++) if (!tiles[c][r].water) land++;
+    for (let c = 0; c < COLS; c++) {
+      const col = new Array(ROWS);
+      for (let r = 0; r < ROWS; r++) {
+        if (!tiles[c][r].water) land++;
+        let best = null, bd = Infinity;
+        for (const s2 of seeds) {
+          const d = hexDist(s2.c, s2.r, c, r);
+          if (d < bd) { bd = d; best = s2; }
+        }
+        col[r] = best.key;
+      }
+      owner.push(col);
+    }
+
     // Roughly one and a half crop tiles for every 7x7 patch of land.
     const target = Math.round((land / 49) * 1.5);
 
-    const counts = {}; crops.forEach(k => counts[k] = 0);
+    // Two tiles of the same crop never touch. Only the tiles within a couple
+    // of steps can possibly be that close, so check those instead of sweeping
+    // the whole map for every single placement.
     const spacedOk = (key, c, r) => {
-      for (let cc = 0; cc < COLS; cc++) {
-        for (let rr = 0; rr < ROWS; rr++) {
+      for (let dc = -2; dc <= 2; dc++) {
+        const cc = ((c + dc) % COLS + COLS) % COLS;
+        for (let dr = -2; dr <= 2; dr++) {
+          const rr = ((r + dr) % ROWS + ROWS) % ROWS;
           if (tiles[cc][rr].res === key && hexDist(cc, rr, c, r) < 2) return false;
         }
       }
       return true;
     };
 
-    let placed = 0, guard = 0;
-    while (placed < target && guard++ < 4000) {
-      const c = (Math.random() * COLS) | 0, r = (Math.random() * ROWS) | 0;
-      // Whichever crop's region this tile falls in, with a little slack so
-      // regions blur into each other at their edges instead of hard borders.
-      let key = null, bestD = Infinity;
-      for (const k of crops) {
-        const d = hexDist(centres[k].c, centres[k].r, c, r) + Math.random() * 3;
-        if (d < bestD) { bestD = d; key = k; }
+    // Every tile that could carry its own territory's crop, shuffled, then
+    // taken until the density target is met.
+    const pool = [];
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        if (cropFits(owner[c][r], c, r)) pool.push({ c, r, k: owner[c][r] });
       }
-      // A crop only grows inside its own region, which is what keeps the four
-      // of them apart instead of letting them blur together everywhere.
-      if (hexDist(centres[key].c, centres[key].r, c, r) > CROP_SPREAD) continue;
-      if (!cropFits(key, c, r) || !spacedOk(key, c, r)) continue;
-      tiles[c][r].res = key; counts[key]++; placed++;
+    }
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = (Math.random() * (i + 1)) | 0;
+      const t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+    }
+
+    const counts = {}; crops.forEach(k => counts[k] = 0);
+    let placed = 0;
+    for (const p of pool) {
+      if (placed >= target) break;
+      if (tiles[p.c][p.r].res || !spacedOk(p.k, p.c, p.r)) continue;
+      tiles[p.c][p.r].res = p.k; counts[p.k]++; placed++;
     }
 
     // Guarantee at least four of every crop. This scans EVERY eligible tile
-    // and takes the ones closest to that crop's region, rather than sampling
-    // a few at random — on a large map, or for rice which needs a river, a
-    // random sample can easily miss and leave a crop below its minimum.
+    // rather than sampling a few at random — for rice, which needs a river,
+    // a random sample can easily miss and leave the crop below its minimum.
     for (const k of crops) {
       if (counts[k] >= 4) continue;
-      const options = [];
-      for (let c = 0; c < COLS; c++) {
-        for (let r = 0; r < ROWS; r++) {
-          if (cropFits(k, c, r)) options.push({ c, r, d: hexDist(centres[k].c, centres[k].r, c, r) });
+      for (let c = 0; c < COLS && counts[k] < 4; c++) {
+        for (let r = 0; r < ROWS && counts[k] < 4; r++) {
+          if (tiles[c][r].res || !cropFits(k, c, r)) continue;
+          tiles[c][r].res = k; counts[k]++;
         }
-      }
-      options.sort((a, b) => a.d - b.d);
-      for (const o of options) {
-        if (counts[k] >= 4) break;
-        if (tiles[o.c][o.r].res) continue;
-        tiles[o.c][o.r].res = k; counts[k]++;
       }
     }
 
     // The other resources stay sparse and scattered as before.
     const others = ['sheep', 'cattle', 'grapes', 'stone'];
+    const otherTarget = Math.round(10 * AREA_SCALE);
     let n = 0, guard3 = 0;
-    while (n < 10 && guard3++ < 600) {
+    while (n < otherTarget && guard3++ < otherTarget * 60) {
       const c = (Math.random() * COLS) | 0, r = (Math.random() * ROWS) | 0;
       const tl = tiles[c][r];
       if (tl.water || tl.res || tl.feature === 'mtn') continue;
@@ -915,50 +961,64 @@
       colWrap.push(w);
     }
 
-    // Sandy shoreline: every land tile touching water gets a slightly larger
-    // sand hex behind it, so the continent is ringed by a beach like the
-    // reference art. Its own pass, so later tiles never cover it.
-    const sw = layout.hexW * 1.13, sh = layout.hexH * 1.13;
-    for (let c = 0; c < COLS; c++) {
-      for (let r = 0; r < ROWS; r++) {
-        if (tiles[c][r].water) continue;
-        if (!neighbors(c, r).some(n => tiles[n.c][n.r].water)) continue;
-        const p = layout.positions[c][r];
-        const sand = document.createElement('div');
-        sand.className = 'hex';
-        Object.assign(sand.style, {
-          width: sw + 'px', height: sh + 'px',
-          left: (p.cx - sw / 2) + 'px', top: (p.cy - sh / 2) + 'px',
-          background: '#efd9a4',
-        });
-        colWrap[c].appendChild(sand);
-        sandEls[c][r] = sand;
-        setRow(sand, r);
-      }
-    }
-
-    for (let c = 0; c < COLS; c++) {
-      for (let r = 0; r < ROWS; r++) {
-        const tl = tiles[c][r], p = layout.positions[c][r];
-        const hex = document.createElement('div');
-        hex.className = 'hex';
-        hex.style.width = tileW + 'px';
-        hex.style.height = tileH + 'px';
-        hex.style.left = (p.cx - tileW / 2) + 'px';
-        hex.style.top = (p.cy - tileH / 2) + 'px';
-        hex.style.backgroundColor = tl.terrain.col;
-        hex.style.backgroundImage = 'url(' + tl.terrain.tex[tl.variant] + ')';
-        hex.style.backgroundSize = '100% 100%';
-        addFeature(hex, tl);
-        if (tl.res) resEls[c][r] = addResource(hex, tl.res, tileW, tileH);
-        colWrap[c].appendChild(hex);
-        hexEls[c][r] = hex;
-        setRow(hex, r);
-      }
-    }
+    tileW_ = tileW; tileH_ = tileH;
+    // Tiles are NOT built here. A 200x200 world is forty thousand hexes, and
+    // most of them carry feature art on top, which is hundreds of thousands
+    // of elements the browser would have to lay out before the first frame.
+    // Everything starts unexplored and unexplored tiles draw nothing at all,
+    // so each tile's elements are created the moment it is first seen — see
+    // ensureTile(). The map you have walked is the only map that exists.
     cursorEl.style.width = tileW + 'px';
     cursorEl.style.height = tileH + 'px';
     buildUnits(tileW);
+  }
+
+  let tileW_ = 0, tileH_ = 0;
+
+  // Build one tile's elements on first sight. Shoreline sand goes in before
+  // the hex so a beach never covers the tile it belongs to, and the fog panel
+  // goes in after so it sits on top.
+  function ensureTile(c, r) {
+    if (hexEls[c][r]) return;
+    const tl = tiles[c][r], p = layout.positions[c][r];
+
+    if (!tl.water && neighbors(c, r).some(n => tiles[n.c][n.r].water)) {
+      const sw = layout.hexW * 1.13, sh = layout.hexH * 1.13;
+      const sand = document.createElement('div');
+      sand.className = 'hex';
+      Object.assign(sand.style, {
+        width: sw + 'px', height: sh + 'px',
+        left: (p.cx - sw / 2) + 'px', top: (p.cy - sh / 2) + 'px',
+        background: '#efd9a4',
+      });
+      colWrap[c].appendChild(sand);
+      sandEls[c][r] = sand;
+      setRow(sand, r);
+    }
+
+    const hex = document.createElement('div');
+    hex.className = 'hex';
+    hex.style.width = tileW_ + 'px';
+    hex.style.height = tileH_ + 'px';
+    hex.style.left = (p.cx - tileW_ / 2) + 'px';
+    hex.style.top = (p.cy - tileH_ / 2) + 'px';
+    hex.style.backgroundColor = tl.terrain.col;
+    hex.style.backgroundImage = 'url(' + tl.terrain.tex[tl.variant] + ')';
+    hex.style.backgroundSize = '100% 100%';
+    addFeature(hex, tl);
+    if (tl.res) resEls[c][r] = addResource(hex, tl.res, tileW_, tileH_);
+    colWrap[c].appendChild(hex);
+    hexEls[c][r] = hex;
+    setRow(hex, r);
+
+    const fog = document.createElement('div');
+    fog.className = 'fog';
+    Object.assign(fog.style, { width: layout.hexW + 'px', height: layout.hexH + 'px',
+      left: (p.cx - layout.hexW / 2) + 'px', top: (p.cy - layout.hexH / 2) + 'px', opacity: 1 });
+    fog._o = 1;
+    colWrap[c].appendChild(fog);
+    setRow(fog, r);
+    fogEls[c][r] = fog;
   }
 
   // Slight per-tile lightness jitter so a biome isn't a flat slab.
@@ -1190,25 +1250,14 @@
   // Every tile starts hidden. Units and cities reveal what's around them; a
   // tile you have seen before but cannot currently see stays dimmed.
   let fogEls = [];
+  let seenList = [];   // every tile ever revealed, in the order it was revealed
   function buildFog() {
-    fogEls = [];
-    const w = layout.hexW, h = layout.hexH;
+    fogEls = []; seenList = [];
     for (let c = 0; c < COLS; c++) {
-      const col = [];
-      for (let r = 0; r < ROWS; r++) {
-        const p = layout.positions[c][r];
-        const d = document.createElement('div');
-        d.className = 'fog';
-        Object.assign(d.style, { width: w + 'px', height: h + 'px',
-          left: (p.cx - w / 2) + 'px', top: (p.cy - h / 2) + 'px', opacity: 1 });
-        d._o = 1;
-        colWrap[c].appendChild(d);
-        setRow(d, r);
-        col.push(d);
-        tiles[c][r].seen = false;
-      }
-      fogEls.push(col);
+      fogEls.push(new Array(ROWS).fill(null));
+      for (let r = 0; r < ROWS; r++) tiles[c][r].seen = false;
     }
+    drawMinimap();   // wipe whatever the previous world left on the canvas
   }
 
   function markVisible(cc, rr, radius, set) {
@@ -1225,47 +1274,42 @@
     const vis = new Set();
     for (const u of units) markVisible(u.c, u.r, u.sight, vis);
     for (const ct of cities) markVisible(ct.c, ct.r, 2, vis);
-    for (let c = 0; c < COLS; c++) {
-      for (let r = 0; r < ROWS; r++) {
-        const seenNow = vis.has(c + ',' + r);
-        if (seenNow) tiles[c][r].seen = true;
-        const el = fogEls[c][r];
 
-        // Never-seen tiles are drawn as nothing at all — no terrain, no
-        // shoreline, not even a fog panel. The dark page behind shows through
-        // as unexplored. At the start that is ~97% of the map, so the browser
-        // paints a couple of dozen tiles instead of nine hundred.
-        const known = tiles[c][r].seen;
-        if (el._known !== known) {
-          el._known = known;
-          const show = known ? '' : 'none';
-          if (hexEls[c][r]) hexEls[c][r].style.display = show;
-          if (sandEls[c][r]) sandEls[c][r].style.display = show;
-        }
-        if (!known) {
-          el._o = 1;
-          if (el.style.display !== 'none') el.style.display = 'none';
-          continue;
-        }
+    // Anything newly in sight gets its elements built now.
+    const fresh = [];
+    for (const key of vis) {
+      const i = key.indexOf(','), c = +key.slice(0, i), r = +key.slice(i + 1);
+      if (tiles[c][r].seen) continue;
+      tiles[c][r].seen = true;
+      ensureTile(c, r);
+      seenList.push({ c, r });
+      fresh.push({ c, r });
+    }
 
-        const want = seenNow ? 0 : 0.45;
-        if (el._o === want) continue;
-        el._o = want;
-        if (want === 0) {
-          // A fully revealed tile is faded out and then taken out of the
-          // layout entirely — a transparent element is still composited every
-          // frame, which made the map get SLOWER the more you explored.
-          el.style.opacity = 0;
-          clearTimeout(el._t);
-          el._t = setTimeout(() => { if (el._o === 0) el.style.display = 'none'; }, 280);
-        } else {
-          clearTimeout(el._t);
-          el.style.display = '';
-          el.style.opacity = want;
-        }
+    // Only tiles you have actually revealed have anything to fade. The rest
+    // of the world has no elements at all, so there is nothing to loop over —
+    // the cost of a move depends on how much you have explored, not on how
+    // big the map is.
+    for (const t of seenList) {
+      const el = fogEls[t.c][t.r];
+      if (!el) continue;
+      const want = vis.has(t.c + ',' + t.r) ? 0 : 0.45;
+      if (el._o === want) continue;
+      el._o = want;
+      if (want === 0) {
+        // A fully revealed tile is faded out and then taken out of the
+        // layout entirely — a transparent element is still composited every
+        // frame, which made the map get SLOWER the more you explored.
+        el.style.opacity = 0;
+        clearTimeout(el._t);
+        el._t = setTimeout(() => { if (el._o === 0) el.style.display = 'none'; }, 280);
+      } else {
+        clearTimeout(el._t);
+        el.style.display = '';
+        el.style.opacity = want;
       }
     }
-    drawMinimap();
+    drawMinimap(fresh);
   }
 
   // ---- CITIES ----
@@ -1468,6 +1512,9 @@
   function updateWrap() {
     if (!colWrap.length) return;
     const s = cellSize / BASE_HEX;
+    // Half a viewport plus one hex of slack, so a column is already in place
+    // before any of it can appear at the edge of the screen.
+    const half = viewportEl.clientWidth / 2 + layout.hexW * s * 1.2;
     for (let c = 0; c < COLS; c++) {
       const cx = layout.positions[c][0].cx;
       let bestK = 0, bestD = Infinity;
@@ -1480,6 +1527,12 @@
         w._k = bestK;
         w.style.transform = bestK ? 'translateX(' + (bestK * layout.worldW) + 'px)' : '';
       }
+      // A column you cannot see costs nothing to skip and a lot to composite.
+      // On a 200-wide world only a handful of columns are ever on screen, so
+      // dropping the rest keeps the frame cost tied to the viewport instead of
+      // to how much of the map you have explored.
+      const on = bestD < half;
+      if (w._on !== on) { w._on = on; w.style.display = on ? '' : 'none'; }
     }
     for (let r = 0; r < ROWS; r++) {
       const cy = layout.positions[0][r].cy;
@@ -1748,20 +1801,27 @@
   // ---- MINIMAP ----
   const mm = document.getElementById('minimap');
   const mmView = document.getElementById('mmView');
-  function drawMinimap() {
+  // Repainting forty thousand tiles on every move would cost more than the
+  // rest of the turn put together, so the minimap keeps what it has drawn and
+  // only paints the tiles that were just revealed. Passing no list repaints
+  // everything you have explored, which is what a fresh map needs.
+  function drawMinimap(fresh) {
     const ctx = mm.getContext('2d');
     const sx = mm.width / layout.boardW, sy = mm.height / layout.boardH;
-    ctx.fillStyle = '#0d2233';
-    ctx.fillRect(0, 0, mm.width, mm.height);
-    const w = layout.hexW * sx * 1.1, h = layout.hexH * sy * 1.1;
-    for (let c = 0; c < COLS; c++) {
-      for (let r = 0; r < ROWS; r++) {
-        const p = layout.positions[c][r];
-        ctx.fillStyle = tiles[c][r].seen ? tiles[c][r].terrain.col : '#0a1a29';
-        ctx.fillRect(p.cx * sx - w / 2, p.cy * sy - h / 2, w, h);
-      }
+    const w = Math.max(1, layout.hexW * sx * 1.1), h = Math.max(1, layout.hexH * sy * 1.1);
+    let list = fresh;
+    if (!list) {
+      ctx.fillStyle = '#0a1a29';
+      ctx.fillRect(0, 0, mm.width, mm.height);
+      list = seenList;
+    }
+    for (const t of list) {
+      const p = layout.positions[t.c][t.r];
+      ctx.fillStyle = tiles[t.c][t.r].terrain.col;
+      ctx.fillRect(p.cx * sx - w / 2, p.cy * sy - h / 2, w, h);
     }
   }
+
   const MM_PAD = 4; // #minimapWrap padding — the canvas's offset inside it
   function updateMinimapView() {
     const s = cellSize / BASE_HEX;
@@ -1802,7 +1862,10 @@
   // ---- INIT ----
   function init() {
     computeZoomBounds();
-    cellSize = Math.min(maxCell, minCell * 2.2);   // start zoomed in, Unciv-like
+    // Start at a comfortable hex size rather than a multiple of the zoom-out
+    // limit: on a world this wide that limit is only a few pixels a hex, and
+    // scaling off it would open the game zoomed almost all the way out.
+    cellSize = Math.max(minCell, Math.min(maxCell, BASE_HEX * 0.84));
     generateMap();
     buildTextures();
     buildBoard();
@@ -1839,6 +1902,22 @@
     }
     out.dist = (a, b, x, y) => 0;
     return out;
+  };
+  window.__regen = () => generateMap();
+  // Reveal a radius around the start, so a test can measure what the map
+  // costs late in a game rather than only on turn one.
+  window.__reveal = (rad) => {
+    for (let dc = -rad; dc <= rad; dc++) {
+      const c = ((startHex.c + dc) % COLS + COLS) % COLS;
+      for (let dr = -rad; dr <= rad; dr++) {
+        const r = ((startHex.r + dr) % ROWS + ROWS) % ROWS;
+        if (tiles[c][r].seen) continue;
+        tiles[c][r].seen = true; ensureTile(c, r); seenList.push({ c, r });
+        const el = fogEls[c][r]; el._o = 0; el.style.display = 'none';
+      }
+    }
+    drawMinimap();
+    return seenList.length;
   };
   window.__hexDist = hexDist;
   window.__dims = { COLS, ROWS };
