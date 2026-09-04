@@ -202,15 +202,8 @@
     width: 20px; height: 20px; border-radius: 50%;
     background: #1e5fa8; display: flex; align-items: center; justify-content: center; font-size: 12px;
   }
-  #stats {
-    flex: 1; display: flex; justify-content: center; gap: 10px;
-    font-size: 12px; font-weight: 700; white-space: nowrap;
-    overflow-x: auto; scrollbar-width: none;
-  }
-  #stats::-webkit-scrollbar { display: none; }
-  #stats .stat { display: flex; align-items: center; gap: 3px; }
-  #stats .delta { font-size: 10px; opacity: 0.85; }
   #overviewBtn {
+    margin-left: auto;
     background: #123a63; color: var(--ink); border: 1px solid var(--stroke);
     border-radius: 14px; padding: 5px 12px; font-size: 12px; font-weight: 600;
   }
@@ -295,10 +288,9 @@
   <div id="toprow">
     <button id="menuBtn">☰</button>
     <div id="civ"><span class="emblem">⚜</span><span id="civName">France</span></div>
-    <div id="stats"></div>
     <button id="overviewBtn">Overview</button>
   </div>
-  <div id="turnline"><span id="turnText">⏳ 1 | 4000 BC</span></div>
+  <div id="turnline"><span id="turnText">⏳ 1 | 1500 BC</span></div>
 </div>
 
 <div id="research">
@@ -1853,25 +1845,16 @@
   }, { passive: false });
 
   // ---- TOP BAR STATS + TURNS ----
-  const STAT_DEFS = [
-    { key: 'gold',    icon: '🪙', color: '#f2c94c' },
-    { key: 'food',    icon: '🍎', color: '#7ec8e3' },
-    { key: 'happy',   icon: '😊', color: '#f2c94c' },
-    { key: 'culture', icon: '🎵', color: '#c58cf5' },
-    { key: 'science', icon: '🔬', color: '#7ec8e3' },
-  ];
   const state = {
-    turn: 1, year: 4000,
+    turn: 1, year: 1500,   // 1500 BC
     gold: 15, goldD: 5, food: 4, happy: 5, culture: 3, science: 0,
   };
+  // The counters along the top are gone; the turn and the year are all the
+  // bar carries now. The values themselves are still tracked — cities still
+  // earn gold and food each turn — they are simply not on screen.
   function renderStats() {
-    document.getElementById('stats').innerHTML = STAT_DEFS.map(s => {
-      const v = state[s.key];
-      const d = s.key === 'gold' ? ` <span class="delta">+${state.goldD}</span>` : '';
-      return `<span class="stat" style="color:${s.color}">${s.icon} ${v}${d}</span>`;
-    }).join('');
     document.getElementById('turnText').textContent =
-      `⏳ ${state.turn} | ${state.year > 0 ? state.year + ' BC' : (-state.year) + ' AD'}`;
+      `⏳ ${state.turn} | ${state.year > 0 ? state.year + ' BC' : (1 - state.year) + ' AD'}`;
   }
   function showNotice(msg) {
     const n = document.getElementById('notice');
@@ -1881,7 +1864,7 @@
   }
   document.getElementById('nextTurn').addEventListener('click', () => {
     state.turn++;
-    state.year -= 40;
+    state.year -= 5;      // five years pass every turn
     // Only resources you have identified are worth anything — an unknown
     // thing sitting in your borders earns you nothing until you study it.
     let resGold = 0, resFood = 0;
