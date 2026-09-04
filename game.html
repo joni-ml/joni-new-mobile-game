@@ -41,7 +41,8 @@
      Three steps down, each one measured on a phone-sized viewport with the
      whole map explored, dropping only what has stopped being visible:
 
-       mid  (< 76px) the art on a tile — trees, peaks, riverbank. Each is a
+       mid  (< 76px) the art on a tile — trees, peaks — and the faint outer
+                     bank. Each is a
                      child element that must be clipped against the hex
                      polygon, which is the most expensive thing on a tile:
                      60px hexes went from 36 fps to 60.
@@ -51,7 +52,9 @@
                      the same handful of pixels, and there are thousands of
                      them: 30px hexes went from 25 fps to 45. */
   #board.mid .feat,
-  #board.mid .reslabel { display: none !important; }
+  #board.mid .reslabel,
+  #board.mid .bank2 { display: none !important; }
+  #board.far .bank1 { display: none !important; }
   #board.far .hex { background-image: none !important; }
   #board.tiny .hex { clip-path: none; }
   #board.tiny .res { display: none !important; }
@@ -373,6 +376,7 @@
   const TERRA = {
     ocean:     { name: 'Ocean',     col: '#3d8a97' },
     coast:     { name: 'Coast',     col: '#5fb0b8' },
+    river:     { name: 'River',     col: '#57a8bd' },
     snow:      { name: 'Snow',      col: '#e2f2f2' },
     tundra:    { name: 'Tundra',    col: '#9fa892' },
     grassland: { name: 'Grassland', col: '#66933c' },
@@ -594,6 +598,45 @@
         c = nc; r = nr;
       }
     }
+
+    // A river is water now, not a blue ribbon painted over the grass. It
+    // keeps its own terrain so it still reads as a river rather than sea,
+    // and it stays walkable — it is shallow, and a 200x200 map cut into
+    // pieces by two hundred impassable rivers would be unplayable.
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        const tl = tiles[c][r];
+        if (tl.river && !tl.water) { tl.terrain = TERRA.river; tl.feature = null; }
+      }
+    }
+    markShores();
+  }
+
+  // How far each land tile is from the nearest water — sea or river — up to
+  // two steps. The bank fades out over that distance instead of stopping dead
+  // at a one-tile ring of sand.
+  const SHORE_REACH = 2;
+  function markShores() {
+    let front = [];
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        const tl = tiles[c][r];
+        tl.shore = 0;
+        if (tl.water || tl.river) front.push({ c, r });
+      }
+    }
+    for (let d = 1; d <= SHORE_REACH; d++) {
+      const next = [];
+      for (const t of front) {
+        for (const nb of neighbors(t.c, t.r)) {
+          const n = tiles[nb.c][nb.r];
+          if (n.water || n.river || n.shore) continue;
+          n.shore = d;
+          next.push(nb);
+        }
+      }
+      front = next;
+    }
   }
 
   // Start on temperate, open grassland well away from the map edge.
@@ -644,6 +687,7 @@
     { key: 'corn',    name: 'Corn',     icon: ICONS.corn,   food: 2, prod: 1, gold: 1 },
     { key: 'potato',  name: 'Potatoes', icon: ICONS.potato, food: 3, prod: 1, gold: 0 },
     { key: 'apple',   name: 'Apples',   icon: ICONS.apple,  food: 2, prod: 0, gold: 2 },
+    { key: 'gold',    name: 'Gold',     icon: null, food: 0, prod: 0, gold: 6 },
     { key: 'sheep',   name: 'Sheep',    icon: ICONS.sheep, food: 2, prod: 0, gold: 1 },
     { key: 'cattle',  name: 'Cattle',   icon: ICONS.cattle, food: 3, prod: 0, gold: 1 },
     { key: 'grapes',  name: 'Grapes',   icon: null, food: 1, prod: 0, gold: 3 },
@@ -797,6 +841,31 @@
       }
     }
 
+    // Gold is in the high country: on hills, or on any land pressed up against
+    // a mountain. It is deliberately rare — a handful of places on a whole
+    // world, so finding one is worth the walk.
+    const veins = [];
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        const tl = tiles[c][r];
+        if (tl.water || tl.river || tl.res || tl.feature === 'mtn') continue;
+        const highGround = tl.feature === 'hill' || tl.feature === 'rock' ||
+          neighbors(c, r).some(n => tiles[n.c][n.r].feature === 'mtn');
+        if (highGround) veins.push({ c, r });
+      }
+    }
+    for (let i = veins.length - 1; i > 0; i--) {
+      const j = (Math.random() * (i + 1)) | 0;
+      const t = veins[i]; veins[i] = veins[j]; veins[j] = t;
+    }
+    const goldTarget = Math.max(3, Math.round(land / 700));
+    let gold = 0;
+    for (const t of veins) {
+      if (gold >= goldTarget) break;
+      if (tiles[t.c][t.r].res) continue;
+      tiles[t.c][t.r].res = 'gold'; gold++;
+    }
+
     // The other resources stay sparse and scattered as before.
     const others = ['sheep', 'cattle', 'grapes', 'stone'];
     const otherTarget = Math.round(10 * AREA_SCALE);
@@ -850,7 +919,7 @@
     };
   }
 
-  const TEX_KIND = { ocean: 'water', coast: 'water', snow: 'snow', tundra: 'tundra',
+  const TEX_KIND = { ocean: 'water', coast: 'water', river: 'water', snow: 'snow', tundra: 'tundra',
                      grassland: 'grass', plains: 'dry', desert: 'sand', mountain: 'rock' };
 
   function makeTexture(kind, base, variant) {
@@ -1037,14 +1106,19 @@
     if (hexEls[c][r]) return;
     const tl = tiles[c][r], p = layout.positions[c][r];
 
-    if (!tl.water && neighbors(c, r).some(n => tiles[n.c][n.r].water)) {
-      const sw = layout.hexW * 1.13, sh = layout.hexH * 1.13;
+    // Sand along every water's edge, sea and river alike, thinning with each
+    // step inland instead of stopping dead after one tile: a solid bank right
+    // at the water, a pale suggestion of one behind it, then nothing.
+    if (tl.shore) {
+      const grow = tl.shore === 1 ? 1.17 : 1.07;
+      const sw = layout.hexW * grow, sh = layout.hexH * grow;
       const sand = document.createElement('div');
-      sand.className = 'hex';
+      sand.className = 'hex bank' + tl.shore;
       Object.assign(sand.style, {
         width: sw + 'px', height: sh + 'px',
         left: (p.cx - sw / 2) + 'px', top: (p.cy - sh / 2) + 'px',
         background: '#efd9a4',
+        opacity: tl.shore === 1 ? 1 : 0.45,
       });
       colWrap[c].appendChild(sand);
       sandEls[c][r] = sand;
@@ -1100,13 +1174,6 @@
   function addFeature(hex, tl) {
     const R = rng((((tl.fseed * 1e9) | 0) >>> 0) + 13);
     const pc = v => v.toFixed(1) + '%';
-    if (tl.river) {
-      const band = document.createElement('div');
-      band.className = 'river';
-      band.style.top = (34 + R() * 14).toFixed(1) + '%';
-      band.style.transform = 'rotate(' + ((R() * 120 - 60).toFixed(1)) + 'deg)';
-      hex.appendChild(band);
-    }
     if (tl.feature === 'mtn') {
       mk('mtn', hex, { left: pc(-6), top: pc(2 + R() * 6), width: pc(112), height: pc(96),
         background: '#6e797c' });
@@ -2062,6 +2129,9 @@
   window.__nudge = (dx, dy) => { panX += dx; panY += dy; clampPan(); applyTransform(); };
   window.__tiers = (mid, far, tiny) => { MID_CELL = mid; FAR_CELL = far; TINY_CELL = tiny;
     boardEl._detail = null; applyTransform(); };
+  window.__neighbors = (c, r) => neighbors(c, r);
+  window.__tile = (c, r) => { const t = tiles[c][r];
+    return { terrain: t.terrain.name, water: !!t.water, river: !!t.river, res: t.res, shore: t.shore }; };
   window.__hexAt = (x, y) => hexAtClient(x, y);
   window.__hexDist = hexDist;
   window.__dims = { COLS, ROWS };
