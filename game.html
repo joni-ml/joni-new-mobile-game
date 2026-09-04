@@ -36,6 +36,26 @@
     will-change: transform;
     backface-visibility: hidden;
   }
+  /* Zooming out puts thousands of tiles on screen at once and the browser
+     pays for all of their detail even when none of it is big enough to see.
+     Three steps down, each one measured on a phone-sized viewport with the
+     whole map explored, dropping only what has stopped being visible:
+
+       mid  (< 76px) the art on a tile — trees, peaks, riverbank. Each is a
+                     child element that must be clipped against the hex
+                     polygon, which is the most expensive thing on a tile:
+                     60px hexes went from 36 fps to 60.
+       far  (< 40px) the terrain texture. The tile keeps its shape and its
+                     colour; only the grain on it goes.
+       tiny (< 22px) the hexagon itself. At this size a hex and a square are
+                     the same handful of pixels, and there are thousands of
+                     them: 30px hexes went from 25 fps to 45. */
+  #board.mid .feat,
+  #board.mid .reslabel { display: none !important; }
+  #board.far .hex { background-image: none !important; }
+  #board.tiny .hex { clip-path: none; }
+  #board.tiny .res { display: none !important; }
+
   .hex {
     position: absolute;
     clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
@@ -242,10 +262,10 @@
   #minimapWrap {
     position: fixed; right: 8px; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
     z-index: 25; background: var(--panel); border: 1px solid var(--stroke);
-    border-radius: 8px; padding: 4px;
+    border-radius: 8px; padding: 4px; overflow: hidden;
   }
   #minimap { display: block; border-radius: 4px; }
-  #mmView {
+  #mmView, .mmview {
     position: absolute; border: 1px solid #fff; border-radius: 2px;
     pointer-events: none; box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
   }
@@ -1507,12 +1527,24 @@
   }
   function clampPan() {
     const s = cellSize / BASE_HEX;
-    const margin = BASE_HEX * s;
     // The world is a torus — neither axis is clamped. Pan is only kept inside
     // one world so the numbers can't drift.
+    //
+    // What gets wrapped is the pan MINUS half the board, because that is the
+    // quantity the transform actually uses: a tile lands at
+    //   screen = viewportCentre + tile * s + pan - board / 2
+    // and board/2 is in unscaled pixels. Wrapping the raw pan instead threw
+    // that offset away, and once you zoomed out far enough that one world was
+    // narrower than board/2, no value of pan could put the map back on screen
+    // and it went black.
     const wpx = layout.worldW * s, hpx = layout.worldH * s;
-    panX = ((panX % wpx) + wpx) % wpx;
-    panY = ((panY % hpx) + hpx) % hpx;
+    // Wrap into a CENTRED interval, [-half a world, +half a world), not
+    // [0, one world). updateWrap only looks one world either side, so if the
+    // offset is allowed to grow to a full world the copy it needs can be two
+    // worlds away and the far side of the seam goes black.
+    const wrap = (v, m) => { const x = ((v % m) + m) % m; return x > m / 2 ? x - m : x; };
+    panX = layout.boardW / 2 + wrap(panX - layout.boardW / 2, wpx);
+    panY = layout.boardH / 2 + wrap(panY - layout.boardH / 2, hpx);
   }
 
   // Each column lives in its own wrapper. Whichever copy of a column (one
@@ -1584,8 +1616,19 @@
       }
     }
   }
+  // Hex widths, in screen pixels, at which each step down kicks in.
+  let MID_CELL = 76, FAR_CELL = 40, TINY_CELL = 22;
   function applyTransform() {
     const s = cellSize / BASE_HEX;
+    // Each step is cumulative: tiny implies far implies mid.
+    const detail = cellSize < TINY_CELL ? 3 : cellSize < FAR_CELL ? 2
+                 : cellSize < MID_CELL ? 1 : 0;
+    if (boardEl._detail !== detail) {
+      boardEl._detail = detail;
+      boardEl.classList.toggle('mid', detail >= 1);
+      boardEl.classList.toggle('far', detail >= 2);
+      boardEl.classList.toggle('tiny', detail >= 3);
+    }
     boardEl.style.transform =
       `translate(-50%, -50%) translate(${panX}px, ${panY}px) scale(${s}) translateZ(0)`;
     updateWrap();
@@ -1858,19 +1901,41 @@
   }
 
   const MM_PAD = 4; // #minimapWrap padding — the canvas's offset inside it
+  // One box per wrapped copy of the camera: here, one map to the left, one
+  // map up, and the diagonal.
+  const mmViews = [mmView];
+  for (let i = 1; i < 4; i++) {
+    const d = mmView.cloneNode();
+    d.removeAttribute('id');
+    d.className = 'mmview';   // without this the copy loses #mmView's rules
+                              // and falls back into normal flow, stretching
+                              // the minimap panel out of shape
+    mmView.parentNode.appendChild(d);
+    mmViews.push(d);
+  }
   function updateMinimapView() {
     const s = cellSize / BASE_HEX;
     const sx = mm.width / layout.boardW, sy = mm.height / layout.boardH;
-    // Board-local coords currently at the viewport's top-left corner.
     const vw = viewportEl.clientWidth, vh = viewportEl.clientHeight;
-    const bx = (-vw / 2 - panX + layout.boardW / 2) / s;
-    const by = (-vh / 2 - panY + layout.boardH / 2) / s;
-    const x0 = Math.max(0, Math.min(mm.width, bx * sx));
-    const y0 = Math.max(0, Math.min(mm.height, by * sy));
-    mmView.style.left = (MM_PAD + x0) + 'px';
-    mmView.style.top = (MM_PAD + y0) + 'px';
-    mmView.style.width = Math.max(4, Math.min(mm.width - x0, (vw / s) * sx)) + 'px';
-    mmView.style.height = Math.max(4, Math.min(mm.height - y0, (vh / s) * sy)) + 'px';
+    // Board-local coords of the viewport's top-left corner, brought back
+    // inside one world since the pan can sit a whole world either side.
+    const wrap = (v, m) => ((v % m) + m) % m;
+    const bx = wrap((-vw / 2 - panX + layout.boardW / 2) / s, layout.worldW);
+    const by = wrap((-vh / 2 - panY + layout.boardH / 2) / s, layout.worldH);
+    const x0 = bx * sx, y0 = by * sy;
+    const bw = Math.max(4, (vw / s) * sx), bh = Math.max(4, (vh / s) * sy);
+    // The world wraps, so the camera box can run off one edge of the minimap
+    // and back in at the other. Draw it up to four times, offset by a map
+    // width and height, and let the minimap's own edge clip the parts that
+    // fall outside. Squeezing it to fit instead made the box shrink and slide
+    // whenever the camera crossed a seam.
+    mmViews.forEach((el, i) => {
+      const dx = (i & 1) ? -mm.width : 0, dy = (i & 2) ? -mm.height : 0;
+      el.style.left = (MM_PAD + x0 + dx) + 'px';
+      el.style.top = (MM_PAD + y0 + dy) + 'px';
+      el.style.width = bw + 'px';
+      el.style.height = bh + 'px';
+    });
   }
 
   // ---- FPS ----
@@ -1958,6 +2023,46 @@
   window.__knowAll = () => { RESOURCES.forEach(x => resInfo[x.key].known = true);
     for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++)
       if (resEls[c][r]) paintResource(resEls[c][r], tiles[c][r].res); };
+  window.__state = () => ({ cell: +cellSize.toFixed(1), minCell: +minCell.toFixed(1),
+    panX: Math.round(panX), panY: Math.round(panY),
+    boardW: Math.round(layout.boardW), boardH: Math.round(layout.boardH),
+    wpx: Math.round(layout.worldW * cellSize / BASE_HEX), hpx: Math.round(layout.worldH * cellSize / BASE_HEX) });
+  window.__units = () => units.map(u => ({ c: u.c, r: u.r, moves: u.moves, kind: u.kind }));
+  window.__select = (c, r) => selectHex(c, r);
+  window.__reach = () => { const u = curUnit(); if (!u) return [];
+    return [...getReachable(u).keys()].map(k => ({ c: +k.split(',')[0], r: +k.split(',')[1] })); };
+  window.__moveTo = (c, r) => onTapHex(c, r);
+  window.__turn = () => turn;
+  window.__seen = () => seenList.length;
+  window.__teleport = (c, r) => { const u = units[0]; u.c = c; u.r = r;
+    placeUnits(); updateFog(); centerOnHex(c, r); applyTransform(); };
+  window.__setZoom = (v) => { cellSize = Math.max(minCell, Math.min(maxCell, v));
+    clampPan(); applyTransform(); };
+  window.__units = () => units.map(u => ({ c: u.c, r: u.r, moves: u.moves, type: u.type }));
+  window.__select = (c, r) => { selectHex(c, r); onTapHex(c, r); };
+  window.__reach = () => [...reachable.keys()].map(k => {
+    const a = k.split(','); return { c: +a[0], r: +a[1] }; });
+  window.__moveTo = (c, r) => onTapHex(c, r);
+  window.__turn = () => state.turn;
+  window.__seen = () => seenList.length;
+  window.__teleport = (c, r) => { const u = units[0]; u.c = c; u.r = r;
+    dropRow(u.el); u.el.remove(); colWrap[c].appendChild(u.el); placeUnit(u);
+    updateFog(); centerOnHex(c, r); applyTransform(); };
+  window.__setZoom = (v) => { cellSize = Math.max(minCell, Math.min(maxCell, v));
+    clampPan(); applyTransform(); };
+  window.__screenOf = (c, r) => {
+    const sc = cellSize / BASE_HEX, pt = layout.positions[c][r];
+    // Pick the wrapped copy nearest the screen, the way updateWrap does.
+    const near = (v, period) => { let best = v;
+      for (const k of [-1, 0, 1]) { const q = v + k * period * sc;
+        if (Math.abs(q) < Math.abs(best)) best = q; } return best; };
+    return { x: innerWidth / 2 + near(pt.cx * sc + panX - layout.boardW / 2, layout.worldW),
+             y: innerHeight / 2 + near(pt.cy * sc + panY - layout.boardH / 2, layout.worldH) };
+  };
+  window.__nudge = (dx, dy) => { panX += dx; panY += dy; clampPan(); applyTransform(); };
+  window.__tiers = (mid, far, tiny) => { MID_CELL = mid; FAR_CELL = far; TINY_CELL = tiny;
+    boardEl._detail = null; applyTransform(); };
+  window.__hexAt = (x, y) => hexAtClient(x, y);
   window.__hexDist = hexDist;
   window.__dims = { COLS, ROWS };
 
