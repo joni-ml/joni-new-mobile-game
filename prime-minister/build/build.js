@@ -11,8 +11,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const ORIGINAL = process.argv[2] || '/root/.claude/uploads/380178b8-d7cf-5df9-a01c-8260baf0f2e4/50a55cbb-prototype2.html';
-const OUT = path.join(__dirname, '..', 'artifact.html');
+const STANDALONE = process.argv.includes('--standalone');
+const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
+const ORIGINAL = args[0] || '/root/.claude/uploads/380178b8-d7cf-5df9-a01c-8260baf0f2e4/50a55cbb-prototype2.html';
+const OUT = path.join(__dirname, '..', STANDALONE ? 'standalone.html' : 'artifact.html');
 
 const original = fs.readFileSync(ORIGINAL, 'utf8');
 const ui = fs.readFileSync(path.join(__dirname, 'artifact-ui.html'), 'utf8');
@@ -24,7 +26,10 @@ const SCAFFOLD = new Set([
   '<meta charset="UTF-8">', '</head>', '<body>', '</body>', '</html>',
 ]);
 
-const body = original.split('\n').filter(l => !SCAFFOLD.has(l.trim())).join('\n');
+// standalone keeps the whole document (it is opened directly, not framed)
+const body = STANDALONE
+  ? original
+  : original.split('\n').filter(l => !SCAFFOLD.has(l.trim())).join('\n');
 
 // the original set RTL on <html>; that element now belongs to the host
 const RTL = `<script>
@@ -37,15 +42,21 @@ const RTL = `<script>
 
 const scriptTag = '<script>\n/* ---------- COUNTRIES ---------- */';
 if (!body.includes(scriptTag)) throw new Error('anchor: game script');
-let out = RTL + body.replace(scriptTag, ui + '\n' + scriptTag);
+let out = (STANDALONE ? '' : RTL) + body.replace(scriptTag, ui + '\n' + scriptTag);
 
-if (!out.trimEnd().endsWith('</script>')) throw new Error('anchor: trailing script');
-out = out.trimEnd() + '\n\n<script>\n' + mp + '</script>\n';
+if (STANDALONE) {
+  const tail = '</script>\n</body>\n</html>';
+  if (!out.includes(tail)) throw new Error('anchor: closing tags');
+  out = out.replace(tail, '</script>\n\n<script>\n' + mp + '</script>\n</body>\n</html>');
+} else {
+  if (!out.trimEnd().endsWith('</script>')) throw new Error('anchor: trailing script');
+  out = out.trimEnd() + '\n\n<script>\n' + mp + '</script>\n';
+}
 
 fs.writeFileSync(OUT, out);
 
 // prove every non-scaffold line of the original survived, in order
-const wanted = original.split('\n').filter(l => !SCAFFOLD.has(l.trim()));
+const wanted = STANDALONE ? original.split('\n') : original.split('\n').filter(l => !SCAFFOLD.has(l.trim()));
 const got = out.split('\n');
 let i = 0; const missing = [];
 for (const line of wanted) {
@@ -60,4 +71,5 @@ console.log('   original game lines kept : ' + wanted.length + ' / ' + original.
             ' (dropped only ' + (original.split('\n').length - wanted.length) + ' scaffold tags)');
 console.log('   built lines              : ' + got.length);
 console.log('   size                     : ' + (Buffer.byteLength(out) / 1024).toFixed(0) + ' KB');
-console.log('   no nested document       : ' + !/<\/?(html|head|body)\b/i.test(out));
+if (!STANDALONE) console.log('   no nested document       : ' + !/<\/?(html|head|body)\b/i.test(out));
+else console.log('   charset / rtl kept       : ' + (/<meta charset="UTF-8">/.test(out) && /<html lang="he" dir="rtl">/.test(out)));
