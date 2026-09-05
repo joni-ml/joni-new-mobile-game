@@ -284,6 +284,21 @@
     background:var(--surface); border:1px solid var(--good); color:var(--good);
     font-size:11.5px; padding:5px 10px; border-radius:14px; font-family:'Assistant',sans-serif; }
   #mpPill.open{ display:block; }
+  /* create-or-join screen */
+  .mp-join-row{ display:flex; gap:10px; align-items:stretch; margin-top:16px; }
+  .mp-join-row .mp-btn{ flex:1; }
+  .mp-code-input{ width:100px; text-align:center; font-size:28px; font-weight:700; letter-spacing:5px;
+    background:var(--surface-2); border:1px solid var(--line); color:var(--text);
+    border-radius:9px; font-family:'Frank Ruhl Libre',serif; padding:4px; }
+  .mp-code-input:focus{ outline:none; border-color:var(--gold); }
+  .mp-or{ display:flex; align-items:center; gap:12px; color:var(--muted); font-size:12px; margin:18px 0 4px; }
+  .mp-or::before, .mp-or::after{ content:""; flex:1; height:1px; background:var(--line); }
+  .mp-codebox{ background:var(--surface-2); border:1px solid var(--gold); border-radius:12px;
+    padding:16px 12px; margin-bottom:16px; }
+  .mp-codebox-label{ font-size:12px; color:var(--muted); }
+  .mp-codebox-num{ font-family:'Frank Ruhl Libre',serif; font-size:74px; font-weight:700;
+    color:var(--gold); line-height:1.05; letter-spacing:8px; margin:2px 0 8px; }
+  .mp-codebox-hint{ font-size:12px; color:var(--muted); line-height:1.55; }
 </style>
 
 <!-- Screen 1: choose single vs multiplayer -->
@@ -315,26 +330,37 @@
         <label>השם שלך</label>
         <input id="mpName" maxlength="18" placeholder="למשל: יונתן" autocomplete="off">
       </div>
-      <div class="mp-field">
-        <label>קוד חדר (כתבו את אותו קוד לכל החברים)</label>
-        <input id="mpRoom" maxlength="24" placeholder="למשל: friends1" autocomplete="off">
+
+      <button class="mp-mode-btn" onclick="MP.createGame()">
+        <span class="t">🆕 צור שרת</span>
+        <span class="d">פותח משחק חדש ונותן לך מספר חדר. תנו את המספר לחברים כדי שיצטרפו מכל מקום בעולם.</span>
+      </button>
+
+      <div class="mp-or">או</div>
+
+      <div class="mp-join-row">
+        <input id="mpRoom" class="mp-code-input" maxlength="2" inputmode="numeric"
+               placeholder="00" autocomplete="off" oninput="MP.onCodeInput(this)">
+        <button class="mp-btn" id="mpConnectBtn" onclick="MP.joinGame()">🔗 התחבר לחבר</button>
       </div>
-      <div class="mp-field">
-        <label>כתובת השרת</label>
-        <input id="mpServer" placeholder="ws://localhost:8080" autocomplete="off">
-      </div>
-      <div class="mp-row">
-        <button class="mp-btn" id="mpConnectBtn" onclick="MP.connect()">התחבר</button>
+      <div class="mp-hint">הקלידו את מספר החדר שהחבר קיבל (שתי ספרות).</div>
+
+      <div class="mp-row" style="margin-top:16px;">
         <button class="mp-btn ghost" onclick="MP.backToMode()">חזרה</button>
+        <button class="mp-btn ghost" onclick="MP.toggleAdvanced()">⚙️ כתובת שרת</button>
       </div>
-      <div class="mp-hint">
-        כדי לשחק עם חברים צריך שמישהו אחד יריץ את השרת (קובץ <b>server.js</b> שבתיקייה).
-        ברירת המחדל <code>ws://localhost:8080</code> היא לשחק על אותו מחשב;
-        כדי לשחק מרחוק, החליפו את הכתובת בכתובת השרת שמישהו העלה לאינטרנט.
+      <div class="mp-field" id="mpAdvanced" style="display:none;margin-top:14px;">
+        <label>כתובת השרת (בדרך כלל אין צורך לשנות)</label>
+        <input id="mpServer" placeholder="ws://localhost:8080" autocomplete="off">
       </div>
     </div>
 
     <div id="mpLobby" style="display:none;">
+      <div id="mpCodeBox" class="mp-codebox" style="display:none;">
+        <div class="mp-codebox-label">מספר החדר שלך</div>
+        <div class="mp-codebox-num" id="mpCodeBig">--</div>
+        <div class="mp-codebox-hint">תנו את המספר הזה לחברים — הם מקלידים אותו ב"התחבר לחבר"</div>
+      </div>
       <div class="mp-status wait" id="mpStatus">מתחבר…</div>
       <div class="mp-players">
         <h3>שחקנים בחדר</h3>
@@ -1857,6 +1883,7 @@ const MP = {
     MP.$('mpModeOverlay').classList.remove('open');
     MP.tutorialClose();
     MP.$('mpServer').value = MP.$('mpServer').value || MP.defaultServer();
+    MP.showForm();
     MP.$('mpSetupOverlay').classList.add('open');
   },
   backToMode(){
@@ -1865,39 +1892,57 @@ const MP = {
   },
   tutorialClose(){ const t=MP.$('tutorialOverlay'); if(t) t.classList.remove('open'); },
 
-  /* ----- connect / lobby ----- */
-  connect(){
-    const name=(MP.$('mpName').value||'').trim();
-    const room=(MP.$('mpRoom').value||'').trim();
+  /* ----- create a game / join a friend's game ----- */
+  onCodeInput(el){ el.value = el.value.replace(/\D/g,'').slice(0,2); },
+  toggleAdvanced(){ const a=MP.$('mpAdvanced'); a.style.display = (a.style.display==='none'?'block':'none'); },
+
+  createGame(){ MP.openSocket('create', null); },
+  joinGame(){
+    const code=(MP.$('mpRoom').value||'').trim();
+    if(!/^\d{1,2}$/.test(code)){ MP.toast('הקלידו את מספר החדר של החבר (שתי ספרות)','bad'); return; }
+    MP.openSocket('join', code);
+  },
+
+  openSocket(action, room){
+    const name=(MP.$('mpName').value||'').trim() || 'שחקן';
     const server=(MP.$('mpServer').value||'').trim() || MP.defaultServer();
-    if(!name){ MP.toast('צריך להזין שם','bad'); return; }
-    if(!room){ MP.toast('צריך להזין קוד חדר','bad'); return; }
-    MP.name=name; MP.room=room; MP.server=server;
+    MP.name=name; MP.server=server;
     MP.$('mpConnectForm').style.display='none';
     MP.$('mpLobby').style.display='block';
-    MP.setStatus('מתחבר לשרת…','wait');
+    MP.$('mpCodeBox').style.display='none';
+    MP.setStatus(action==='create' ? 'פותח שרת חדש…' : 'מתחבר למשחק '+room+'…', 'wait');
     try{
       MP.ws = new WebSocket(server);
     }catch(e){
       MP.setStatus('כתובת שרת לא תקינה','bad'); MP.showForm(); return;
     }
-    MP.ws.onopen = ()=>{ MP.active=true; MP.send({t:'join', room, name}); };
+    MP.ws.onopen = ()=>{ MP.active=true;
+      MP.send(action==='create' ? {t:'create', name} : {t:'join', room, name}); };
     MP.ws.onmessage = (ev)=>{ let m; try{ m=JSON.parse(ev.data); }catch(_){ return; } MP.onMessage(m); };
     MP.ws.onclose = ()=>{
-      if(!MP.started){ MP.setStatus('החיבור נסגר. בדקו שהשרת פועל ושהכתובת נכונה.','bad'); MP.showForm(); }
+      if(!MP.started){ MP.setStatus('החיבור נסגר. בדקו שהשרת פועל.','bad'); MP.showForm(); }
       else { MP.toast('נותק מהשרת','bad'); const p=MP.$('mpPill'); if(p) p.style.borderColor='#b4483f'; }
       MP.active=false;
     };
     MP.ws.onerror = ()=>{ if(!MP.started){ MP.setStatus('שגיאת חיבור לשרת.','bad'); } };
   },
-  showForm(){ MP.$('mpLobby').style.display='none'; MP.$('mpConnectForm').style.display='block'; },
+  showForm(){ MP.$('mpLobby').style.display='none'; MP.$('mpCodeBox').style.display='none'; MP.$('mpConnectForm').style.display='block'; },
   leave(){ if(MP.ws){ try{ MP.ws.close(); }catch(_){}} MP.active=false; MP.showForm(); MP.backToMode(); MP.$('mpSetupOverlay').classList.remove('open'); MP.$('mpModeOverlay').classList.add('open'); },
 
   onMessage(m){
     switch(m.t){
       case 'welcome':
         MP.playerId=m.playerId;
-        MP.setStatus('מחובר! ממתין לשחקנים…','ok');
+        break;
+      case 'created':
+      case 'joined':
+        MP.room=m.room;
+        MP.$('mpCodeBig').textContent=m.room;
+        MP.$('mpCodeBox').style.display='block';
+        MP.setStatus(m.t==='created'
+          ? 'השרת נפתח! מסרו את המספר לחברים.'
+          : 'הצטרפת למשחק מספר '+m.room+'!', 'ok');
+        MP.updatePill();
         break;
       case 'room':
         MP.players=m.players||{};
@@ -1917,6 +1962,11 @@ const MP = {
         break;
       case 'error':
         MP.toast(m.msg||'שגיאה','bad');
+        if(m.code==='noroom' || m.code==='full'){
+          MP.setStatus(m.msg,'bad');
+          MP.showForm();
+          if(MP.ws){ try{ MP.ws.close(); }catch(_){} }
+        }
         break;
     }
   },

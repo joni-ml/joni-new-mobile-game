@@ -53,9 +53,14 @@ const wss = new WebSocketServer({ server });
 const rooms = new Map(); // roomCode -> { players: Map<id, player> }
 let nextId = 1;
 
-function getRoom(code) {
-  if (!rooms.has(code)) rooms.set(code, { players: new Map() });
-  return rooms.get(code);
+/* Room codes are short 2-digit numbers (10-99) so they are easy to read
+   out loud to a friend. Only a couple of games run at a time, so 90 codes
+   is far more than enough; a code is recycled as soon as its room empties. */
+function allocCode() {
+  const free = [];
+  for (let n = 10; n <= 99; n++) if (!rooms.has(String(n))) free.push(String(n));
+  if (!free.length) return null;
+  return free[Math.floor(Math.random() * free.length)];
 }
 
 function roomSnapshot(room) {
@@ -84,12 +89,26 @@ wss.on('connection', (ws) => {
     let m;
     try { m = JSON.parse(raw.toString()); } catch (_) { return; }
 
-    if (m.t === 'join') {
+    // "create" opens a brand-new game and hands back its 2-digit code;
+    // "join" enters an existing game by that code.
+    if (m.t === 'create' || m.t === 'join') {
       player.name = String(m.name || 'שחקן').slice(0, 24);
-      const code = String(m.room || 'lobby').slice(0, 40);
+      let code, room;
+
+      if (m.t === 'create') {
+        code = allocCode();
+        if (!code) { send(ws, { t: 'error', code: 'full', msg: 'אין כרגע מקום למשחק חדש' }); return; }
+        room = { players: new Map() };
+        rooms.set(code, room);
+      } else {
+        code = String(m.room || '').trim();
+        room = rooms.get(code);
+        if (!room) { send(ws, { t: 'error', code: 'noroom', msg: 'לא נמצא משחק עם המספר הזה' }); return; }
+      }
+
       player.room = code;
-      const room = getRoom(code);
       room.players.set(player.id, player);
+      send(ws, { t: m.t === 'create' ? 'created' : 'joined', room: code });
       // hand the newcomer every country snapshot already in the room
       for (const other of room.players.values()) {
         if (other.id !== player.id && other.lastSummary) {
