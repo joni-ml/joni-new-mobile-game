@@ -1,0 +1,142 @@
+<!-- =========================================================
+     MULTIPLAYER ADD-ON (UI) — added on top of the original game.
+     None of the original markup above was modified.
+     ========================================================= -->
+<style>
+  .mp-overlay{ display:none; position:fixed; inset:0; z-index:2000;
+    background:rgba(8,10,14,0.98); padding:24px 16px; overflow-y:auto; }
+  .mp-overlay.open{ display:block; }
+  .mp-box{ max-width:520px; margin:6vh auto 0; background:var(--surface);
+    border:1px solid var(--line); border-radius:14px; padding:26px 22px; text-align:center; }
+  .mp-box .emblem{ width:52px;height:52px;border:2px solid var(--gold);border-radius:50%;
+    margin:0 auto 12px;display:flex;align-items:center;justify-content:center;
+    font-family:'Frank Ruhl Libre',serif;color:var(--gold);font-size:22px; }
+  .mp-box h1{ font-family:'Frank Ruhl Libre',serif; font-size:23px; margin:0 0 4px; }
+  .mp-box p.sub{ color:var(--muted); font-size:13.5px; margin:0 0 22px; }
+  .mp-mode-btn{ display:block; width:100%; text-align:right; background:var(--surface-2);
+    border:1px solid var(--line); color:var(--text); padding:16px 18px; border-radius:10px;
+    margin-bottom:12px; cursor:pointer; font-family:'Assistant',sans-serif; transition:border-color .15s, background .15s; }
+  .mp-mode-btn:hover{ border-color:var(--gold); background:#262d3a; }
+  .mp-mode-btn .t{ font-size:16px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  .mp-mode-btn .d{ color:var(--muted); font-size:12.5px; margin-top:5px; line-height:1.5; }
+  .mp-field{ text-align:right; margin-bottom:14px; }
+  .mp-field label{ display:block; font-size:12px; color:var(--muted); margin-bottom:5px; }
+  .mp-field input{ width:100%; background:var(--surface-2); border:1px solid var(--line);
+    color:var(--text); padding:10px 12px; border-radius:8px; font-family:'Assistant',sans-serif; font-size:15px; }
+  .mp-btn{ background:var(--gold); color:#1b1508; border:none; padding:11px 22px; border-radius:9px;
+    font-weight:700; cursor:pointer; font-family:'Assistant',sans-serif; font-size:15px; }
+  .mp-btn:disabled{ background:var(--surface-2); color:var(--muted); cursor:not-allowed; }
+  .mp-btn.ghost{ background:transparent; color:var(--muted); border:1px solid var(--line); }
+  .mp-row{ display:flex; gap:10px; justify-content:center; margin-top:6px; flex-wrap:wrap; }
+  .mp-status{ font-size:13px; margin:14px 0; min-height:18px; }
+  .mp-status.ok{ color:var(--good); } .mp-status.bad{ color:var(--bad); } .mp-status.wait{ color:var(--warn); }
+  .mp-players{ text-align:right; margin-top:16px; border-top:1px solid var(--line); padding-top:14px; }
+  .mp-players h3{ font-family:'Frank Ruhl Libre',serif; font-size:14px; color:var(--gold); margin:0 0 10px; }
+  .mp-player{ display:flex; justify-content:space-between; align-items:center; font-size:13px;
+    background:var(--surface-2); border:1px solid var(--line); border-radius:7px; padding:8px 11px; margin-bottom:7px; }
+  .mp-player .who{ font-weight:600; } .mp-player .cc{ color:var(--muted); font-size:12px; }
+  .mp-player.me{ border-color:var(--good); }
+  .mp-hint{ color:var(--muted); font-size:12.5px; line-height:1.6; margin-top:12px; }
+  /* live "player-controlled" badge inside the existing world cards */
+  .country-card.mp-taken{ opacity:.45; cursor:not-allowed; }
+  .country-card.mp-taken:hover{ border-color:var(--line); background:var(--surface); }
+  .country-card .mp-claim{ font-size:10px; color:var(--good); margin-top:4px; min-height:12px; }
+  /* small connection pill shown during the game */
+  #mpPill{ display:none; position:fixed; top:10px; left:10px; z-index:1500;
+    background:var(--surface); border:1px solid var(--good); color:var(--good);
+    font-size:11.5px; padding:5px 10px; border-radius:14px; font-family:'Assistant',sans-serif; }
+  #mpPill.open{ display:block; }
+  /* create-or-join screen */
+  .mp-join-row{ display:flex; gap:10px; align-items:stretch; margin-top:16px; }
+  .mp-join-row .mp-btn{ flex:1; }
+  .mp-code-input{ width:100px; text-align:center; font-size:28px; font-weight:700; letter-spacing:5px;
+    background:var(--surface-2); border:1px solid var(--line); color:var(--text);
+    border-radius:9px; font-family:'Frank Ruhl Libre',serif; padding:4px; }
+  .mp-code-input:focus{ outline:none; border-color:var(--gold); }
+  .mp-or{ display:flex; align-items:center; gap:12px; color:var(--muted); font-size:12px; margin:18px 0 4px; }
+  .mp-or::before, .mp-or::after{ content:""; flex:1; height:1px; background:var(--line); }
+  .mp-codebox{ background:var(--surface-2); border:1px solid var(--gold); border-radius:12px;
+    padding:16px 12px; margin-bottom:16px; }
+  .mp-codebox-label{ font-size:12px; color:var(--muted); }
+  .mp-codebox-num{ font-family:'Frank Ruhl Libre',serif; font-size:74px; font-weight:700;
+    color:var(--gold); line-height:1.05; letter-spacing:8px; margin:2px 0 8px; }
+  .mp-codebox-hint{ font-size:12px; color:var(--muted); line-height:1.55; }
+  .mp-formerror{ display:none; text-align:right; font-size:12.5px; line-height:1.6;
+    background:rgba(180,72,63,0.12); border:1px solid var(--bad); color:#e9b0aa;
+    border-radius:8px; padding:10px 12px; margin-bottom:14px; }
+  .mp-formerror.warn{ background:rgba(201,162,39,0.10); border-color:var(--warn); color:#ddc98a; }
+  .mp-waitdots::after{ content:"…"; animation:mpdots 1.2s steps(4,end) infinite; }
+  @keyframes mpdots{ 0%{content:""} 25%{content:"."} 50%{content:".."} 75%{content:"..."} }
+</style>
+
+<!-- Screen 1: choose single vs multiplayer -->
+<div id="mpModeOverlay" class="mp-overlay open">
+  <div class="mp-box">
+    <div class="emblem">מ</div>
+    <h1>משרד ראש הממשלה</h1>
+    <p class="sub">איך תרצה/י לשחק?</p>
+    <button class="mp-mode-btn" onclick="MP.chooseSingle()">
+      <span class="t">👤 משחק יחיד</span>
+      <span class="d">אתה מנהל מדינה אחת. שאר מדינות העולם מנוהלות אוטומטית על ידי המחשב — בדיוק כמו במשחק המקורי.</span>
+    </button>
+    <button class="mp-mode-btn" onclick="MP.chooseMulti()">
+      <span class="t">🌍 משחק מרובה משתתפים</span>
+      <span class="d">אחד פותח שרת — והמכשיר שלו מארח את המשחק. חברים מכל העולם מצטרפים עם מספר החדר, כל אחד מנהל מדינה אחרת, וסוחרים, עוזרים, מטילים סנקציות ומרגלים בזמן אמת.</span>
+    </button>
+  </div>
+</div>
+
+<!-- Screen 2: multiplayer connect + lobby -->
+<div id="mpSetupOverlay" class="mp-overlay">
+  <div class="mp-box">
+    <div class="emblem">🌍</div>
+    <h1>משחק מרובה משתתפים</h1>
+    <p class="sub">התחברו לאותו חדר כדי לשחק יחד</p>
+
+    <div id="mpConnectForm">
+      <div class="mp-formerror" id="mpFormError"></div>
+      <div class="mp-field">
+        <label>השם שלך</label>
+        <input id="mpName" maxlength="18" placeholder="למשל: יונתן" autocomplete="off">
+      </div>
+
+      <button class="mp-mode-btn" onclick="MP.createGame()">
+        <span class="t">🆕 צור שרת</span>
+        <span class="d">המכשיר שלך הופך למארח המשחק. תקבל מספר חדר — תנו אותו לחברים והם יצטרפו מכל מקום בעולם. כשתצא, החדר נסגר.</span>
+      </button>
+
+      <div class="mp-or">או</div>
+
+      <div class="mp-join-row">
+        <input id="mpRoom" class="mp-code-input" maxlength="2" inputmode="numeric"
+               placeholder="00" autocomplete="off" oninput="MP.onCodeInput(this)">
+        <button class="mp-btn" id="mpConnectBtn" onclick="MP.joinGame()">🔗 התחבר לחבר</button>
+      </div>
+      <div class="mp-hint">הקלידו את מספר החדר שהחבר קיבל (שתי ספרות).</div>
+
+      <div class="mp-row" style="margin-top:16px;">
+        <button class="mp-btn ghost" onclick="MP.backToMode()">חזרה</button>
+      </div>
+    </div>
+
+    <div id="mpLobby" style="display:none;">
+      <div id="mpCodeBox" class="mp-codebox" style="display:none;">
+        <div class="mp-codebox-label">מספר החדר שלך</div>
+        <div class="mp-codebox-num" id="mpCodeBig">--</div>
+        <div class="mp-codebox-hint">תנו את המספר הזה לחברים — הם מקלידים אותו ב"התחבר לחבר"</div>
+      </div>
+      <div class="mp-status wait" id="mpStatus">מתחבר…</div>
+      <div class="mp-players">
+        <h3>שחקנים בחדר</h3>
+        <div id="mpPlayerList"></div>
+      </div>
+      <div class="mp-hint" id="mpLobbyHint">ממתינים שחברים יצטרפו</div>
+      <div class="mp-row" style="margin-top:14px;">
+        <button class="mp-btn" id="mpStartBtn" onclick="MP.startGame()" style="display:none;">▶️ התחל משחק</button>
+        <button class="mp-btn ghost" onclick="MP.leave()">התנתק</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="mpPill"></div>
