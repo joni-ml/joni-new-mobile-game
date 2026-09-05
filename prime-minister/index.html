@@ -319,7 +319,7 @@
     </button>
     <button class="mp-mode-btn" onclick="MP.chooseMulti()">
       <span class="t">🌍 משחק מרובה משתתפים</span>
-      <span class="d">כמה שחקנים אמיתיים מכל העולם מתחברים לאותו עולם — כל אחד מנהל מדינה אחרת. אפשר לסחור, לעזור, להטיל סנקציות ולרגל אחד על השני בזמן אמת.</span>
+      <span class="d">אחד פותח שרת — והמכשיר שלו מארח את המשחק. חברים מכל העולם מצטרפים עם מספר החדר, כל אחד מנהל מדינה אחרת, וסוחרים, עוזרים, מטילים סנקציות ומרגלים בזמן אמת.</span>
     </button>
   </div>
 </div>
@@ -340,7 +340,7 @@
 
       <button class="mp-mode-btn" onclick="MP.createGame()">
         <span class="t">🆕 צור שרת</span>
-        <span class="d">פותח משחק חדש ונותן לך מספר חדר. תנו את המספר לחברים כדי שיצטרפו מכל מקום בעולם.</span>
+        <span class="d">המכשיר שלך הופך למארח המשחק. תקבל מספר חדר — תנו אותו לחברים והם יצטרפו מכל מקום בעולם. כשתצא, החדר נסגר.</span>
       </button>
 
       <div class="mp-or">או</div>
@@ -357,7 +357,7 @@
         <button class="mp-btn ghost" onclick="MP.toggleAdvanced()">⚙️ כתובת שרת</button>
       </div>
       <div class="mp-field" id="mpAdvanced" style="display:none;margin-top:14px;">
-        <label>כתובת השרת (בדרך כלל אין צורך לשנות)</label>
+        <label>השאירו ריק! מלאו רק אם מריצים שרת Node משלכם (server.js)</label>
         <input id="mpServer" placeholder="ws://localhost:8080" autocomplete="off">
       </div>
     </div>
@@ -1842,6 +1842,10 @@ function startUrgentTimer(ev){
 renderCountrySelect();
 </script>
 
+<!-- direct phone-to-phone connection + the room that runs on the host's device -->
+<script src="vendor/peerjs.min.js"></script>
+<script src="mp-room.js"></script>
+
 <!-- =========================================================
      MULTIPLAYER ADD-ON (LOGIC)
      Everything multiplayer lives here. It wraps the original
@@ -1859,10 +1863,18 @@ const MP = {
   humanCountries:{},   // countryName -> playerId
   humanState:{},       // countryName -> live world-view snapshot
   worldOpen:false, _toastT:null,
+  // transport: 'p2p' = the host's own device is the server (default),
+  //            'ws'  = a Node server somewhere, entered under "כתובת שרת"
+  transport:'p2p', PEER_PREFIX:'pmgov-mp-',
+  peer:null, conn:null, hostRoom:null, hostPid:null, connsByPid:{}, _codeTries:0, _joinTimer:null,
 
   /* ----- tiny helpers ----- */
   $(id){ return document.getElementById(id); },
-  send(obj){ if(MP.ws && MP.ws.readyState===1){ MP.ws.send(JSON.stringify(obj)); } },
+  send(obj){
+    if(MP.transport==='ws'){ if(MP.ws && MP.ws.readyState===1) MP.ws.send(JSON.stringify(obj)); return; }
+    if(MP.hostRoom){ MP.hostRoom.handle(MP.hostPid, obj); return; }    // host: straight into the local room
+    if(MP.conn && MP.conn.open){ try{ MP.conn.send(obj); }catch(_){} } // guest: over the direct link
+  },
   showFormError(msg, kind){
     const el=MP.$('mpFormError');
     if(el){ el.textContent=msg; el.className='mp-formerror'+(kind?' '+kind:''); el.style.display='block'; }
@@ -1884,7 +1896,7 @@ const MP = {
     if(!MP.servedOverWeb()) return 'ws://localhost:8080';
     const proto = location.protocol==='https:' ? 'wss' : 'ws';
     const port = location.port ? (':'+location.port) : '';
-    return proto+'//'+location.hostname+port;
+    return proto+'://'+location.hostname+port;
   },
 
   /* ----- mode selection ----- */
@@ -1896,7 +1908,6 @@ const MP = {
   chooseMulti(){
     MP.$('mpModeOverlay').classList.remove('open');
     MP.tutorialClose();
-    MP.$('mpServer').value = MP.$('mpServer').value || MP.defaultServer();
     MP.showForm();
     MP.clearFormError();
     // file: / data: / blob: — the page was opened as a local copy, so there is
@@ -1918,22 +1929,148 @@ const MP = {
   onCodeInput(el){ el.value = el.value.replace(/\D/g,'').slice(0,2); },
   toggleAdvanced(){ const a=MP.$('mpAdvanced'); a.style.display = (a.style.display==='none'?'block':'none'); },
 
-  createGame(){ MP.openSocket('create', null); },
+  // Only an explicit ws:// / wss:// address switches to the Node-server
+  // transport. Anything else (blank, autofilled junk) stays peer-to-peer.
+  serverOverride(){
+    const v=(MP.$('mpServer').value||'').trim();
+    return /^wss?:\/\//i.test(v) ? v : '';
+  },
+  createGame(){
+    const srv=MP.serverOverride();
+    if(srv){ MP.transport='ws'; MP.openSocket('create', null); return; }
+    MP.transport='p2p'; MP.hostStart();
+  },
   joinGame(){
     const code=(MP.$('mpRoom').value||'').trim();
     if(!/^\d{1,2}$/.test(code)){ MP.toast('הקלידו את מספר החדר של החבר (שתי ספרות)','bad'); return; }
-    MP.openSocket('join', code);
+    const srv=MP.serverOverride();
+    if(srv){ MP.transport='ws'; MP.openSocket('join', code); return; }
+    MP.transport='p2p'; MP.guestStart(code);
+  },
+
+  /* ---------- P2P: the host's own device is the server ---------- */
+  p2pReady(){
+    if(!MP.servedOverWeb()){
+      MP.showFormError('כדי לשחק עם אנשים המשחק צריך להיפתח מכתובת אינטרנט (https), ולא כקובץ מקומי. משחק יחיד עובד כאן רגיל.','warn');
+      return false;
+    }
+    if(typeof Peer==='undefined' || typeof MPRoom==='undefined'){
+      MP.showFormError('קבצי החיבור לא נטענו. ודאו שהמשחק נפתח עם התיקייה המלאה (vendor/peerjs.min.js ו-mp-room.js).');
+      return false;
+    }
+    return true;
+  },
+  destroyPeer(){
+    clearTimeout(MP._joinTimer);
+    try{ if(MP.conn) MP.conn.close(); }catch(_){}
+    try{ if(MP.peer) MP.peer.destroy(); }catch(_){}
+    MP.conn=null; MP.peer=null; MP.hostRoom=null; MP.hostPid=null; MP.connsByPid={};
+  },
+  enterLobby(msg){
+    MP.clearFormError();
+    MP.$('mpConnectForm').style.display='none';
+    MP.$('mpLobby').style.display='block';
+    MP.$('mpCodeBox').style.display='none';
+    MP.setStatus(msg,'wait');
+  },
+  randomCode(){ return String(10+Math.floor(Math.random()*90)); },
+
+  // messages the room wants to hand out: to us directly, or down a friend's link
+  deliverAsHost(pid, msg){
+    if(pid===MP.hostPid){ MP.onMessage(msg); return; }
+    const c=MP.connsByPid[pid];
+    if(c && c.open){ try{ c.send(msg); }catch(_){} }
+  },
+
+  hostStart(){
+    if(!MP.p2pReady()) return;
+    MP.name=(MP.$('mpName').value||'').trim()||'שחקן';
+    MP.enterLobby('פותח שרת בטלפון שלך…');
+    MP._codeTries=0;
+    MP.tryHostCode();
+  },
+  // matchmaking server options. Defaults to the free public one; set
+  // window.MP_PEER_CONFIG to point at your own instead.
+  peerOpts(){ return Object.assign({debug:0}, (typeof window!=='undefined' && window.MP_PEER_CONFIG) || {}); },
+  tryHostCode(){
+    const code=MP.randomCode();
+    MP.destroyPeer();
+    MP.peer=new Peer(MP.PEER_PREFIX+code, MP.peerOpts());
+    MP.peer.on('open',()=>{
+      MP.active=true;
+      MP.hostRoom=MPRoom.createRoom(code, MP.deliverAsHost);
+      // bind first: our own id must be routable before 'welcome' is sent
+      MP.hostRoom.add(MP.name, true, (id)=>{ MP.hostPid=id; });
+    });
+    MP.peer.on('connection',(conn)=>MP.onGuestConnection(conn));
+    MP.peer.on('error',(err)=>{
+      // that number is in use somewhere in the world right now — take another
+      if(err && err.type==='unavailable-id' && MP._codeTries<15){ MP._codeTries++; MP.tryHostCode(); return; }
+      MP.active=false; MP.destroyPeer(); MP.showForm();
+      MP.showFormError('לא הצלחנו לפתוח שרת. בדקו שיש חיבור לאינטרנט ונסו שוב.');
+      MP.toast('פתיחת השרת נכשלה','bad');
+    });
+  },
+  onGuestConnection(conn){
+    conn.on('data',(m)=>{
+      if(!MP.hostRoom || !m) return;
+      if(conn._pid==null){
+        if(m.t!=='join') return;               // first word from a guest must be "join"
+        MP.hostRoom.add(m.name, false, (id)=>{ conn._pid=id; MP.connsByPid[id]=conn; });
+        MP.toast((m.name||'שחקן')+' הצטרף/ה!','good');
+        return;
+      }
+      MP.hostRoom.handle(conn._pid, m);
+    });
+    conn.on('close',()=>{
+      if(conn._pid!=null && MP.hostRoom){
+        const p=MP.hostRoom.players.get(conn._pid);
+        if(p) MP.toast(p.name+' יצא/ה מהמשחק','bad');
+        MP.hostRoom.remove(conn._pid);
+        delete MP.connsByPid[conn._pid];
+      }
+    });
+    conn.on('error',()=>{});
+  },
+
+  guestStart(code){
+    if(!MP.p2pReady()) return;
+    MP.name=(MP.$('mpName').value||'').trim()||'שחקן';
+    MP.enterLobby('מחפש את המשחק מספר '+code+'…');
+    MP.destroyPeer();
+    let settled=false;
+    const fail=(msg)=>{
+      if(settled) return; settled=true;
+      MP.destroyPeer(); MP.active=false;
+      MP.showForm(); MP.showFormError(msg); MP.toast('לא התחברנו','bad');
+    };
+    MP.peer=new Peer(undefined, MP.peerOpts());
+    MP._joinTimer=setTimeout(()=>fail('אף אחד לא ענה על מספר '+code+'. ודאו שהחבר פתח שרת ושהמספר נכון.'),20000);
+    MP.peer.on('open',()=>{
+      MP.conn=MP.peer.connect(MP.PEER_PREFIX+code,{reliable:true});
+      MP.conn.on('open',()=>{
+        settled=true; clearTimeout(MP._joinTimer);
+        MP.active=true; MP.conn.send({t:'join', name:MP.name});
+      });
+      MP.conn.on('data',(m)=>MP.onMessage(m));
+      MP.conn.on('close',()=>{
+        MP.active=false;
+        if(MP.started){ MP.toast('הקשר עם המארח נותק — המשחק נסגר','bad'); const p=MP.$('mpPill'); if(p) p.style.borderColor='#b4483f'; }
+        else fail('הקשר עם המארח נותק.');
+      });
+      MP.conn.on('error',()=>fail('לא הצלחנו להתחבר למשחק מספר '+code+'.'));
+    });
+    MP.peer.on('error',(err)=>{
+      if(err && err.type==='peer-unavailable') fail('לא נמצא משחק עם המספר '+code+'. ודאו שהחבר פתח שרת ושהמספר נכון.');
+      else fail('שגיאת חיבור. בדקו את האינטרנט ונסו שוב.');
+    });
   },
 
   openSocket(action, room){
     const name=(MP.$('mpName').value||'').trim() || 'שחקן';
     const server=(MP.$('mpServer').value||'').trim() || MP.defaultServer();
     MP.name=name; MP.server=server;
-    MP.clearFormError();
-    MP.$('mpConnectForm').style.display='none';
-    MP.$('mpLobby').style.display='block';
-    MP.$('mpCodeBox').style.display='none';
-    MP.setStatus(action==='create' ? 'פותח שרת חדש…' : 'מתחבר למשחק '+room+'…', 'wait');
+    MP.enterLobby(action==='create' ? 'פותח שרת חדש…' : 'מתחבר למשחק '+room+'…');
     try{
       MP.ws = new WebSocket(server);
     }catch(e){
@@ -1957,7 +2094,7 @@ const MP = {
     MP.ws.onerror = ()=>{};
   },
   showForm(){ MP.$('mpLobby').style.display='none'; MP.$('mpCodeBox').style.display='none'; MP.$('mpConnectForm').style.display='block'; },
-  leave(){ if(MP.ws){ try{ MP.ws.close(); }catch(_){}} MP.active=false; MP.showForm(); MP.backToMode(); MP.$('mpSetupOverlay').classList.remove('open'); MP.$('mpModeOverlay').classList.add('open'); },
+  leave(){ if(MP.ws){ try{ MP.ws.close(); }catch(_){}} MP.destroyPeer(); MP.active=false; MP.showForm(); MP.backToMode(); MP.$('mpSetupOverlay').classList.remove('open'); MP.$('mpModeOverlay').classList.add('open'); },
 
   onMessage(m){
     switch(m.t){
@@ -2149,7 +2286,7 @@ const MP = {
 window.MP = MP;
 
 /* prefill the server field with a sensible default */
-(function(){ const f=MP.$('mpServer'); if(f && !f.value) f.value=MP.defaultServer(); })();
+(function(){ const f=MP.$('mpServer'); if(f) f.placeholder=MP.defaultServer(); })();
 
 /* ---------- WRAP ORIGINAL FUNCTIONS (single-player untouched) ---------- */
 (function(){
