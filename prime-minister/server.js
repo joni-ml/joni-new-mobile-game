@@ -76,7 +76,7 @@ function send(ws, obj) {
 }
 
 function broadcastRoom(room) {
-  const msg = { t: 'room', players: roomSnapshot(room) };
+  const msg = { t: 'room', players: roomSnapshot(room), host: room.hostId, started: !!room.started };
   for (const p of room.players.values()) send(p.ws, msg);
 }
 
@@ -98,7 +98,7 @@ wss.on('connection', (ws) => {
       if (m.t === 'create') {
         code = allocCode();
         if (!code) { send(ws, { t: 'error', code: 'full', msg: 'אין כרגע מקום למשחק חדש' }); return; }
-        room = { players: new Map() };
+        room = { players: new Map(), hostId: player.id, started: false };
         rooms.set(code, room);
       } else {
         code = String(m.room || '').trim();
@@ -121,6 +121,15 @@ wss.on('connection', (ws) => {
 
     const room = player.room ? rooms.get(player.room) : null;
     if (!room) return;
+
+    // only the host decides when the game begins
+    if (m.t === 'start') {
+      if (player.id !== room.hostId) return;
+      room.started = true;
+      for (const p of room.players.values()) send(p.ws, { t: 'start' });
+      broadcastRoom(room);
+      return;
+    }
 
     if (m.t === 'claim') {
       const wanted = String(m.country || '');
@@ -163,8 +172,14 @@ wss.on('connection', (ws) => {
     const room = player.room ? rooms.get(player.room) : null;
     if (room) {
       room.players.delete(player.id);
-      if (room.players.size === 0) rooms.delete(player.room);
-      else broadcastRoom(room);
+      if (room.players.size === 0) {
+        rooms.delete(player.room);
+      } else {
+        if (room.hostId === player.id) {
+          room.hostId = room.players.keys().next().value; // promote the next player
+        }
+        broadcastRoom(room);
+      }
     }
   });
 });

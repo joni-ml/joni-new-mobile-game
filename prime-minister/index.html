@@ -299,6 +299,12 @@
   .mp-codebox-num{ font-family:'Frank Ruhl Libre',serif; font-size:74px; font-weight:700;
     color:var(--gold); line-height:1.05; letter-spacing:8px; margin:2px 0 8px; }
   .mp-codebox-hint{ font-size:12px; color:var(--muted); line-height:1.55; }
+  .mp-formerror{ display:none; text-align:right; font-size:12.5px; line-height:1.6;
+    background:rgba(180,72,63,0.12); border:1px solid var(--bad); color:#e9b0aa;
+    border-radius:8px; padding:10px 12px; margin-bottom:14px; }
+  .mp-formerror.warn{ background:rgba(201,162,39,0.10); border-color:var(--warn); color:#ddc98a; }
+  .mp-waitdots::after{ content:"…"; animation:mpdots 1.2s steps(4,end) infinite; }
+  @keyframes mpdots{ 0%{content:""} 25%{content:"."} 50%{content:".."} 75%{content:"..."} }
 </style>
 
 <!-- Screen 1: choose single vs multiplayer -->
@@ -326,6 +332,7 @@
     <p class="sub">התחברו לאותו חדר כדי לשחק יחד</p>
 
     <div id="mpConnectForm">
+      <div class="mp-formerror" id="mpFormError"></div>
       <div class="mp-field">
         <label>השם שלך</label>
         <input id="mpName" maxlength="18" placeholder="למשל: יונתן" autocomplete="off">
@@ -366,9 +373,9 @@
         <h3>שחקנים בחדר</h3>
         <div id="mpPlayerList"></div>
       </div>
-      <div class="mp-hint" id="mpLobbyHint">בחרו מדינה מהרשימה כדי להיכנס למשחק. מדינה שכבר נתפסה על ידי שחקן אחר מסומנת ולא ניתנת לבחירה.</div>
+      <div class="mp-hint" id="mpLobbyHint">ממתינים שחברים יצטרפו</div>
       <div class="mp-row" style="margin-top:14px;">
-        <button class="mp-btn" id="mpPickBtn" onclick="MP.goPickCountry()">בחר/י מדינה ←</button>
+        <button class="mp-btn" id="mpStartBtn" onclick="MP.startGame()" style="display:none;">▶️ התחל משחק</button>
         <button class="mp-btn ghost" onclick="MP.leave()">התנתק</button>
       </div>
     </div>
@@ -1856,6 +1863,11 @@ const MP = {
   /* ----- tiny helpers ----- */
   $(id){ return document.getElementById(id); },
   send(obj){ if(MP.ws && MP.ws.readyState===1){ MP.ws.send(JSON.stringify(obj)); } },
+  showFormError(msg, kind){
+    const el=MP.$('mpFormError');
+    if(el){ el.textContent=msg; el.className='mp-formerror'+(kind?' '+kind:''); el.style.display='block'; }
+  },
+  clearFormError(){ const el=MP.$('mpFormError'); if(el){ el.style.display='none'; el.textContent=''; } },
   setStatus(msg, kind){ const el=MP.$('mpStatus'); if(el){ el.textContent=msg; el.className='mp-status '+(kind||''); } },
   toast(msg, kind){
     let t=MP.$('mpToast');
@@ -1884,6 +1896,10 @@ const MP = {
     MP.tutorialClose();
     MP.$('mpServer').value = MP.$('mpServer').value || MP.defaultServer();
     MP.showForm();
+    MP.clearFormError();
+    if(location.protocol==='file:'){
+      MP.showFormError('המשחק נפתח כקובץ מקומי, ולכן אין שרת להתחבר אליו. כדי לשחק עם אנשים: הריצו "npm start" בתיקייה ופתחו את http://localhost:8080', 'warn');
+    }
     MP.$('mpSetupOverlay').classList.add('open');
   },
   backToMode(){
@@ -1907,6 +1923,7 @@ const MP = {
     const name=(MP.$('mpName').value||'').trim() || 'שחקן';
     const server=(MP.$('mpServer').value||'').trim() || MP.defaultServer();
     MP.name=name; MP.server=server;
+    MP.clearFormError();
     MP.$('mpConnectForm').style.display='none';
     MP.$('mpLobby').style.display='block';
     MP.$('mpCodeBox').style.display='none';
@@ -1920,11 +1937,18 @@ const MP = {
       MP.send(action==='create' ? {t:'create', name} : {t:'join', room, name}); };
     MP.ws.onmessage = (ev)=>{ let m; try{ m=JSON.parse(ev.data); }catch(_){ return; } MP.onMessage(m); };
     MP.ws.onclose = ()=>{
-      if(!MP.started){ MP.setStatus('החיבור נסגר. בדקו שהשרת פועל.','bad'); MP.showForm(); }
-      else { MP.toast('נותק מהשרת','bad'); const p=MP.$('mpPill'); if(p) p.style.borderColor='#b4483f'; }
+      if(!MP.started){
+        MP.showForm();
+        if(!MP.$('mpFormError').textContent){
+          MP.showFormError('לא הצלחנו להתחבר לשרת ('+server+'). ודאו שמישהו מריץ את השרת (npm start) ושנכנסתם דרך הכתובת שלו.');
+        }
+        MP.toast('אין חיבור לשרת','bad');
+      } else {
+        MP.toast('נותק מהשרת','bad'); const p=MP.$('mpPill'); if(p) p.style.borderColor='#b4483f';
+      }
       MP.active=false;
     };
-    MP.ws.onerror = ()=>{ if(!MP.started){ MP.setStatus('שגיאת חיבור לשרת.','bad'); } };
+    MP.ws.onerror = ()=>{};
   },
   showForm(){ MP.$('mpLobby').style.display='none'; MP.$('mpCodeBox').style.display='none'; MP.$('mpConnectForm').style.display='block'; },
   leave(){ if(MP.ws){ try{ MP.ws.close(); }catch(_){}} MP.active=false; MP.showForm(); MP.backToMode(); MP.$('mpSetupOverlay').classList.remove('open'); MP.$('mpModeOverlay').classList.add('open'); },
@@ -1945,6 +1969,7 @@ const MP = {
         MP.updatePill();
         break;
       case 'room':
+        MP.hostId=(m.host!=null?m.host:MP.hostId);
         MP.players=m.players||{};
         MP.humanCountries={};
         Object.values(MP.players).forEach(p=>{ if(p.country) MP.humanCountries[p.country]=p.id; });
@@ -1960,11 +1985,14 @@ const MP = {
       case 'diplo':
         MP.receiveDiplo(m);
         break;
+      case 'start':
+        MP.goPickCountry();
+        break;
       case 'error':
         MP.toast(m.msg||'שגיאה','bad');
         if(m.code==='noroom' || m.code==='full'){
-          MP.setStatus(m.msg,'bad');
           MP.showForm();
+          MP.showFormError(m.msg);
           if(MP.ws){ try{ MP.ws.close(); }catch(_){} }
         }
         break;
@@ -1972,15 +2000,32 @@ const MP = {
   },
 
   renderLobby(){
-    const list=MP.$('mpPlayerList'); if(!list) return;
+    const list=MP.$('mpPlayerList');
     const players=Object.values(MP.players);
-    if(!players.length){ list.innerHTML='<div class="mp-hint">אין עדיין שחקנים.</div>'; return; }
-    list.innerHTML=players.map(p=>{
-      const me = p.id===MP.playerId;
-      const c = p.country ? p.country : '— בוחר/ת מדינה —';
-      return `<div class="mp-player${me?' me':''}"><span class="who">${p.name}${me?' (אתה)':''}</span><span class="cc">${c}</span></div>`;
-    }).join('');
+    if(list){
+      list.innerHTML = players.length ? players.map(p=>{
+        const me=p.id===MP.playerId, host=p.id===MP.hostId;
+        const c = p.country ? p.country : '— טרם בחר/ה מדינה —';
+        return `<div class="mp-player${me?' me':''}"><span class="who">${host?'👑 ':''}${p.name}${me?' (אתה)':''}</span><span class="cc">${c}</span></div>`;
+      }).join('') : '<div class="mp-hint">אין עדיין שחקנים.</div>';
+    }
+    const isHost = MP.playerId!=null && MP.playerId===MP.hostId;
+    const btn=MP.$('mpStartBtn'), hint=MP.$('mpLobbyHint');
+    if(btn) btn.style.display = isHost ? 'inline-block' : 'none';
+    if(hint){
+      hint.className='mp-hint';
+      if(isHost){
+        hint.textContent = players.length<2
+          ? 'ממתינים שחברים יצטרפו. אפשר גם להתחיל כבר עכשיו.'
+          : players.length+' שחקנים בחדר — כשכולם כאן לחצו "התחל משחק".';
+      } else {
+        hint.textContent='ממתינים שהמארח יתחיל את המשחק';
+        hint.className='mp-hint mp-waitdots';
+      }
+    }
   },
+
+  startGame(){ MP.send({t:'start'}); },
 
   updatePill(){
     const pill=MP.$('mpPill'); if(!pill) return;
@@ -2012,7 +2057,7 @@ const MP = {
     MP.tutorialClose();
     MP.$('mpSetupOverlay').classList.remove('open');
     MP.decorateGrid();
-    MP.toast('בחר/י מדינה פנויה מהרשימה','good');
+    MP.toast('המשחק התחיל! בחר/י מדינה פנויה','good');
   },
 
   onGameStart(){
