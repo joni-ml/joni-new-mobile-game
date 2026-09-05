@@ -1,0 +1,2103 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>רוה"מ — אב־טיפוס</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700&family=Assistant:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#12151c; --surface:#1b2029; --surface-2:#232a36; --line:#333c4a;
+    --gold:#b8934b; --text:#e9e5da; --muted:#8a93a3;
+    --good:#4c8c7b; --bad:#b4483f; --warn:#c9a227;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:'Assistant',sans-serif;min-height:100vh;padding:24px 16px 60px;}
+  .wrap{max-width:1040px;margin:0 auto;}
+  header{text-align:center;border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:22px;}
+  header .emblem{width:46px;height:46px;border:2px solid var(--gold);border-radius:50%;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;font-family:'Frank Ruhl Libre',serif;color:var(--gold);font-size:20px;}
+  header h1{font-family:'Frank Ruhl Libre',serif;font-weight:700;font-size:26px;margin:0;letter-spacing:.5px;}
+  header p{color:var(--muted);margin:6px 0 0;font-size:14px;}
+  .turn-badge{display:inline-block;background:var(--surface-2);border:1px solid var(--line);padding:4px 14px;border-radius:14px;font-size:13px;color:var(--gold);margin-top:10px;}
+
+  /* Country select */
+  .country-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:20px;}
+  .country-card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 10px;text-align:center;cursor:pointer;transition:border-color .15s;}
+  .country-card:hover{border-color:var(--gold);background:#232a36;}
+  .country-card .flag{font-size:26px;margin-bottom:6px;}
+  .country-card .cname{font-size:13px;font-weight:600;}
+  .country-card .ctag{font-size:11px;color:var(--muted);margin-top:3px;}
+  .search-box{width:100%;max-width:340px;margin:16px auto 0;display:block;background:var(--surface-2);border:1px solid var(--line);color:var(--text);padding:9px 12px;border-radius:8px;font-family:'Assistant',sans-serif;font-size:14px;}
+
+  .pixel-frame{
+    border:2px solid var(--line); border-radius:10px; overflow:hidden; margin-bottom:16px;
+    background:#000; position:relative; width:100%;
+  }
+  .pixel-frame::after{
+    content:""; position:absolute; inset:0; pointer-events:none;
+    box-shadow:inset 0 0 0 2px rgba(184,147,75,0.15);
+  }
+  #pixelCanvas{
+    width:100%; height:auto; display:block; aspect-ratio:320/140;
+    image-rendering:pixelated; image-rendering:crisp-edges;
+  }
+  .pixel-frame:fullscreen #pixelCanvas,
+  .pixel-frame:-webkit-full-screen #pixelCanvas{
+    width:100vw; height:100vh; aspect-ratio:unset; object-fit:contain;
+  }
+  .pixel-controls{
+    position:absolute; bottom:8px; left:8px; display:flex; gap:8px;
+  }
+  .pixel-btn{
+    background:rgba(18,21,28,0.85); color:var(--text); border:1px solid var(--gold);
+    padding:6px 12px; border-radius:6px; font-size:12px; cursor:pointer;
+    font-family:'Assistant',sans-serif; backdrop-filter:blur(2px);
+  }
+  .pixel-btn:hover{ background:rgba(184,147,75,0.25); }
+
+  .world-overlay{
+    display:none; position:fixed; inset:0; background:rgba(10,12,16,0.97);
+    z-index:999; padding:20px; overflow-y:auto;
+  }
+  .world-overlay.open{ display:block; }
+  .world-header{
+    display:flex; justify-content:space-between; align-items:center;
+    max-width:1100px; margin:0 auto 18px; border-bottom:1px solid var(--line); padding-bottom:12px;
+  }
+  .world-header h2{ font-family:'Frank Ruhl Libre',serif; font-size:20px; margin:0; }
+  .world-grid{
+    max-width:1100px; margin:0 auto; display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px;
+  }
+  .tutorial-body{ max-width:640px; margin:0 auto; font-size:14px; line-height:1.7; }
+  .tutorial-body ul{ padding-right:18px; }
+  .tutorial-body li{ margin-bottom:10px; }
+  .world-card{
+    background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:10px; cursor:pointer;
+    transition:border-color .15s;
+  }
+  .world-card:hover{ border-color:var(--gold); }
+  .world-card.is-you{ border-color:var(--good); }
+  .world-card canvas{ width:100%; height:auto; image-rendering:pixelated; border-radius:6px; display:block; margin-bottom:8px; }
+  .world-card .wname{ font-size:13px; font-weight:700; display:flex; justify-content:space-between; }
+  .world-card .wheadline{ font-size:11.5px; color:var(--muted); margin:5px 0 8px; min-height:28px; }
+  .world-card .wbars{ display:flex; flex-direction:column; gap:3px; }
+  .world-card .wbar-row{ display:flex; align-items:center; gap:6px; font-size:10px; color:var(--muted); }
+  .world-card .wbar{ flex:1; height:4px; background:var(--surface-2); border-radius:3px; overflow:hidden; }
+  .world-card .wbar > div{ height:100%; }
+  .wactions{ display:flex; gap:5px; margin-top:9px; }
+  .wact-btn{ flex:1; background:var(--surface-2); border:1px solid var(--line); color:var(--text);
+    font-size:10.5px; padding:5px 4px; border-radius:5px; cursor:pointer; font-family:'Assistant',sans-serif; }
+  .wact-btn:hover{ border-color:var(--gold); }
+  .wact-bad:hover{ border-color:var(--bad); }
+  .wact-spy{ background:rgba(184,147,75,0.1); }
+  .wact-spy:disabled{ opacity:0.5; cursor:not-allowed; }
+  .espionage-info{ font-size:10.5px; color:var(--gold); background:rgba(184,147,75,0.08); border:1px solid var(--line); border-radius:5px; padding:5px 7px; margin-top:8px; }
+
+
+  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
+  .metric{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 10px;}
+  .metric .label{font-size:12px;color:var(--muted);margin-bottom:6px;}
+  .metric .value{font-family:'Frank Ruhl Libre',serif;font-size:19px;margin-bottom:8px;}
+  .bar{height:6px;border-radius:4px;background:var(--surface-2);overflow:hidden;}
+  .bar > div{height:100%;border-radius:4px;transition:width .4s ease;}
+
+  .narrative{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--muted);margin-bottom:18px;font-style:italic;}
+
+  .grid{display:grid;grid-template-columns:2fr 1fr;gap:18px;}
+  @media (max-width:720px){.grid{grid-template-columns:1fr;} .metrics{grid-template-columns:repeat(2,1fr);} .country-grid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr));}}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px;}
+  .card h2{font-family:'Frank Ruhl Libre',serif;font-size:19px;margin:0 0 4px;font-weight:700;}
+  .card .sub{color:var(--muted);font-size:13px;margin-bottom:14px;}
+  .desc{font-size:15px;line-height:1.6;margin-bottom:18px;}
+
+  .choice{display:block;width:100%;text-align:right;background:var(--surface-2);border:1px solid var(--line);color:var(--text);padding:13px 14px;border-radius:8px;margin-bottom:10px;cursor:pointer;font-size:14px;font-family:'Assistant',sans-serif;transition:border-color .15s ease, background .15s ease;}
+  .choice:hover{border-color:var(--gold);background:#262d3a;}
+  .choice .ctop{display:flex;justify-content:space-between;align-items:center;}
+  .choice .ctitle{font-weight:700;}
+  .choice .cdesc{color:var(--muted);font-size:12.5px;margin-top:3px;}
+  .cpreview{font-size:11px;color:var(--gold);margin-top:6px;}
+  .preview-lock{color:var(--muted);}
+
+  .urgent-bar{background:rgba(180,72,63,0.12);border:1px solid var(--bad);border-radius:8px;padding:8px 12px;margin-bottom:14px;}
+  .urgent-label{font-size:12.5px;color:var(--bad);font-weight:700;margin-bottom:6px;}
+  .urgent-track{height:6px;background:var(--surface-2);border-radius:4px;overflow:hidden;}
+  .urgent-fill{height:100%;background:var(--bad);transition:width 1s linear;}
+
+  .impact-arrows{display:flex;gap:6px;font-size:12px;}
+  .impact-arrows span{background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:1px 5px;}
+  .up{color:var(--good);} .down{color:var(--bad);} .flat{color:var(--muted);}
+
+  .side h3{font-family:'Frank Ruhl Libre',serif;font-size:15px;margin:0 0 10px;color:var(--gold);border-bottom:1px solid var(--line);padding-bottom:6px;}
+  .minister{margin-bottom:12px;}
+  .minister .mtop{display:flex;justify-content:space-between;font-size:13px;margin-bottom:2px;}
+  .minister .mtop span:last-child{color:var(--muted);}
+  .minister .magenda{font-size:11px;color:var(--muted);margin-bottom:4px;}
+
+  .skills{margin-top:18px;}
+  .skill-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:8px;}
+  .skill-row .sname{color:var(--text);}
+  .skill-row .slevel{color:var(--muted);font-size:12px;}
+  .upgrade-btn{background:var(--gold);color:#1b1508;border:none;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;}
+  .upgrade-btn:disabled{background:var(--surface-2);color:var(--muted);cursor:not-allowed;}
+  .xp-line{font-size:12px;color:var(--muted);margin-bottom:8px;}
+
+  .log{margin-top:18px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:12px 14px;font-size:12.5px;max-height:170px;overflow-y:auto;}
+  .log div{margin-bottom:6px;color:var(--muted);}
+  .log div b{color:var(--text);}
+
+  .gameover{text-align:center;padding:40px 20px;}
+  .gameover h2{font-family:'Frank Ruhl Libre',serif;color:var(--bad);font-size:24px;}
+  .headline-box{
+    font-family:'Frank Ruhl Libre',serif; font-style:italic; font-size:16px;
+    border-top:1px solid var(--line); border-bottom:1px solid var(--line);
+    padding:12px 0; margin:16px auto; max-width:480px; color:var(--gold);
+  }
+  .timeline{
+    text-align:right; max-width:520px; margin:0 auto; background:var(--surface-2);
+    border:1px solid var(--line); border-radius:8px; padding:14px 16px; font-size:12.5px;
+    color:var(--muted); max-height:220px; overflow-y:auto;
+  }
+  .timeline div{ margin-bottom:6px; }
+  .timeline h3{ font-family:'Frank Ruhl Libre',serif; color:var(--text); font-size:14px; }
+
+  .restart{margin-top:16px;background:var(--gold);color:#1b1508;border:none;padding:10px 22px;border-radius:8px;font-weight:700;cursor:pointer;font-family:'Assistant',sans-serif;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="emblem">מ</div>
+    <h1 id="mainTitle">משרד ראש הממשלה</h1>
+    <p id="mainSub">אב־טיפוס — בחר/י מדינה כדי להתחיל כהונה</p>
+    <div class="turn-badge" id="turnBadge" style="display:none;"></div>
+  </header>
+
+  <div id="countrySelect"></div>
+  <div id="gameRoot" style="display:none;">
+    <div class="pixel-frame" id="pixelFrame">
+      <canvas id="pixelCanvas" width="320" height="140"></canvas>
+      <div class="pixel-controls">
+        <button class="pixel-btn" onclick="toggleFullscreen()">⛶ מסך מלא</button>
+        <button class="pixel-btn" onclick="openWorldView()">🌍 מה קורה בעולם</button>
+        <button class="pixel-btn" onclick="exportSave()">💾 שמור</button>
+        <button class="pixel-btn" onclick="document.getElementById('importFile').click()">📂 טען</button>
+        <button class="pixel-btn" onclick="openTutorial()">❓ עזרה</button>
+        <input type="file" id="importFile" accept="application/json" style="display:none" onchange="importSave(event)">
+      </div>
+    </div>
+    <div id="metrics" class="metrics"></div>
+    <div id="narrative" class="narrative"></div>
+    <div id="mainArea" class="grid">
+      <div class="card" id="eventCard"></div>
+      <div class="card side">
+        <h3>קואליציה</h3>
+        <div id="ministers"></div>
+        <h3 style="margin-top:14px;">יריב פוליטי</h3>
+        <div id="rivalBlock"></div>
+        <div class="skills">
+          <h3 style="margin-top:14px;">כישורי ראש הממשלה</h3>
+          <div class="xp-line" id="xpLine"></div>
+          <div id="skillsList"></div>
+        </div>
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="worldOverlay" class="world-overlay">
+  <div class="world-header">
+    <h2>🌍 מצב העולם — רבעון <span id="worldTurnLabel"></span></h2>
+    <button class="pixel-btn" onclick="closeWorldView()">✕ סגור</button>
+  </div>
+  <div class="world-grid" id="worldGrid"></div>
+</div>
+
+<div id="tutorialOverlay" class="world-overlay open">
+  <div class="world-header">
+    <h2>👋 ברוכים הבאים למשרד ראש הממשלה</h2>
+    <button class="pixel-btn" onclick="closeTutorial()">✕ בואו נתחיל</button>
+  </div>
+  <div class="tutorial-body">
+    <p>אתה עומד לנהל מדינה במשך שנות כהונה, רבעון אחר רבעון. הנה המכניקות המרכזיות בקצרה:</p>
+    <ul>
+      <li><b>דילמות רבעוניות</b> — כל תור מציג משבר או הזדמנות. לכל אפשרות בחירה יש חיצי כיוון (↑/↓) שמראים השפעה על 4 המדדים המרכזיים: אישור, יציבות, קופה, מתיחות גבולות.</li>
+      <li><b>תקציב שנתי</b> — בתחילת כל שנה (רבעון 1) תבחר מדיניות תקציב שמשפיעה על כל השנה: חינוך/בריאות/רווחה/ביטחון.</li>
+      <li><b>בחירות</b> — בסוף כל שנה (רבעון 4) מגיע יום הבחירות. הישרדות תלויה באישור הציבורי ובנאמנות הקואליציה.</li>
+      <li><b>עץ כישורים</b> — נקודות ניסיון (XP) מצטברות מהחלטות ומושקעות בכריזמה, מניפולציה, ידע כלכלי, דיפלומטיה ומודיעין.</li>
+      <li><b>קואליציה</b> — לכל שר יש אג'נדה. סתירה שלה פוגעת בנאמנות; נאמנות אפס = התפטרות בפועל.</li>
+      <li><b>יריב פוליטי</b> — אישור נמוך מאריך לו/ה את הידיים. אם רמת האיום מגיעה ל-100, מתפרץ משבר אמון דחוף.</li>
+      <li><b>מסך העולם 🌍</b> — סחר, סיוע הומניטרי, סנקציות וריגול מול כל המדינות האחרות, כולל השכנה העוינת הפוטנציאלית שלך.</li>
+      <li><b>שמירה/טעינה 💾</b> — אפשר לייצא את מצב הכהונה כקובץ ולחזור אליו מאוחר יותר.</li>
+    </ul>
+    <p style="color:var(--muted);font-size:12.5px;">אפשר לפתוח את המסך הזה שוב בכל רגע דרך כפתור "❓ עזרה".</p>
+  </div>
+</div>
+
+<!-- =========================================================
+     MULTIPLAYER ADD-ON (UI) — added on top of the original game.
+     None of the original markup above was modified.
+     ========================================================= -->
+<style>
+  .mp-overlay{ display:none; position:fixed; inset:0; z-index:2000;
+    background:rgba(8,10,14,0.98); padding:24px 16px; overflow-y:auto; }
+  .mp-overlay.open{ display:block; }
+  .mp-box{ max-width:520px; margin:6vh auto 0; background:var(--surface);
+    border:1px solid var(--line); border-radius:14px; padding:26px 22px; text-align:center; }
+  .mp-box .emblem{ width:52px;height:52px;border:2px solid var(--gold);border-radius:50%;
+    margin:0 auto 12px;display:flex;align-items:center;justify-content:center;
+    font-family:'Frank Ruhl Libre',serif;color:var(--gold);font-size:22px; }
+  .mp-box h1{ font-family:'Frank Ruhl Libre',serif; font-size:23px; margin:0 0 4px; }
+  .mp-box p.sub{ color:var(--muted); font-size:13.5px; margin:0 0 22px; }
+  .mp-mode-btn{ display:block; width:100%; text-align:right; background:var(--surface-2);
+    border:1px solid var(--line); color:var(--text); padding:16px 18px; border-radius:10px;
+    margin-bottom:12px; cursor:pointer; font-family:'Assistant',sans-serif; transition:border-color .15s, background .15s; }
+  .mp-mode-btn:hover{ border-color:var(--gold); background:#262d3a; }
+  .mp-mode-btn .t{ font-size:16px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  .mp-mode-btn .d{ color:var(--muted); font-size:12.5px; margin-top:5px; line-height:1.5; }
+  .mp-field{ text-align:right; margin-bottom:14px; }
+  .mp-field label{ display:block; font-size:12px; color:var(--muted); margin-bottom:5px; }
+  .mp-field input{ width:100%; background:var(--surface-2); border:1px solid var(--line);
+    color:var(--text); padding:10px 12px; border-radius:8px; font-family:'Assistant',sans-serif; font-size:15px; }
+  .mp-btn{ background:var(--gold); color:#1b1508; border:none; padding:11px 22px; border-radius:9px;
+    font-weight:700; cursor:pointer; font-family:'Assistant',sans-serif; font-size:15px; }
+  .mp-btn:disabled{ background:var(--surface-2); color:var(--muted); cursor:not-allowed; }
+  .mp-btn.ghost{ background:transparent; color:var(--muted); border:1px solid var(--line); }
+  .mp-row{ display:flex; gap:10px; justify-content:center; margin-top:6px; flex-wrap:wrap; }
+  .mp-status{ font-size:13px; margin:14px 0; min-height:18px; }
+  .mp-status.ok{ color:var(--good); } .mp-status.bad{ color:var(--bad); } .mp-status.wait{ color:var(--warn); }
+  .mp-players{ text-align:right; margin-top:16px; border-top:1px solid var(--line); padding-top:14px; }
+  .mp-players h3{ font-family:'Frank Ruhl Libre',serif; font-size:14px; color:var(--gold); margin:0 0 10px; }
+  .mp-player{ display:flex; justify-content:space-between; align-items:center; font-size:13px;
+    background:var(--surface-2); border:1px solid var(--line); border-radius:7px; padding:8px 11px; margin-bottom:7px; }
+  .mp-player .who{ font-weight:600; } .mp-player .cc{ color:var(--muted); font-size:12px; }
+  .mp-player.me{ border-color:var(--good); }
+  .mp-hint{ color:var(--muted); font-size:12.5px; line-height:1.6; margin-top:12px; }
+  /* live "player-controlled" badge inside the existing world cards */
+  .country-card.mp-taken{ opacity:.45; cursor:not-allowed; }
+  .country-card.mp-taken:hover{ border-color:var(--line); background:var(--surface); }
+  .country-card .mp-claim{ font-size:10px; color:var(--good); margin-top:4px; min-height:12px; }
+  /* small connection pill shown during the game */
+  #mpPill{ display:none; position:fixed; top:10px; left:10px; z-index:1500;
+    background:var(--surface); border:1px solid var(--good); color:var(--good);
+    font-size:11.5px; padding:5px 10px; border-radius:14px; font-family:'Assistant',sans-serif; }
+  #mpPill.open{ display:block; }
+</style>
+
+<!-- Screen 1: choose single vs multiplayer -->
+<div id="mpModeOverlay" class="mp-overlay open">
+  <div class="mp-box">
+    <div class="emblem">מ</div>
+    <h1>משרד ראש הממשלה</h1>
+    <p class="sub">איך תרצה/י לשחק?</p>
+    <button class="mp-mode-btn" onclick="MP.chooseSingle()">
+      <span class="t">👤 משחק יחיד</span>
+      <span class="d">אתה מנהל מדינה אחת. שאר מדינות העולם מנוהלות אוטומטית על ידי המחשב — בדיוק כמו במשחק המקורי.</span>
+    </button>
+    <button class="mp-mode-btn" onclick="MP.chooseMulti()">
+      <span class="t">🌍 משחק מרובה משתתפים</span>
+      <span class="d">כמה שחקנים אמיתיים מכל העולם מתחברים לאותו עולם — כל אחד מנהל מדינה אחרת. אפשר לסחור, לעזור, להטיל סנקציות ולרגל אחד על השני בזמן אמת.</span>
+    </button>
+  </div>
+</div>
+
+<!-- Screen 2: multiplayer connect + lobby -->
+<div id="mpSetupOverlay" class="mp-overlay">
+  <div class="mp-box">
+    <div class="emblem">🌍</div>
+    <h1>משחק מרובה משתתפים</h1>
+    <p class="sub">התחברו לאותו חדר כדי לשחק יחד</p>
+
+    <div id="mpConnectForm">
+      <div class="mp-field">
+        <label>השם שלך</label>
+        <input id="mpName" maxlength="18" placeholder="למשל: יונתן" autocomplete="off">
+      </div>
+      <div class="mp-field">
+        <label>קוד חדר (כתבו את אותו קוד לכל החברים)</label>
+        <input id="mpRoom" maxlength="24" placeholder="למשל: friends1" autocomplete="off">
+      </div>
+      <div class="mp-field">
+        <label>כתובת השרת</label>
+        <input id="mpServer" placeholder="ws://localhost:8080" autocomplete="off">
+      </div>
+      <div class="mp-row">
+        <button class="mp-btn" id="mpConnectBtn" onclick="MP.connect()">התחבר</button>
+        <button class="mp-btn ghost" onclick="MP.backToMode()">חזרה</button>
+      </div>
+      <div class="mp-hint">
+        כדי לשחק עם חברים צריך שמישהו אחד יריץ את השרת (קובץ <b>server.js</b> שבתיקייה).
+        ברירת המחדל <code>ws://localhost:8080</code> היא לשחק על אותו מחשב;
+        כדי לשחק מרחוק, החליפו את הכתובת בכתובת השרת שמישהו העלה לאינטרנט.
+      </div>
+    </div>
+
+    <div id="mpLobby" style="display:none;">
+      <div class="mp-status wait" id="mpStatus">מתחבר…</div>
+      <div class="mp-players">
+        <h3>שחקנים בחדר</h3>
+        <div id="mpPlayerList"></div>
+      </div>
+      <div class="mp-hint" id="mpLobbyHint">בחרו מדינה מהרשימה כדי להיכנס למשחק. מדינה שכבר נתפסה על ידי שחקן אחר מסומנת ולא ניתנת לבחירה.</div>
+      <div class="mp-row" style="margin-top:14px;">
+        <button class="mp-btn" id="mpPickBtn" onclick="MP.goPickCountry()">בחר/י מדינה ←</button>
+        <button class="mp-btn ghost" onclick="MP.leave()">התנתק</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="mpPill"></div>
+
+<script>
+/* ---------- COUNTRIES ---------- */
+const COUNTRIES = [
+  {name:"ישראל", flag:"🇮🇱", tag:"מזה\"ת, גבולות רגישים", tension:45, debt:65, approval:52, colors:["#0038b8","#ffffff"]},
+  {name:"ארה\"ב", flag:"🇺🇸", tag:"מעצמה, קואליציה מפוצלת", tension:20, debt:105, approval:48, colors:["#3c3b6e","#b22234"]},
+  {name:"בריטניה", flag:"🇬🇧", tag:"פוליטיקה פרלמנטרית סוערת", tension:15, debt:95, approval:50, colors:["#012169","#c8102e"]},
+  {name:"צרפת", flag:"🇫🇷", tag:"מחאות תכופות", tension:20, debt:98, approval:45, colors:["#0055a4","#ef4135"]},
+  {name:"גרמניה", flag:"🇩🇪", tag:"יציבה אך זהירה", tension:15, debt:60, approval:55, colors:["#000000","#ffce00"]},
+  {name:"יפן", flag:"🇯🇵", tag:"חוב עצום, יציבות גבוהה", tension:25, debt:230, approval:58, colors:["#bc002d","#ffffff"]},
+  {name:"הודו", flag:"🇮🇳", tag:"צמיחה מהירה, אי-שוויון", tension:35, debt:80, approval:60, colors:["#ff9933","#138808"]},
+  {name:"ברזיל", flag:"🇧🇷", tag:"אינפלציה כרונית", tension:30, debt:85, approval:47, colors:["#009c3b","#ffdf00"]},
+  {name:"רוסיה", flag:"🇷🇺", tag:"מתיחות גבולות גבוהה", tension:70, debt:20, approval:65, colors:["#0039a6","#d52b1e"]},
+  {name:"אוקראינה", flag:"🇺🇦", tag:"מדינה בעימות פעיל", tension:90, debt:75, approval:70, colors:["#0057b7","#ffd700"]},
+  {name:"טורקיה", flag:"🇹🇷", tag:"אינפלציה קיצונית", tension:40, debt:40, approval:44, colors:["#e30a17","#ffffff"]},
+  {name:"מצרים", flag:"🇪🇬", tag:"חוב גבוה, יציבות שברירית", tension:50, debt:95, approval:50, colors:["#ce1126","#000000"]},
+  {name:"דרום קוריאה", flag:"🇰🇷", tag:"שכנות מתוחה בצפון", tension:60, debt:50, approval:53, colors:["#003478","#cd2e3a"]},
+  {name:"סין", flag:"🇨🇳", tag:"שליטה מרכזית חזקה", tension:35, debt:70, approval:68, colors:["#de2910","#ffde00"]},
+  {name:"קנדה", flag:"🇨🇦", tag:"יציבה, קונצנזוס רחב", tension:10, debt:90, approval:57, colors:["#ff0000","#ffffff"]},
+  {name:"אוסטרליה", flag:"🇦🇺", tag:"בידוד גיאוגרפי, יציבה", tension:12, debt:55, approval:56, colors:["#00008b","#ff0000"]},
+  {name:"מקסיקו", flag:"🇲🇽", tag:"אתגרי פשיעה מאורגנת", tension:38, debt:60, approval:49, colors:["#006847","#ce1126"]},
+  {name:"ארגנטינה", flag:"🇦🇷", tag:"משבר חוב מתמשך", tension:28, debt:150, approval:40, colors:["#74acdf","#ffffff"]},
+  {name:"דרום אפריקה", flag:"🇿🇦", tag:"פערים חברתיים חדים", tension:33, debt:75, approval:46, colors:["#007a4d","#ffb612"]},
+  {name:"ניגריה", flag:"🇳🇬", tag:"צמיחה עם אתגרי ביטחון", tension:55, debt:45, approval:48, colors:["#008751","#ffffff"]},
+  {name:"פולין", flag:"🇵🇱", tag:"עמדת חיץ מזרח-מערב", tension:42, debt:55, approval:52, colors:["#ffffff","#dc143c"]},
+  {name:"שוודיה", flag:"🇸🇪", tag:"רווחה נדיבה, קונצנזוס", tension:14, debt:40, approval:60, colors:["#006aa7","#fecc02"]},
+  {name:"איטליה", flag:"🇮🇹", tag:"קואליציות לא יציבות", tension:22, debt:140, approval:43, colors:["#008c45","#cd212a"]},
+  {name:"ספרד", flag:"🇪🇸", tag:"מתיחות אזוריות פנימיות", tension:26, debt:110, approval:47, colors:["#aa151b","#f1bf00"]},
+  {name:"הולנד", flag:"🇳🇱", tag:"יציבה, פוליטיקה מפוצלת", tension:14, debt:50, approval:55, colors:["#ae1c28","#21468b"]},
+  {name:"סעודיה", flag:"🇸🇦", tag:"עושר אנרגיה, שכנות רגישה", tension:48, debt:25, approval:63, colors:["#006c35","#ffffff"]},
+  {name:"איראן", flag:"🇮🇷", tag:"סנקציות ומתיחות אזורית", tension:65, debt:35, approval:41, colors:["#239f40","#da0000"]},
+  {name:"פקיסטן", flag:"🇵🇰", tag:"חוב גבוה, שכנות מתוחה", tension:58, debt:88, approval:44, colors:["#01411c","#ffffff"]},
+  {name:"אינדונזיה", flag:"🇮🇩", tag:"ארכיפלג ענק, צמיחה", tension:20, debt:42, approval:56, colors:["#ff0000","#ffffff"]},
+  {name:"וייטנאם", flag:"🇻🇳", tag:"צמיחה תעשייתית מהירה", tension:24, debt:38, approval:59, colors:["#da251d","#ffff00"]},
+  {name:"קניה", flag:"🇰🇪", tag:"מוקד אזורי מזרח-אפריקה", tension:30, debt:68, approval:48, colors:["#000000","#006600"]},
+  {name:"צ'ילה", flag:"🇨🇱", tag:"יציבה יחסית, פערים חברתיים", tension:18, debt:35, approval:51, colors:["#0039a6","#d52b1e"]},
+  {name:"נורווגיה", flag:"🇳🇴", tag:"קופת עתק, יציבות גבוהה", tension:8, debt:30, approval:62, colors:["#ba0c2f","#00205b"]},
+  {name:"תאילנד", flag:"🇹🇭", tag:"היסטוריה של הפיכות", tension:36, debt:52, approval:47, colors:["#241d4f","#a51931"]},
+  {name:"פיליפינים", flag:"🇵🇭", tag:"סיכוני אסונות טבע גבוהים", tension:32, debt:58, approval:50, colors:["#0038a8","#ce1126"]},
+  {name:"קולומביה", flag:"🇨🇴", tag:"מתיחות פנימית היסטורית", tension:34, debt:56, approval:46, colors:["#fcd116","#003893"]},
+];
+
+/* ---------- SKILL / CHOICE TAG DEFINITIONS ---------- */
+const skillNames = { rhetoric:"נאום/כריזמה", manipulation:"מניפולציה", economics:"ידע כלכלי", diplomacy:"דיפלומטיה", intelligence:"מודיעין/ריגול" };
+const rivalNamePool = ["ח\"כ אלמוג שני", "השר לשעבר רון ברקאי", "מנהיגת האופוזיציה מיה טל", "ח\"כ עומר נדב", "יו\"ר המפלגה היריבה נועה כרמי"];
+
+/* ---------- STATE ---------- */
+let state = null;
+
+function freshState(country){
+  return {
+    country,
+    turn: 1,
+    approval: country.approval,
+    stability: 60,
+    treasury: 12000,
+    debtToGdp: country.debt,
+    inflation: 3,
+    militaryReadiness: 50,
+    borderTension: country.tension,
+    skills: { rhetoric:1, manipulation:1, economics:1, diplomacy:1, intelligence:1 },
+    xp: 0,
+    ministers: [
+      { name:"שרת האוצר", loyalty:70, likes:["austerity"], dislikes:["spending"] },
+      { name:"שר הביטחון", loyalty:65, likes:["military","force"], dislikes:["diplomacy_soft"] },
+      { name:"שרת הרווחה", loyalty:60, likes:["spending","social"], dislikes:["austerity"] },
+    ],
+    delayed: [],
+    history: {},
+    log: [],
+    narrative: "כהונתך מתחילה. העם, השרים והשכנים ממתינים לצעדיך הראשונים.",
+    relations: {}, // countryName -> -100..100
+    neighborName: null,
+    urgentDeadline: null, // {expiresAt, eventId} for real-time crisis decisions
+    budget: { defense:20, education:20, health:20, welfare:20, infra:20 },
+    fullHistory: [],
+    electionLost: false,
+    termsWon: 0,
+    espionage: {}, // countryName -> {treasury, debtToGdp, trend, revealedTurn}
+    spyCooldowns: {}, // countryName -> turn number when spying becomes available again
+    rival: { name: rivalNamePool[Math.floor(seededRand(seedFromName(country.name)^42)*rivalNamePool.length)], threat: 20 },
+  };
+}
+
+function pickNeighbor(playerCountryName){
+  const others = COUNTRIES.filter(c => c.name !== playerCountryName);
+  const seed = seedFromName(playerCountryName) ^ 0xBEEF;
+  const idx = Math.floor(seededRand(seed) * others.length);
+  return others[idx].name;
+}
+
+/* ---------- EVENT POOL ---------- */
+const eventPool = [
+  {
+    id:"protest",
+    title:"גל מחאות ברחובות",
+    desc: s => `אלפים יוצאים להפגין על יוקר המחיה.${histCount('protest_0')>=2 ? " הפעם המחאה גדולה וזועמת יותר מבעבר." : ""}`,
+    weight: s => (s.approval < 60 ? 3 : 1) * clamp(1 - (s.budget.education-20)/40, 0.6, 1.6),
+    choices: [
+      { title:"לפזר בכוח", desc:"יציבות עולה מיידית, אישור ציבורי נפגע — הנזק גדל ככל שמשתמשים בזה שוב.",
+        tags:["force","authoritarian"], impact:{approval:-2,stability:1,treasury:0,tension:0},
+        effect: s => { const escalation = histCount('protest_0'); s.stability += 6; s.approval -= (12 + escalation*4); } },
+      { title:"לנהל דיאלוג פומבי", desc:"דורש כריזמה גבוהה; מרגיע בלי לפגוע ביציבות.",
+        tags:["diplomacy_soft","social"], impact:{approval:1,stability:-1,treasury:0,tension:0},
+        effect: s => { const bonus = s.skills.rhetoric*2; s.approval += 3+bonus; s.stability -= 2; gainXp(s,1); } },
+      { title:"להתעלם", desc:"חוסך משאבים, אך המחאה תתעצם ברבעון הבא.",
+        tags:[], impact:{approval:-1,stability:-1,treasury:0,tension:0},
+        effect: s => { s.stability -= 6; s.approval -= 2; },
+        delay:{turns:2, label:"המחאה שהוזנחה גלשה למהומות נרחבות", effect: s => { s.stability -= 8; s.approval -= 4; }} },
+    ]
+  },
+  {
+    id:"border",
+    title:"הסלמה בגבול",
+    urgent:true,
+    desc: s => {
+      const intel = s.espionage[s.neighborName];
+      const hasRecentIntel = intel && (s.turn - intel.revealedTurn <= 3);
+      return `כוחות ${s.neighborName} מתגייסים סמוך לגבול המשותף. הצבא מתריע על חלון פעולה מצומצם — יש להחליט מהר.${s.relations[s.neighborName] < -30 ? " היחסים עם השכנה כבר במתיחות גבוהה מראש." : ""}${hasRecentIntel ? ` בזכות המודיעין העדכני שברשותך (מגמת מתיחות: ${intel.trend}), אתה נכנס למשא ומתן עם יתרון.` : ""}`;
+    },
+    weight: s => (s.borderTension > 50 ? 3 : 1) * (s.relations[s.neighborName] < -30 ? 2 : 1),
+    choices: [
+      { title:"תקיפה מונעת", desc:"מפגינה כוח, מסלימה משמעותית ועלולה לגרור מלחמה.",
+        tags:["military","force"], impact:{approval:1,stability:-1,treasury:0,tension:2},
+        effect: s => { s.borderTension += 25; s.militaryReadiness -= 15; s.approval += 5; s.stability -= 5;
+          s.relations[s.neighborName] = clamp((s.relations[s.neighborName]||0) - 25, -100, 100); } },
+      { title:"ערוץ דיפלומטי חשאי", desc:"מפחית מתיחות אם מצליח; תלוי בכישור דיפלומטיה, מודיעין עדכני משפר את הסיכוי.",
+        tags:["diplomacy_soft"], impact:{approval:0,stability:0,treasury:0,tension:-1},
+        effect: s => { const intel = s.espionage[s.neighborName];
+          const hasRecentIntel = intel && (s.turn - intel.revealedTurn <= 3);
+          const chance = 0.4 + s.skills.diplomacy*0.1 + (hasRecentIntel ? 0.15 : 0);
+          if (Math.random() < chance) { s.borderTension -= 20; gainXp(s,2); s.relations[s.neighborName] = clamp((s.relations[s.neighborName]||0) + 15, -100, 100); }
+          else { s.borderTension += 10; s.approval -= 5; } } },
+      { title:"הפגנת כוח מרתיעה", desc:"פתרון ביניים: מרתיע בלי להסלים לכדי קרב.",
+        tags:["military"], impact:{approval:0,stability:0,treasury:0,tension:1},
+        effect: s => { s.borderTension += 5; s.militaryReadiness -= 5; s.relations[s.neighborName] = clamp((s.relations[s.neighborName]||0) - 5, -100, 100); },
+        delay:{turns:1, label:"המתיחות בגבול נותרה בעינה ודורשת מעקב נוסף", effect: s => { s.borderTension += 3; }} },
+    ]
+  },
+  {
+    id:"budget_crisis",
+    title:"אזהרת סוכנות דירוג אשראי",
+    desc: s => "החוב הלאומי מתקרב לסף מסוכן. יש לבחור כיצד להגיב.",
+    weight: s => s.debtToGdp > 90 ? 3 : 0.5,
+    choices: [
+      { title:"תוכנית צנע", desc:"מוריד חוב משמעותית, פוגע קשות באישור הציבורי.",
+        tags:["austerity"], impact:{approval:-2,stability:0,treasury:1,tension:0},
+        effect: s => { s.debtToGdp -= 12; s.approval -= 10; s.treasury += 800; } },
+      { title:"העלאת מיסים נקודתית", desc:"פותר חלקית, פוגע פחות באישור.",
+        tags:["austerity"], impact:{approval:-1,stability:0,treasury:1,tension:0},
+        effect: s => { s.debtToGdp -= 6; s.approval -= 4; s.treasury += 400; } },
+      { title:"התעלמות מהאזהרה", desc:"לא פוגע היום, מגביר סיכון אינפלציה בעתיד.",
+        tags:[], impact:{approval:0,stability:0,treasury:0,tension:0},
+        effect: s => { s.inflation += 1; },
+        delay:{turns:3, label:"האזהרה שהתעלמת ממנה הפכה למשבר אשראי של ממש", effect: s => { s.inflation += 4; s.debtToGdp += 8; }} },
+    ]
+  },
+  {
+    id:"pandemic",
+    title:"התפרצות מגיפה אזורית",
+    desc: s => `משרד הבריאות מדווח על עלייה חדה בתחלואה.${s.budget.health>=25?" מערכת הבריאות המחוזקת נותנת יתרון התחלתי.":""}`,
+    weight: s => 1,
+    choices: [
+      { title:"סגר מלא", desc:"בולם את המגיפה, פוגע קשות בכלכלה ובאישור.",
+        tags:["spending","authoritarian"], impact:{approval:-2,stability:1,treasury:-1,tension:0},
+        effect: s => { s.treasury -= 1500; s.approval -= 8; s.stability += 3; } },
+      { title:"הנחיות מתונות", desc:"פתרון מאוזן, תוצאה בריאותית פחות ודאית.",
+        tags:["spending"], impact:{approval:-1,stability:0,treasury:-1,tension:0},
+        effect: s => { s.treasury -= 500; s.approval -= 2; },
+        delay:{turns:1, label:"ההנחיות המתונות לא הספיקו וגל שני פרץ", effect: s => { const healthFactor = clamp(1-(s.budget.health-20)/40,0.5,1.5); if(Math.random()<0.4*healthFactor){ s.stability -= 6; } }} },
+      { title:"לא להתערב", desc:"חוסך תקציב, מסוכן ליציבות אם המגיפה מתפשטת — תקציב בריאות חזק מקטין את הסיכון.",
+        tags:["austerity"], impact:{approval:0,stability:-1,treasury:0,tension:0},
+        effect: s => { const healthFactor = clamp(1-(s.budget.health-20)/40,0.5,1.5); if(Math.random()<0.5*healthFactor){ s.stability -= 10; s.approval -= 6; } } },
+    ]
+  },
+  {
+    id:"earthquake",
+    title:"רעידת אדמה הרסנית",
+    desc: s => "אזור שלם ניזוק קשות. צוותי חילוץ ממתינים להוראה על היקף המענה.",
+    weight: s => 1,
+    choices: [
+      { title:"מבצע חילוץ לאומי מקיף", desc:"עלות תקציבית גבוהה, אך מציל חיים ומשפר אמון ציבורי.",
+        tags:["spending"], impact:{approval:2,stability:1,treasury:-2,tension:0},
+        effect: s => { s.treasury -= 2200; s.approval += 10; s.stability += 4; } },
+      { title:"מענה מצומצם ותקציבי", desc:"חוסך בקופה, אך משאיר אזורים שלמים ללא סיוע מספק.",
+        tags:["austerity"], impact:{approval:-1,stability:-1,treasury:0,tension:0},
+        effect: s => { s.treasury -= 400; s.approval -= 4; },
+        delay:{turns:2, label:"הזעם על המענה החלקי לרעידת האדמה גלש למחאות אזוריות", effect: s => { s.stability -= 6; s.approval -= 5; }} },
+      { title:"לבקש סיוע בינלאומי", desc:"חוסך בתקציב המקומי, תלוי ברצון הרצון הטוב של שכנות.",
+        tags:["diplomacy_soft"], impact:{approval:1,stability:0,treasury:1,tension:0},
+        effect: s => { const chance = 0.5 + s.skills.diplomacy*0.08;
+          if (Math.random() < chance) { s.approval += 5; gainXp(s,2); } else { s.approval -= 3; } } },
+    ]
+  },
+  {
+    id:"corruption",
+    title:"חשיפת שחיתות בשר בכיר",
+    desc: s => "כתב חוקר חושף חשד לשוחד אצל אחד השרים. הלחץ הציבורי לפעולה מיידית עולה.",
+    weight: s => 1,
+    choices: [
+      { title:"לפטר מיידית", desc:"מפגין נחישות ומשפר אמון, אך מחליש את הקואליציה.",
+        tags:["authoritarian"], impact:{approval:2,stability:0,treasury:0,tension:0},
+        effect: s => { s.approval += 8; s.ministers = s.ministers.filter((m,idx)=>idx!==0 || s.ministers.length<=1);
+          if(s.ministers.length>0){ s.ministers[0].loyalty -= 15; } } },
+      { title:"להקים ועדת בדיקה פנימית", desc:"פתרון זהיר, אך נתפס כניסיון להשתיק את הפרשה.",
+        tags:[], impact:{approval:-1,stability:0,treasury:0,tension:0},
+        effect: s => { s.approval -= 3; },
+        delay:{turns:2, label:"ועדת הבדיקה נתפסה כטיוח והאמון הציבורי נפגע מחדש", effect: s => { s.approval -= 6; }} },
+      { title:"להגן פומבית על השר", desc:"שומר על נאמנות הקואליציה, אך מסכן את המוניטין שלך אם האשמות יתאמתו.",
+        tags:["manipulation"], impact:{approval:-2,stability:0,treasury:0,tension:0},
+        effect: s => { s.approval -= 6; if(s.ministers[0]) s.ministers[0].loyalty += 10; } },
+    ]
+  },
+  {
+    id:"trade_war",
+    title:"סכסוך סחר עם שותפה כלכלית",
+    desc: s => "מדינה שכנה מטילה מכסים על יבוא ממדינתך בעקבות מחלוקת מסחרית.",
+    weight: s => 1,
+    choices: [
+      { title:"להשיב במכסי נגד", desc:"מפגין כוח כלכלי, אך מייקר מוצרים ופוגע בציבור.",
+        tags:["force"], impact:{approval:0,stability:0,treasury:-1,tension:1},
+        effect: s => { s.treasury -= 600; s.borderTension += 8; s.approval -= 2; } },
+      { title:"לפתוח במשא ומתן", desc:"פתרון ארוך טווח, תלוי בכישור הדיפלומטיה.",
+        tags:["diplomacy_soft"], impact:{approval:0,stability:0,treasury:1,tension:-1},
+        effect: s => { const chance = 0.45 + s.skills.diplomacy*0.09;
+          if (Math.random() < chance) { s.treasury += 500; gainXp(s,2); } else { s.treasury -= 300; } } },
+      { title:"להתאים את הכלכלה המקומית", desc:"תוכנית תמיכה ליצואנים נפגעים — יקר, אך מונע זעזוע.",
+        tags:["spending"], impact:{approval:1,stability:0,treasury:-1,tension:0},
+        effect: s => { s.treasury -= 900; s.approval += 4; } },
+    ]
+  },
+  {
+    id:"cyberattack",
+    urgent:true,
+    title:"מתקפת סייבר על תשתיות קריטיות",
+    desc: s => "האקרים חדרו למערכות חיוניות. יש חשש להשבתת שירותים ציבוריים.",
+    weight: s => 1,
+    choices: [
+      { title:"השקעת חירום באבטחת סייבר", desc:"פותר את המשבר המיידי במחיר תקציבי גבוה.",
+        tags:["spending"], impact:{approval:1,stability:1,treasury:-1,tension:0},
+        effect: s => { s.treasury -= 1000; s.stability += 5; s.approval += 2; } },
+      { title:"להאשים גורם זר ולהחמיר מתיחות", desc:"מסיט ביקורת פנימית, אך מסלים מתיחות בינלאומית.",
+        tags:["force"], impact:{approval:1,stability:0,treasury:0,tension:2},
+        effect: s => { s.approval += 5; s.borderTension += 15; } },
+      { title:"לטפל בשקט מקצועי", desc:"בלי הצהרות פומביות; פחות רעש, אך גם פחות קרדיט ציבורי.",
+        tags:[], impact:{approval:0,stability:0,treasury:0,tension:0},
+        effect: s => { s.stability += 2; },
+        delay:{turns:1, label:"פרטים על המתקפה דלפו לתקשורת בכל זאת", effect: s => { s.approval -= 4; }} },
+    ]
+  },
+  {
+    id:"refugees",
+    title:"גל פליטים מעבר לגבול",
+    desc: s => "עקב משבר אזורי, אלפי פליטים מבקשים מקלט. הדעות בקואליציה חלוקות.",
+    weight: s => 1,
+    choices: [
+      { title:"לפתוח את הגבולות", desc:"מהלך הומניטרי שמשפר מוניטין בינלאומי, יקר לתקציב ושנוי במחלוקת פנימית.",
+        tags:["social","diplomacy_soft"], impact:{approval:-1,stability:-1,treasury:-1,tension:-1},
+        effect: s => { s.treasury -= 700; s.borderTension -= 5; s.approval -= 3; s.stability -= 3; } },
+      { title:"לסגור את הגבול", desc:"חוסך משאבים ומרגיע חלק מהציבור, פוגע במוניטין הבינלאומי.",
+        tags:["authoritarian","force"], impact:{approval:1,stability:1,treasury:1,tension:1},
+        effect: s => { s.approval += 4; s.stability += 2; s.borderTension += 6; } },
+      { title:"קליטה מבוקרת עם מכסות", desc:"פתרון ביניים זהיר שמפצל את דעת הקהל אך לא קיצוני.",
+        tags:[], impact:{approval:0,stability:0,treasury:-1,tension:0},
+        effect: s => { s.treasury -= 300; } },
+    ]
+  },
+  {
+    id:"public_strike",
+    title:"שביתה כללית במגזר הציבורי",
+    desc: s => "ארגוני העובדים משביתים בתי חולים ותחבורה ציבורית בדרישה להעלאת שכר.",
+    weight: s => s.approval < 50 ? 2 : 1,
+    choices: [
+      { title:"להיענות לדרישות השכר", desc:"מסיים את השביתה מיד, אך מכביד על התקציב לטווח ארוך.",
+        tags:["spending","social"], impact:{approval:1,stability:1,treasury:-1,tension:0},
+        effect: s => { s.treasury -= 1100; s.approval += 6; s.stability += 4; } },
+      { title:"להוציא צווי עבודה", desc:"שובר את השביתה בכוח משפטי, אך פוגע קשות ביחסי העבודה.",
+        tags:["authoritarian","force"], impact:{approval:-2,stability:0,treasury:0,tension:0},
+        effect: s => { s.approval -= 9; s.stability -= 2; } },
+      { title:"לנהל משא ומתן ממושך", desc:"תלוי בכריזמה; אם מצליח — פתרון זול ומאוזן, אם לא — השביתה נמשכת.",
+        tags:["diplomacy_soft"], impact:{approval:0,stability:0,treasury:0,tension:0},
+        effect: s => { const chance = 0.4 + s.skills.rhetoric*0.1;
+          if (Math.random() < chance) { s.approval += 3; s.treasury -= 200; gainXp(s,1); } else { s.stability -= 5; s.approval -= 4; } } },
+    ]
+  },
+  {
+    id:"drought",
+    title:"בצורת חמורה פוגעת בחקלאות",
+    desc: s => "יבולים נהרסים ומחירי המזון מזנקים. חקלאים דורשים פיצוי דחוף.",
+    weight: s => 1,
+    choices: [
+      { title:"חבילת פיצויים לחקלאים", desc:"שומרת על ענף החקלאות ומרגיעה מחוזות כפריים, עולה ביוקר.",
+        tags:["spending"], impact:{approval:1,stability:0,treasury:-1,tension:0},
+        effect: s => { s.treasury -= 850; s.approval += 5; } },
+      { title:"ייבוא מזון מסובסד", desc:"פותר את מחסור המזון בטווח הקצר, מגדיל תלות בייבוא.",
+        tags:["spending"], impact:{approval:1,stability:0,treasury:-1,tension:0},
+        effect: s => { s.treasury -= 500; s.approval += 2; },
+        delay:{turns:2, label:"התלות בייבוא המזון ייקרה את המחירים מחדש", effect: s => { s.inflation += 2; s.approval -= 3; }} },
+      { title:"להשאיר את השוק להתאזן לבד", desc:"חוסך לגמרי בתקציב, אך פוגע קשות במחוזות הכפריים.",
+        tags:["austerity"], impact:{approval:-2,stability:-1,treasury:1,tension:0},
+        effect: s => { s.approval -= 7; s.stability -= 4; } },
+    ]
+  },
+  {
+    id:"whistleblower",
+    title:"מסמכים חסויים דולפים לתקשורת",
+    desc: s => "מסמכי ממשלה חסויים על עסקת נשק שנויה במחלוקת דולפים לעיתונות.",
+    weight: s => 1,
+    choices: [
+      { title:"שקיפות מלאה ובדיקה עצמאית", desc:"פוגע בטווח המיידי אך בונה אמון ארוך טווח.",
+        tags:["diplomacy_soft"], impact:{approval:-1,stability:0,treasury:0,tension:0},
+        effect: s => { s.approval -= 4; },
+        delay:{turns:2, label:"השקיפות בנושא הדליפה שיפרה את התדמית הבינלאומית שלך", effect: s => { s.approval += 6; }} },
+      { title:"להשתיק ולחקור את מקור הדלף", desc:"מגן על יוקרת הממשלה, נתפס כמדכא חופש עיתונות.",
+        tags:["authoritarian"], impact:{approval:-1,stability:1,treasury:0,tension:0},
+        effect: s => { s.stability += 3; s.approval -= 6; } },
+      { title:"להכחיש ולעבור לסדר היום", desc:"מהלך מסוכן שתלוי לגמרי ביכולת הרטורית שלך לשכנע את הציבור.",
+        tags:["manipulation"], impact:{approval:0,stability:0,treasury:0,tension:0},
+        effect: s => { const chance = 0.3 + s.skills.rhetoric*0.08;
+          if (Math.random() < chance) { s.approval += 2; } else { s.approval -= 10; } } },
+    ]
+  },
+  {
+    id:"energy_crisis",
+    title:"משבר אנרגיה עולמי",
+    desc: s => "מחירי הדלק והחשמל מזנקים בעקבות משבר אספקה גלובלי.",
+    weight: s => 1,
+    choices: [
+      { title:"סבסוד ישיר לצרכנים", desc:"מגן על משקי הבית, עולה כסף רב ומעמיס על התקציב.",
+        tags:["spending"], impact:{approval:2,stability:0,treasury:-2,tension:0},
+        effect: s => { s.treasury -= 1800; s.approval += 8; } },
+      { title:"האצת מעבר לאנרגיה מקומית", desc:"השקעה אסטרטגית לטווח ארוך, תוצאה מיידית מוגבלת.",
+        tags:["spending"], impact:{approval:0,stability:0,treasury:-1,tension:0},
+        effect: s => { s.treasury -= 700; },
+        delay:{turns:3, label:"ההשקעה באנרגיה מקומית הבשילה והוזילה את המחירים", effect: s => { s.approval += 7; s.inflation -= 2; }} },
+      { title:"לתת למחירים לזרום חופשי", desc:"לא עולה כסף לממשלה, אך פוגע קשות בכיס האזרחים.",
+        tags:["austerity"], impact:{approval:-2,stability:-1,treasury:1,tension:0},
+        effect: s => { s.approval -= 9; s.inflation += 3; } },
+    ]
+  },
+  {
+    id:"ally_request",
+    title:"בקשת סיוע צבאי מבעלת ברית",
+    desc: s => "מדינה ידידותית מבקשת ממך לשלוח כוחות או ציוד לתמיכה בעימות שלה.",
+    weight: s => 1,
+    choices: [
+      { title:"להיענות במלואה", desc:"מחזק בריתות אסטרטגיות, מסוכן מבחינה צבאית ופוליטית בבית.",
+        tags:["military","force"], impact:{approval:-1,stability:0,treasury:-1,tension:1},
+        effect: s => { s.militaryReadiness -= 10; s.treasury -= 500; s.approval -= 3; } },
+      { title:"לספק סיוע לוגיסטי בלבד", desc:"פתרון מתון ששומר על מחויבות מבלי לסכן כוחות.",
+        tags:["diplomacy_soft"], impact:{approval:0,stability:0,treasury:-1,tension:0},
+        effect: s => { s.treasury -= 250; } },
+      { title:"לסרב בנימוס", desc:"שומר על משאבים, מסכן את מערכת היחסים עם בעלת הברית.",
+        tags:[], impact:{approval:0,stability:0,treasury:0,tension:0},
+        effect: s => { s.approval += 1; },
+        delay:{turns:2, label:"בעלת הברית שסירבת לה צמצמה שיתופי פעולה כלכליים", effect: s => { s.treasury -= 600; }} },
+    ]
+  },
+  {
+    id:"tech_boom",
+    title:"פריצת דרך טכנולוגית מקומית",
+    desc: s => "חברת הזנק מקומית מפתחת טכנולוגיה פורצת דרך שמושכת עניין בינלאומי.",
+    weight: s => 0.7,
+    choices: [
+      { title:"תמריצי מס לענף ההייטק", desc:"מזניק צמיחה עתידית, מקטין הכנסות ממס בטווח הקצר.",
+        tags:["austerity"], impact:{approval:1,stability:0,treasury:-1,tension:0},
+        effect: s => { s.treasury -= 400; },
+        delay:{turns:3, label:"תמריצי ההייטק הניבו גל השקעות זרות", effect: s => { s.treasury += 1600; s.approval += 5; }} },
+      { title:"הלאמת חלק מהקניין הרוחני לטובת המדינה", desc:"מהלך שנוי במחלוקת שמסכן את אקלים ההשקעות אך מזרים קופה מיידית.",
+        tags:["authoritarian"], impact:{approval:-1,stability:0,treasury:1,tension:0},
+        effect: s => { s.treasury += 900; s.approval -= 6; } },
+      { title:"לתת לשוק החופשי לפעול", desc:"ללא התערבות ממשלתית — לא עולה כסף, גם לא תורם ישירות לקופה.",
+        tags:[], impact:{approval:0,stability:0,treasury:0,tension:0},
+        effect: s => { s.approval += 1; } },
+    ]
+  },
+  {
+    id:"election_scandal",
+    title:"חשד למימון פוליטי לא חוקי",
+    desc: s => "דו\"ח מבקר המדינה חושף חריגות במימון מפלגתך בבחירות האחרונות.",
+    weight: s => 1,
+    choices: [
+      { title:"לשתף פעולה מלא עם החקירה", desc:"פוגע פוליטית בטווח הקצר, בונה אמינות מוסדית.",
+        tags:["diplomacy_soft"], impact:{approval:-1,stability:0,treasury:0,tension:0},
+        effect: s => { s.approval -= 5; s.stability += 2; } },
+      { title:"להיאבק משפטית בממצאים", desc:"מעכב את הפגיעה המיידית, מסוכן אם ההליך יתפוצץ בהמשך.",
+        tags:["manipulation"], impact:{approval:0,stability:0,treasury:-1,tension:0},
+        effect: s => { s.treasury -= 300; },
+        delay:{turns:2, label:"ההליך המשפטי בפרשת המימון התפוצץ מחדש לתקשורת", effect: s => { s.approval -= 8; }} },
+      { title:"להאשים יריבים פוליטיים בהסתה", desc:"מסיט את השיח, תלוי ביכולת השכנוע שלך.",
+        tags:["manipulation"], impact:{approval:0,stability:0,treasury:0,tension:0},
+        effect: s => { const chance = 0.35 + s.skills.manipulation*0.09;
+          if (Math.random() < chance) { s.approval += 3; } else { s.approval -= 7; } } },
+    ]
+  },
+  {
+    id:"israel_coalition_sector",
+    title:"דרישה מגזרית בקואליציה",
+    countryOnly:["ישראל"],
+    desc: s => "שותפה קואליציונית מציבה אולטימטום סביב חוק שנוי במחלוקת על חלוקת נטל השירות הלאומי.",
+    weight: s => 1.2,
+    choices: [
+      { title:"להיכנע לדרישה", desc:"שומר על הקואליציה, מעורר זעם בציבור הרחב.",
+        tags:["authoritarian"], impact:{approval:-2,stability:0,treasury:0,tension:0},
+        effect: s => { s.approval -= 8; if(s.ministers[0]) s.ministers[0].loyalty += 8; s.stability += 2; } },
+      { title:"לסרב ולסכן את הקואליציה", desc:"שומר על עקרון שוויוני, מסכן את יציבות הממשלה.",
+        tags:["social"], impact:{approval:1,stability:-1,treasury:0,tension:0},
+        effect: s => { s.approval += 5; s.ministers.forEach(m=>m.loyalty -= 10); } },
+      { title:"לגבש פשרה מנוסחת בזהירות", desc:"פותר זמנית; תלוי בכריזמה ומניפולציה פוליטית.",
+        tags:["manipulation"], impact:{approval:0,stability:0,treasury:0,tension:0},
+        effect: s => { const chance = 0.35 + (s.skills.manipulation+s.skills.rhetoric)*0.06;
+          if (Math.random() < chance) { s.approval += 2; gainXp(s,2); } else { s.approval -= 5; s.ministers.forEach(m=>m.loyalty -= 4); } } },
+    ]
+  },
+  {
+    id:"japan_aging",
+    title:"משבר הזדקנות האוכלוסייה",
+    countryOnly:["יפן"],
+    desc: s => "יחס הפנסיונרים לעובדים מגיע לשיא היסטורי, ומאיים על קרנות הפנסיה הלאומיות.",
+    weight: s => 1.2,
+    choices: [
+      { title:"להעלות את גיל הפרישה", desc:"מקל על התקציב לטווח ארוך, מעורר זעם בציבור המבוגר.",
+        tags:["austerity"], impact:{approval:-1,stability:0,treasury:1,tension:0},
+        effect: s => { s.debtToGdp -= 5; s.approval -= 6; } },
+      { title:"לעודד הגירת עבודה", desc:"פותר מחסור בכוח אדם, שנוי במחלוקת חברתית.",
+        tags:["social"], impact:{approval:0,stability:-1,treasury:1,tension:0},
+        effect: s => { s.treasury += 500; s.stability -= 4; },
+        delay:{turns:2, label:"מדיניות ההגירה עוררה ויכוח ציבורי מחודש", effect: s => { s.approval -= 3; }} },
+      { title:"מימון גירעוני נוסף לפנסיות", desc:"פותר את הבעיה המיידית, מעמיק את החוב הלאומי העצום ממילא.",
+        tags:["spending"], impact:{approval:1,stability:0,treasury:-1,tension:0},
+        effect: s => { s.debtToGdp += 10; s.approval += 5; } },
+    ]
+  },
+  {
+    id:"ukraine_frontline",
+    title:"גיוס נוסף לחזית",
+    countryOnly:["אוקראינה"],
+    desc: s => "המצב בחזית דורש גיוס עתודות נוספות. הציבור עייף מהמלחמה הממושכת.",
+    weight: s => 1.5,
+    choices: [
+      { title:"גיוס חובה מורחב", desc:"מחזק את החזית, פוגע קשות במורל האזרחי.",
+        tags:["military","force"], impact:{approval:-2,stability:-1,treasury:0,tension:0},
+        effect: s => { s.militaryReadiness += 15; s.approval -= 9; s.stability -= 3; } },
+      { title:"להישען על סיוע בעלות ברית", desc:"תלוי ביחסים בינלאומיים; פותר בלי לגייס עוד אזרחים.",
+        tags:["diplomacy_soft"], impact:{approval:0,stability:0,treasury:0,tension:0},
+        effect: s => { const chance = 0.4 + s.skills.diplomacy*0.1;
+          if (Math.random() < chance) { s.militaryReadiness += 10; gainXp(s,2); } else { s.approval -= 4; } } },
+      { title:"לשמור על המצב הקיים", desc:"לא עולה פוליטית, אך מותיר את החזית במתח מתמשך.",
+        tags:[], impact:{approval:0,stability:0,treasury:0,tension:1},
+        effect: s => { s.borderTension += 8; } },
+    ]
+  },
+  {
+    id:"us_polarization",
+    title:"קיפאון פוליטי בקונגרס",
+    countryOnly:["ארה\"ב"],
+    desc: s => "חוק תקציב מרכזי נתקע בקונגרס המפולג. סגירת ממשל מתקרבת אם לא יימצא פתרון.",
+    weight: s => 1.2,
+    choices: [
+      { title:"להתפשר עם האופוזיציה", desc:"מונע סגירת ממשל, נתפס כחולשה על ידי הבסיס הפוליטי שלך.",
+        tags:["diplomacy_soft"], impact:{approval:-1,stability:1,treasury:0,tension:0},
+        effect: s => { s.stability += 5; s.approval -= 4; } },
+      { title:"לעמוד על עמדתך עד הסוף", desc:"מחזק את הבסיס הפוליטי, מסתכן בסגירת ממשל ופגיעה כלכלית.",
+        tags:["force"], impact:{approval:1,stability:-1,treasury:-1,tension:0},
+        effect: s => { s.approval += 4; s.treasury -= 700; s.stability -= 5; } },
+      { title:"לעקוף בצו נשיאותי חלקי", desc:"פתרון ביניים שנוי במחלוקת משפטית.",
+        tags:["authoritarian"], impact:{approval:0,stability:0,treasury:0,tension:0},
+        effect: s => { s.approval -= 2; },
+        delay:{turns:2, label:"הצו הנשיאותי נתקל באתגר משפטי בבית המשפט", effect: s => { s.approval -= 4; }} },
+    ]
+  },
+  {
+    id:"india_infrastructure",
+    title:"פרויקט תשתית ענק דורש הכרעה",
+    countryOnly:["הודו"],
+    desc: s => "יזמים מציעים פרויקט רכבת מהירה ענק; יש חשש מעקירת כפרים שלמים בדרך.",
+    weight: s => 1.2,
+    choices: [
+      { title:"לאשר במלואו", desc:"מזניק צמיחה כלכלית עתידית, מעורר מחאות בקרב הנפגעים.",
+        tags:["spending"], impact:{approval:-1,stability:-1,treasury:-1,tension:0},
+        effect: s => { s.treasury -= 900; s.stability -= 3; },
+        delay:{turns:3, label:"פרויקט התשתית הושלם והזניק את הכלכלה", effect: s => { s.treasury += 2400; s.approval += 6; }} },
+      { title:"לדרוש פיצויים נדיבים לנפגעים", desc:"פתרון מאוזן, יקר יותר אך פחות שנוי במחלוקת.",
+        tags:["social"], impact:{approval:1,stability:0,treasury:-1,tension:0},
+        effect: s => { s.treasury -= 1300; s.approval += 3; } },
+      { title:"לדחות את הפרויקט", desc:"נמנע ממחלוקת, מוותר על צמיחה כלכלית פוטנציאלית.",
+        tags:["austerity"], impact:{approval:0,stability:0,treasury:0,tension:0},
+        effect: s => { s.approval -= 1; } },
+    ]
+  },
+  {
+    id:"russia_sanctions",
+    title:"סבב סנקציות בינלאומי חדש",
+    countryOnly:["רוסיה"],
+    desc: s => "קואליציה בינלאומית מטילה סנקציות כלכליות נרחבות בעקבות מדיניות החוץ שלך.",
+    weight: s => 1.3,
+    choices: [
+      { title:"לפנות לשווקים חלופיים", desc:"מפחית את הפגיעה בטווח הבינוני, יקר בטווח המיידי.",
+        tags:["diplomacy_soft"], impact:{approval:0,stability:0,treasury:-1,tension:-1},
+        effect: s => { s.treasury -= 700; },
+        delay:{turns:2, label:"השווקים החלופיים התייצבו והקלו על הפגיעה הכלכלית", effect: s => { s.treasury += 1200; }} },
+      { title:"להחריף רטוריקה כלפי המערב", desc:"מגייס תמיכה פנימית סביב דגל לאומי, מסלים מתיחות בינלאומית.",
+        tags:["force","authoritarian"], impact:{approval:2,stability:0,treasury:0,tension:1},
+        effect: s => { s.approval += 7; s.borderTension += 10; } },
+      { title:"לשאת ולתת על הקלה בסנקציות", desc:"תלוי בכישור הדיפלומטיה; עלול להיכשל.",
+        tags:["diplomacy_soft"], impact:{approval:0,stability:0,treasury:1,tension:-1},
+        effect: s => { const chance = 0.3 + s.skills.diplomacy*0.1;
+          if(Math.random()<chance){ s.treasury += 900; gainXp(s,2); } else { s.approval -= 3; } } },
+    ]
+  },
+  {
+    id:"brazil_rainforest",
+    title:"לחץ בינלאומי בנושא כריתת יערות",
+    countryOnly:["ברזיל"],
+    desc: s => "ארגונים סביבתיים בינלאומיים מאיימים בהחרמת סחר בעקבות קצב כריתת היערות.",
+    weight: s => 1.2,
+    choices: [
+      { title:"להטיל מגבלות כריתה מחמירות", desc:"משפר מוניטין בינלאומי, פוגע בענפי חקלאות וכרייה מקומיים.",
+        tags:["diplomacy_soft"], impact:{approval:-1,stability:0,treasury:-1,tension:0},
+        effect: s => { s.treasury -= 600; s.approval -= 3; } },
+      { title:"להתעלם ולהמשיך כרגיל", desc:"שומר על ענפי הכלכלה המסורתיים, מסתכן בסנקציות סחר עתידיות.",
+        tags:["austerity"], impact:{approval:1,stability:0,treasury:0,tension:0},
+        effect: s => { s.approval += 3; },
+        delay:{turns:3, label:"איחוד סחר בינלאומי הטיל מכסים בתגובה לכריתת היערות", effect: s => { s.treasury -= 1400; }} },
+      { title:"להציע תוכנית פיצוי ירוקה בינלאומית", desc:"פותר חלקית תמורת מימון חיצוני; תלוי בהצלחת המשא ומתן.",
+        tags:["diplomacy_soft"], impact:{approval:0,stability:0,treasury:1,tension:0},
+        effect: s => { const chance = 0.4 + s.skills.diplomacy*0.08;
+          if(Math.random()<chance){ s.treasury += 800; s.approval += 2; } else { s.approval -= 2; } } },
+    ]
+  },
+  {
+    id:"saudi_oil_dependence",
+    title:"תנודתיות במחירי הנפט העולמיים",
+    countryOnly:["סעודיה"],
+    desc: s => "צניחה חדה במחירי הנפט מאיימת על תקציב המדינה שתלוי בו במידה רבה.",
+    weight: s => 1.2,
+    choices: [
+      { title:"להאיץ גיוון כלכלי", desc:"השקעה אסטרטגית להפחתת התלות בנפט לטווח ארוך.",
+        tags:["spending"], impact:{approval:0,stability:0,treasury:-1,tension:0},
+        effect: s => { s.treasury -= 1000; },
+        delay:{turns:3, label:"תוכנית הגיוון הכלכלי החלה לשאת פרי", effect: s => { s.treasury += 1800; s.approval += 4; }} },
+      { title:"לצמצם הוצאות ציבוריות בהתאם", desc:"שומר על איזון תקציבי, פוגע בשירותים ובאישור הציבורי.",
+        tags:["austerity"], impact:{approval:-1,stability:0,treasury:1,tension:0},
+        effect: s => { s.debtToGdp -= 5; s.approval -= 5; } },
+      { title:"למשוך מקרן העושר הריבונית", desc:"פותר את הבעיה המיידית, מדלל את החיסכון הלאומי לעתיד.",
+        tags:["spending"], impact:{approval:1,stability:0,treasury:1,tension:0},
+        effect: s => { s.treasury += 1500; s.approval += 2; } },
+    ]
+  },
+  {
+    id:"germany_energy",
+    title:"משבר אספקת אנרגיה תעשייתית",
+    countryOnly:["גרמניה"],
+    desc: s => "תעשיית הרכב והכימיה המקומית מתריעה על מחסור באנרגיה זולה ומאיימת בפיטורים המוניים.",
+    weight: s => 1.2,
+    choices: [
+      { title:"סבסוד אנרגיה לתעשייה הכבדה", desc:"שומר על מקומות עבודה, עולה ביוקר לתקציב.",
+        tags:["spending"], impact:{approval:1,stability:0,treasury:-1,tension:0},
+        effect: s => { s.treasury -= 1300; s.approval += 5; } },
+      { title:"להאיץ מעבר לאנרגיה מתחדשת", desc:"פתרון אסטרטגי לטווח ארוך, לא פותר את המשבר המיידי.",
+        tags:["spending"], impact:{approval:0,stability:0,treasury:-1,tension:0},
+        effect: s => { s.treasury -= 600; },
+        delay:{turns:3, label:"ההשקעה באנרגיה מתחדשת שיפרה את עמידות התעשייה", effect: s => { s.treasury += 1400; s.approval += 4; }} },
+      { title:"לאפשר לשוק להתאזן עצמאית", desc:"לא עולה לתקציב, מסתכן בפיטורים ובפגיעה תעשייתית של ממש.",
+        tags:["austerity"], impact:{approval:-1,stability:-1,treasury:0,tension:0},
+        effect: s => { s.approval -= 6; s.stability -= 3; } },
+    ]
+  },
+];
+
+/* ---------- YEARLY CYCLE: BUDGET & ELECTIONS ---------- */
+const budgetEvent = {
+  id:"budget",
+  title:"תקציב שנתי",
+  desc: s => `תחילת שנה חדשה בכהונתך. יש לקבוע מדיניות תקציב ומיסוי ל-4 הרבעונים הקרובים — הבחירה תשפיע על חוסן הכלכלה, הבריאות והביטחון לאורך השנה.`,
+  choices: [
+    { title:"צנע פיסקלי", desc:"מצמצם הוצאות בכל התחומים; מוריד חוב, פוגע בשירותים ובאישור.",
+      tags:["austerity"], impact:{approval:-1,stability:0,treasury:1,tension:0},
+      effect: s => { s.budget = {defense:15,education:10,health:10,welfare:10,infra:10}; s.treasury += 1500; s.approval -= 6; s.debtToGdp -= 8; } },
+    { title:"תקציב מאוזן", desc:"ממשיך במדיניות קיימת, בלי הטיה לכיוון מסוים.",
+      tags:[], impact:{approval:0,stability:0,treasury:0,tension:0},
+      effect: s => { s.budget = {defense:20,education:20,health:20,welfare:20,infra:20}; } },
+    { title:"השקעה חברתית מוגברת", desc:"מגדיל חינוך/בריאות/רווחה; משפר אישור ועמידות בפני משברי בריאות ומחאות, יקר לתקציב.",
+      tags:["spending","social"], impact:{approval:1,stability:0,treasury:-1,tension:0},
+      effect: s => { s.budget = {defense:10,education:25,health:25,welfare:30,infra:10}; s.treasury -= 1200; s.approval += 6; } },
+    { title:"עדיפות ביטחונית", desc:"מגדיל תקציב ביטחון על חשבון תחומים אחרים; משפר מוכנות צבאית.",
+      tags:["military"], impact:{approval:0,stability:0,treasury:-1,tension:0},
+      effect: s => { s.budget = {defense:35,education:15,health:15,welfare:15,infra:20}; s.treasury -= 800; s.militaryReadiness = clamp(s.militaryReadiness+15,0,100); } },
+  ]
+};
+
+const electionEvent = {
+  id:"election",
+  title:"יום הבחירות",
+  desc: s => `תום השנה מגיע יחד עם יום הדין הדמוקרטי. הרגע האחרון להטות את דעת הציבור לפני ההצבעה.`,
+  choices: [
+    { title:"קמפיין רטורי ארצי", desc:"מבוסס על כריזמה — נאום מסכם לעם.",
+      tags:[], impact:{approval:1,stability:0,treasury:0,tension:0},
+      effect: s => { s.approval = clamp(s.approval + s.skills.rhetoric*2, 0, 100); } },
+    { title:"הבטחות כלכליות נקודתיות", desc:"מבוסס על ידע כלכלי; מבטיח הטבות במחיר תקציבי.",
+      tags:["spending"], impact:{approval:1,stability:0,treasury:-1,tension:0},
+      effect: s => { s.treasury -= 600; s.approval = clamp(s.approval + 4 + s.skills.economics, 0, 100); } },
+    { title:"קמפיין מאופק, בלי הבטחות חדשות", desc:"לא עולה דבר, גם לא תורם הרבה.",
+      tags:[], impact:{approval:0,stability:0,treasury:0,tension:0},
+      effect: s => { s.approval = clamp(s.approval + 1, 0, 100); } },
+  ]
+};
+
+function isYearStartTurn(turn){ return (turn-1) % 4 === 0; }
+function isYearEndTurn(turn){ return turn % 4 === 0; }
+
+function resolveElection(){
+  const avgLoyalty = state.ministers.length ? state.ministers.reduce((a,m)=>a+m.loyalty,0)/state.ministers.length : 20;
+  const passChance = clamp(0.32 + (state.approval-50)/100 + (avgLoyalty-50)/200, 0.05, 0.95);
+  const won = Math.random() < passChance;
+  if(won){
+    state.termsWon += 1;
+    state.stability = clamp(state.stability + 5, 0, 100);
+    addLog(`<b>בחירות:</b> נבחרת מחדש לכהונה נוספת! (סיכוי היה כ-${(passChance*100).toFixed(0)}%)`);
+  } else {
+    state.electionLost = true;
+    addLog(`<b>בחירות:</b> הפסדת בבחירות — העם בחר במנהיג/ת אחר/ת.`);
+  }
+}
+
+/* ---------- POLITICAL RIVAL ---------- */
+const rivalCrisisEvent = {
+  id:"rival_crisis",
+  title:"משבר אמון מוביל למהלך חריג",
+  desc: s => `${s.rival.name} צובר/ת תמיכה ציבורית מסוכנת ומכריז/ה על יוזמה להחלפתך מיידית, ללא המתנה לבחירות הבאות.`,
+  choices: [
+    { title:"מערכה תקשורתית נגדית", desc:"תלוי בכריזמה ומניפולציה; אם מצליח מנטרל את האיום כמעט לגמרי.",
+      tags:["manipulation"], impact:{approval:1,stability:0,treasury:0,tension:0},
+      effect: s => { const chance = 0.35 + (s.skills.rhetoric+s.skills.manipulation)*0.07;
+        if(Math.random()<chance){ s.rival.threat = 15; s.approval += 5; gainXp(s,2); }
+        else { s.rival.threat = clamp(s.rival.threat+15,0,100); s.approval -= 8; } } },
+    { title:"להציע לו/לה תפקיד בממשלה", desc:"מנטרל את האיום לטווח ארוך במחיר נאמנות הקואליציה הקיימת.",
+      tags:["manipulation"], impact:{approval:-1,stability:1,treasury:0,tension:0},
+      effect: s => { s.rival.threat = 10; s.approval -= 3; s.ministers.forEach(m=>m.loyalty -= 10); } },
+    { title:"להתעלם ולהמשיך כרגיל", desc:"לא עולה דבר כרגע, אך משאיר את האיום פעיל להמשך הכהונה.",
+      tags:[], impact:{approval:0,stability:-1,treasury:0,tension:0},
+      effect: s => { s.rival.threat = clamp(s.rival.threat-10,0,100); s.stability -= 4; } },
+  ]
+};
+
+function buildCounterSpyEvent(){
+  const others = COUNTRIES.filter(c => c.name !== state.country.name);
+  const suspect = others[Math.floor(Math.random()*others.length)].name;
+  return {
+    id:"counter_spy",
+    title:"מרגל זר נתפס",
+    desc: s => `שירותי הביטחון תפסו מרגל שפעל, על פי החשד, מטעם ${suspect} בתוככי המדינה שלך.`,
+    choices: [
+      { title:"לחשוף פומבית", desc:"מפגין נחישות ומשפר אמון פנימי, מסלים משמעותית את היחסים עם המדינה החשודה.",
+        tags:["force"], impact:{approval:1,stability:0,treasury:0,tension:0},
+        effect: s => { s.approval += 6; s.relations[suspect] = clamp((s.relations[suspect]||0) - 30, -100, 100); } },
+      { title:"לסחוט בשקט תמורת מידע", desc:"לא עולה לך כלום פומבית, ומעניק מודיעין איכותי על המדינה החשודה.",
+        tags:["manipulation"], impact:{approval:0,stability:0,treasury:0,tension:0},
+        effect: s => { const w = worldState[suspect];
+          if(w){ state.espionage[suspect] = { treasury:w.treasury, debtToGdp:w.debtToGdp, trend:'לא ידוע', revealedTurn:state.turn }; }
+          gainXp(s,2); } },
+      { title:"לשחרר בלי הודעה פומבית", desc:"מהלך של רצון טוב שעשוי לשפר את מערכת היחסים לטווח ארוך.",
+        tags:["diplomacy_soft"], impact:{approval:0,stability:0,treasury:0,tension:0},
+        effect: s => { s.relations[suspect] = clamp((s.relations[suspect]||0) + 10, -100, 100); } },
+    ]
+  };
+}
+
+
+function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+function histKey(eventId, i){ return eventId+'_'+i; }
+function histCount(key){ return (state.history[key]||0); }
+
+function pickEvent(){
+  const eligible = eventPool.filter(e => !e.countryOnly || e.countryOnly.includes(state.country.name));
+  const weighted = eligible.map(e => ({ e, w: e.weight(state) }));
+  const total = weighted.reduce((a,b)=>a+b.w,0);
+  let r = Math.random()*total;
+  for(const item of weighted){ if(r < item.w) return item.e; r -= item.w; }
+  return weighted[0].e;
+}
+
+function addLog(text){ state.log.unshift(text); if(state.log.length > 8) state.log.pop(); state.fullHistory.push(text); }
+function gainXp(s, amount){ s.xp += amount; }
+
+function skillCost(level){ return level*4; }
+
+function upgradeSkill(key){
+  const lvl = state.skills[key];
+  const cost = skillCost(lvl);
+  if(state.xp >= cost && lvl < 5){
+    state.xp -= cost;
+    state.skills[key] += 1;
+    addLog(`<b>שדרוג:</b> ${skillNames[key]} עלה לרמה ${state.skills[key]}`);
+    render();
+  }
+}
+window.upgradeSkill = upgradeSkill;
+
+function checkGameOver(){
+  if(state.electionLost) return "הפסדת בבחירות לתפקיד ראש הממשלה — כהונתך הגיעה לסיומה בדרך הדמוקרטית.";
+  const avgLoyalty = state.ministers.length ? state.ministers.reduce((a,m)=>a+m.loyalty,0)/state.ministers.length : 0;
+  if(state.approval < 15 && avgLoyalty < 30) return "הצבעת אי-אמון בכנסת מדיחה את הממשלה.";
+  if(state.stability <= 0) return "המדינה שקעה בתוהו ובוהו — משטרך התמוטט.";
+  if(state.treasury < -8000 && state.inflation > 20) return "קריסה כלכלית מוחלטת — המטבע קרס.";
+  if(state.borderTension >= 100) return "פרצה מלחמה בקנה מידה שלא הצלחת לבלום.";
+  if(state.ministers.length === 0) return "כל שרי הקואליציה התפטרו — הממשלה נופלת.";
+  return null;
+}
+
+const ministerNamePool = ["שר/ת התחבורה","שר/ת החינוך","שר/ת הבריאות","שר/ת המשפטים","שר/ת התיירות","שר/ת האנרגיה"];
+const agendaTagPool = ["austerity","spending","military","force","diplomacy_soft","social","authoritarian"];
+function appointMinister(){
+  if(state.ministers.length >= 3) return;
+  state.approval = clamp(state.approval - 5, 0, 100);
+  const name = ministerNamePool[Math.floor(Math.random()*ministerNamePool.length)];
+  const likes = [agendaTagPool[Math.floor(Math.random()*agendaTagPool.length)]];
+  let dislikes = [agendaTagPool[Math.floor(Math.random()*agendaTagPool.length)]];
+  if(dislikes[0] === likes[0]) dislikes = [agendaTagPool[(agendaTagPool.indexOf(likes[0])+1)%agendaTagPool.length]];
+  state.ministers.push({ name, loyalty: 55, likes, dislikes });
+  addLog(`<b>מינוי:</b> ${name} הצטרף/ה לממשלה.`);
+  render();
+}
+window.appointMinister = appointMinister;
+
+function applyMinisterReactions(choice){
+  const manip = state.skills.manipulation;
+  const resigned = [];
+  state.ministers.forEach(m => {
+    let drift = (Math.random()*6-3) * (1 - manip*0.1);
+    const likesMatch = choice.tags.some(t => m.likes.includes(t));
+    const dislikesMatch = choice.tags.some(t => m.dislikes.includes(t));
+    if(likesMatch) drift += 6;
+    if(dislikesMatch) drift -= Math.max(2, 9 - manip*1.2);
+    m.loyalty = clamp(m.loyalty + drift, 0, 100);
+  });
+  state.ministers = state.ministers.filter(m => {
+    if(m.loyalty <= 0){
+      resigned.push(m.name);
+      return false;
+    }
+    return true;
+  });
+  resigned.forEach(name => {
+    addLog(`<b>התפטרות:</b> ${name} עזב/ה את הממשלה במחאה.`);
+    state.approval -= 4;
+    state.stability -= 2;
+  });
+}
+
+function buildHeadline(){
+  const c = state.country.name;
+  if(state.electionLost) return `${c}: ראש הממשלה מפסיד/ה בבחירות אחרי כהונה סוערת`;
+  if(state.stability <= 0) return `${c}: שקיעה למשבר שלטוני חסר תקדים`;
+  if(state.treasury < -8000) return `${c}: קריסה כלכלית מטלטלת את המדינה`;
+  if(state.borderTension >= 100) return `${c}: המדינה נגררת למלחמה גלויה`;
+  if(state.approval > 65) return `${c}: ראש ממשלה שעזב/ה כשהעם עדיין מריע`;
+  if(state.termsWon >= 2) return `${c}: עידן ארוך בשלטון מגיע לסיומו`;
+  return `${c}: כהונה סוערת מסתיימת בין הישגים למחירים כבדים`;
+}
+
+function buildNarrative(prev){
+  const dA = state.approval - prev.approval;
+  const dS = state.stability - prev.stability;
+  if(state.approval < 20) return "הרחוב רותח נגדך; הלגיטימיות הפוליטית שלך נשחקת מיום ליום.";
+  if(dS < -8) return "רבעון סוער — היציבות נפגעה קשות ותחושת השליטה מתערערת.";
+  if(dA >= 6) return "רבעון מוצלח פוליטית — הציבור מגיב בחיוב להחלטותיך.";
+  if(state.borderTension > 70) return "המתיחות בגבול הפכה לנושא היחיד שכולם מדברים עליו.";
+  if(dA <= -6) return "רבעון קשה — הביקורת הציבורית מחריפה.";
+  return "רבעון שקט יחסית, אך האתגרים הבאים כבר ממתינים בתור.";
+}
+
+function processDelayed(){
+  const due = state.delayed.filter(d => d.dueTurn === state.turn);
+  state.delayed = state.delayed.filter(d => d.dueTurn !== state.turn);
+  due.forEach(d => {
+    d.effect(state);
+    addLog(`<b>השלכה מושהית:</b> ${d.label}`);
+  });
+}
+
+/* ---------- RENDER: COUNTRY SELECT ---------- */
+function renderCountrySelect(){
+  const root = document.getElementById('countrySelect');
+  root.innerHTML = `
+    <input class="search-box" id="countrySearch" placeholder="חיפוש מדינה..." oninput="filterCountries()">
+    <div class="country-grid" id="countryGrid"></div>
+  `;
+  drawCountryGrid(COUNTRIES);
+}
+function drawCountryGrid(list){
+  document.getElementById('countryGrid').innerHTML = list.map((c,i) => `
+    <div class="country-card" onclick="selectCountry('${c.name.replace(/'/g,"\\'")}')">
+      <div class="flag">${c.flag}</div>
+      <div class="cname">${c.name}</div>
+      <div class="ctag">${c.tag}</div>
+    </div>`).join('');
+}
+function filterCountries(){
+  const q = document.getElementById('countrySearch').value.trim();
+  drawCountryGrid(COUNTRIES.filter(c => c.name.includes(q)));
+}
+window.filterCountries = filterCountries;
+
+function selectCountry(name){
+  const country = COUNTRIES.find(c => c.name === name);
+  state = freshState(country);
+  initWorld(country.name);
+  state.neighborName = pickNeighbor(country.name);
+  COUNTRIES.forEach(c => { if(c.name !== country.name) state.relations[c.name] = 0; });
+  document.getElementById('countrySelect').style.display = 'none';
+  document.getElementById('gameRoot').style.display = 'block';
+  document.getElementById('mainTitle').textContent = `משרד ראש ממשלת ${country.name}`;
+  document.getElementById('mainSub').textContent = `${country.flag} ${country.tag} · שכנה עוינת פוטנציאלית: ${state.neighborName}`;
+  document.getElementById('turnBadge').style.display = 'inline-block';
+  newTurn();
+}
+window.selectCountry = selectCountry;
+
+/* ---------- PIXEL WORLD ---------- */
+function seedFromName(name){
+  let h = 0;
+  for(let i=0;i<name.length;i++){ h = (h*31 + name.charCodeAt(i)) >>> 0; }
+  return h;
+}
+function seededRand(seed){
+  let t = seed += 0x6D2B79F5;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+function hexToRgb(hex){
+  const v = parseInt(hex.replace('#',''),16);
+  return { r:(v>>16)&255, g:(v>>8)&255, b:v&255 };
+}
+function shade(hex, amt){
+  const {r,g,b} = hexToRgb(hex);
+  const f = c => clamp(Math.round(c + amt), 0, 255);
+  return `rgb(${f(r)},${f(g)},${f(b)})`;
+}
+
+let pixelFrame = 0;
+const buildingsCache = {};
+function getBuildings(country, W){
+  if(!buildingsCache[country.name]){
+    const seed = seedFromName(country.name);
+    const buildings = [];
+    let x = Math.round(W*0.02);
+    let s = seed;
+    const maxX = W - Math.round(W*0.05);
+    while(x < maxX){
+      s = (s*1103515245 + 12345) >>> 0;
+      const w = Math.round(W*0.03) + (seededRand(s) * Math.round(W*0.035) | 0);
+      s = (s*1103515245 + 12345) >>> 0;
+      const h = Math.round(W*0.045) + (seededRand(s) * Math.round(W*0.09) | 0);
+      buildings.push({ x, w, h });
+      x += w + Math.round(W*0.01)+1;
+    }
+    buildingsCache[country.name] = buildings;
+  }
+  return buildingsCache[country.name];
+}
+
+/**
+ * Generic pixel-scene renderer. Draws into any canvas for any country,
+ * driven purely by the simState numbers passed in (works for the
+ * player's own live state, or a background-simulated "other country").
+ */
+function drawPixelScene(canvas, country, simState, frame){
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  const W = canvas.width, H = canvas.height;
+  const [c1, c2] = country.colors || ["#b8934b","#1b2029"];
+  const buildings = getBuildings(country, W);
+  const groundY = H*0.72;
+
+  const calm = simState.stability >= 45 && simState.approval >= 35;
+  const skyTop = calm ? "#1b2a4a" : (simState.stability < 20 ? "#3a1414" : "#3a2a14");
+  const skyBottom = calm ? "#3d5a8a" : (simState.stability < 20 ? "#7a2a20" : "#7a5a20");
+  const grad = ctx.createLinearGradient(0,0,0,groundY);
+  grad.addColorStop(0, skyTop);
+  grad.addColorStop(1, skyBottom);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,W,groundY);
+
+  ctx.fillStyle = calm ? "#f4d35e" : "#d97b4f";
+  ctx.fillRect(W-Math.round(W*0.09), H*0.08, Math.round(W*0.025), Math.round(W*0.025));
+
+  if(!calm){
+    let s = seedFromName(country.name) ^ 77;
+    for(let i=0;i<12;i++){
+      s = (s*1103515245+12345)>>>0;
+      const sx = (seededRand(s)*W)|0;
+      s = (s*1103515245+12345)>>>0;
+      const sy = (seededRand(s)*H*0.3)|0;
+      ctx.fillStyle = "rgba(255,255,255,0.6)";
+      ctx.fillRect(sx, sy, 1, 1);
+    }
+  }
+
+  const groundColor = simState.treasury < 0 ? "#4a3a2a" : (simState.debtToGdp > 110 ? "#5a4a30" : "#2f4a34");
+  ctx.fillStyle = groundColor;
+  ctx.fillRect(0, groundY, W, H-groundY);
+  ctx.fillStyle = shade(groundColor, -12);
+  ctx.fillRect(0, groundY, W, 2);
+
+  const dim = simState.stability < 30;
+  buildings.forEach((b,i) => {
+    const base = i % 2 === 0 ? "#2a3242" : "#232a38";
+    ctx.fillStyle = dim ? shade(base, -14) : base;
+    ctx.fillRect(b.x, groundY - b.h, b.w, b.h);
+    ctx.fillStyle = simState.approval > 40 ? "#e8c96b" : "#4a4a3a";
+    for(let wy = groundY - b.h + 4; wy < groundY - 4; wy += 6){
+      for(let wx = b.x + 2; wx < b.x + b.w - 2; wx += 5){
+        if(seededRand((wx*13+wy*7+seedFromName(country.name))>>>0) > 0.35){
+          ctx.fillRect(wx, wy, 2, 2);
+        }
+      }
+    }
+  });
+
+  const tallest = buildings.reduce((a,b)=> b.h>a.h?b:a, buildings[0]);
+  if(tallest){
+    const poleX = tallest.x + Math.floor(tallest.w/2);
+    const poleH = Math.round(H*0.09);
+    const poleTop = groundY - tallest.h - poleH;
+    ctx.fillStyle = "#c9c9c9";
+    ctx.fillRect(poleX, poleTop, 1, poleH);
+    const wave = Math.sin(frame/8) > 0 ? 0 : 1;
+    const flagW = Math.round(W*0.03);
+    ctx.fillStyle = c1;
+    ctx.fillRect(poleX+1, poleTop, flagW-wave, 3);
+    ctx.fillStyle = c2;
+    ctx.fillRect(poleX+1, poleTop+3, flagW-wave, 3);
+  }
+
+  let cs = seedFromName(country.name) ^ 999;
+  const totalCitizens = Math.round(W*0.06);
+  const happyRatio = clamp(simState.approval/100, 0.05, 0.95);
+  for(let i=0;i<totalCitizens;i++){
+    cs = (cs*1103515245+12345)>>>0;
+    const cx = 4 + (seededRand(cs) * (W-8) | 0);
+    const cy = groundY + 3 + ((i%3)*2);
+    const happy = (i / totalCitizens) < happyRatio;
+    ctx.fillStyle = happy ? "#7fd8a0" : "#d86a5a";
+    ctx.fillRect(cx, cy, 2, 3);
+  }
+
+  if(simState.stability < 40){
+    let ss = seedFromName(country.name) ^ 55;
+    const smokeCount = simState.stability < 20 ? 5 : 2;
+    for(let i=0;i<smokeCount;i++){
+      ss = (ss*1103515245+12345)>>>0;
+      const bIdx = Math.floor(seededRand(ss) * buildings.length);
+      const b = buildings[bIdx];
+      if(!b) continue;
+      const baseY = groundY - b.h;
+      for(let k=0;k<3;k++){
+        const offset = (frame + k*3) % 12;
+        ctx.fillStyle = `rgba(140,140,140,${0.5 - k*0.12})`;
+        ctx.fillRect(b.x + b.w/2, baseY - offset, 2, 2);
+      }
+    }
+  }
+
+  if(simState.borderTension > 60){
+    const alertSide = 2;
+    ctx.fillStyle = "#7a2a20";
+    ctx.fillRect(alertSide, groundY-6, 8, 4);
+    ctx.fillRect(alertSide+2, groundY-9, 3, 3);
+    if(simState.borderTension > 80 && frame % 10 < 5){
+      ctx.fillStyle = "#d94f3a";
+      ctx.fillRect(alertSide+9, groundY-9, 2, 2);
+    }
+  }
+
+  if(simState.treasury > 20000){
+    let ts = seedFromName(country.name) ^ 321;
+    for(let i=0;i<4;i++){
+      ts = (ts*1103515245+12345)>>>0;
+      const gx = (seededRand(ts)*W)|0;
+      const gy = H*0.5 + (seededRand(ts+1)*H*0.15|0);
+      ctx.fillStyle = "#f4d35e";
+      ctx.fillRect(gx, gy, 1, 1);
+    }
+  }
+}
+
+function animatePixelWorld(){
+  pixelFrame += 1;
+  const canvas = document.getElementById('pixelCanvas');
+  if(state && canvas && !checkGameOver()){ drawPixelScene(canvas, state.country, state, pixelFrame); }
+  requestAnimationFrame(animatePixelWorld);
+}
+requestAnimationFrame(animatePixelWorld);
+
+function toggleFullscreen(){
+  const el = document.getElementById('pixelFrame');
+  if(!document.fullscreenElement){
+    (el.requestFullscreen || el.webkitRequestFullscreen || function(){}).call(el);
+  } else {
+    (document.exitFullscreen || document.webkitExitFullscreen || function(){}).call(document);
+  }
+}
+window.toggleFullscreen = toggleFullscreen;
+
+/* ---------- SAVE / LOAD (file-based, no browser storage APIs) ---------- */
+function exportSave(){
+  const payload = { state, worldState, savedAt: new Date().toISOString() };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `pm-save-${state.country.name}-turn${state.turn}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  addLog('<b>שמירה:</b> קובץ הכהונה יוצא בהצלחה.');
+  render();
+}
+window.exportSave = exportSave;
+
+function importSave(evt){
+  const file = evt.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const payload = JSON.parse(reader.result);
+      state = payload.state;
+      worldState = payload.worldState;
+      document.getElementById('countrySelect').style.display = 'none';
+      document.getElementById('gameRoot').style.display = 'block';
+      document.getElementById('mainTitle').textContent = `משרד ראש ממשלת ${state.country.name}`;
+      document.getElementById('mainSub').textContent = `${state.country.flag} ${state.country.tag} · שכנה עוינת פוטנציאלית: ${state.neighborName}`;
+      document.getElementById('turnBadge').style.display = 'inline-block';
+      render();
+    } catch(e){
+      alert('קובץ השמירה לא תקין.');
+    }
+  };
+  reader.readAsText(file);
+}
+window.importSave = importSave;
+
+/* ---------- REST OF THE WORLD (background simulation) ---------- */
+let worldState = {}; // keyed by country name, for every country EXCEPT the one being played
+const headlinePool = [
+  "מחאות פרצו ברחובות הבירה",
+  "הושג הסכם סחר חדש עם מדינה שכנה",
+  "מתיחות גבולות גברה בעקבות תמרוני צבא",
+  "רפורמת מס שנויה במחלוקת אושרה בפרלמנט",
+  "משבר קואליציוני מוביל להחלפת שר בכיר",
+  "גל השקעות זרות מחזק את שוק ההון המקומי",
+  "שביתה כללית משתקת חלקים מהמשק",
+  "הסכם דיפלומטי משפר יחסים עם מעצמה שכנה",
+  "אסון טבע מקומי גורר קריאה לסיוע בינלאומי",
+  "שערוריית שחיתות מטלטלת את הממשלה",
+  "צמיחה כלכלית חדה משפרת את מצב הרוח הציבורי",
+  "עימות גבולות קל דעך ללא הסלמה נוספת",
+];
+
+function initWorld(playerCountryName){
+  worldState = {};
+  COUNTRIES.forEach(c => {
+    if(c.name === playerCountryName) return;
+    worldState[c.name] = {
+      approval: c.approval,
+      stability: 55 + Math.round(seededRand(seedFromName(c.name))*15),
+      treasury: 8000 + Math.round(seededRand(seedFromName(c.name)^5)*8000),
+      debtToGdp: c.debt,
+      borderTension: c.tension,
+      headline: "המצב יציב בינתיים.",
+    };
+  });
+}
+
+function tickWorld(){
+  Object.keys(worldState).forEach(name => {
+    const w = worldState[name];
+    w.prevBorderTension = w.borderTension;
+    w.approval = clamp(w.approval + (Math.random()*8-4), 0, 100);
+    w.stability = clamp(w.stability + (Math.random()*6-3), 0, 100);
+    w.borderTension = clamp(w.borderTension + (Math.random()*6-3), 0, 100);
+    w.treasury += Math.round(Math.random()*1000-450);
+    w.debtToGdp = clamp(w.debtToGdp + (Math.random()*3-1.5), 0, 300);
+    if(Math.random() < 0.35){
+      w.headline = headlinePool[Math.floor(Math.random()*headlinePool.length)];
+      // headline gives a slightly bigger nudge so the world feels eventful
+      w.approval = clamp(w.approval + (Math.random()*10-5), 0, 100);
+      w.stability = clamp(w.stability + (Math.random()*8-4), 0, 100);
+    }
+  });
+}
+
+function openWorldView(){
+  document.getElementById('worldTurnLabel').textContent = `${((state.turn-1)%4)+1} · שנה ${Math.ceil(state.turn/4)}`;
+  const grid = document.getElementById('worldGrid');
+  grid.innerHTML = '';
+
+  // your own country card first
+  const meCard = document.createElement('div');
+  meCard.className = 'world-card is-you';
+  meCard.innerHTML = worldCardInner(state.country, state, true);
+  grid.appendChild(meCard);
+  drawPixelScene(meCard.querySelector('canvas'), state.country, state, pixelFrame);
+
+  COUNTRIES.filter(c => c.name !== state.country.name).forEach(c => {
+    const w = worldState[c.name];
+    const card = document.createElement('div');
+    card.className = 'world-card';
+    card.innerHTML = worldCardInner(c, w, false);
+    grid.appendChild(card);
+    drawPixelScene(card.querySelector('canvas'), c, w, pixelFrame);
+  });
+
+  document.getElementById('worldOverlay').classList.add('open');
+}
+window.openWorldView = openWorldView;
+
+function closeWorldView(){
+  document.getElementById('worldOverlay').classList.remove('open');
+}
+window.closeWorldView = closeWorldView;
+
+function openTutorial(){
+  document.getElementById('tutorialOverlay').classList.add('open');
+}
+window.openTutorial = openTutorial;
+function closeTutorial(){
+  document.getElementById('tutorialOverlay').classList.remove('open');
+}
+window.closeTutorial = closeTutorial;
+
+function worldCardInner(country, simState, isYou){
+  const barRow = (label, val, color) => `
+    <div class="wbar-row"><span>${label}</span>
+      <div class="wbar"><div style="width:${clamp(val,0,100)}%;background:${color}"></div></div>
+    </div>`;
+  const relation = isYou ? null : (state.relations[country.name] || 0);
+  const relationColor = relation > 20 ? 'var(--good)' : relation < -20 ? 'var(--bad)' : 'var(--warn)';
+  const isNeighbor = country.name === state.neighborName;
+  const escapedName = country.name.replace(/'/g,"\\'");
+  const intel = !isYou ? state.espionage[country.name] : null;
+  const cooldownUntil = state.spyCooldowns[country.name] || 0;
+  const onCooldown = state.turn < cooldownUntil;
+  return `
+    <canvas width="220" height="100"></canvas>
+    <div class="wname"><span>${country.flag} ${country.name}${isYou ? ' (אתה)' : ''}${isNeighbor ? ' ⚠️ שכנה' : ''}</span></div>
+    <div class="wheadline">${isYou ? 'המדינה שאתה מנהל.' : simState.headline}</div>
+    <div class="wbars">
+      ${barRow('אישור', simState.approval, simState.approval<30?'var(--bad)':'var(--good)')}
+      ${barRow('יציבות', simState.stability, simState.stability<30?'var(--bad)':'var(--good)')}
+      ${barRow('מתיחות', simState.borderTension, simState.borderTension>60?'var(--bad)':'var(--warn)')}
+      ${!isYou ? barRow('יחסים איתך', (relation+100)/2, relationColor) : ''}
+    </div>
+    ${intel ? `<div class="espionage-info">🕵️ מודיעין מרבעון ${intel.revealedTurn}: קופה ${intel.treasury.toFixed(0)} מיל' ₪ · חוב ${intel.debtToGdp.toFixed(0)}% · מגמת מתיחות: ${intel.trend}</div>` : ''}
+    ${!isYou ? `
+    <div class="wactions">
+      <button class="wact-btn" onclick="worldAction('${escapedName}','trade')" title="הצעת סחר: משפרת יחסים ומכניסה קופה, בעלות קטנה">🤝 סחר</button>
+      <button class="wact-btn" onclick="worldAction('${escapedName}','aid')" title="סיוע הומניטרי: משפר יחסים ומצב השכנה, עולה בקופתך">📦 סיוע</button>
+      <button class="wact-btn wact-bad" onclick="worldAction('${escapedName}','sanction')" title="סנקציות: פוגעות בשכנה ובקשר, ללא עלות ישירה">⛔ סנקציות</button>
+    </div>
+    <div class="wactions">
+      <button class="wact-btn wact-spy" ${onCooldown?'disabled':''} onclick="sendSpy('${escapedName}')" title="שלח מרגל: 400 תקציב, סיכוי תפיסה תלוי בכישור מודיעין. תפיסה פוגעת ביחסים ובאישור בבית.">
+        🕵️ ${onCooldown ? `מרגל (מוכן בעוד ${cooldownUntil - state.turn})` : 'שלח מרגל (400)'}
+      </button>
+    </div>` : ''}`;
+}
+
+function sendSpy(countryName){
+  const w = worldState[countryName];
+  if(!w) return;
+  const cooldownUntil = state.spyCooldowns[countryName] || 0;
+  if(state.turn < cooldownUntil) return;
+  if(state.treasury < 400){
+    addLog('<b>ריגול:</b> אין מספיק תקציב לשלוח מרגל.');
+    render();
+    return;
+  }
+  state.treasury = clamp(state.treasury - 400, -20000, 100000);
+  const chance = clamp(0.5 + state.skills.intelligence*0.08, 0.1, 0.95);
+  if(Math.random() < chance){
+    const delta = w.borderTension - (w.prevBorderTension!==undefined ? w.prevBorderTension : w.borderTension);
+    const trend = delta > 3 ? 'עולה' : delta < -3 ? 'יורדת' : 'יציבה';
+    state.espionage[countryName] = { treasury: w.treasury, debtToGdp: w.debtToGdp, trend, revealedTurn: state.turn };
+    gainXp(state, 2);
+    addLog(`<b>ריגול:</b> מודיעין מפורט התקבל בהצלחה על ${countryName}.`);
+  } else {
+    state.relations[countryName] = clamp((state.relations[countryName]||0) - 20, -100, 100);
+    state.approval = clamp(state.approval - 4, 0, 100);
+    addLog(`<b>ריגול:</b> המרגל שלך נתפס ב${countryName} — שערורייה דיפלומטית פוגעת בך בבית.`);
+    if(countryName === state.neighborName){
+      state.borderTension = clamp(state.borderTension + 8, 0, 100);
+    }
+  }
+  state.spyCooldowns[countryName] = state.turn + 2;
+  openWorldView();
+  render();
+}
+window.sendSpy = sendSpy;
+
+function worldAction(countryName, type){
+  const w = worldState[countryName];
+  if(!w) return;
+  state.relations[countryName] = state.relations[countryName] || 0;
+  let logMsg = '';
+  if(type === 'trade'){
+    state.treasury = clamp(state.treasury - 200, -20000, 100000);
+    state.treasury += 350; // net small gain over time, modeled as immediate for simplicity
+    w.approval = clamp(w.approval + 3, 0, 100);
+    state.relations[countryName] = clamp(state.relations[countryName] + 15, -100, 100);
+    logMsg = `נחתם הסכם סחר עם ${countryName}.`;
+  } else if(type === 'aid'){
+    state.treasury = clamp(state.treasury - 500, -20000, 100000);
+    w.stability = clamp(w.stability + 8, 0, 100);
+    w.approval = clamp(w.approval + 5, 0, 100);
+    state.relations[countryName] = clamp(state.relations[countryName] + 20, -100, 100);
+    logMsg = `נשלח סיוע הומניטרי ל${countryName}.`;
+  } else if(type === 'sanction'){
+    w.treasury -= 800;
+    w.approval = clamp(w.approval - 6, 0, 100);
+    state.relations[countryName] = clamp(state.relations[countryName] - 25, -100, 100);
+    if(countryName === state.neighborName){
+      state.borderTension = clamp(state.borderTension + 6, 0, 100);
+    }
+    logMsg = `הוטלו סנקציות על ${countryName}.`;
+  }
+  addLog(`<b>יחסי חוץ:</b> ${logMsg}`);
+  openWorldView(); // refresh the overlay with updated numbers
+  render();
+}
+window.worldAction = worldAction;
+
+/* ---------- RENDER: GAME ---------- */
+function previewText(choice){
+  const lvl = state.skills.economics;
+  if(lvl <= 1) return `<span class="preview-lock">🔒 תחזית כלכלית — שדרג "ידע כלכלי" כדי לראות</span>`;
+  const net = choice.impact.approval + choice.impact.stability + choice.impact.treasury - choice.impact.tension;
+  const confidence = lvl >= 4 ? "גבוהה" : lvl === 3 ? "בינונית" : "נמוכה";
+  const outlook = net > 0 ? "תחזית: השפעה כללית חיובית" : net < 0 ? "תחזית: השפעה כללית שלילית" : "תחזית: השפעה מעורבת";
+  return `${outlook} · ודאות ${confidence}`;
+}
+
+function metricBlock(label, value, pct, color){
+  return `<div class="metric"><div class="label">${label}</div><div class="value">${value}</div>
+    <div class="bar"><div style="width:${clamp(pct,0,100)}%;background:${color}"></div></div></div>`;
+}
+
+function arrow(v){
+  if(v > 0) return `<span class="up">↑</span>`;
+  if(v < 0) return `<span class="down">↓</span>`;
+  return `<span class="flat">→</span>`;
+}
+
+function render(){
+  document.getElementById('turnBadge').textContent = `רבעון ${((state.turn-1)%4)+1} · שנה ${Math.ceil(state.turn/4)} · ${state.country.flag} ${state.country.name}`;
+
+  document.getElementById('metrics').innerHTML =
+    metricBlock("אישור ציבורי", state.approval.toFixed(0)+"%", state.approval, state.approval<30?'var(--bad)':'var(--good)') +
+    metricBlock("יציבות", state.stability.toFixed(0)+"%", state.stability, state.stability<30?'var(--bad)':'var(--good)') +
+    metricBlock("קופת המדינה", state.treasury.toFixed(0)+" מיל' ₪", clamp((state.treasury+5000)/150,0,100), state.treasury<0?'var(--bad)':'var(--warn)') +
+    metricBlock("מתיחות גבולות", state.borderTension.toFixed(0)+"%", state.borderTension, state.borderTension>60?'var(--bad)':'var(--warn)');
+
+  document.getElementById('narrative').textContent = state.narrative;
+
+  const over = checkGameOver();
+  if(over){
+    clearUrgentTimer();
+    document.getElementById('mainArea').innerHTML = `
+      <div class="card gameover" style="grid-column:1/-1;">
+        <h2>סוף הכהונה</h2>
+        <p>${over}</p>
+        <div class="headline-box">"${buildHeadline()}"</div>
+        <p style="color:var(--muted);font-size:13px;">שרדת ${state.turn-1} רבעונים כראש ממשלת ${state.country.name}${state.termsWon>0 ? ` · נבחרת מחדש ${state.termsWon} פעמים` : ''}.</p>
+        <div class="timeline">
+          <h3 style="margin-top:0;">ציר הזמן של הכהונה</h3>
+          ${state.fullHistory.slice(-12).map(h => `<div>${h}</div>`).join('') || '<div>אין נתונים.</div>'}
+        </div>
+        <button class="restart" onclick="location.reload()">בחר/י מדינה חדשה</button>
+      </div>`;
+    return;
+  }
+
+  const ev = state.currentEvent;
+  document.getElementById('eventCard').innerHTML = `
+    <h2>${ev.title}${ev.urgent ? ' ⚠️' : ''}</h2>
+    <div class="sub">דילמה רבעונית — נדרשת החלטה</div>
+    <div class="desc">${ev.desc(state)}</div>
+    ${ev.choices.map((c,i) => `
+      <button class="choice" onclick="makeChoice(${i})">
+        <div class="ctop">
+          <span class="ctitle">${c.title}</span>
+          <span class="impact-arrows">
+            <span title="אישור">א${arrow(c.impact.approval)}</span>
+            <span title="יציבות">י${arrow(c.impact.stability)}</span>
+            <span title="קופה">ק${arrow(c.impact.treasury)}</span>
+            <span title="מתיחות">מ${arrow(c.impact.tension)}</span>
+          </span>
+        </div>
+        <div class="cdesc">${c.desc}</div>
+        <div class="cpreview">${previewText(c)}</div>
+      </button>`).join('')}
+  `;
+  if(ev.urgent){ startUrgentTimer(ev); } else { clearUrgentTimer(); }
+
+  document.getElementById('ministers').innerHTML = (state.ministers.length ? state.ministers.map(m => `
+    <div class="minister">
+      <div class="mtop"><span>${m.name}</span><span>${m.loyalty.toFixed(0)}/100</span></div>
+      <div class="magenda">אג'נדה: ${m.likes.map(t=>tagLabel(t)).join(', ') || '—'}</div>
+      <div class="bar"><div style="width:${clamp(m.loyalty,0,100)}%;background:${m.loyalty<35?'var(--bad)':'var(--gold)'}"></div></div>
+    </div>`).join('') : '<div style="color:var(--muted);font-size:13px;">אין שרים בקואליציה.</div>')
+    + (state.ministers.length < 3 ? `<button class="upgrade-btn" style="width:100%;margin-top:6px;" onclick="appointMinister()">+ מנה שר/ה חדש/ה (עלות: 5% אישור)</button>` : '');
+
+  document.getElementById('rivalBlock').innerHTML = `
+    <div class="minister">
+      <div class="mtop"><span>${state.rival.name}</span><span>${state.rival.threat.toFixed(0)}/100</span></div>
+      <div class="magenda">רמת איום ליציבות כהונתך</div>
+      <div class="bar"><div style="width:${clamp(state.rival.threat,0,100)}%;background:${state.rival.threat>70?'var(--bad)':state.rival.threat>40?'var(--warn)':'var(--good)'}"></div></div>
+    </div>`;
+
+  document.getElementById('xpLine').textContent = `נקודות ניסיון זמינות: ${state.xp}`;
+  document.getElementById('skillsList').innerHTML = Object.keys(state.skills).map(k => {
+    const lvl = state.skills[k];
+    const cost = skillCost(lvl);
+    const disabled = lvl >= 5 || state.xp < cost;
+    return `<div class="skill-row">
+      <span class="sname">${skillNames[k]}</span>
+      <span class="slevel">רמה ${lvl}/5 ${lvl<5 ? '· עלות '+cost : '(מקס)'}</span>
+      ${lvl<5 ? `<button class="upgrade-btn" ${disabled?'disabled':''} onclick="upgradeSkill('${k}')">שדרג</button>` : ''}
+    </div>`;
+  }).join('');
+
+  document.getElementById('log').innerHTML = state.log.map(l => `<div>${l}</div>`).join('') || '<div>אין עדיין אירועים ביומן.</div>';
+}
+
+function tagLabel(t){
+  const map = { austerity:"צנע", spending:"הוצאה חברתית", military:"עוצמה צבאית", force:"שימוש בכוח",
+    diplomacy_soft:"דיפלומטיה רכה", social:"רווחה חברתית", authoritarian:"שליטה מרכזית" };
+  return map[t] || t;
+}
+
+/* ---------- GAME FLOW ---------- */
+function newTurn(){
+  processDelayed();
+  if(isYearStartTurn(state.turn)){
+    state.currentEvent = budgetEvent;
+  } else if(isYearEndTurn(state.turn)){
+    state.currentEvent = electionEvent;
+  } else if(state.rival.threat >= 100){
+    state.currentEvent = rivalCrisisEvent;
+  } else if(Math.random() < clamp(0.12 - state.skills.intelligence*0.015, 0.03, 0.2)){
+    state.currentEvent = buildCounterSpyEvent();
+  } else {
+    state.currentEvent = pickEvent();
+  }
+  render();
+}
+
+function makeChoice(i){
+  const ev = state.currentEvent;
+  const choice = ev.choices[i];
+  const prev = { approval: state.approval, stability: state.stability, borderTension: state.borderTension };
+
+  clearUrgentTimer();
+  choice.effect(state);
+  gainXp(state, 1);
+
+  const key = histKey(ev.id, i);
+  state.history[key] = (state.history[key]||0) + 1;
+
+  if(choice.delay){
+    state.delayed.push({ dueTurn: state.turn + choice.delay.turns, effect: choice.delay.effect, label: choice.delay.label });
+  }
+
+  applyMinisterReactions(choice);
+
+  // budget policy has ongoing quarterly consequences, not just the one-time effect
+  const b = state.budget;
+  state.treasury += 2200; // baseline quarterly tax revenue
+  state.treasury -= (b.defense + b.education + b.health + b.welfare + b.infra) * 15; // upkeep
+  state.militaryReadiness = clamp(state.militaryReadiness + (b.defense-20)*0.15, 0, 100);
+  state.approval = clamp(state.approval + (b.welfare-20)*0.05, 0, 100);
+
+  state.debtToGdp += (state.treasury < 0 ? 1.5 : -0.5);
+  state.inflation = clamp(state.inflation + (state.debtToGdp>100?0.5:-0.2), 0, 60);
+  state.approval = clamp(state.approval - state.inflation*0.15, 0, 100);
+  state.stability = clamp(state.stability, 0, 100);
+  state.borderTension = clamp(state.borderTension, 0, 100);
+  state.treasury = clamp(state.treasury, -20000, 100000);
+  state.debtToGdp = clamp(state.debtToGdp, 0, 300);
+
+  // political rival gains or loses ground based on how you're doing
+  if(ev.id !== 'rival_crisis'){
+    if(state.approval < 40) state.rival.threat = clamp(state.rival.threat + 4, 0, 100);
+    else if(state.approval > 60) state.rival.threat = clamp(state.rival.threat - 3, 0, 100);
+  }
+
+  // your neighbor feels a share of any border-tension swing you caused
+  const tensionDelta = state.borderTension - prev.borderTension;
+  if(tensionDelta !== 0 && worldState[state.neighborName]){
+    const nb = worldState[state.neighborName];
+    nb.borderTension = clamp(nb.borderTension + tensionDelta * 0.6, 0, 100);
+    nb.stability = clamp(nb.stability - tensionDelta * 0.25, 0, 100);
+  }
+
+  state.narrative = buildNarrative(prev);
+  addLog(`<b>רבעון ${state.turn}:</b> ${ev.title} → נבחר "${choice.title}"`);
+
+  if(ev.id === 'election'){ resolveElection(); }
+
+  tickWorld();
+  state.turn += 1;
+  newTurn();
+}
+window.makeChoice = makeChoice;
+
+/* ---------- URGENT (REAL-TIME) CRISIS TIMER ---------- */
+let urgentInterval = null;
+function clearUrgentTimer(){
+  if(urgentInterval){ clearInterval(urgentInterval); urgentInterval = null; }
+  const bar = document.getElementById('urgentBar');
+  if(bar) bar.remove();
+}
+
+function startUrgentTimer(ev){
+  clearUrgentTimer();
+  const seconds = 18;
+  let remaining = seconds;
+  const eventCard = document.getElementById('eventCard');
+  const bar = document.createElement('div');
+  bar.id = 'urgentBar';
+  bar.className = 'urgent-bar';
+  bar.innerHTML = `<div class="urgent-label">⏱ החלטה דחופה — <span id="urgentSeconds">${remaining}</span> שניות</div>
+    <div class="urgent-track"><div class="urgent-fill" id="urgentFill" style="width:100%"></div></div>`;
+  eventCard.prepend(bar);
+
+  urgentInterval = setInterval(() => {
+    remaining -= 1;
+    const secEl = document.getElementById('urgentSeconds');
+    const fillEl = document.getElementById('urgentFill');
+    if(secEl) secEl.textContent = remaining;
+    if(fillEl) fillEl.style.width = `${(remaining/seconds)*100}%`;
+    if(remaining <= 0){
+      clearUrgentTimer();
+      addLog(`<b>היסוס:</b> לא התקבלה החלטה בזמן על "${ev.title}" — המצב הידרדר מעצמו.`);
+      state.stability = clamp(state.stability - 6, 0, 100);
+      state.approval = clamp(state.approval - 3, 0, 100);
+      tickWorld();
+      state.turn += 1;
+      newTurn();
+    }
+  }, 1000);
+}
+
+renderCountrySelect();
+</script>
+
+<!-- =========================================================
+     MULTIPLAYER ADD-ON (LOGIC)
+     Everything multiplayer lives here. It wraps the original
+     functions from the outside (monkey-patching) so the game
+     code above is never modified. When the player picks
+     "single player", MP.active stays false and the game behaves
+     exactly like the original.
+     ========================================================= -->
+<script>
+const MP = {
+  active:false, started:false, ws:null, playerId:null,
+  name:'', room:'', server:'',
+  myCountry:null,
+  players:{},          // id -> {id, name, country}
+  humanCountries:{},   // countryName -> playerId
+  humanState:{},       // countryName -> live world-view snapshot
+  worldOpen:false, _toastT:null,
+
+  /* ----- tiny helpers ----- */
+  $(id){ return document.getElementById(id); },
+  send(obj){ if(MP.ws && MP.ws.readyState===1){ MP.ws.send(JSON.stringify(obj)); } },
+  setStatus(msg, kind){ const el=MP.$('mpStatus'); if(el){ el.textContent=msg; el.className='mp-status '+(kind||''); } },
+  toast(msg, kind){
+    let t=MP.$('mpToast');
+    if(!t){ t=document.createElement('div'); t.id='mpToast';
+      t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:3000;background:#1b2029;border:1px solid #b8934b;color:#e9e5da;padding:10px 16px;border-radius:10px;font-family:Assistant,sans-serif;font-size:13px;box-shadow:0 6px 16px rgba(0,0,0,.5);max-width:90%;text-align:center;';
+      document.body.appendChild(t); }
+    t.textContent=msg; t.style.display='block';
+    t.style.borderColor = kind==='bad'?'#b4483f':(kind==='good'?'#4c8c7b':'#b8934b');
+    clearTimeout(MP._toastT); MP._toastT=setTimeout(()=>{ t.style.display='none'; },3500);
+  },
+  defaultServer(){
+    if(location.protocol==='file:' || !location.hostname) return 'ws://localhost:8080';
+    const proto = location.protocol==='https:' ? 'wss' : 'ws';
+    const port = location.port ? (':'+location.port) : '';
+    return proto+'//'+location.hostname+port;
+  },
+
+  /* ----- mode selection ----- */
+  chooseSingle(){
+    MP.active=false;
+    MP.$('mpModeOverlay').classList.remove('open');
+    // original behaviour: the welcome/tutorial overlay is already shown behind us.
+  },
+  chooseMulti(){
+    MP.$('mpModeOverlay').classList.remove('open');
+    MP.tutorialClose();
+    MP.$('mpServer').value = MP.$('mpServer').value || MP.defaultServer();
+    MP.$('mpSetupOverlay').classList.add('open');
+  },
+  backToMode(){
+    MP.$('mpSetupOverlay').classList.remove('open');
+    MP.$('mpModeOverlay').classList.add('open');
+  },
+  tutorialClose(){ const t=MP.$('tutorialOverlay'); if(t) t.classList.remove('open'); },
+
+  /* ----- connect / lobby ----- */
+  connect(){
+    const name=(MP.$('mpName').value||'').trim();
+    const room=(MP.$('mpRoom').value||'').trim();
+    const server=(MP.$('mpServer').value||'').trim() || MP.defaultServer();
+    if(!name){ MP.toast('צריך להזין שם','bad'); return; }
+    if(!room){ MP.toast('צריך להזין קוד חדר','bad'); return; }
+    MP.name=name; MP.room=room; MP.server=server;
+    MP.$('mpConnectForm').style.display='none';
+    MP.$('mpLobby').style.display='block';
+    MP.setStatus('מתחבר לשרת…','wait');
+    try{
+      MP.ws = new WebSocket(server);
+    }catch(e){
+      MP.setStatus('כתובת שרת לא תקינה','bad'); MP.showForm(); return;
+    }
+    MP.ws.onopen = ()=>{ MP.active=true; MP.send({t:'join', room, name}); };
+    MP.ws.onmessage = (ev)=>{ let m; try{ m=JSON.parse(ev.data); }catch(_){ return; } MP.onMessage(m); };
+    MP.ws.onclose = ()=>{
+      if(!MP.started){ MP.setStatus('החיבור נסגר. בדקו שהשרת פועל ושהכתובת נכונה.','bad'); MP.showForm(); }
+      else { MP.toast('נותק מהשרת','bad'); const p=MP.$('mpPill'); if(p) p.style.borderColor='#b4483f'; }
+      MP.active=false;
+    };
+    MP.ws.onerror = ()=>{ if(!MP.started){ MP.setStatus('שגיאת חיבור לשרת.','bad'); } };
+  },
+  showForm(){ MP.$('mpLobby').style.display='none'; MP.$('mpConnectForm').style.display='block'; },
+  leave(){ if(MP.ws){ try{ MP.ws.close(); }catch(_){}} MP.active=false; MP.showForm(); MP.backToMode(); MP.$('mpSetupOverlay').classList.remove('open'); MP.$('mpModeOverlay').classList.add('open'); },
+
+  onMessage(m){
+    switch(m.t){
+      case 'welcome':
+        MP.playerId=m.playerId;
+        MP.setStatus('מחובר! ממתין לשחקנים…','ok');
+        break;
+      case 'room':
+        MP.players=m.players||{};
+        MP.humanCountries={};
+        Object.values(MP.players).forEach(p=>{ if(p.country) MP.humanCountries[p.country]=p.id; });
+        // a country no longer held by a human reverts to computer control
+        Object.keys(MP.humanState).forEach(c=>{ if(!MP.humanCountries[c]) delete MP.humanState[c]; });
+        MP.renderLobby();
+        MP.decorateGrid();
+        MP.updatePill();
+        break;
+      case 'world':
+        MP.applyWorldUpdate(m.summary);
+        break;
+      case 'diplo':
+        MP.receiveDiplo(m);
+        break;
+      case 'error':
+        MP.toast(m.msg||'שגיאה','bad');
+        break;
+    }
+  },
+
+  renderLobby(){
+    const list=MP.$('mpPlayerList'); if(!list) return;
+    const players=Object.values(MP.players);
+    if(!players.length){ list.innerHTML='<div class="mp-hint">אין עדיין שחקנים.</div>'; return; }
+    list.innerHTML=players.map(p=>{
+      const me = p.id===MP.playerId;
+      const c = p.country ? p.country : '— בוחר/ת מדינה —';
+      return `<div class="mp-player${me?' me':''}"><span class="who">${p.name}${me?' (אתה)':''}</span><span class="cc">${c}</span></div>`;
+    }).join('');
+  },
+
+  updatePill(){
+    const pill=MP.$('mpPill'); if(!pill) return;
+    const n=Object.keys(MP.players).length;
+    pill.textContent=`🌍 חדר "${MP.room}" · ${n} שחקנים`;
+  },
+
+  /* mark countries already taken by other players in the selection grid */
+  decorateGrid(){
+    if(!MP.active) return;
+    document.querySelectorAll('#countryGrid .country-card').forEach(card=>{
+      const nameEl=card.querySelector('.cname'); if(!nameEl) return;
+      const name=nameEl.textContent.trim();
+      let claim=card.querySelector('.mp-claim');
+      if(!claim){ claim=document.createElement('div'); claim.className='mp-claim'; card.appendChild(claim); }
+      const owner=MP.humanCountries[name];
+      if(owner && owner!==MP.playerId){
+        const p=MP.players[owner];
+        card.classList.add('mp-taken');
+        claim.textContent='נתפס ע"י '+(p?p.name:'שחקן');
+      } else {
+        card.classList.remove('mp-taken');
+        claim.textContent = owner===MP.playerId ? 'המדינה שלך' : 'פנוי';
+      }
+    });
+  },
+
+  goPickCountry(){
+    MP.tutorialClose();
+    MP.$('mpSetupOverlay').classList.remove('open');
+    MP.decorateGrid();
+    MP.toast('בחר/י מדינה פנויה מהרשימה','good');
+  },
+
+  onGameStart(){
+    MP.started=true;
+    MP.tutorialClose();
+    const pill=MP.$('mpPill'); if(pill) pill.classList.add('open');
+    MP.updatePill();
+    // seed the shared world with any snapshots we already received
+    MP.restoreHumans();
+    MP.pushState();
+  },
+
+  /* ----- state sync ----- */
+  pushState(){
+    if(!MP.active || !state) return;
+    const s=state;
+    MP.send({ t:'state', summary:{
+      country:s.country.name, flag:s.country.flag,
+      approval:s.approval, stability:s.stability, borderTension:s.borderTension,
+      treasury:s.treasury, debtToGdp:s.debtToGdp, turn:s.turn,
+      name:MP.name, alive:!checkGameOver()
+    }});
+  },
+  applyWorldUpdate(sum){
+    if(!sum || !sum.country) return;
+    if(sum.country===MP.myCountry) return;
+    const snap={
+      approval:sum.approval, stability:sum.stability, borderTension:sum.borderTension,
+      treasury:sum.treasury, debtToGdp:sum.debtToGdp,
+      headline:'👤 '+(sum.name||'שחקן')+' · רבעון '+(sum.turn||1)+(sum.alive===false?' (הודח)':''),
+    };
+    MP.humanState[sum.country]=snap;
+    if(MP.started && typeof worldState!=='undefined' && worldState[sum.country]){
+      const w=worldState[sum.country];
+      w.prevBorderTension=w.borderTension;
+      Object.assign(w, snap);
+    }
+    if(MP.worldOpen && typeof openWorldView==='function'){ try{ openWorldView(); }catch(_){}}
+  },
+  restoreHumans(){
+    if(typeof worldState==='undefined') return;
+    Object.keys(MP.humanState).forEach(country=>{
+      if(country===MP.myCountry) return;
+      if(worldState[country]){ Object.assign(worldState[country], MP.humanState[country]); }
+    });
+  },
+
+  /* ----- receiving a diplomatic action from another player ----- */
+  receiveDiplo(m){
+    if(!state) return;
+    const from=m.fromName||'שחקן'; const fromCountry=m.fromCountry;
+    const rel = fromCountry!=null ? (state.relations[fromCountry]||0) : 0;
+    let msg='';
+    switch(m.type){
+      case 'trade':
+        state.treasury=clamp(state.treasury+350,-20000,100000);
+        state.approval=clamp(state.approval+2,0,100);
+        if(fromCountry!=null) state.relations[fromCountry]=clamp(rel+15,-100,100);
+        msg=`🤝 ${from} חתם/ה איתך על הסכם סחר (+קופה, +יחסים)`; break;
+      case 'aid':
+        state.treasury=clamp(state.treasury+500,-20000,100000);
+        state.stability=clamp(state.stability+8,0,100);
+        state.approval=clamp(state.approval+4,0,100);
+        if(fromCountry!=null) state.relations[fromCountry]=clamp(rel+20,-100,100);
+        msg=`📦 ${from} שלח/ה לך סיוע הומניטרי (+קופה, +יציבות)`; break;
+      case 'sanction':
+        state.treasury=clamp(state.treasury-800,-20000,100000);
+        state.approval=clamp(state.approval-6,0,100);
+        if(fromCountry===state.neighborName) state.borderTension=clamp(state.borderTension+6,0,100);
+        if(fromCountry!=null) state.relations[fromCountry]=clamp(rel-25,-100,100);
+        msg=`⛔ ${from} הטיל/ה עליך סנקציות! (-קופה, -אישור)`; break;
+      case 'spy':
+        state.approval=clamp(state.approval-1,0,100);
+        msg=`🕵️ זוהתה פעילות ריגול של ${from} נגד מדינתך`; break;
+      default: return;
+    }
+    if(typeof addLog==='function') addLog('<b>יחסי חוץ:</b> '+msg);
+    MP.toast(msg, m.type==='sanction'?'bad':(m.type==='spy'?'':'good'));
+    if(typeof render==='function' && !checkGameOver()) render();
+    MP.pushState();
+  },
+};
+window.MP = MP;
+
+/* prefill the server field with a sensible default */
+(function(){ const f=MP.$('mpServer'); if(f && !f.value) f.value=MP.defaultServer(); })();
+
+/* ---------- WRAP ORIGINAL FUNCTIONS (single-player untouched) ---------- */
+(function(){
+  const _selectCountry = window.selectCountry;
+  window.selectCountry = function(name){
+    if(MP.active){
+      const owner=MP.humanCountries[name];
+      if(owner && owner!==MP.playerId){ MP.toast('המדינה כבר נתפסה — בחר/י אחרת','bad'); return; }
+      MP.myCountry=name;
+      MP.send({t:'claim', country:name});
+    }
+    _selectCountry(name);
+    if(MP.active){ MP.onGameStart(); }
+  };
+
+  const _makeChoice = window.makeChoice;
+  window.makeChoice = function(i){
+    _makeChoice(i);
+    if(MP.active){ MP.restoreHumans(); MP.pushState(); if(MP.worldOpen) { try{ openWorldView(); }catch(_){}} }
+  };
+
+  const _worldAction = window.worldAction;
+  window.worldAction = function(name, type){
+    _worldAction(name, type);
+    if(MP.active){
+      const owner=MP.humanCountries[name];
+      if(owner && owner!==MP.playerId){ MP.send({t:'diplo', target:owner, type}); }
+      MP.pushState();
+    }
+  };
+
+  const _sendSpy = window.sendSpy;
+  window.sendSpy = function(name){
+    _sendSpy(name);
+    if(MP.active){
+      const owner=MP.humanCountries[name];
+      if(owner && owner!==MP.playerId){ MP.send({t:'diplo', target:owner, type:'spy'}); }
+      MP.pushState();
+    }
+  };
+
+  const _filterCountries = window.filterCountries;
+  window.filterCountries = function(){ _filterCountries(); if(MP.active) MP.decorateGrid(); };
+
+  const _openWorldView = window.openWorldView;
+  window.openWorldView = function(){ _openWorldView(); MP.worldOpen=true; };
+  const _closeWorldView = window.closeWorldView;
+  window.closeWorldView = function(){ _closeWorldView(); MP.worldOpen=false; };
+})();
+</script>
+</body>
+</html>

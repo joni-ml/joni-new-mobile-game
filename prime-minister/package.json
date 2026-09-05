@@ -1,0 +1,12 @@
+{
+  "name": "prime-minister-multiplayer",
+  "version": "1.0.0",
+  "description": "משרד ראש הממשלה — משחק סימולציה פוליטית עם מצב שחקן יחיד ומצב מרובה משתתפים",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
