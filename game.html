@@ -23,6 +23,28 @@
   }
 
   /* ---- MAP ---- */
+  #startScreen {
+    position: fixed; inset: 0; z-index: 100; background: #071120;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; padding: 24px; text-align: center;
+  }
+  #startScreen h1 { margin: 0; font-size: 24px; letter-spacing: 0.5px; }
+  #startScreen p { margin: 0 0 10px; font-size: 13px; opacity: 0.7; max-width: 300px; line-height: 1.5; }
+  #sizeList { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 300px; }
+  .sizeBtn {
+    display: flex; align-items: baseline; gap: 8px; width: 100%;
+    background: var(--panel); color: var(--ink); border: 1px solid var(--stroke);
+    border-radius: 10px; padding: 12px 14px; font-size: 15px; font-weight: 700;
+    text-align: left;
+  }
+  .sizeBtn .dim { font-weight: 400; font-size: 12px; opacity: 0.55; margin-left: auto; }
+  .sizeBtn .blurb { font-weight: 400; font-size: 12px; opacity: 0.7; }
+
+  /* The far-zoom view. See the atlas comment in the script. */
+  #atlas { position: absolute; inset: 0; display: none; z-index: 1; }
+  #board.atlas { display: none; }
+  #viewport.atlas #atlas { display: block; }
+
   #viewport {
     position: fixed; inset: 0; overflow: hidden;
     /* Unexplored world is simply this background showing through, and it
@@ -284,7 +306,13 @@
 </head>
 <body>
 
-<div id="viewport"><div id="board"></div></div>
+<div id="startScreen">
+  <h1>Found a world</h1>
+  <p>How big should it be? A bigger world takes longer to cross and longer to fill.</p>
+  <div id="sizeList"></div>
+</div>
+
+<div id="viewport"><canvas id="atlas"></canvas><div id="board"></div></div>
 
 <div id="topbar">
   <div id="toprow">
@@ -331,12 +359,12 @@
   "use strict";
 
   // ---- CONFIG ----
-  const COLS = 200, ROWS = 200;
+  let COLS = 200, ROWS = 200;
   // Everything below was tuned on a 30x30 world. AREA_SCALE lets counts that
   // describe "how much of this per world" (biome seeds, mountain ranges, crop
   // regions) grow with the map instead of staying at their 900-tile values,
   // which on a 200x200 map would leave the world almost empty.
-  const AREA_SCALE = (COLS * ROWS) / 900;
+  let AREA_SCALE = (COLS * ROWS) / 900;
   const BASE_HEX = 100;
 
   const viewportEl = document.getElementById('viewport');
@@ -365,7 +393,21 @@
     return { hexW, hexH, positions, boardW: maxX, boardH: maxY,
              worldW: COLS * hexW * 0.75, worldH: ROWS * hexH };
   }
-  const layout = computeLayout(BASE_HEX);
+  let layout = computeLayout(BASE_HEX);
+
+  // The size is picked on the opening screen, so everything derived from it
+  // has to be rebuilt rather than computed once when the file loads.
+  const MAP_SIZES = [
+    { key: 'small',  n: 60,  name: 'Small',  blurb: 'a quick world' },
+    { key: 'medium', n: 100, name: 'Medium', blurb: 'room to grow' },
+    { key: 'large',  n: 150, name: 'Large',  blurb: 'a long game' },
+    { key: 'huge',   n: 200, name: 'Huge',   blurb: 'the full world' },
+  ];
+  function setMapSize(n) {
+    COLS = ROWS = n;
+    AREA_SCALE = (COLS * ROWS) / 900;
+    layout = computeLayout(BASE_HEX);
+  }
 
   // ---- TERRAIN PALETTE (colors sampled from Unciv) ----
   const TERRA = {
@@ -1749,32 +1791,118 @@
   }
   // How many tiles may be on screen before each step down. What costs a frame
   // is the NUMBER of tiles being drawn, not how far out the zoom is: on the
-  // same viewport, 108 tiles held 57 fps at full detail and 144 fell to 39.
+  // same viewport, 108 tiles held 57 fps at full detail and 155 fell to 44.
   // Counting tiles also means that early in a game, when you have explored
   // almost nothing, the full artwork survives however far out you zoom —
   // there is hardly anything on screen to draw.
-  let FULL_MAX = 130, MID_MAX = 400, FAR_MAX = 2000;
+  let FULL_MAX = 110, MID_MAX = 330, FAR_MAX = 2000, ATLAS_MAX = 480;
   function drawnTiles() {
     const sc = cellSize / BASE_HEX;
     const onScreen = Math.ceil(viewportEl.clientWidth / (layout.hexW * 0.75 * sc))
                    * Math.ceil(viewportEl.clientHeight / (layout.hexH * sc));
     return revealAll ? onScreen : Math.min(onScreen, seenList.length);
   }
+  // ---- THE ATLAS: the far-zoom view ----
+  // Zoomed right out on a big world there are twelve thousand tiles on screen
+  // and one element each is more than the browser will composite smoothly —
+  // it measured seventeen frames a second. None of that detail survives at
+  // seven pixels a tile anyway, so past a certain count the board is hidden
+  // and the same tiles are painted as flat rectangles onto one canvas.
+  //
+  // This is the opposite of the right answer close in: a canvas has to repaint
+  // every tile every frame, where the board is composited by the GPU and costs
+  // nothing to move. It only wins once the tile count is high enough that the
+  // per-element cost dominates, which is exactly where it is switched on.
+  const atlasEl = document.getElementById('atlas');
+  const dimCache = {};
+  function dimCol(col) {
+    if (!dimCache[col]) {
+      const n = parseInt(col.slice(1), 16);
+      const f = 0.42;   // the haze over a tile you are only being shown
+      dimCache[col] = `rgb(${Math.round(((n >> 16) & 255) * f)},` +
+                      `${Math.round(((n >> 8) & 255) * f)},${Math.round((n & 255) * f)})`;
+    }
+    return dimCache[col];
+  }
+  function drawAtlas() {
+    const vw = viewportEl.clientWidth, vh = viewportEl.clientHeight;
+    if (atlasEl.width !== vw || atlasEl.height !== vh) { atlasEl.width = vw; atlasEl.height = vh; }
+    const ctx = atlasEl.getContext('2d');
+    ctx.fillStyle = '#05090f';
+    ctx.fillRect(0, 0, vw, vh);
+    const sc = cellSize / BASE_HEX;
+    // Hexagons are drawn a touch under size so the dark ground shows between
+    // them as the same thin outline the board has. Rectangles are drawn a
+    // touch over, because at that size an outline is just noise and a gap
+    // would show as a grid of dark lines.
+    const asHex = layout.hexW * sc > 14;
+    const grow = asHex ? 0.97 : 1.02;
+    const w = layout.hexW * sc * grow, h = layout.hexH * sc * grow;
+    const bx = vw / 2 + panX - layout.boardW / 2, by = vh / 2 + panY - layout.boardH / 2;
+    // While tiles are big enough for the shape to read they are drawn as
+    // hexagons, so switching to the atlas does not visibly change the map.
+    // Once they are a few pixels across a hexagon and a rectangle are the
+    // same picture, and rectangles are cheaper.
+    for (let c = 0; c < COLS; c++) {
+      const wrap = colWrap[c];
+      if (!wrap || !wrap._on) continue;
+      const cx = bx + (layout.positions[c][0].cx + wrap._k * layout.worldW) * sc;
+      for (let r = 0; r < ROWS; r++) {
+        const tl = tiles[c][r];
+        if (!tl.seen && !revealAll) continue;
+        const cy = by + (layout.positions[c][r].cy + rowM[r] * layout.worldH) * sc;
+        if (cy < -h || cy > vh + h) continue;
+        ctx.fillStyle = tl.seen ? tl.terrain.col : dimCol(tl.terrain.col);
+        if (asHex) {
+          ctx.beginPath();
+          ctx.moveTo(cx - w / 2, cy);
+          ctx.lineTo(cx - w / 4, cy - h / 2);
+          ctx.lineTo(cx + w / 4, cy - h / 2);
+          ctx.lineTo(cx + w / 2, cy);
+          ctx.lineTo(cx + w / 4, cy + h / 2);
+          ctx.lineTo(cx - w / 4, cy + h / 2);
+          ctx.fill();
+        } else {
+          ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
+        }
+      }
+    }
+    // Your own pieces stay findable — at this size they are the only thing
+    // worth picking out.
+    const dot = (c, r, col, rad) => {
+      const p = layout.positions[c][r];
+      const wr = colWrap[c];
+      if (!wr || !wr._on) return;
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(bx + (p.cx + wr._k * layout.worldW) * sc,
+              by + (p.cy + rowM[r] * layout.worldH) * sc, rad, 0, 6.2832);
+      ctx.fill();
+    };
+    for (const ct of cities) dot(ct.c, ct.r, '#ffd76a', Math.max(3, w * 0.5));
+    for (const u of units) dot(u.c, u.r, '#5aa9ff', Math.max(3, w * 0.42));
+  }
+
   function applyTransform() {
     const s = cellSize / BASE_HEX;
-    // Each step is cumulative: tiny implies far implies mid.
+    // Each step is cumulative: tiny implies far implies mid. Past the top rung
+    // the board is put away entirely and the atlas is drawn instead.
     const n = drawnTiles();
-    const detail = n > FAR_MAX ? 3 : n > MID_MAX ? 2 : n > FULL_MAX ? 1 : 0;
+    const detail = n > ATLAS_MAX ? 4 : n > FAR_MAX ? 3 : n > MID_MAX ? 2
+                 : n > FULL_MAX ? 1 : 0;
     if (boardEl._detail !== detail) {
       boardEl._detail = detail;
       boardEl.classList.toggle('mid', detail >= 1);
       boardEl.classList.toggle('far', detail >= 2);
       boardEl.classList.toggle('tiny', detail >= 3);
+      boardEl.classList.toggle('atlas', detail >= 4);
+      viewportEl.classList.toggle('atlas', detail >= 4);
     }
     boardEl.style.transform =
       `translate(-50%, -50%) translate(${panX}px, ${panY}px) scale(${s}) translateZ(0)`;
     updateWrap();
-    ensureViewport();   // after updateWrap, which decides each column's copy
+    if (boardEl._detail >= 4) drawAtlas();   // needs updateWrap's column copies
+    else ensureViewport();                   // ditto
     updateMinimapView();
   }
   let scheduled = false;
@@ -2240,7 +2368,8 @@
              y: innerHeight / 2 + near(pt.cy * sc + panY - layout.boardH / 2, layout.worldH) };
   };
   window.__nudge = (dx, dy) => { panX += dx; panY += dy; clampPan(); applyTransform(); };
-  window.__tiers = (a, b, c) => { FULL_MAX = a; MID_MAX = b; FAR_MAX = c;
+  window.__tiers = (a, b, c, d) => { FULL_MAX = a; MID_MAX = b; FAR_MAX = c;
+    if (d !== undefined) ATLAS_MAX = d;
     boardEl._detail = null; applyTransform(); };
   window.__neighbors = (c, r) => neighbors(c, r);
   window.__tile = (c, r) => { const t = tiles[c][r];
@@ -2249,10 +2378,62 @@
   window.__revealed = () => revealAll;
   window.__tileState = (c, r) => ({ seen: !!tiles[c][r].seen, built: !!hexEls[c][r],
     fog: fogEls[c][r] ? fogEls[c][r]._o : null });
+  window.__atlasDiag = () => {
+    const vw = viewportEl.clientWidth, vh = viewportEl.clientHeight;
+    const sc = cellSize / BASE_HEX;
+    const w = layout.hexW * sc * 1.02, h = layout.hexH * sc * 1.02;
+    const bx = vw / 2 + panX - layout.boardW / 2, by = vh / 2 + panY - layout.boardH / 2;
+    const xs = [];
+    for (let c = 0; c < COLS; c++) {
+      const wr = colWrap[c]; if (!wr || !wr._on) continue;
+      xs.push({ c, x: +(bx + (layout.positions[c][0].cx + wr._k * layout.worldW) * sc).toFixed(2), k: wr._k });
+    }
+    xs.sort((a, b) => a.x - b.x);
+    let gaps = [];
+    for (let i = 1; i < xs.length; i++) {
+      const d = xs[i].x - xs[i-1].x;
+      if (d > w) gaps.push(`cols ${xs[i-1].c}(k${xs[i-1].k})@${xs[i-1].x} -> ${xs[i].c}(k${xs[i].k})@${xs[i].x}  step ${d.toFixed(2)} vs tile ${w.toFixed(2)}`);
+    }
+    const ys = [];
+    for (let r = 0; r < ROWS; r++) {
+      const y = by + (layout.positions[0][r].cy + rowM[r] * layout.worldH) * sc;
+      if (y > -h && y < vh + h) ys.push({ r, y: +y.toFixed(2), m: rowM[r] });
+    }
+    ys.sort((a, b) => a.y - b.y);
+    let ygaps = [];
+    for (let i = 1; i < ys.length; i++) {
+      const d = ys[i].y - ys[i-1].y;
+      if (d > h) ygaps.push(`rows ${ys[i-1].r}(m${ys[i-1].m})@${ys[i-1].y} -> ${ys[i].r}(m${ys[i].m})@${ys[i].y}  step ${d.toFixed(2)} vs tile ${h.toFixed(2)}`);
+    }
+    return 'COLUMN GAPS:\n' + (gaps.join('\n') || 'none') +
+           '\nROW GAPS:\n' + (ygaps.join('\n') || 'none') +
+           `\ncolumns drawn ${xs.length}, rows in band ${ys.length}, viewport ${vw}x${vh}`;
+  };
   window.__hexDist = hexDist;
   window.__dims = { COLS, ROWS };
 
-  init();
+  // Nothing is generated until a size is chosen — the whole world, its
+  // textures and its board all depend on it.
+  const sizeList = document.getElementById('sizeList');
+  for (const sz of MAP_SIZES) {
+    const btn = document.createElement('button');
+    btn.className = 'sizeBtn';
+    btn.innerHTML = `<span>${sz.name}</span><span class="blurb">${sz.blurb}</span>` +
+                    `<span class="dim">${sz.n}\u00d7${sz.n}</span>`;
+    btn.addEventListener('click', () => {
+      document.getElementById('startScreen').remove();
+      setMapSize(sz.n);
+      init();
+    });
+    sizeList.appendChild(btn);
+  }
+  // A test harness can skip the screen and go straight in at a given size.
+  window.__start = (n) => {
+    const el = document.getElementById('startScreen');
+    if (el) el.remove();
+    setMapSize(n || 200);
+    init();
+  };
 })();
 </script>
 </body>
