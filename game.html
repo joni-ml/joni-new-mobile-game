@@ -121,7 +121,45 @@
     color: #fff; background: #14001a; border: 1px solid #f000f0;
     border-radius: 4px; padding: 1px 4px; pointer-events: none;
   }
-  #labelsBtn, #revealBtn {
+  /* The height map replaces the terrain outright rather than tinting it —
+     a wash over the ground would read as two encodings at once. Everything
+     drawn on top of a tile goes with it, so the only thing on screen is the
+     elevation. */
+  #board.heights .hex { background-image: none !important; }
+  #board.heights .feat,
+  #board.heights .res,
+  #board.heights .reslabel,
+  #board.heights .bank1,
+  #board.heights .bank2 { display: none !important; }
+  #board.heights .hex.elev0 { background-color: #1c5cab !important; }
+  #board.heights .hex.elev1 { background-color: #3987e5 !important; }
+  #board.heights .hex.elev2 { background-color: #6da7ec !important; }
+  #board.heights .hex.elev3 { background-color: #9ec5f4 !important; }
+  #board.heights .hex.elev4 { background-color: #cde2fb !important; }
+  /* The ordinary haze is far too heavy for a colour ramp to survive: run
+     through it, three of the four steps fall under the lightness gap the
+     ramp needs and the dark end drops to 1.33:1 against the page. While the
+     height map is on it is lifted to the point the ramp measures clean
+     again, keeping a lighter difference between ground you explored and
+     ground you were only shown. */
+  #board.heights .fog { opacity: 0.12 !important; }
+  #board.heights .fog.unex { opacity: 0.24 !important; }
+
+  #heightKey {
+    position: fixed; left: 8px; z-index: 26; display: none;
+    background: rgba(4,10,18,0.82); border: 1px solid var(--stroke);
+    border-radius: 8px; padding: 8px 11px; font-size: 9px;
+  }
+  #heightKey.on { display: block; }
+  #heightKey .bar { display: flex; width: 118px; height: 9px; border-radius: 2px; overflow: hidden; }
+  #heightKey .bar i { flex: 1; }
+  #heightKey .ends {
+    display: flex; justify-content: space-between; margin-top: 3px;
+    color: var(--ink); opacity: 0.75; font-weight: 700;
+  }
+  #heightKey .keycap { opacity: 0.6; margin-bottom: 4px; white-space: nowrap; }
+
+  #labelsBtn, #revealBtn, #heightBtn {
     position: fixed; left: 8px; z-index: 26;
     background: rgba(0,0,0,0.5); color: #f0a; border: 1px solid #f000f0;
     border-radius: 6px; padding: 3px 7px; font-size: 11px; font-weight: 700;
@@ -129,6 +167,8 @@
   #labelsBtn.on { background: #f000f0; color: #fff; }
   #revealBtn { color: #7ec8e3; border-color: #4f9fb5; }
   #revealBtn.on { background: #4f9fb5; color: #fff; }
+  #heightBtn { color: #9ec5f4; border-color: #3987e5; }
+  #heightBtn.on { background: #3987e5; color: #fff; }
   /* A resource with real artwork drops the plain badge chrome so the
      medallion itself is what you see. */
   .res.art {
@@ -351,6 +391,12 @@
 <button id="examineBtn">🔍 Study this</button>
 <button id="labelsBtn" title="Show the name of every missing texture">🏷 names</button>
 <button id="revealBtn" title="Show the whole map, or only what you have explored">🗺 map</button>
+<button id="heightBtn" title="Colour every tile by how high the ground is">⛰ height</button>
+<div id="heightKey">
+  <div class="keycap">GROUND HEIGHT</div>
+  <div class="bar"><i style="background:#1c5cab"></i><i style="background:#3987e5"></i><i style="background:#6da7ec"></i><i style="background:#9ec5f4"></i><i style="background:#cde2fb"></i></div>
+  <div class="ends"><span>Low</span><span>High</span></div>
+</div>
 <div id="fps">— FPS</div>
 <div id="tileInfo"></div>
 
@@ -1163,7 +1209,7 @@
     }
 
     const hex = document.createElement('div');
-    hex.className = 'hex';
+    hex.className = 'hex elev' + elevBand(tl.elev);
     hex.style.width = tileW_ + 'px';
     hex.style.height = tileH_ + 'px';
     hex.style.left = (p.cx - tileW_ / 2) + 'px';
@@ -1178,7 +1224,7 @@
     setRow(hex, r);
 
     const fog = document.createElement('div');
-    fog.className = 'fog';
+    fog.className = tl.seen ? 'fog' : 'fog unex';
     // A tile you walked to sits under the ordinary "seen but not in sight"
     // haze. One you are only being SHOWN sits under a heavier one, so the map
     // you earned still reads differently from the map you were handed.
@@ -1433,6 +1479,25 @@
     }
   }
 
+  // ---- HEIGHT MAP ----
+  // Elevation is a magnitude, so it gets a SEQUENTIAL ramp: one hue, stepped
+  // by lightness, never a rainbow. Blue, run dark-to-light because the board
+  // sits on a near-black ground — the step nearest the ground is the one that
+  // may recede, and here that is the dark end, so low ground fades into the
+  // page and high ground stands out. Validated against the game's own surface
+  // (#05090f): monotone lightness, every adjacent gap over the 0.06 floor,
+  // the dark end at 3.01:1, hue spread 3 degrees.
+  const ELEV_RAMP = ['#1c5cab', '#3987e5', '#6da7ec', '#9ec5f4', '#cde2fb'];
+  // Breaks are the measured quintiles of the elevation field over five worlds,
+  // not an even split of 0..1 — elevation clusters around the middle, and even
+  // thresholds would drop four fifths of the map into the bottom two bands.
+  const ELEV_STOPS = [0.27, 0.375, 0.46, 0.57];
+  function elevBand(e) {
+    for (let i = 0; i < ELEV_STOPS.length; i++) if (e < ELEV_STOPS[i]) return i;
+    return ELEV_STOPS.length;
+  }
+  let heightMap = false;
+
   const FOG_SEEN = 0.45;    // explored, just not in sight right now
   const FOG_SHOWN = 0.68;   // never explored — only shown by the map button
 
@@ -1510,6 +1575,7 @@
       if (tiles[c][r].seen) continue;
       tiles[c][r].seen = true;
       ensureTile(c, r);
+      fogEls[c][r].classList.remove('unex');
       seenList.push({ c, r });
       fresh.push({ c, r });
     }
@@ -1815,14 +1881,18 @@
   // per-element cost dominates, which is exactly where it is switched on.
   const atlasEl = document.getElementById('atlas');
   const dimCache = {};
+  // The haze over a tile you are only being shown. The height map lifts it to
+  // 0.78 because at 0.42 the elevation ramp stops measuring clean — the steps
+  // collapse into each other and the dark end sinks into the page.
   function dimCol(col) {
-    if (!dimCache[col]) {
+    const f = heightMap ? 0.78 : 0.42;
+    const key = col + f;
+    if (!dimCache[key]) {
       const n = parseInt(col.slice(1), 16);
-      const f = 0.42;   // the haze over a tile you are only being shown
-      dimCache[col] = `rgb(${Math.round(((n >> 16) & 255) * f)},` +
+      dimCache[key] = `rgb(${Math.round(((n >> 16) & 255) * f)},` +
                       `${Math.round(((n >> 8) & 255) * f)},${Math.round((n & 255) * f)})`;
     }
-    return dimCache[col];
+    return dimCache[key];
   }
   function drawAtlas() {
     const vw = viewportEl.clientWidth, vh = viewportEl.clientHeight;
@@ -1852,7 +1922,8 @@
         if (!tl.seen && !revealAll) continue;
         const cy = by + (layout.positions[c][r].cy + rowM[r] * layout.worldH) * sc;
         if (cy < -h || cy > vh + h) continue;
-        ctx.fillStyle = tl.seen ? tl.terrain.col : dimCol(tl.terrain.col);
+        const col = heightMap ? ELEV_RAMP[elevBand(tl.elev)] : tl.terrain.col;
+        ctx.fillStyle = tl.seen ? col : dimCol(col);
         if (asHex) {
           ctx.beginPath();
           ctx.moveTo(cx - w / 2, cy);
@@ -1982,6 +2053,7 @@
       }
     }
     bits.push('🌡 ' + Math.round(tl.heat * 100) + '%');
+    bits.push('⛰ ' + Math.round(tl.elev * 100) + '%');
     infoEl.textContent = bits.join(' · ');
     infoEl.style.display = 'block';
   }
@@ -2174,6 +2246,15 @@
     showNotice(on ? 'Whole map shown. Tap again for just what you have explored.'
                   : 'Back to your own map — anywhere you have not walked is hidden.');
   });
+  document.getElementById('heightBtn').addEventListener('click', (e) => {
+    heightMap = !heightMap;
+    e.currentTarget.classList.toggle('on', heightMap);
+    boardEl.classList.toggle('heights', heightMap);
+    document.getElementById('heightKey').classList.toggle('on', heightMap);
+    if (boardEl._detail >= 4) drawAtlas();   // the atlas repaints on demand
+    showNotice(heightMap ? 'Every tile coloured by how high the ground is.'
+                         : 'Back to the terrain.');
+  });
   document.getElementById('examineBtn').addEventListener('click', examineResource);
   document.getElementById('foundCity').addEventListener('click', () => {
     const u = curUnit();
@@ -2265,6 +2346,8 @@
     document.getElementById('fps').style.top = (barH + 62) + 'px';
     document.getElementById('labelsBtn').style.top = (barH + 88) + 'px';
     document.getElementById('revealBtn').style.top = (barH + 114) + 'px';
+    document.getElementById('heightBtn').style.top = (barH + 140) + 'px';
+    document.getElementById('heightKey').style.top = (barH + 168) + 'px';
   }
 
   // ---- INIT ----
@@ -2409,6 +2492,8 @@
            '\nROW GAPS:\n' + (ygaps.join('\n') || 'none') +
            `\ncolumns drawn ${xs.length}, rows in band ${ys.length}, viewport ${vw}x${vh}`;
   };
+  window.__elevs = () => { const o=[]; for(let c=0;c<COLS;c+=3) for(let r=0;r<ROWS;r+=3) o.push(tiles[c][r].elev); return o; };
+  window.__heights = () => heightMap;
   window.__hexDist = hexDist;
   window.__dims = { COLS, ROWS };
 
