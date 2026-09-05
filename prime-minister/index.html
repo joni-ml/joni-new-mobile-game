@@ -1878,8 +1878,10 @@ const MP = {
     t.style.borderColor = kind==='bad'?'#b4483f':(kind==='good'?'#4c8c7b':'#b8934b');
     clearTimeout(MP._toastT); MP._toastT=setTimeout(()=>{ t.style.display='none'; },3500);
   },
+  // true only when the page came from a real http(s) address (so a server can be found)
+  servedOverWeb(){ return (location.protocol==='http:'||location.protocol==='https:') && !!location.hostname; },
   defaultServer(){
-    if(location.protocol==='file:' || !location.hostname) return 'ws://localhost:8080';
+    if(!MP.servedOverWeb()) return 'ws://localhost:8080';
     const proto = location.protocol==='https:' ? 'wss' : 'ws';
     const port = location.port ? (':'+location.port) : '';
     return proto+'//'+location.hostname+port;
@@ -1897,8 +1899,12 @@ const MP = {
     MP.$('mpServer').value = MP.$('mpServer').value || MP.defaultServer();
     MP.showForm();
     MP.clearFormError();
-    if(location.protocol==='file:'){
-      MP.showFormError('המשחק נפתח כקובץ מקומי, ולכן אין שרת להתחבר אליו. כדי לשחק עם אנשים: הריצו "npm start" בתיקייה ופתחו את http://localhost:8080', 'warn');
+    // file: / data: / blob: — the page was opened as a local copy, so there is
+    // no web address to find a server at. Say so plainly instead of failing later.
+    if(!MP.servedOverWeb()){
+      MP.showFormError('פתחת את המשחק כקובץ מקומי (לא מכתובת אינטרנט), ולכן אין שרת להתחבר אליו — ' +
+        'ו-localhost כאן זה המכשיר שלך עצמו. כדי לשחק עם אנשים, המשחק צריך להיות מועלה לאינטרנט ' +
+        'ולהיפתח מכתובת https. משחק יחיד עובד כאן רגיל.', 'warn');
     }
     MP.$('mpSetupOverlay').classList.add('open');
   },
