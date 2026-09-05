@@ -41,14 +41,14 @@
      Three steps down, each one measured on a phone-sized viewport with the
      whole map explored, dropping only what has stopped being visible:
 
-       mid  (> 130 tiles) the art on a tile — trees, peaks — and the faint
-                     outer bank. Each is a
+       mid  (> 130 tiles) the art on a tile — trees, peaks — and the faint outer
+                     bank. Each is a
                      child element that must be clipped against the hex
                      polygon, which is the most expensive thing on a tile:
                      60px hexes went from 36 fps to 60.
-       far  (> 400 tiles) the terrain texture. The tile keeps its shape and
-                     its colour; only the grain on it goes.
-       tiny (> 2000 tiles) the hexagon itself. At that size a hex and a square are
+       far  (> 400 tiles) the terrain texture. The tile keeps its shape and its
+                     colour; only the grain on it goes.
+       tiny (> 2000 tiles) the hexagon itself. At this size a hex and a square are
                      the same handful of pixels, and there are thousands of
                      them: 30px hexes went from 25 fps to 45. */
   #board.mid .feat,
@@ -1137,11 +1137,10 @@
 
     const fog = document.createElement('div');
     fog.className = 'fog';
-    // A tile you have actually walked to sits under the ordinary "seen but
-    // not in sight" haze. One you are only being SHOWN, by the reveal
-    // button, sits under a heavier one, so the map you earned still reads
-    // differently from the map you were handed.
-    const o = tl.seen ? 0.45 : 0.68;
+    // A tile you walked to sits under the ordinary "seen but not in sight"
+    // haze. One you are only being SHOWN sits under a heavier one, so the map
+    // you earned still reads differently from the map you were handed.
+    const o = tl.seen ? FOG_SEEN : FOG_SHOWN;
     Object.assign(fog.style, { width: layout.hexW + 'px', height: layout.hexH + 'px',
       left: (p.cx - layout.hexW / 2) + 'px', top: (p.cy - layout.hexH / 2) + 'px', opacity: o });
     fog._o = o;
@@ -1392,68 +1391,68 @@
     }
   }
 
-  // Show the whole map, or only what you have explored.
+  const FOG_SEEN = 0.45;    // explored, just not in sight right now
+  const FOG_SHOWN = 0.68;   // never explored — only shown by the map button
+
+  // Show the whole world, or only the part you have walked.
   let revealAll = false;
+  function shown(c, r) { return tiles[c][r].seen || revealAll; }
 
-  // A tile is drawn if you have explored it, or if you have asked to be shown
-  // the whole map.
-  function wantTile(c, r) { return tiles[c][r].seen || revealAll; }
-
-  // Build the tiles that are ON SCREEN and wanted. Revealing a 200x200 map in
-  // one go means a hundred and forty thousand elements and about eighteen
-  // seconds of frozen page, so tiles are built for the viewport instead of
-  // for the world, a bounded number per frame, filling in over a few frames
-  // rather than locking up for one long one.
+  // Build the tiles that are on screen and should be drawn.
+  //
+  // Revealing a 200x200 map in one go is a hundred and forty thousand
+  // elements and about eighteen seconds of frozen page, so tiles are built
+  // for the VIEWPORT rather than for the world, a bounded number per frame,
+  // filling in over a few frames instead of locking up for one long one.
   const BUILD_BUDGET = 700;
   let buildPending = false;
   function ensureViewport() {
     if (!colWrap.length) return;
     const sc = cellSize / BASE_HEX;
     const halfH = viewportEl.clientHeight / 2 + layout.hexH * sc * 1.2;
-    let budget = BUILD_BUDGET, ranOut = false;
-    for (let c = 0; c < COLS && !ranOut; c++) {
-      if (!colWrap[c]._on) continue;                 // column is off screen
+    let budget = BUILD_BUDGET;
+    for (let c = 0; c < COLS; c++) {
+      if (!colWrap[c]._on) continue;                       // column off screen
       for (let r = 0; r < ROWS; r++) {
-        if (hexEls[c][r] || !wantTile(c, r)) continue;
-        const cy = (layout.positions[c][r].cy + rowM[r] * layout.worldH) * sc;
-        if (Math.abs(cy + panY - layout.boardH / 2) > halfH) continue;
+        if (hexEls[c][r] || !shown(c, r)) continue;
+        const y = (layout.positions[c][r].cy + rowM[r] * layout.worldH) * sc
+                  + panY - layout.boardH / 2;
+        if (Math.abs(y) > halfH) continue;                 // row off screen
         ensureTile(c, r);
-        if (--budget <= 0) { ranOut = true; break; }
+        if (--budget <= 0) {                               // finish next frame
+          if (!buildPending) {
+            buildPending = true;
+            requestAnimationFrame(() => { buildPending = false; ensureViewport(); });
+          }
+          return;
+        }
       }
     }
-    if (ranOut && !buildPending) {
-      buildPending = true;
-      requestAnimationFrame(() => { buildPending = false; ensureViewport(); });
+  }
+
+  // Switching the map back off throws away the tiles you were only shown,
+  // rather than hiding them. Panning around a revealed world builds tiles the
+  // whole way, and keeping them all as hidden elements would let a long look
+  // at the map leave tens of thousands of them behind for the rest of the
+  // game. Rebuilding costs nothing worth measuring — only a viewport of them
+  // is ever built at a time.
+  function dropShownTiles() {
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        if (!hexEls[c][r] || tiles[c][r].seen) continue;
+        for (const el of [hexEls[c][r], sandEls[c][r], fogEls[c][r]]) {
+          if (!el) continue;
+          dropRow(el);
+          el.remove();
+        }
+        hexEls[c][r] = sandEls[c][r] = fogEls[c][r] = resEls[c][r] = null;
+      }
     }
   }
 
   function setRevealAll(on) {
     revealAll = on;
-    if (on) {
-      ensureViewport();
-    } else {
-      // Put back everything you were only being shown. The elements are kept
-      // rather than destroyed — you may well press the button again.
-      for (let c = 0; c < COLS; c++) {
-        for (let r = 0; r < ROWS; r++) {
-          if (tiles[c][r].seen || !hexEls[c][r]) continue;
-          hexEls[c][r].style.display = 'none';
-          if (sandEls[c][r]) sandEls[c][r].style.display = 'none';
-          fogEls[c][r].style.display = 'none';
-        }
-      }
-    }
-    // Anything shown again needs its display cleared.
-    if (on) {
-      for (let c = 0; c < COLS; c++) {
-        for (let r = 0; r < ROWS; r++) {
-          if (!hexEls[c][r] || tiles[c][r].seen) continue;
-          hexEls[c][r].style.display = '';
-          if (sandEls[c][r]) sandEls[c][r].style.display = '';
-          fogEls[c][r].style.display = '';
-        }
-      }
-    }
+    if (on) ensureViewport(); else dropShownTiles();
     drawMinimap();
   }
 
@@ -1480,7 +1479,7 @@
     for (const t of seenList) {
       const el = fogEls[t.c][t.r];
       if (!el) continue;
-      const want = vis.has(t.c + ',' + t.r) ? 0 : 0.45;
+      const want = vis.has(t.c + ',' + t.r) ? 0 : FOG_SEEN;
       if (el._o === want) continue;
       el._o = want;
       if (want === 0) {
@@ -1748,18 +1747,17 @@
       }
     }
   }
-  // How many tiles may be on screen before each step down. What costs the
-  // frame is the NUMBER of tiles being drawn, not how far out you are zoomed:
-  // at 108 tiles full detail held 57 fps and at 144 it fell to 39, on the
-  // same viewport. Counting tiles instead of pixels also means that early in
-  // a game, when you have explored almost nothing, you keep the full artwork
-  // however far out you zoom — there is hardly anything on screen to draw.
+  // How many tiles may be on screen before each step down. What costs a frame
+  // is the NUMBER of tiles being drawn, not how far out the zoom is: on the
+  // same viewport, 108 tiles held 57 fps at full detail and 144 fell to 39.
+  // Counting tiles also means that early in a game, when you have explored
+  // almost nothing, the full artwork survives however far out you zoom —
+  // there is hardly anything on screen to draw.
   let FULL_MAX = 130, MID_MAX = 400, FAR_MAX = 2000;
   function drawnTiles() {
     const sc = cellSize / BASE_HEX;
-    const cols = viewportEl.clientWidth / (layout.hexW * 0.75 * sc);
-    const rows = viewportEl.clientHeight / (layout.hexH * sc);
-    const onScreen = Math.ceil(cols) * Math.ceil(rows);
+    const onScreen = Math.ceil(viewportEl.clientWidth / (layout.hexW * 0.75 * sc))
+                   * Math.ceil(viewportEl.clientHeight / (layout.hexH * sc));
     return revealAll ? onScreen : Math.min(onScreen, seenList.length);
   }
   function applyTransform() {
@@ -1776,7 +1774,7 @@
     boardEl.style.transform =
       `translate(-50%, -50%) translate(${panX}px, ${panY}px) scale(${s}) translateZ(0)`;
     updateWrap();
-    ensureViewport();   // must follow updateWrap, which decides the wrapping
+    ensureViewport();   // after updateWrap, which decides each column's copy
     updateMinimapView();
   }
   let scheduled = false;
@@ -1866,24 +1864,24 @@
   function dist(a, b) { const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY; return Math.hypot(dx, dy); }
 
   // Flick momentum. Dragging a finger's width at a time across a world two
-  // hundred tiles wide is a lot of dragging, so letting go of a moving drag
-  // keeps the map gliding and slowing down, the way a map is expected to.
+  // hundred tiles wide is a great deal of dragging, so letting go of a moving
+  // drag keeps the map gliding and slowing, the way a map is expected to.
   let velX = 0, velY = 0, glideId = 0, lastMoveT = 0;
   function trackVel(dx, dy) {
-    const now = performance.now();
-    const dt = Math.max(8, now - lastMoveT);
+    const now = performance.now(), dt = Math.max(8, now - lastMoveT);
     lastMoveT = now;
-    // Blend with what we had, so one jittery last frame can't set the throw.
+    // Blended over roughly the last 90ms, so one jittery final frame can't
+    // decide the throw on its own.
     const k = Math.min(1, dt / 90);
     velX = velX * (1 - k) + (dx / dt) * 16 * k;
     velY = velY * (1 - k) + (dy / dt) * 16 * k;
   }
-  function stopGlide() { if (glideId) { cancelAnimationFrame(glideId); glideId = 0; } velX = velY = 0; }
+  function stopGlide() { if (glideId) cancelAnimationFrame(glideId); glideId = 0; velX = velY = 0; }
   function startGlide() {
-    if (Math.hypot(velX, velY) < 2.5) { velX = velY = 0; return; }   // not a throw
+    if (Math.hypot(velX, velY) < 6) { velX = velY = 0; return; }   // a drag, not a flick
     const step = () => {
       panX += velX; panY += velY;
-      velX *= 0.94; velY *= 0.94;                                    // friction
+      velX *= 0.94; velY *= 0.94;
       clampPan(); applyTransform();
       glideId = Math.hypot(velX, velY) > 0.4 ? requestAnimationFrame(step) : 0;
     };
@@ -1893,8 +1891,8 @@
   viewportEl.addEventListener('touchstart', (e) => {
     lastTouchAt = Date.now();
     stopGlide();
-    moved = false;
     lastMoveT = performance.now();
+    moved = false;
     if (e.touches.length === 1) {
       lastPan = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       downPt = lastPan; downT = Date.now(); lastPinch = null;
@@ -1914,7 +1912,7 @@
       const d = dist(e.touches[0], e.touches[1]);
       const mid = { x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
                     y: (e.touches[0].clientY + e.touches[1].clientY) / 2 };
-      velX = velY = 0;
+      velX = velY = 0;                       // a pinch never launches a throw
       if (lastPinch) setZoom(cellSize * Math.pow(d / lastPinch, 1.4), mid.x, mid.y);
       lastPinch = d;
     }
@@ -1931,7 +1929,7 @@
       lastPan = null; lastPinch = null;
     } else if (e.touches.length === 1) {
       lastPan = { x: e.touches[0].clientX, y: e.touches[0].clientY }; lastPinch = null;
-      velX = velY = 0;
+      velX = velY = 0;                         // second finger lifted, not a throw
     }
   }, { passive: true });
 
@@ -1939,8 +1937,8 @@
   viewportEl.addEventListener('mousedown', (e) => {
     if (Date.now() - lastTouchAt < 700) return;   // synthesised from a tap
     stopGlide();
-    mDown = true; mMoved = false; mLast = { x: e.clientX, y: e.clientY }; mDownPt = mLast;
     lastMoveT = performance.now();
+    mDown = true; mMoved = false; mLast = { x: e.clientX, y: e.clientY }; mDownPt = mLast;
   });
   window.addEventListener('mousemove', (e) => {
     if (!mDown) return;
@@ -2045,8 +2043,8 @@
     const on = !revealAll;
     e.currentTarget.classList.toggle('on', on);
     setRevealAll(on);
-    showNotice(on ? 'Whole map shown. Tap again to go back to what you have explored.'
-                  : 'Back to your own map — anything you have not walked to is hidden again.');
+    showNotice(on ? 'Whole map shown. Tap again for just what you have explored.'
+                  : 'Back to your own map — anywhere you have not walked is hidden.');
   });
   document.getElementById('examineBtn').addEventListener('click', examineResource);
   document.getElementById('foundCity').addEventListener('click', () => {
@@ -2072,9 +2070,7 @@
       if (revealAll) {
         list = [];
         for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++) list.push({ c, r });
-      } else {
-        list = seenList;
-      }
+      } else list = seenList;
     }
     for (const t of list) {
       const p = layout.positions[t.c][t.r];
@@ -2148,7 +2144,7 @@
     computeZoomBounds();
     // Open on something that reads as a map. A fixed size, not a multiple of
     // the zoom-out limit: on a world this wide that limit is only a few pixels
-    // a hex, and scaling off it would start the game almost fully zoomed out.
+    // a hex, so scaling off it would start the game almost fully zoomed out.
     cellSize = Math.max(minCell, Math.min(maxCell, BASE_HEX * 0.48));
     generateMap();
     buildTextures();
@@ -2250,6 +2246,9 @@
   window.__tile = (c, r) => { const t = tiles[c][r];
     return { terrain: t.terrain.name, water: !!t.water, river: !!t.river, res: t.res, shore: t.shore }; };
   window.__hexAt = (x, y) => hexAtClient(x, y);
+  window.__revealed = () => revealAll;
+  window.__tileState = (c, r) => ({ seen: !!tiles[c][r].seen, built: !!hexEls[c][r],
+    fog: fogEls[c][r] ? fogEls[c][r]._o : null });
   window.__hexDist = hexDist;
   window.__dims = { COLS, ROWS };
 
