@@ -2629,6 +2629,7 @@ const MP = {
     } else {
       // the original game already ends a term when the border is fully ablaze
       state.borderTension=100;
+      MP.closePanels();
       if(typeof addLog==='function') addLog('<b>מלחמה:</b> 💥 הפסדת במלחמה מול '+m.winnerName+' — מדינתך נכבשה');
       MP.toast('💥 הפסדת במלחמה מול '+m.winnerName,'bad');
     }
@@ -2649,8 +2650,16 @@ const MP = {
     if(typeof addLog==='function') addLog('<b>העולם:</b> ⚔️ '+m.winnerName+' ניצח/ה במלחמה מול '+m.loserName);
     MP.toast('⚔️ '+m.winnerCountry+' ניצחה במלחמה מול '+m.loserCountry);
   },
+  // when a run ends, nothing should sit on top of the end-of-term screen
+  closePanels(){
+    ['mpAsk','mpUN','mpSetupOverlay'].forEach(id=>{
+      const el=MP.$(id); if(el) el.classList.remove('open');
+    });
+    const bar=MP.$('mpNukeBar'); if(bar) bar.classList.remove('open');
+  },
   onEliminated(){
     MP.unlockTurn();
+    MP.closePanels();
     MP.toast('המשחק שלך נגמר','bad');
   },
 
@@ -2858,6 +2867,7 @@ const MP = {
       const iAmVictim = state.country.name===m.targetCountry;
       if(iAmVictim){
         state.borderTension=100;   // an end-of-term condition the game already has
+        MP.closePanels();
         if(typeof addLog==='function') addLog('<b>או"ם:</b> ☢️ '+m.byName+' שיגר/ה תקיפה גרעינית על מדינתך');
         MP.toast('☢️ מדינתך הותקפה בנשק גרעיני','bad');
       } else if(iAmLauncher){
