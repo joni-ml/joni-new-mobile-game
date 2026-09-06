@@ -95,7 +95,7 @@
   .espionage-info{ font-size:10.5px; color:var(--gold); background:rgba(184,147,75,0.08); border:1px solid var(--line); border-radius:5px; padding:5px 7px; margin-top:8px; }
 
 
-  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
+  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px;}
   .metric{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 10px;}
   .metric .label{font-size:12px;color:var(--muted);margin-bottom:6px;}
   .metric .value{font-family:'Frank Ruhl Libre',serif;font-size:19px;margin-bottom:8px;}
@@ -650,6 +650,19 @@ function freshState(country){
     espionage: {}, // countryName -> {treasury, debtToGdp, trend, revealedTurn}
     spyCooldowns: {}, // countryName -> turn number when spying becomes available again
     rival: { name: rivalNamePool[Math.floor(seededRand(seedFromName(country.name)^42)*rivalNamePool.length)], threat: 20 },
+    // New features
+    tourism: 50,
+    tourismIncome: 0,
+    diseaseRisk: { level: 0, type: null },
+    countryPersonality: { type: ['יציב','אגרסיבי','דיפלומטי','כלכלי'][Math.floor(Math.random()*4)], traits: [] },
+    allies: [],
+    peaceAgreements: {},
+    moleActive: false,
+    moleDiscovered: false,
+    mediaAppearances: [],
+    mediaApprovalBoost: 0,
+    bombInventory: { conventional: Math.floor(Math.random()*5), chemical: 0, nuclear: 0 },
+    siegeCapability: 0,
   };
 }
 
@@ -1137,7 +1150,179 @@ const eventPool = [
         effect: s => { s.approval -= 6; s.stability -= 3; } },
     ]
   },
+  /* ========== TOURISM INCOME ========== */
+  {
+    id:"tourism_boom",
+    title:"תיירות בעלייה - הכנסות משפחות גדלות",
+    desc: s => `רף תיירי גבוה השנה. המדיניות ההזמנה תרומה של פעילות תרבותית ותיירות הולכת ועולה.`,
+    weight: s => s.budget.infra > 20 ? 2 : 1,
+    choices: [
+      { title:"השקעה בתשתיות תיירותיות", desc:"מעלה הכנסות מתיירות מיידי, דורש השקעה ראשונית.",
+        tags:["spending"], impact:{approval:1,stability:0,treasury:1,tension:0},
+        effect: s => { s.treasury -= 400; s.tourism += 15; s.tourismIncome += Math.floor(s.tourism*2); } },
+      { title:"לעודד התיירות בשיטות קלות", desc:"הכנסה מתונה, תוך כדי הפחתת עלות.",
+        tags:[], impact:{approval:0,stability:0,treasury:0,tension:0},
+        effect: s => { s.tourism += 5; s.tourismIncome += Math.floor(s.tourism*0.8); } },
+    ]
+  },
+  {
+    id:"disease_outbreak",
+    title:"התפרצות מחלה חדשה בתחום הציבור",
+    desc: s => {
+      const diseases = ["שפעת קשה","חום כדורי","וירוס קשה"];
+      const disease = diseases[Math.floor(Math.random()*diseases.length)];
+      return `בדיקות מה מצביעות על התפרצות ${disease}. משרד הבריאות דורש תגובה מיידית.`;
+    },
+    weight: s => 1.5,
+    choices: [
+      { title:"תעניקת חיסון למסתו", desc:"מעלה הוצאות בריאות, אך עוצרת את התפשטות המחלה.",
+        tags:["spending"], impact:{approval:2,stability:1,treasury:-1,tension:0},
+        effect: s => { s.treasury -= 800; s.diseaseRisk.level = 0; s.approval += 5; } },
+      { title:"הנחיות בריאות בלבד", desc:"פחות עלות, פחות יעיל.",
+        tags:[], impact:{approval:0,stability:-1,treasury:0,tension:0},
+        effect: s => { s.treasury -= 200; s.diseaseRisk.level = Math.max(0, s.diseaseRisk.level-1); s.approval -= 2; } },
+      { title:"להתעלם ולייחס זאת לתעיתות",
+        tags:["manipulation"], impact:{approval:-1,stability:-1,treasury:0,tension:0},
+        effect: s => { s.diseaseRisk.level = 3; s.stability -= 8; s.approval -= 6; } },
+    ]
+  },
+  /* ========== COUNTRY PERSONALITY ========== */
+  {
+    id:"personality_reveal",
+    title:"אופי משדדי - השפעה על היכולות שלך",
+    desc: s => `אופי האומה שלך משפיע על יכולותיך בתחומים מסוימים. הכרה עמוקה של זהותך תשפר את ביצועיך.`,
+    weight: s => s.turn === 2 ? 1 : 0,
+    choices: [
+      { title:"קבל את אופיך יציב - חוזק בכלכלה",
+        tags:["economics"], impact:{approval:1,stability:1,treasury:1,tension:0},
+        effect: s => { s.skills.economics += 1; s.approval += 3; s.countryPersonality.traits.push("יציב כלכלי"); } },
+      { title:"קבל את אופיך אגרסיבי - חוזק בצבא",
+        tags:["military"], impact:{approval:0,stability:0,treasury:0,tension:0},
+        effect: s => { s.militaryReadiness += 10; s.countryPersonality.traits.push("אגרסיבי צבאי"); } },
+      { title:"קבל את אופיך דיפלומטי - חוזק בשיחות",
+        tags:["diplomacy_soft"], impact:{approval:1,stability:1,treasury:0,tension:-1},
+        effect: s => { s.skills.diplomacy += 1; s.relations[s.neighborName] = (s.relations[s.neighborName]||0) + 20; } },
+    ]
+  },
+  /* ========== ALLIES & PEACE ========== */
+  {
+    id:"alliance_request",
+    title:"בקשה לברית צבאית",
+    desc: s => {
+      const otherCountries = COUNTRIES.filter(c => c.name !== s.country.name);
+      const ally = otherCountries[Math.floor(Math.random()*otherCountries.length)];
+      return `${ally.name} מציעה ברית צבאית עם מדינתך לקבלת הגנה הדדית.`;
+    },
+    weight: s => s.relations[s.neighborName] > 20 ? 2 : 0.5,
+    choices: [
+      { title:"קבל את הברית", desc:"משפר יחסים, מחזק הגנה משותפת.",
+        tags:["diplomacy_soft"], impact:{approval:1,stability:1,treasury:0,tension:-1},
+        effect: s => { s.allies.push(s.neighborName); s.relations[s.neighborName] = 100; s.militaryReadiness += 5; } },
+      { title:"דחה בנימוס", desc:"לא פוגע, אך לא משפר קשרים.",
+        tags:[], impact:{approval:0,stability:0,treasury:0,tension:0},
+        effect: s => { s.relations[s.neighborName] = clamp((s.relations[s.neighborName]||0)-10, -100, 100); } },
+    ]
+  },
+  {
+    id:"peace_treaty",
+    title:"הסכם שלום עם אויב",
+    desc: s => {
+      const otherCountries = COUNTRIES.filter(c => c.name !== s.country.name);
+      const enemy = otherCountries[Math.floor(Math.random()*otherCountries.length)];
+      return `${enemy.name} מציעה הסכם שלום וסחר להנמכת מתיחויות.`;
+    },
+    weight: s => s.borderTension > 50 ? 2 : 0,
+    choices: [
+      { title:"חתום על הסכם", desc:"מורידה מתיחות משמעותית, משפרת יחסים.",
+        tags:["diplomacy_soft"], impact:{approval:1,stability:1,treasury:0,tension:-2},
+        effect: s => { s.borderTension -= 25; s.relations[s.neighborName] = 50; s.peaceAgreements[s.neighborName] = true; } },
+      { title:"הם לא מעניינים אותך", desc:"ממשיכה מתיחות.",
+        tags:[], impact:{approval:0,stability:0,treasury:0,tension:0},
+        effect: s => { s.borderTension += 5; } },
+    ]
+  },
+  /* ========== MOLE (HIDDEN SPY) ========== */
+  {
+    id:"mole_discovered",
+    title:"חשיפת מרגל חדור עמוק במשרדך",
+    desc: s => `מודיעין חשף מרגל עמוק במוקדי הממשלה! האם זה היה אימון או חתרנות?`,
+    weight: s => Math.random() < 0.05 ? 1 : 0,
+    choices: [
+      { title:"גרש מיד - הגדל את הבטחון", desc:"מעלה אמון בביטחון ממלכתי.",
+        tags:["authoritarian"], impact:{approval:1,stability:1,treasury:0,tension:0},
+        effect: s => { s.moleDiscovered = true; s.skills.intelligence += 1; s.approval += 6; } },
+      { title:"השתמש בו כמקור מידע כפול", desc:"סיכום גבוה אך רווח מודיעיני משמעותי.",
+        tags:["intelligence"], impact:{approval:0,stability:-1,treasury:1,tension:0},
+        effect: s => { s.moleActive = true; s.moleDiscovered = true; s.xp += 5; } },
+    ]
+  },
+  /* ========== NEWS INTERVIEWS ========== */
+  {
+    id:"media_interview",
+    title:"הזמנה לראיון טלוויזיוני",
+    desc: s => "ערוץ טלוויזיוני בכיר מזמין אותך לראיון לשיחה על ניסיון הכהונה שלך.",
+    weight: s => 1,
+    choices: [
+      { title:"קבל תנאי חזקים", desc:"דורש כריזמה, עלול להגביר אישור משמעותית.",
+        tags:["rhetoric"], impact:{approval:2,stability:0,treasury:0,tension:0},
+        effect: s => { const bonus = s.skills.rhetoric*2; s.approval += 8+bonus; s.mediaAppearances.push('חזק'); s.mediaApprovalBoost += 5; } },
+      { title:"תן ראיון מאוזן", desc:"ראיון בטוח, רווח מתון בעזרת משאבים כלא.",
+        tags:[], impact:{approval:1,stability:0,treasury:0,tension:0},
+        effect: s => { s.approval += 3; s.mediaAppearances.push('מאוזן'); } },
+      { title:"התעלם מההזמנה", desc:"שומר זמן, אך לא מנצל הזדמנות.",
+        tags:[], impact:{approval:0,stability:0,treasury:0,tension:0},
+        effect: s => { } },
+    ]
+  },
+  /* ========== BOMB SIEGE MECHANICS ========== */
+  {
+    id:"bomb_siege",
+    title:"מתקפת צפצפים - טקטיקה חדשה בשדה הקרב",
+    desc: s => `היריב משתמש בטקטיקת צפצפים לחומר אזורי. צריך להחליט בין גנה פעילה לפינוי יזום.`,
+    weight: s => s.borderTension > 60 ? 2 : 0,
+    choices: [
+      { title:"הקם הגנה אווירית - מחירון משאבים",
+        tags:["military","spending"], impact:{approval:0,stability:1,treasury:-2,tension:0},
+        effect: s => { s.treasury -= 1200; s.stability += 3; s.militaryReadiness -= 10; s.approval -= 2; } },
+      { title:"פנה את התושבים - בעלות חברתית",
+        tags:["spending"], impact:{approval:-2,stability:-1,treasury:0,tension:0},
+        effect: s => { s.approval -= 8; s.stability -= 5; } },
+      { title:"הגנה קונבנציונלית מלאה", desc:"השתמש בחימוש",
+        tags:["military","force"], impact:{approval:1,stability:1,treasury:-1,tension:1},
+        effect: s => { s.treasury -= 800; s.bombInventory.conventional = Math.max(0, s.bombInventory.conventional-1); s.militaryReadiness += 5; } },
+    ]
+  },
+  /* ========== NUCLEAR & CHEMICAL WEAPONS ========== */
+  {
+    id:"chemical_weapons_threat",
+    title:"זיהום כימי בגבול",
+    desc: s => `בדיקות זיהו זיהום כימי בגבול שלך. אויב טוען זה תאונה, אך כשמועה עולה מתח.`,
+    weight: s => Math.random() < 0.3 ? 1 : 0,
+    choices: [
+      { title:"הגש תביעה בחוקי בינלאומיים",
+        tags:["diplomacy_soft"], impact:{approval:1,stability:1,treasury:0,tension:-1},
+        effect: s => { s.approval += 4; const chance = 0.6 + s.skills.diplomacy*0.08; if(Math.random()<chance){ s.borderTension -= 20; } else { s.borderTension += 10; }} },
+      { title:"הטל מתקפת נגד כימית", desc:"מסוכן וממוזמן אך מדהים.",
+        tags:["military","force"], impact:{approval:0,stability:-1,treasury:-1,tension:2},
+        effect: s => { s.treasury -= 1500; s.bombInventory.chemical = Math.max(0, s.bombInventory.chemical-1); s.borderTension += 30; s.approval -= 6; } },
+    ]
+  },
 ];
+
+/* ========== WORLD MAP & TOURISM GENERATION ========== */
+function generateTourismIncome(state){
+  const baseTourism = 50 + state.tourism;
+  const stabilityFactor = state.stability / 100;
+  const infrastructureFactor = state.budget.infra / 50;
+  return Math.floor(baseTourism * stabilityFactor * infrastructureFactor);
+}
+
+function updateTourismMetrics(){
+  if(state && state.tourismIncome) {
+    state.treasury += state.tourismIncome;
+    state.tourismIncome = generateTourismIncome(state);
+  }
+}
 
 /* ---------- YEARLY CYCLE: BUDGET & ELECTIONS ---------- */
 const budgetEvent = {
@@ -1832,7 +2017,11 @@ function render(){
     metricBlock("אישור ציבורי", state.approval.toFixed(0)+"%", state.approval, state.approval<30?'var(--bad)':'var(--good)') +
     metricBlock("יציבות", state.stability.toFixed(0)+"%", state.stability, state.stability<30?'var(--bad)':'var(--good)') +
     metricBlock("קופת המדינה", state.treasury.toFixed(0)+" מיל' ₪", clamp((state.treasury+5000)/150,0,100), state.treasury<0?'var(--bad)':'var(--warn)') +
-    metricBlock("מתיחות גבולות", state.borderTension.toFixed(0)+"%", state.borderTension, state.borderTension>60?'var(--bad)':'var(--warn)');
+    metricBlock("מתיחות גבולות", state.borderTension.toFixed(0)+"%", state.borderTension, state.borderTension>60?'var(--bad)':'var(--warn)') +
+    metricBlock("📍 תיירות", state.tourism.toFixed(0), clamp(state.tourism/100,0,100), 'var(--gold)') +
+    metricBlock("🦠 סיכון מחלה", state.diseaseRisk.level, state.diseaseRisk.level*25, state.diseaseRisk.level>2?'var(--bad)':'var(--warn)') +
+    metricBlock("🤝 בעלי ברית", state.allies.length, Math.min(state.allies.length*20,100), 'var(--good)') +
+    metricBlock("💣 מלאי צפצפים", state.bombInventory.conventional + state.bombInventory.chemical + state.bombInventory.nuclear, clamp((state.bombInventory.conventional + state.bombInventory.chemical*2 + state.bombInventory.nuclear*3)/10,0,100), state.bombInventory.nuclear>0?'var(--bad)':'var(--warn)');
 
   document.getElementById('narrative').textContent = state.narrative;
 
@@ -1904,6 +2093,42 @@ function render(){
   }).join('');
 
   document.getElementById('log').innerHTML = state.log.map(l => `<div>${l}</div>`).join('') || '<div>אין עדיין אירועים ביומן.</div>';
+
+  // New features display
+  const advancedStatsHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+      <div style="background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;">
+        <div style="color:var(--gold);font-weight:600;margin-bottom:6px;">🌍 אופי ארץ</div>
+        <div style="color:var(--text);">${state.countryPersonality.type}${state.countryPersonality.traits.length ? ' · ' + state.countryPersonality.traits.slice(0,2).join(', ') : ''}</div>
+      </div>
+      <div style="background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;">
+        <div style="color:var(--gold);font-weight:600;margin-bottom:6px;">🤝 בעלי ברית</div>
+        <div style="color:var(--text);">${state.allies.length > 0 ? state.allies.join(', ') : 'אין עדיין'}</div>
+      </div>
+      <div style="background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;">
+        <div style="color:var(--gold);font-weight:600;margin-bottom:6px;">💣 ארסנל</div>
+        <div style="color:var(--text);">קונבנציוני: ${state.bombInventory.conventional} | כימי: ${state.bombInventory.chemical} | גרעיני: ${state.bombInventory.nuclear}</div>
+      </div>
+      <div style="background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;">
+        <div style="color:var(--gold);font-weight:600;margin-bottom:6px;">📺 הופעות מדיה</div>
+        <div style="color:var(--text);">${state.mediaAppearances.length > 0 ? state.mediaAppearances.join(', ') : 'אף אחת עדיין'}</div>
+      </div>
+      ${state.moleDiscovered ? `<div style="background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;grid-column:1/-1;">
+        <div style="color:${state.moleActive ? 'var(--warn)' : 'var(--good)'};font-weight:600;margin-bottom:6px;">🕵️ מרגל</div>
+        <div style="color:var(--text);">${state.moleActive ? 'פעיל - מספק מודיעין' : 'החוסל'}</div>
+      </div>` : ''}
+    </div>
+  `;
+
+  const skillsContainer = document.getElementById('skillsList').parentElement;
+  if(skillsContainer && !document.getElementById('advancedStats')){
+    const statsDiv = document.createElement('div');
+    statsDiv.id = 'advancedStats';
+    statsDiv.innerHTML = advancedStatsHTML;
+    skillsContainer.appendChild(statsDiv);
+  } else if(document.getElementById('advancedStats')){
+    document.getElementById('advancedStats').innerHTML = advancedStatsHTML;
+  }
 }
 
 function tagLabel(t){
@@ -1946,6 +2171,20 @@ function makeChoice(i){
   }
 
   applyMinisterReactions(choice);
+
+  // New feature: Tourism income
+  const tourismIncome = generateTourismIncome(state);
+  state.treasury += tourismIncome;
+  if(tourismIncome > 0) addLog(`💰 <b>תיירות:</b> +${tourismIncome} מיל' ₪`);
+
+  // New feature: Disease progression and healing
+  if(state.diseaseRisk.level > 0){
+    if(state.budget.health >= 25) state.diseaseRisk.level = Math.max(0, state.diseaseRisk.level - 1);
+    else {
+      state.diseaseRisk.level += 0.3;
+      if(state.diseaseRisk.level > 3) { state.stability -= 5; state.approval -= 4; }
+    }
+  }
 
   // budget policy has ongoing quarterly consequences, not just the one-time effect
   const b = state.budget;
