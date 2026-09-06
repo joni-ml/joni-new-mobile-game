@@ -74,9 +74,17 @@
                      the same handful of pixels, and there are thousands of
                      them: 30px hexes went from 25 fps to 45. */
   #board.mid .feat,
+  #board.mid .bank,
   #board.mid .reslabel,
-  #board.mid .bank2 { display: none !important; }
-  #board.far .bank1 { display: none !important; }
+  /* Sand over the whole tile, fading step by step inland. */
+  .bank { position: absolute; inset: 0; background: #efd9a4; pointer-events: none; }
+  .bank1 { opacity: 0.80; }
+  .bank2 { opacity: 0.44; }
+  .bank3 { opacity: 0.17; }
+  /* The bank is tile art like the trees and the peaks, and it costs what
+     they cost — a child clipped against the hex polygon. It goes at the same
+     step they do: 55px hexes fell from 58 to 27 fps with it drawn there. */
+  #board.mid .bank { display: none !important; }
   #board.far .hex { background-image: none !important; }
   #board.tiny .hex { clip-path: none; }
   #board.tiny .res { display: none !important; }
@@ -129,8 +137,7 @@
   #board.heights .feat,
   #board.heights .res,
   #board.heights .reslabel,
-  #board.heights .bank1,
-  #board.heights .bank2 { display: none !important; }
+  #board.heights .bank { display: none !important; }
   #board.heights .hex.elev0 { background-color: #1c5cab !important; }
   #board.heights .hex.elev1 { background-color: #3987e5 !important; }
   #board.heights .hex.elev2 { background-color: #6da7ec !important; }
@@ -790,14 +797,14 @@
   // How far each land tile is from the nearest water — sea or river — up to
   // two steps. The bank fades out over that distance instead of stopping dead
   // at a one-tile ring of sand.
-  const SHORE_REACH = 2;
+  const SHORE_REACH = 3;
   function markShores() {
     let front = [];
     for (let c = 0; c < COLS; c++) {
       for (let r = 0; r < ROWS; r++) {
         const tl = tiles[c][r];
         tl.shore = 0;
-        if (tl.water || tl.river) front.push({ c, r });
+        if (tl.water && !tl.lake) front.push({ c, r });   // the open sea
       }
     }
     for (let d = 1; d <= SHORE_REACH; d++) {
@@ -811,6 +818,15 @@
         }
       }
       front = next;
+    }
+    // A riverbank or a lake shore gets one narrow band of its own, and only
+    // where the sea has not already claimed the ground.
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        const tl = tiles[c][r];
+        if (tl.water || tl.river || tl.shore) continue;
+        if (neighbors(c, r).some(n => tiles[n.c][n.r].river || tiles[n.c][n.r].lake)) tl.shore = 2;
+      }
     }
   }
 
@@ -1281,25 +1297,6 @@
     if (hexEls[c][r]) return;
     const tl = tiles[c][r], p = layout.positions[c][r];
 
-    // Sand along every water's edge, sea and river alike, thinning with each
-    // step inland instead of stopping dead after one tile: a solid bank right
-    // at the water, a pale suggestion of one behind it, then nothing.
-    if (tl.shore) {
-      const grow = tl.shore === 1 ? 1.17 : 1.07;
-      const sw = layout.hexW * grow, sh = layout.hexH * grow;
-      const sand = document.createElement('div');
-      sand.className = 'hex bank' + tl.shore;
-      Object.assign(sand.style, {
-        width: sw + 'px', height: sh + 'px',
-        left: (p.cx - sw / 2) + 'px', top: (p.cy - sh / 2) + 'px',
-        background: '#efd9a4',
-        opacity: tl.shore === 1 ? 1 : 0.45,
-      });
-      colWrap[c].appendChild(sand);
-      sandEls[c][r] = sand;
-      setRow(sand, r);
-    }
-
     const hex = document.createElement('div');
     hex.className = 'hex elev' + elevBand(tl.elev);
     hex.style.width = tileW_ + 'px';
@@ -1309,6 +1306,15 @@
     hex.style.backgroundColor = tl.terrain.col;
     hex.style.backgroundImage = 'url(' + tl.terrain.tex[tl.variant] + ')';
     hex.style.backgroundSize = '100% 100%';
+    // The bank is a wash of sand over the WHOLE tile, strongest against the
+    // water and thinning inland until the ground is itself again. Drawn as a
+    // larger hex behind the tile it only ever showed as a yellow rim, which
+    // read as an outline round the water rather than as a beach.
+    if (tl.shore) {
+      const wash = document.createElement('div');
+      wash.className = 'bank bank' + tl.shore;
+      hex.appendChild(wash);
+    }
     addFeature(hex, tl);
     if (tl.res) resEls[c][r] = addResource(hex, tl.res, tileW_, tileH_);
     colWrap[c].appendChild(hex);
