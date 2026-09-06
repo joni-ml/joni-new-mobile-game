@@ -1783,6 +1783,7 @@
   function setRevealAll(on) {
     revealAll = on;
     if (on) ensureViewport(); else dropShownTiles();
+    revealRivalCities();   // showing the whole map shows who is on it
     drawMinimap();
   }
 
@@ -1827,6 +1828,7 @@
       }
     }
     drawMinimap(fresh);
+    revealRivalCities();
   }
 
   // ---- CITIES ----
@@ -1907,13 +1909,73 @@
       ],
     },
   ];
-  let nation = NATIONS[0];
-  const mod = k => (nation.mods && nation.mods[k]) || 0;
+  // Every nation in the save. You are players[0]; the rest are rivals, each
+  // drawn a DIFFERENT nation and keeping it, and its traits, for the whole
+  // game. A trait belongs to the nation holding it, so Egypt's rivers feed
+  // Egypt whether Egypt is you or a bot.
+  let players = [];
+  let nation = NATIONS[0];          // shorthand for your own, used everywhere
+  const mod = (k, pl) => {
+    const n = (pl || players[0] || { nation }).nation || nation;
+    return (n.mods && n.mods[k]) || 0;
+  };
 
-  function pickNation() {
-    nation = NATIONS[(Math.random() * NATIONS.length) | 0];
+  // Rival marker colours, in the fixed order of a validated categorical
+  // palette — assigned by seat and never cycled, so a nation keeps its colour
+  // for the whole save. Yours stays the gold one it has always been.
+  const RIVAL_COLOURS = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#9085e9'];
+
+  function setupPlayers() {
+    const pool = NATIONS.slice();
+    for (let i = pool.length - 1; i > 0; i--) {          // shuffle
+      const j = (Math.random() * (i + 1)) | 0;
+      const t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+    }
+    // More of the world, more nations in it — but never more than the palette
+    // has distinct colours for.
+    const rivals = Math.max(3, Math.min(6, Math.round(AREA_SCALE / 3)));
+    players = [];
+    for (let i = 0; i <= rivals; i++) {
+      players.push({
+        nation: pool[i % pool.length], human: i === 0,
+        colour: i === 0 ? '#e6c169' : RIVAL_COLOURS[(i - 1) % RIVAL_COLOURS.length],
+        gold: 15, food: 4, happy: 5, cities: [], home: null,
+      });
+    }
+    nation = players[0].nation;
     document.getElementById('civName').textContent = nation.name;
     document.querySelector('#civ .emblem').textContent = nation.emblem;
+    placeRivals();
+  }
+
+  // Each rival gets a homeland of its own, as far from you and from each
+  // other as the land allows.
+  function placeRivals() {
+    const land = [];
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        const tl = tiles[c][r];
+        if (tl.water || tl.river || tl.feature === 'mtn') continue;
+        land.push({ c, r });
+      }
+    }
+    if (!land.length) return;
+    const taken = [{ c: startHex.c, r: startHex.r }];
+    // Sample rather than sweep: on a big map the land runs to tens of
+    // thousands of tiles and every seat would cost a full pass over all of it.
+    const sample = [];
+    for (let i = 0; i < 900; i++) sample.push(land[(Math.random() * land.length) | 0]);
+    for (const pl of players) {
+      if (pl.human) { pl.home = { c: startHex.c, r: startHex.r }; continue; }
+      let best = sample[0], bestD = -1;
+      for (const cand of sample) {
+        let d = Infinity;
+        for (const t of taken) d = Math.min(d, hexDist(t.c, t.r, cand.c, cand.r));
+        if (d > bestD) { bestD = d; best = cand; }
+      }
+      pl.home = best;
+      taken.push(best);
+    }
   }
 
   const CITY_NAMES = ['Paris', 'Orleans', 'Lyon', 'Tours', 'Reims', 'Marseille', 'Rouen', 'Nantes'];
@@ -1929,21 +1991,8 @@
     const names = nation.cities;
     const city = { c: u.c, r: u.r, name: names[cities.length % names.length] };
     cities.push(city);
-    // The city claims the land nearest it. A COUNT of tiles rather than a
-    // radius, because hex distance is a whole number and a thirty percent
-    // wider radius would have rounded straight back to the same ring.
-    const claim = [];
-    for (let c = 0; c < COLS; c++) {
-      for (let r = 0; r < ROWS; r++) {
-        if (tiles[c][r].water) continue;
-        const d = hexDist(city.c, city.r, c, r);
-        if (d <= 3) claim.push({ c, r, d });
-      }
-    }
-    claim.sort((a, b) => a.d - b.d);
-    const want = Math.round(7 * (1 + mod('borders')));   // 7 is the ring of one
-    for (const t of claim.slice(0, want)) tiles[t.c][t.r].owned = true;
-    drawCity(city);
+    claimFor(city, players[0]);
+    drawCity(city, players[0]);
     u.el.remove();
     units.splice(units.indexOf(u), 1);
     sel = Math.max(0, Math.min(sel, units.length - 1));
@@ -1956,14 +2005,98 @@
     showNotice('🏠 ' + city.name + ' built! +2 gold, +1 science per turn.');
   }
 
-  function drawCity(city) {
+  // A rival founds a city every few turns, spreading out from its homeland.
+  function rivalTurn(pl) {
+    if (pl.cities.length < 5 && (state.turn % 4 === 1 || !pl.cities.length)) {
+      const spots = [];
+      for (let dc = -6; dc <= 6; dc++) {
+        const c = ((pl.home.c + dc) % COLS + COLS) % COLS;
+        for (let dr = -6; dr <= 6; dr++) {
+          const r = ((pl.home.r + dr) % ROWS + ROWS) % ROWS;
+          const tl = tiles[c][r];
+          if (tl.water || tl.river || tl.feature === 'mtn' || tl.owner) continue;
+          if (hexDist(pl.home.c, pl.home.r, c, r) > 6) continue;
+          let clear = true;
+          for (const q of allCities()) if (hexDist(q.c, q.r, c, r) < 3) { clear = false; break; }
+          if (clear) spots.push({ c, r, d: hexDist(pl.home.c, pl.home.r, c, r) });
+        }
+      }
+      if (spots.length) {
+        spots.sort((a, b) => a.d - b.d);
+        const pick = spots[(Math.random() * Math.min(4, spots.length)) | 0];
+        const names = pl.nation.cities;
+        const city = { c: pick.c, r: pick.r, name: names[pl.cities.length % names.length], pl };
+        pl.cities.push(city);
+        claimFor(city, pl);
+        drawCity(city, pl);
+      }
+    }
+    runEconomy(pl);
+  }
+
+  function allCities() {
+    const out = cities.slice();
+    for (const pl of players) if (!pl.human) out.push(...pl.cities);
+    return out;
+  }
+
+  // A rival's city only appears once you have been there to see it. Cities
+  // draw above the fog, so without this a bot's capital would show through
+  // ground you have never walked.
+  function revealRivalCities() {
+    for (const pl of players) {
+      if (pl.human) continue;
+      for (const ct of pl.cities) {
+        if (!ct.el) continue;
+        const known = tiles[ct.c][ct.r].seen || revealAll;
+        const want = known ? '' : 'none';
+        if (ct.el.style.display !== want) {
+          ct.el.style.display = want;
+          if (ct.lab) ct.lab.style.display = want;
+        }
+      }
+    }
+  }
+
+  // A city claims the land nearest it. A COUNT of tiles rather than a radius,
+  // because hex distance is a whole number and a thirty percent wider radius
+  // would have rounded straight back to the same ring.
+  function claimFor(city, pl) {
+    const claim = [];
+    for (let dc = -4; dc <= 4; dc++) {
+      const c = ((city.c + dc) % COLS + COLS) % COLS;
+      for (let dr = -4; dr <= 4; dr++) {
+        const r = ((city.r + dr) % ROWS + ROWS) % ROWS;
+        if (tiles[c][r].water || tiles[c][r].owner) continue;
+        const d = hexDist(city.c, city.r, c, r);
+        if (d <= 3) claim.push({ c, r, d });
+      }
+    }
+    claim.sort((a, b) => a.d - b.d);
+    const want = Math.round(7 * (1 + mod('borders', pl)));   // 7 is the ring of one
+    for (const t of claim.slice(0, want)) {
+      tiles[t.c][t.r].owner = pl;
+      if (pl.human) tiles[t.c][t.r].owned = true;
+    }
+  }
+
+  function drawCity(city, pl) {
     const p = layout.positions[city.c][city.r];
     const s = layout.hexW * 0.46;
     const m = document.createElement('div');
     m.className = 'city';
     Object.assign(m.style, { width: s + 'px', height: s + 'px',
       left: (p.cx - s / 2) + 'px', top: (p.cy - s / 2) + 'px', fontSize: (s * 0.55) + 'px' });
-    m.textContent = '🏠';
+    if (pl && !pl.human) {
+      // A rival's own colour, held for the whole save.
+      m.style.background = pl.colour;
+      m.style.borderColor = 'rgba(255,255,255,0.85)';
+      m.textContent = pl.nation.emblem;
+      m.style.display = 'none';        // until you have seen the ground
+    } else {
+      m.textContent = '🏠';
+    }
+    city.el = m;
     colWrap[city.c].appendChild(m);
     setRow(m, city.r);
     const lab = document.createElement('div');
@@ -1972,6 +2105,8 @@
     lab.style.left = p.cx + 'px';
     lab.style.top = (p.cy + layout.hexH * 0.34) + 'px';
     lab.style.fontSize = (layout.hexW * 0.16) + 'px';
+    if (pl && !pl.human) { lab.style.color = pl.colour; lab.style.display = 'none'; }
+    city.lab = lab;
     colWrap[city.c].appendChild(lab);
     setRow(lab, city.r);
   }
@@ -2269,6 +2404,15 @@
       ctx.fill();
     };
     for (const ct of cities) dot(ct.c, ct.r, '#ffd76a', Math.max(3, w * 0.5));
+    // Rivals you have found, each in its own colour. Without this the whole
+    // world was empty at far zoom, which is exactly where you look for them.
+    for (const pl of players) {
+      if (pl.human) continue;
+      for (const ct of pl.cities) {
+        if (!tiles[ct.c][ct.r].seen && !revealAll) continue;
+        dot(ct.c, ct.r, pl.colour, Math.max(3, w * 0.5));
+      }
+    }
     for (const u of units) dot(u.c, u.r, '#5aa9ff', Math.max(3, w * 0.42));
   }
 
@@ -2504,8 +2648,24 @@
     state.year -= 5;      // five years pass every turn
     // Only resources you have identified are worth anything — an unknown
     // thing sitting in your borders earns you nothing until you study it.
+    runEconomy(players[0]);
+    for (const pl of players) if (!pl.human) rivalTurn(pl);
+    revealRivalCities();
+    for (const u of units) u.moves = u.max;
+    if (unitSelected) computeReachable();
+    renderMoves();
+    updateUnitBar();
+    renderStats();
+    showNotice('Turn ' + state.turn + ' — all units refreshed.');
+  });
+
+  // The same books for everyone, kept per nation and read through that
+  // nation's own traits — so a bot Egypt eats better than a bot England for
+  // exactly the reason you would.
+  function runEconomy(pl) {
+    const own = pl.human ? cities : pl.cities;
     let resGold = 0, resFood = 0;
-    for (const ct of cities) {
+    for (const ct of own) {
       // A city with no water within reach is a dry one, and Egypt pays for
       // that every turn.
       let wet = false;
@@ -2514,43 +2674,42 @@
           if (hexDist(ct.c, ct.r, c, r) <= 2 && (tiles[c][r].water || tiles[c][r].river)) wet = true;
         }
       }
-      const dry = wet ? 1 : 1 + mod('dryCity');
+      const dry = wet ? 1 : 1 + mod('dryCity', pl);
       for (let c = 0; c < COLS; c++) {
         for (let r = 0; r < ROWS; r++) {
           const tl = tiles[c][r];
-          if (!tl.res || !isKnown(tl.res)) continue;
+          // You only earn from what you have identified; a nation running its
+          // own affairs already knows its own ground.
+          if (!tl.res || (pl.human && !isKnown(tl.res))) continue;
           if (hexDist(ct.c, ct.r, c, r) > 1) continue;
           // Land beside a river feeds better.
           const bank = neighbors(c, r).some(n => tiles[n.c][n.r].river || tiles[n.c][n.r].water)
-                     ? 1 + mod('riverFood') : 1;
+                     ? 1 + mod('riverFood', pl) : 1;
           resGold += resDef(tl.res).gold * dry;
           resFood += resDef(tl.res).food * bank * dry;
         }
       }
     }
-    const earned = (state.goldD + cities.length * 2 + resGold) * (1 + mod('trade'));
-    state.gold += Math.round(earned);
-    state.food = Math.round((4 + resFood) * (1 + mod('foodKeep')));
-    state.science += 1 + cities.length;
-    if (state.turn % 4 === 0) state.culture += 1;
+    const earned = (5 + own.length * 2 + resGold) * (1 + mod('trade', pl));
+    pl.gold += Math.round(earned);
+    pl.food = Math.round((4 + resFood) * (1 + mod('foodKeep', pl)));
 
     // Happiness follows the food on the table and the cities you hold. A
     // nation that is happier while it is rising gains more on the way up;
     // one that is simply less happy carries the loss whatever it does.
-    const target = 5 + cities.length + Math.round((state.food - 4) / 2);
-    let change = target - state.happy;
-    if (change > 0) change *= 1 + mod('happyRise');
+    const target = 5 + own.length + Math.round((pl.food - 4) / 2);
+    let change = target - pl.happy;
+    if (change > 0) change *= 1 + mod('happyRise', pl);
     // Kept as a fraction and only rounded for display: rounded every turn, a
     // thirty percent bonus on a change of one tile disappeared entirely and
     // the trait did nothing.
-    state.happy = (state.happy + change) * (1 + mod('happy'));
-    for (const u of units) u.moves = u.max;
-    if (unitSelected) computeReachable();
-    renderMoves();
-    updateUnitBar();
-    renderStats();
-    showNotice('Turn ' + state.turn + ' — all units refreshed.');
-  });
+    pl.happy = (pl.happy + change) * (1 + mod('happy', pl));
+    if (pl.human) {                       // the top bar reads these
+      state.gold = pl.gold; state.food = pl.food; state.happy = pl.happy;
+      state.science += 1 + own.length;
+      if (state.turn % 4 === 0) state.culture += 1;
+    }
+  }
 
   let citySel = 0;
   function updateCityBar() {
@@ -2591,9 +2750,10 @@
   function showOverview() {
     document.getElementById('ovName').textContent = nation.emblem + '  ' + nation.name;
     const fig = (label, v) => `<div class="fig">${v} <span>${label}</span></div>`;
+    const me = players[0];
     let html = '<h3>Your nation</h3><div class="figs">' +
-      fig('gold', state.gold) + fig('food', state.food) +
-      fig('happiness', Math.round(state.happy)) +
+      fig('gold', me.gold) + fig('food', me.food) +
+      fig('happiness', Math.round(me.happy)) +
       fig('science', state.science) + fig('culture', state.culture) +
       fig(cities.length === 1 ? 'city' : 'cities', cities.length) + '</div>';
     const tr = nation.traits || [];
@@ -2612,6 +2772,23 @@
           soon.map(t => `<div class="row waiting">${t.t}<span class="tag">not in play yet</span></div>`).join('');
       }
     }
+    // Every nation in the save, with what it holds. A rival is only listed
+    // once you have found one of its cities — until then you do not know it
+    // is out there.
+    const met = players.filter(pl => !pl.human &&
+      pl.cities.some(ct => tiles[ct.c][ct.r].seen || revealAll));
+    html += '<h3>Nations you have met</h3>';
+    if (!met.length) {
+      html += '<div class="row waiting">None yet — go and find them.</div>';
+    } else {
+      html += met.map(pl =>
+        `<div class="row"><span style="color:${pl.colour}">${pl.nation.emblem}</span> ` +
+        `${pl.nation.name}<span class="tag">${pl.cities.length} ` +
+        `${pl.cities.length === 1 ? 'city' : 'cities'}</span></div>`).join('');
+    }
+    html += `<div class="row waiting">${players.length - 1 - met.length} more nation` +
+            `${players.length - met.length === 2 ? '' : 's'} somewhere in the world` +
+            `<span class="tag">not met</span></div>`;
     document.getElementById('ovBody').innerHTML = html;
     document.getElementById('overview').classList.add('on');
   }
@@ -2730,11 +2907,11 @@
     // the zoom-out limit: on a world this wide that limit is only a few pixels
     // a hex, so scaling off it would start the game almost fully zoomed out.
     cellSize = Math.max(minCell, Math.min(maxCell, BASE_HEX * 0.48));
-    pickNation();
     generateMap();
     buildTextures();
     buildBoard();
     buildFog();
+    setupPlayers();
     updateFog();
     centerOnHex(startHex.c, startHex.r);
     selectHex(startHex.c, startHex.r);
@@ -2782,6 +2959,7 @@
       }
     }
     drawMinimap();
+    revealRivalCities();
     return seenList.length;
   };
   window.__centerOn = (c, r) => { centerOnHex(c, r); applyTransform(); };
@@ -2895,17 +3073,31 @@
         if(x.water && !x.river) continue; seen.add(k); q.push(nb); } }
     return n;
   };
-  window.__pickNation = () => pickNation();
+  window.__pickNation = () => setupPlayers();
   window.__foundAt = (c, r) => { const u = units[0]; u.c = c; u.r = r; foundCity(u); };
   window.__resetCities = () => { for (const ct of cities) if (ct.el) ct.el.remove();
     cities.length = 0;
     for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++) tiles[c][r].owned = false;
     if (!units.length) addUnit('settler', startHex.c, startHex.r); };
-  window.__resetState = () => { state.gold = 15; state.food = 4; state.happy = 5; };
+  window.__resetState = () => { state.gold = 15; state.food = 4; state.happy = 5;
+    players[0].gold = 15; players[0].food = 4; players[0].happy = 5; };
+  window.__seat = (names) => {
+    players = names.map((n, i) => ({ nation: NATIONS.find(x => x.name === n),
+      human: false, colour: RIVAL_COLOURS[i % RIVAL_COLOURS.length],
+      gold: 15, food: 4, happy: 5, cities: [], home: null }));
+    players[0].human = false;
+    placeRivals();
+    // every seat gets the same homeland spread, so only the traits differ
+  };
+  window.__players = () => players.map(pl => ({ name: pl.nation.name, human: pl.human,
+    cities: pl.human ? cities.length : pl.cities.length,
+    gold: pl.gold, food: pl.food, happy: +pl.happy.toFixed(2), colour: pl.colour }));
   window.__nation = () => nation.name;
   window.__setNation = (n) => { nation = NATIONS.find(x => x.name === n) || nation;
+    if (players[0]) players[0].nation = nation;
     document.getElementById('civName').textContent = nation.name; };
-  window.__stateOf = () => ({ gold: state.gold, food: state.food, happy: state.happy });
+  window.__stateOf = () => ({ gold: players[0].gold, food: players[0].food,
+                              happy: players[0].happy });
   window.__owned = () => { let n = 0;
     for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++) if (tiles[c][r].owned) n++;
     return n; };
