@@ -326,6 +326,32 @@
   }
   #citiesBar.on { display: flex; }
   #citiesBar .uname { min-width: 92px; text-align: center; }
+  #overview {
+    position: fixed; inset: 0; z-index: 60; display: none;
+    background: rgba(4,10,18,0.94); padding: 20px; overflow-y: auto;
+  }
+  #overview.on { display: block; }
+  .ovhead { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  #ovName { font-size: 20px; font-weight: 700; }
+  #ovClose { margin-left: auto; background: none; border: none; color: var(--ink); font-size: 20px; }
+  #ovBody h3 {
+    font-size: 11px; letter-spacing: 0.6px; text-transform: uppercase;
+    opacity: 0.5; margin: 16px 0 6px; font-weight: 700;
+  }
+  #ovBody .row {
+    display: flex; gap: 8px; padding: 7px 10px; border-radius: 8px;
+    background: var(--panel); border: 1px solid var(--stroke); margin-bottom: 5px;
+    font-size: 13px; align-items: baseline;
+  }
+  #ovBody .row .tag { margin-left: auto; font-size: 10px; opacity: 0.55; white-space: nowrap; }
+  #ovBody .row.waiting { opacity: 0.55; }
+  #ovBody .figs { display: flex; flex-wrap: wrap; gap: 8px; }
+  #ovBody .fig {
+    background: var(--panel); border: 1px solid var(--stroke); border-radius: 8px;
+    padding: 7px 11px; font-size: 13px; font-weight: 700;
+  }
+  #ovBody .fig span { opacity: 0.55; font-weight: 400; font-size: 11px; }
+
   #minimapWrap {
     position: fixed; right: 8px; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
     z-index: 25; background: var(--panel); border: 1px solid var(--stroke);
@@ -387,6 +413,11 @@
 
 <div id="citiesBar">
   <span class="nav" id="prevCity">◀</span><span class="uname" id="cityLabel">—</span><span class="nav" id="nextCity">▶</span>
+</div>
+
+<div id="overview">
+  <div class="ovhead"><span id="ovName"></span><button id="ovClose">✕</button></div>
+  <div id="ovBody"></div>
 </div>
 
 <div id="minimapWrap">
@@ -1799,6 +1830,92 @@
   }
 
   // ---- CITIES ----
+  // ---- NATIONS ----
+  // One is drawn at random when the world is made. Every nation carries its
+  // own city names, and some carry traits.
+  //
+  // A trait is either LIVE — the turn, the treasury or the borders read it —
+  // or it is written down and waiting for a system that does not exist yet.
+  // Inflation, crime, football, monarchy, stability, mathematicians and
+  // flexibility have nothing behind them in this game, so those traits are
+  // listed on the nation's card as waiting rather than quietly doing nothing.
+  const NATIONS = [
+    { name: 'France',      emblem: '⚜', cities: ['Paris','Orleans','Lyon','Tours','Reims','Marseille','Rouen','Nantes'] },
+    { name: 'Spain',       emblem: '🌞', cities: ['Madrid','Barcelona','Sevilla','Toledo','Valencia','Granada','Cordoba','Bilbao'] },
+    { name: 'Italy',       emblem: '🍇', cities: ['Milan','Venice','Florence','Naples','Genoa','Turin','Bologna','Pisa'] },
+    { name: 'Netherlands', emblem: '🌷', cities: ['Amsterdam','Rotterdam','Utrecht','Leiden','Delft','Haarlem','Groningen','Breda'] },
+    { name: 'Russia',      emblem: '❄', cities: ['Moscow','Novgorod','Kiev','Smolensk','Tver','Kazan','Rostov','Vladimir'] },
+    { name: 'Greece',      emblem: '🏛', cities: ['Athens','Sparta','Corinth','Thebes','Argos','Delphi','Rhodes','Miletus'] },
+    { name: 'China',       emblem: '🐉', cities: ['Beijing','Xian','Luoyang','Nanjing','Chengdu','Kaifeng','Hangzhou','Guangzhou'] },
+    { name: 'The Inca',    emblem: '🌄', cities: ['Cusco','Machu Picchu','Quito','Tiwanaku','Ollantaytambo','Cajamarca','Pisac','Nazca'] },
+    { name: 'The Huns',    emblem: '🏹', cities: ['Attila','Balamber','Uldin','Ruga','Bleda','Ellac','Dengizich','Ernak'] },
+    { name: 'Babylon',     emblem: '𒀭', cities: ['Babylon','Nippur','Uruk','Kish','Sippar','Borsippa','Lagash','Ur'] },
+    { name: 'Aztecs',      emblem: '🦅', cities: ['Tenochtitlan','Texcoco','Tlacopan','Xochimilco','Tlatelolco','Chalco','Azcapotzalco','Cholula'] },
+    { name: 'Rome',        emblem: '🦂', cities: ['Rome','Ostia','Capua','Ravenna','Pompeii','Verona','Brundisium','Neapolis'] },
+    {
+      name: 'Israel', emblem: '✡',
+      cities: ['Jerusalem','Tel Aviv','Haifa','Beer Sheva','Tiberias','Akko','Ashdod','Eilat'],
+      mods: { trade: 0.20, unity: true, warChance: 0.70 },
+      traits: [
+        { t: '+20% from trade', live: true },
+        { t: 'Unity', live: true },
+        { t: '+70% chance of quarrels and wars with neighbours', live: false },
+      ],
+    },
+    {
+      name: 'USA', emblem: '🦬',
+      cities: ['Washington','New York','Boston','Philadelphia','Chicago','Denver','Atlanta','Seattle'],
+      mods: { trade: -0.10, unity: false, borders: 0.30 },
+      traits: [
+        { t: 'No Unity', live: true },
+        { t: '+30% border expansion', live: true },
+        { t: '\u221210% money made', live: true },
+      ],
+    },
+    {
+      name: 'Brazil', emblem: '🌴',
+      cities: ['Rio de Janeiro','Sao Paulo','Salvador','Recife','Brasilia','Manaus','Belem','Porto Alegre'],
+      mods: { happyRise: 0.30, inflation: 0.15, crime: 0.10, football: 0.20 },
+      traits: [
+        { t: '+30% happiness while it is rising', live: true },
+        { t: '+15% inflation', live: false },
+        { t: '+10% petty crime', live: false },
+        { t: '+20% at football', live: false },
+      ],
+    },
+    {
+      name: 'England', emblem: '🦁',
+      cities: ['London','York','Bristol','Norwich','Oxford','Canterbury','Winchester','Lincoln'],
+      mods: { happy: -0.10, stability: 0.20, monarchy: 0.50, football: 0.05 },
+      traits: [
+        { t: '\u221210% happiness', live: true },
+        { t: '+20% stability', live: false },
+        { t: '+50% to monarchy', live: false },
+        { t: '+5% at football', live: false },
+      ],
+    },
+    {
+      name: 'Egypt', emblem: '🐫',
+      cities: ['Thebes','Memphis','Giza','Alexandria','Luxor','Abydos','Aswan','Heliopolis'],
+      mods: { riverFood: 0.15, foodKeep: 0.20, dryCity: -0.05, mathematicians: 0.05, flexibility: -0.15 },
+      traits: [
+        { t: '+15% food beside rivers', live: true },
+        { t: 'Food keeps 20% better', live: true },
+        { t: '\u22125% for a city with little water', live: true },
+        { t: '+5% chance of mathematicians', live: false },
+        { t: '\u221215% flexibility', live: false },
+      ],
+    },
+  ];
+  let nation = NATIONS[0];
+  const mod = k => (nation.mods && nation.mods[k]) || 0;
+
+  function pickNation() {
+    nation = NATIONS[(Math.random() * NATIONS.length) | 0];
+    document.getElementById('civName').textContent = nation.name;
+    document.querySelector('#civ .emblem').textContent = nation.emblem;
+  }
+
   const CITY_NAMES = ['Paris', 'Orleans', 'Lyon', 'Tours', 'Reims', 'Marseille', 'Rouen', 'Nantes'];
 
   function canFoundCity(c, r) {
@@ -1809,14 +1926,23 @@
   }
 
   function foundCity(u) {
-    const city = { c: u.c, r: u.r, name: CITY_NAMES[cities.length % CITY_NAMES.length] };
+    const names = nation.cities;
+    const city = { c: u.c, r: u.r, name: names[cities.length % names.length] };
     cities.push(city);
-    // The city claims the ring of tiles around it.
+    // The city claims the land nearest it. A COUNT of tiles rather than a
+    // radius, because hex distance is a whole number and a thirty percent
+    // wider radius would have rounded straight back to the same ring.
+    const claim = [];
     for (let c = 0; c < COLS; c++) {
       for (let r = 0; r < ROWS; r++) {
-        if (hexDist(city.c, city.r, c, r) <= 1 && !tiles[c][r].water) tiles[c][r].owned = true;
+        if (tiles[c][r].water) continue;
+        const d = hexDist(city.c, city.r, c, r);
+        if (d <= 3) claim.push({ c, r, d });
       }
     }
+    claim.sort((a, b) => a.d - b.d);
+    const want = Math.round(7 * (1 + mod('borders')));   // 7 is the ring of one
+    for (const t of claim.slice(0, want)) tiles[t.c][t.r].owned = true;
     drawCity(city);
     u.el.remove();
     units.splice(units.indexOf(u), 1);
@@ -2380,20 +2506,44 @@
     // thing sitting in your borders earns you nothing until you study it.
     let resGold = 0, resFood = 0;
     for (const ct of cities) {
+      // A city with no water within reach is a dry one, and Egypt pays for
+      // that every turn.
+      let wet = false;
+      for (let c = 0; c < COLS && !wet; c++) {
+        for (let r = 0; r < ROWS && !wet; r++) {
+          if (hexDist(ct.c, ct.r, c, r) <= 2 && (tiles[c][r].water || tiles[c][r].river)) wet = true;
+        }
+      }
+      const dry = wet ? 1 : 1 + mod('dryCity');
       for (let c = 0; c < COLS; c++) {
         for (let r = 0; r < ROWS; r++) {
           const tl = tiles[c][r];
           if (!tl.res || !isKnown(tl.res)) continue;
           if (hexDist(ct.c, ct.r, c, r) > 1) continue;
-          resGold += resDef(tl.res).gold;
-          resFood += resDef(tl.res).food;
+          // Land beside a river feeds better.
+          const bank = neighbors(c, r).some(n => tiles[n.c][n.r].river || tiles[n.c][n.r].water)
+                     ? 1 + mod('riverFood') : 1;
+          resGold += resDef(tl.res).gold * dry;
+          resFood += resDef(tl.res).food * bank * dry;
         }
       }
     }
-    state.gold += state.goldD + cities.length * 2 + resGold;
-    state.food = 4 + resFood;
+    const earned = (state.goldD + cities.length * 2 + resGold) * (1 + mod('trade'));
+    state.gold += Math.round(earned);
+    state.food = Math.round((4 + resFood) * (1 + mod('foodKeep')));
     state.science += 1 + cities.length;
     if (state.turn % 4 === 0) state.culture += 1;
+
+    // Happiness follows the food on the table and the cities you hold. A
+    // nation that is happier while it is rising gains more on the way up;
+    // one that is simply less happy carries the loss whatever it does.
+    const target = 5 + cities.length + Math.round((state.food - 4) / 2);
+    let change = target - state.happy;
+    if (change > 0) change *= 1 + mod('happyRise');
+    // Kept as a fraction and only rounded for display: rounded every turn, a
+    // thirty percent bonus on a change of one tile disappeared entirely and
+    // the trait did nothing.
+    state.happy = (state.happy + change) * (1 + mod('happy'));
     for (const u of units) u.moves = u.max;
     if (unitSelected) computeReachable();
     renderMoves();
@@ -2438,6 +2588,37 @@
     showNotice(on ? 'Whole map shown. Tap again for just what you have explored.'
                   : 'Back to your own map — anywhere you have not walked is hidden.');
   });
+  function showOverview() {
+    document.getElementById('ovName').textContent = nation.emblem + '  ' + nation.name;
+    const fig = (label, v) => `<div class="fig">${v} <span>${label}</span></div>`;
+    let html = '<h3>Your nation</h3><div class="figs">' +
+      fig('gold', state.gold) + fig('food', state.food) +
+      fig('happiness', Math.round(state.happy)) +
+      fig('science', state.science) + fig('culture', state.culture) +
+      fig(cities.length === 1 ? 'city' : 'cities', cities.length) + '</div>';
+    const tr = nation.traits || [];
+    if (!tr.length) {
+      html += '<h3>Traits</h3><div class="row">No special traits.</div>';
+    } else {
+      const live = tr.filter(t => t.live), soon = tr.filter(t => !t.live);
+      if (live.length) {
+        html += '<h3>Traits in play</h3>' +
+          live.map(t => `<div class="row">${t.t}</div>`).join('');
+      }
+      if (soon.length) {
+        // Said plainly rather than pretended: these need a system the game
+        // has not got yet.
+        html += '<h3>Traits waiting on the game</h3>' +
+          soon.map(t => `<div class="row waiting">${t.t}<span class="tag">not in play yet</span></div>`).join('');
+      }
+    }
+    document.getElementById('ovBody').innerHTML = html;
+    document.getElementById('overview').classList.add('on');
+  }
+  document.getElementById('overviewBtn').addEventListener('click', showOverview);
+  document.getElementById('ovClose').addEventListener('click',
+    () => document.getElementById('overview').classList.remove('on'));
+
   document.getElementById('heightBtn').addEventListener('click', (e) => {
     heightMap = !heightMap;
     e.currentTarget.classList.toggle('on', heightMap);
@@ -2549,6 +2730,7 @@
     // the zoom-out limit: on a world this wide that limit is only a few pixels
     // a hex, so scaling off it would start the game almost fully zoomed out.
     cellSize = Math.max(minCell, Math.min(maxCell, BASE_HEX * 0.48));
+    pickNation();
     generateMap();
     buildTextures();
     buildBoard();
@@ -2562,7 +2744,7 @@
     layoutPanels();
     updateMinimapView();
     startFps();
-    showNotice('Nothing is labelled. Stand on a marker and tap Study this to learn what it is.');
+    showNotice('You are ' + nation.name + '. Tap Overview to see what that means.');
   }
   window.addEventListener('resize', () => {
     computeZoomBounds();
@@ -2713,6 +2895,20 @@
         if(x.water && !x.river) continue; seen.add(k); q.push(nb); } }
     return n;
   };
+  window.__pickNation = () => pickNation();
+  window.__foundAt = (c, r) => { const u = units[0]; u.c = c; u.r = r; foundCity(u); };
+  window.__resetCities = () => { for (const ct of cities) if (ct.el) ct.el.remove();
+    cities.length = 0;
+    for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++) tiles[c][r].owned = false;
+    if (!units.length) addUnit('settler', startHex.c, startHex.r); };
+  window.__resetState = () => { state.gold = 15; state.food = 4; state.happy = 5; };
+  window.__nation = () => nation.name;
+  window.__setNation = (n) => { nation = NATIONS.find(x => x.name === n) || nation;
+    document.getElementById('civName').textContent = nation.name; };
+  window.__stateOf = () => ({ gold: state.gold, food: state.food, happy: state.happy });
+  window.__owned = () => { let n = 0;
+    for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++) if (tiles[c][r].owned) n++;
+    return n; };
   window.__hexDist = hexDist;
   window.__dims = { COLS, ROWS };
 
