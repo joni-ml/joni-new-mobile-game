@@ -60,6 +60,13 @@
     font-family:'Assistant',sans-serif; backdrop-filter:blur(2px);
   }
   .pixel-btn:hover{ background:rgba(184,147,75,0.25); }
+  /* the monitor jolts when a battle lands */
+  .pixel-frame.shaking{ animation:frameShake .28s linear infinite; }
+  @keyframes frameShake{
+    0%,100%{ transform:translate(0,0); } 25%{ transform:translate(-2px,1px); }
+    50%{ transform:translate(2px,-1px); } 75%{ transform:translate(-1px,-2px); }
+  }
+  @media (prefers-reduced-motion:reduce){ .pixel-frame.shaking{ animation:none; } }
 
   .world-overlay{
     display:none; position:fixed; inset:0; background:rgba(10,12,16,0.97);
@@ -114,6 +121,57 @@
   .mdelta.up{color:#8fe3b0;background:rgba(76,140,123,0.20);}
   .mdelta.down{color:#f0a094;background:rgba(180,72,63,0.20);}
   .metric .spark{display:block;width:100%;height:16px;margin-top:7px;opacity:.5;}
+
+  /* ---- the quarter clock: five minutes, and the country keeps running ---- */
+  .turn-clock{
+    display:flex; align-items:center; gap:10px; margin:10px auto 0; max-width:300px;
+    background:var(--surface); border:1px solid var(--line); border-radius:20px;
+    padding:6px 14px; position:relative; overflow:hidden;
+  }
+  .turn-clock .tc-label{ font-size:11.5px; color:var(--muted); letter-spacing:.02em; }
+  .turn-clock .tc-time{
+    font-family:'Frank Ruhl Libre',serif; font-size:17px; color:var(--gold);
+    font-variant-numeric:tabular-nums; margin-inline-start:auto;
+  }
+  .turn-clock .tc-track{ position:absolute; inset:auto 0 0 0; height:2px; background:transparent; }
+  .turn-clock .tc-fill{ height:100%; width:100%; background:var(--gold); transition:width 1s linear; }
+  .turn-clock.low{ border-color:var(--bad); }
+  .turn-clock.low .tc-time{ color:var(--bad); animation:tcPulse 1s ease-in-out infinite; }
+  .turn-clock.low .tc-fill{ background:var(--bad); }
+  @keyframes tcPulse{ 50%{ opacity:.45; } }
+  @media (prefers-reduced-motion:reduce){ .turn-clock.low .tc-time{ animation:none; } }
+
+  /* ---- army command ---- */
+  .army-wrap{ max-width:1000px; margin:0 auto; display:grid; grid-template-columns:300px 1fr; gap:18px; }
+  .army-readout{ display:flex; flex-direction:column; gap:14px; align-content:start; }
+  .army-stat{ background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:11px 12px;
+    display:grid; grid-template-columns:1fr auto; gap:4px 8px; font-size:12px; color:var(--muted); }
+  .army-stat b{ font-family:'Frank Ruhl Libre',serif; font-size:17px; color:var(--text);
+    font-variant-numeric:tabular-nums; }
+  .army-stat .bar{ grid-column:1/-1; margin-top:4px; }
+  .army-arsenal{ display:flex; flex-direction:column; gap:7px; background:var(--surface-2);
+    border:1px solid var(--line); border-radius:8px; padding:11px 12px; font-size:12.5px; color:var(--muted); }
+  .army-arsenal b{ color:var(--gold); font-variant-numeric:tabular-nums; }
+  .army-actions{ display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr));
+    gap:10px; align-content:start; }
+  .army-btn{ display:flex; align-items:center; gap:11px; text-align:start; width:100%;
+    background:var(--surface); border:1px solid var(--line); border-radius:9px; padding:12px;
+    color:var(--text); font-family:'Assistant',sans-serif; cursor:pointer; transition:border-color .15s; }
+  .army-btn:hover:not(:disabled){ border-color:var(--gold); }
+  .army-btn:disabled{ opacity:.4; cursor:not-allowed; }
+  .army-btn .ab-icon{ font-size:21px; line-height:1; }
+  .army-btn .ab-body{ display:flex; flex-direction:column; gap:3px; flex:1; }
+  .army-btn .ab-title{ font-size:13.5px; font-weight:700; }
+  .army-btn .ab-desc{ font-size:11.5px; color:var(--muted); line-height:1.45; }
+  .army-btn .ab-cost{ font-size:11.5px; color:var(--gold); white-space:nowrap;
+    font-variant-numeric:tabular-nums; }
+  @media (max-width:720px){ .army-wrap{ grid-template-columns:1fr; } }
+
+  /* ---- conquest ---- */
+  .wact-war{ border-color:rgba(180,72,63,0.5) !important; }
+  .wact-war:hover{ border-color:var(--bad) !important; background:rgba(180,72,63,0.14); }
+  .conquered-tag{ margin-top:9px; padding:6px 9px; border-radius:6px; font-size:11.5px; font-weight:700;
+    color:var(--gold); background:rgba(184,147,75,0.12); border:1px solid rgba(184,147,75,0.35); }
 
   .narrative{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--muted);margin-bottom:18px;font-style:italic;}
 
@@ -185,6 +243,11 @@
     <h1 id="mainTitle">משרד ראש הממשלה</h1>
     <p id="mainSub">אב־טיפוס — בחר/י מדינה כדי להתחיל כהונה</p>
     <div class="turn-badge" id="turnBadge" style="display:none;"></div>
+    <div class="turn-clock" id="turnClock" style="display:none;">
+      <span class="tc-label">⏱ זמן להחלטה</span>
+      <span class="tc-time" id="turnClockTime">5:00</span>
+      <div class="tc-track"><div class="tc-fill" id="turnClockFill"></div></div>
+    </div>
   </header>
 
   <div id="countrySelect"></div>
@@ -194,6 +257,7 @@
       <div class="pixel-controls">
         <button class="pixel-btn" onclick="toggleFullscreen()">⛶ מסך מלא</button>
         <button class="pixel-btn" onclick="openWorldView()">🌍 מה קורה בעולם</button>
+        <button class="pixel-btn" onclick="openArmyView()">🎖️ הצבא</button>
         <button class="pixel-btn" onclick="exportSave()">💾 שמור</button>
         <button class="pixel-btn" onclick="document.getElementById('importFile').click()">📂 טען</button>
         <button class="pixel-btn" onclick="openTutorial()">❓ עזרה</button>
@@ -226,6 +290,17 @@
     <button class="pixel-btn" onclick="closeWorldView()">✕ סגור</button>
   </div>
   <div class="world-grid" id="worldGrid"></div>
+</div>
+
+<div id="armyOverlay" class="world-overlay">
+  <div class="world-header">
+    <h2>🎖️ פיקוד הצבא</h2>
+    <button class="pixel-btn" onclick="closeArmyView()">✕ סגור</button>
+  </div>
+  <div class="army-wrap">
+    <div class="army-readout" id="armyReadout"></div>
+    <div class="army-actions" id="armyActions"></div>
+  </div>
 </div>
 
 <div id="tutorialOverlay" class="world-overlay open">
@@ -678,6 +753,13 @@ function freshState(country){
     siegeCapability: 0,
     prevMetrics: null,   // last quarter's headline numbers, for the trend chips
     metricHistory: { approval:[], stability:[], treasury:[], borderTension:[] },
+    conquests: [],       // countries taken by force
+    lastWarTurn: 0,
+    lastAttackedTurn: 0,
+    defeatMessage: null, // set when a war ends the term
+    /* What the quarter's baseline has already paid out while the clock ran,
+       so the settle-up at the end of the turn never double-charges. */
+    driftApplied: { treasury: 0, approval: 0 },
   };
 }
 
@@ -1475,6 +1557,7 @@ function upgradeSkill(key){
 window.upgradeSkill = upgradeSkill;
 
 function checkGameOver(){
+  if(state.defeatMessage) return state.defeatMessage;
   if(state.electionLost) return "הפסדת בבחירות לתפקיד ראש הממשלה — כהונתך הגיעה לסיומה בדרך הדמוקרטית.";
   const avgLoyalty = state.ministers.length ? state.ministers.reduce((a,m)=>a+m.loyalty,0)/state.ministers.length : 0;
   if(state.approval < 15 && avgLoyalty < 30) return "הצבעת אי-אמון בכנסת מדיחה את הממשלה.";
@@ -1590,6 +1673,7 @@ function selectCountry(name){
   document.getElementById('mainTitle').textContent = `משרד ראש ממשלת ${country.name}`;
   document.getElementById('mainSub').textContent = `${country.flag} ${country.tag} · שכנה עוינת פוטנציאלית: ${state.neighborName}`;
   document.getElementById('turnBadge').style.display = 'inline-block';
+  document.getElementById('turnClock').style.display = 'flex';
   newTurn();
 }
 window.selectCountry = selectCountry;
@@ -1723,6 +1807,19 @@ function drawPixelScene(canvas, country, simState, frame){
     }
   }
 
+  /* ---------- 2b. aurora — only a calm, solvent country earns one ---------- */
+  if(night && stability > 70 && wealth > 0.5){
+    for(let band=0; band<3; band++){
+      const baseY = horizon*(0.16 + band*0.10);
+      ctx.fillStyle = band%2 ? 'rgba(96,220,170,0.10)' : 'rgba(120,170,240,0.09)';
+      for(let x=0; x<W; x+=2){
+        const h = P(7) + Math.sin(x*0.035 + frame*0.012 + band*2)*P(6)
+                       + Math.sin(x*0.011 - frame*0.007)*P(4);
+        ctx.fillRect(x, baseY, 2, Math.max(1,h));
+      }
+    }
+  }
+
   /* ---------- 3. sun or moon, tracking across the term ---------- */
   const bodyX = R(W*(0.16 + 0.60*(phase/3)));
   const bodyY = R(horizon*(night?0.28:dusk?0.66:0.34));
@@ -1757,6 +1854,20 @@ function drawPixelScene(canvas, country, simState, frame){
     ctx.fillRect(R(cx+cw*0.22), R(cy-ch*0.6), R(cw*0.5), R(ch*0.8));
   }
 
+  /* ---------- 4b. birds cross a settled sky ---------- */
+  if(!night && stability > 45 && unrest < 0.4){
+    const bx = ((frame*0.34) % (W + P(40))) - P(20);
+    const by = horizon*0.30 + Math.sin(frame*0.02)*P(3);
+    ctx.fillStyle = night ? 'rgba(180,190,210,0.5)' : 'rgba(30,36,52,0.55)';
+    for(let b=0;b<4;b++){
+      const ox = P(7)*b, oy = P(3)*Math.abs(b-1.5);
+      const flap = Math.sin(frame*0.22 + b) > 0 ? P(1) : 0;
+      ctx.fillRect(R(bx+ox),        R(by+oy),        P(2), 1);
+      ctx.fillRect(R(bx+ox-P(2)),   R(by+oy-flap),   P(2), 1);
+      ctx.fillRect(R(bx+ox+P(2)),   R(by+oy-flap),   P(2), 1);
+    }
+  }
+
   /* ---------- 5. two mountain ridges behind the bay ---------- */
   for(let layer=0; layer<2; layer++){
     const base = horizon - P(layer ? 2 : 8);
@@ -1783,6 +1894,21 @@ function drawPixelScene(canvas, country, simState, frame){
       const sway = Math.sin(frame*0.06 + y*0.55)*P(2)*t;
       ctx.fillStyle = night ? 'rgba(220,230,255,0.14)' : 'rgba(255,224,150,0.18)';
       ctx.fillRect(R(bodyX - P(3) + sway), y, R(P(6)*(0.5+t)), 1);
+    }
+    /* freighters and cruise ships — the busier the economy, the fuller the bay */
+    const ships = R(clamp(wealth*3 + (tourism>70?1:0), 0, 4));
+    let hs = seed0 ^ 2718;
+    for(let i=0;i<ships;i++){
+      hs=(hs*1103515245+12345)>>>0; const lane = seededRand(hs);
+      hs=(hs*1103515245+12345)>>>0; const off  = seededRand(hs)*W;
+      const sp = 0.05 + lane*0.05;
+      const sy2 = R(waterTop + waterH*(0.35 + lane*0.5));
+      const sx2 = R(((off + frame*sp) % (W + P(26))) - P(13));
+      const bob = Math.sin(frame*0.04 + i)*1;
+      ctx.fillStyle = mix('#2b3444','#0a0f18', dark*0.5);
+      ctx.fillRect(sx2, R(sy2+bob), P(14), P(3));
+      ctx.fillRect(sx2+P(4), R(sy2+bob-P(3)), P(5), P(3));
+      if(dark > 0.4){ ctx.fillStyle='rgba(255,226,150,0.6)'; ctx.fillRect(sx2+P(5), R(sy2+bob-P(2)), P(1), P(1)); }
     }
   }
 
@@ -1893,6 +2019,23 @@ function drawPixelScene(canvas, country, simState, frame){
     if(dark > 0.4){                              // headlights carve the dusk
       ctx.fillStyle = 'rgba(255,238,180,0.22)';
       ctx.fillRect(right ? cx+P(8) : cx-P(7), cy+P(1), P(7), P(1));
+    }
+  }
+
+  /* ---------- 9b. armour rolls toward the border when it heats up ---------- */
+  if(tension > 65){
+    const columns = tension > 85 ? 3 : 2;
+    for(let i=0;i<columns;i++){
+      const sp = 0.22 + i*0.05;
+      const tx = R(W - (((frame*sp + i*W/columns) % (W + P(20))) - P(20)));
+      const ty = roadY + P(7);
+      ctx.fillStyle = mix('#3f4636','#141810', dark*0.45);
+      ctx.fillRect(tx, ty, P(11), P(4));                    // hull
+      ctx.fillRect(tx+P(3), ty-P(2), P(5), P(2));           // turret
+      ctx.fillRect(tx-P(4), ty-P(1), P(5), P(1));           // barrel
+      ctx.fillStyle = mix('#22261c','#000', dark*0.4);
+      ctx.fillRect(tx+P(1), ty+P(4), P(2), P(1));
+      ctx.fillRect(tx+P(7), ty+P(4), P(2), P(1));
     }
   }
 
@@ -2038,6 +2181,59 @@ function drawPixelScene(canvas, country, simState, frame){
     }
   }
 
+  /* ---------- 17b. snow in the opening quarter of the year ---------- */
+  if(phase === 0 && unrest <= 0.45){
+    const flakes = R(38*k);
+    let ns = seed0 ^ 3131;
+    for(let i=0;i<flakes;i++){
+      ns=(ns*1103515245+12345)>>>0; const fx0=seededRand(ns)*W;
+      ns=(ns*1103515245+12345)>>>0; const dr=seededRand(ns);
+      const fy=((dr*H + frame*(0.35+dr*0.5)) % H);
+      const fx=fx0 + Math.sin(frame*0.02 + dr*8)*P(4);
+      ctx.fillStyle = 'rgba(255,255,255,' + (0.35+dr*0.4).toFixed(2) + ')';
+      ctx.fillRect(R(fx), R(fy), P(1.5), P(1.5));
+    }
+  }
+
+  /* ---------- 18b. fireworks when the country genuinely loves you ---------- */
+  if(approval > 82 && stability > 55){
+    let fw = seed0 ^ 1717;
+    for(let i=0;i<3;i++){
+      fw=(fw*1103515245+12345)>>>0; const cx0=(seededRand(fw)*W)|0;
+      fw=(fw*1103515245+12345)>>>0; const cy0=(horizon*0.25 + seededRand(fw)*horizon*0.4)|0;
+      fw=(fw*1103515245+12345)>>>0; const hue=seededRand(fw);
+      const t = ((frame + i*40) % 90) / 90;
+      if(t > 0.55) continue;                       // most of the cycle is dark sky
+      const rad = P(3) + t*P(13), a = (1 - t/0.55) * 0.9;
+      const col = hue<0.33 ? '255,214,110' : hue<0.66 ? '255,140,150' : '150,215,255';
+      for(let sp=0; sp<10; sp++){
+        const ang = sp/10*6.2832;
+        ctx.fillStyle = 'rgba(' + col + ',' + a.toFixed(2) + ')';
+        ctx.fillRect(R(cx0 + Math.cos(ang)*rad), R(cy0 + Math.sin(ang)*rad), P(1.5), P(1.5));
+      }
+    }
+  }
+
+  /* ---------- 18c. the battle itself ---------- */
+  if(warFlash > 0){
+    const t = warFlash/70;
+    ctx.fillStyle = 'rgba(255,90,50,' + (t*0.30).toFixed(2) + ')';
+    ctx.fillRect(0,0,W,H);
+    let es = seed0 ^ 9090;
+    for(let i=0;i<7;i++){
+      es=(es*1103515245+12345)>>>0; const ex=(seededRand(es)*W)|0;
+      es=(es*1103515245+12345)>>>0; const ey=(groundY - seededRand(es)*H*0.35)|0;
+      es=(es*1103515245+12345)>>>0; const delay=seededRand(es)*40;
+      const age = (70 - warFlash) - delay;
+      if(age < 0 || age > 26) continue;
+      const rad = P(2) + (age/26)*P(16), a = 1 - age/26;
+      ctx.fillStyle = 'rgba(255,' + Math.round(120 + age*4) + ',60,' + (a*0.85).toFixed(2) + ')';
+      ctx.beginPath(); ctx.arc(ex, ey, rad, 0, 6.2832); ctx.fill();
+      ctx.fillStyle = 'rgba(40,36,34,' + (a*0.5).toFixed(2) + ')';
+      ctx.beginPath(); ctx.arc(ex, ey - rad*0.5, rad*0.7, 0, 6.2832); ctx.fill();
+    }
+  }
+
   /* ---------- 19. vignette and scanlines: it is a broadcast, not a window ---------- */
   const vig = ctx.createRadialGradient(W/2,H*0.45,H*0.22,W/2,H*0.5,H*0.95);
   vig.addColorStop(0,'rgba(0,0,0,0)');
@@ -2049,6 +2245,11 @@ function drawPixelScene(canvas, country, simState, frame){
 
 function animatePixelWorld(){
   pixelFrame += 1;
+  if(warFlash > 0){
+    warFlash -= 1;
+    const fr = document.getElementById('pixelFrame');
+    if(fr) fr.classList.toggle('shaking', warFlash > 40);
+  }
   const canvas = document.getElementById('pixelCanvas');
   if(state && canvas && !checkGameOver()){ drawPixelScene(canvas, state.country, state, pixelFrame); }
   requestAnimationFrame(animatePixelWorld);
@@ -2096,6 +2297,7 @@ function importSave(evt){
       document.getElementById('mainTitle').textContent = `משרד ראש ממשלת ${state.country.name}`;
       document.getElementById('mainSub').textContent = `${state.country.flag} ${state.country.tag} · שכנה עוינת פוטנציאלית: ${state.neighborName}`;
       document.getElementById('turnBadge').style.display = 'inline-block';
+  document.getElementById('turnClock').style.display = 'flex';
       render();
     } catch(e){
       alert('קובץ השמירה לא תקין.');
@@ -2132,6 +2334,8 @@ function initWorld(playerCountryName){
       treasury: 8000 + Math.round(seededRand(seedFromName(c.name)^5)*8000),
       debtToGdp: c.debt,
       borderTension: c.tension,
+      militaryReadiness: 35 + Math.round(seededRand(seedFromName(c.name)^9)*45),
+      conquered: false,
       headline: "המצב יציב בינתיים.",
     };
   });
@@ -2140,12 +2344,14 @@ function initWorld(playerCountryName){
 function tickWorld(){
   Object.keys(worldState).forEach(name => {
     const w = worldState[name];
+    if(w.conquered) return;               // it answers to you now
     w.prevBorderTension = w.borderTension;
     w.approval = clamp(w.approval + (Math.random()*8-4), 0, 100);
     w.stability = clamp(w.stability + (Math.random()*6-3), 0, 100);
     w.borderTension = clamp(w.borderTension + (Math.random()*6-3), 0, 100);
     w.treasury += Math.round(Math.random()*1000-450);
     w.debtToGdp = clamp(w.debtToGdp + (Math.random()*3-1.5), 0, 300);
+    w.militaryReadiness = clamp((w.militaryReadiness ?? 50) + (Math.random()*7-3), 0, 100);
     if(Math.random() < 0.35){
       w.headline = headlinePool[Math.floor(Math.random()*headlinePool.length)];
       // headline gives a slightly bigger nudge so the world feels eventful
@@ -2203,6 +2409,7 @@ function worldCardInner(country, simState, isYou){
   const relationColor = relation > 20 ? 'var(--good)' : relation < -20 ? 'var(--bad)' : 'var(--warn)';
   const isNeighbor = country.name === state.neighborName;
   const escapedName = country.name.replace(/'/g,"\\'");
+  const conquered = !isYou && simState.conquered;
   const intel = !isYou ? state.espionage[country.name] : null;
   const cooldownUntil = state.spyCooldowns[country.name] || 0;
   const onCooldown = state.turn < cooldownUntil;
@@ -2217,11 +2424,15 @@ function worldCardInner(country, simState, isYou){
       ${!isYou ? barRow('יחסים איתך', (relation+100)/2, relationColor) : ''}
     </div>
     ${intel ? `<div class="espionage-info">🕵️ מודיעין מרבעון ${intel.revealedTurn}: קופה ${intel.treasury.toFixed(0)} מיל' ₪ · חוב ${intel.debtToGdp.toFixed(0)}% · מגמת מתיחות: ${intel.trend}</div>` : ''}
-    ${!isYou ? `
+    ${conquered ? '<div class="conquered-tag">🏴 נכבשה — בשליטתך</div>' : ''}
+    ${!isYou && !conquered ? `
     <div class="wactions">
       <button class="wact-btn" onclick="worldAction('${escapedName}','trade')" title="הצעת סחר: משפרת יחסים ומכניסה קופה, בעלות קטנה">🤝 סחר</button>
       <button class="wact-btn" onclick="worldAction('${escapedName}','aid')" title="סיוע הומניטרי: משפר יחסים ומצב השכנה, עולה בקופתך">📦 סיוע</button>
       <button class="wact-btn wact-bad" onclick="worldAction('${escapedName}','sanction')" title="סנקציות: פוגעות בשכנה ובקשר, ללא עלות ישירה">⛔ סנקציות</button>
+    </div>
+    <div class="wactions">
+      <button class="wact-btn wact-war" onclick="declareWarOnCountry('${escapedName}')" title="מלחמה: הכוח נקבע לפי מוכנות צבאית, יציבות, אישור ומלאי נשק. הפסד מסיים את הכהונה.">⚔️ הכרז מלחמה</button>
     </div>
     <div class="wactions">
       <button class="wact-btn wact-spy" ${onCooldown?'disabled':''} onclick="sendSpy('${escapedName}')" title="שלח מרגל: 400 תקציב, סיכוי תפיסה תלוי בכישור מודיעין. תפיסה פוגעת ביחסים ובאישור בבית.">
@@ -2347,10 +2558,13 @@ function arrow(v){
   return `<span class="flat">→</span>`;
 }
 
-function render(){
-  document.getElementById('turnBadge').textContent = `רבעון ${((state.turn-1)%4)+1} · שנה ${Math.ceil(state.turn/4)} · ${state.country.flag} ${state.country.name}`;
-
-  document.getElementById('metrics').innerHTML =
+/* Only the headline row. The quarter clock repaints this every second,
+   so it must never touch the event card the player is reading. */
+function renderMetricsOnly(){
+  if(!state) return;
+  const box = document.getElementById('metrics');
+  if(!box) return;
+  box.innerHTML =
     metricBlock("אישור ציבורי", state.approval.toFixed(0)+"%", state.approval, state.approval<30?'var(--bad)':'var(--good)', 'approval') +
     metricBlock("יציבות", state.stability.toFixed(0)+"%", state.stability, state.stability<30?'var(--bad)':'var(--good)', 'stability') +
     metricBlock("קופת המדינה", state.treasury.toFixed(0)+" מיל' ₪", clamp((state.treasury+5000)/150,0,100), state.treasury<0?'var(--bad)':'var(--warn)', 'treasury') +
@@ -2360,7 +2574,16 @@ function render(){
     metricBlock("🤝 בעלי ברית", state.allies.length, Math.min(state.allies.length*20,100), 'var(--good)') +
     metricBlock("💣 מלאי פצצות", state.bombInventory.conventional + state.bombInventory.chemical + state.bombInventory.nuclear, clamp((state.bombInventory.conventional + state.bombInventory.chemical*2 + state.bombInventory.nuclear*3)/10,0,100), state.bombInventory.nuclear>0?'var(--bad)':'var(--warn)');
 
+}
+
+function render(){
+  document.getElementById('turnBadge').textContent = `רבעון ${((state.turn-1)%4)+1} · שנה ${Math.ceil(state.turn/4)} · ${state.country.flag} ${state.country.name}`;
+
+  renderMetricsOnly();
+
   document.getElementById('narrative').textContent = state.narrative;
+
+
 
   const over = checkGameOver();
   if(over){
@@ -2474,6 +2697,320 @@ function tagLabel(t){
   return map[t] || t;
 }
 
+/* ================= WARFARE =================
+   Any country on the board can be attacked, and any country that has come to
+   hate you can attack back. Both directions run through the same two
+   functions below, so the odds shown in the dialog are the odds actually
+   rolled — the player is never quoted a number the engine does not use. */
+
+let warFlash = 0;   // frames of fire and shake left on the scene after a battle
+
+/* Bombs count heavily: an arsenal is the entire point of paying for one. */
+function warPower(s){
+  const inv = s.bombInventory || { conventional:0, chemical:0, nuclear:0 };
+  return (s.militaryReadiness ?? 50) * 0.50
+       + (s.stability ?? 50)         * 0.25
+       + (s.approval ?? 50)          * 0.15
+       + (inv.conventional + inv.chemical*2 + inv.nuclear*5) * 3;
+}
+
+/* Never a certainty in either direction — a 95% war still loses one time in
+   twenty, which is what keeps a strong army from being a win button. */
+function warOdds(attacker, defender, defenderBonus){
+  const a = warPower(attacker), d = warPower(defender) * (defenderBonus || 1);
+  return clamp(a / (a + d), 0.05, 0.95);
+}
+
+/* Invading is never a private matter: everyone else revises their opinion. */
+function worldReactsToWar(exclude, relHit, tensionHit){
+  COUNTRIES.forEach(c => {
+    if(c.name === state.country.name || c.name === exclude) return;
+    state.relations[c.name] = clamp((state.relations[c.name]||0) - relHit, -100, 100);
+    const o = worldState[c.name];
+    if(o && !o.conquered) o.borderTension = clamp(o.borderTension + tensionHit, 0, 100);
+  });
+}
+
+function declareWarOnCountry(name){
+  const w = worldState[name];
+  if(!w || w.conquered) return;
+  if(typeof MP !== 'undefined' && MP.started && MP.isHuman && MP.isHuman(name)){
+    MP.declareWar(name); return;           // another player answers for themselves
+  }
+  const odds = Math.round(warOdds(state, w)*100);
+  MP.ask({
+    icon:'⚔️',
+    title:'להכריז מלחמה על ' + name + '?',
+    from:'סיכויי ניצחון מוערכים: ' + odds + '%',
+    text:'ניצחון מכניע את המדינה ומעביר את קופתה אליך. הפסד מסיים את כהונתך. שאר העולם יגיב בחריפות.',
+    choices:[
+      { title:'⚔️ לצאת למתקפה', desc:'הכוח נקבע לפי מוכנות צבאית, יציבות, אישור ומלאי הנשק', tone:'bad',
+        pick:()=>resolveWarWithBot(name) },
+      { title:'↩️ לסגת מהרעיון', desc:'שום דבר לא קורה', pick:()=>{} },
+    ]
+  });
+}
+window.declareWarOnCountry = declareWarOnCountry;
+
+function resolveWarWithBot(name){
+  const w = worldState[name];
+  if(!w) return;
+  const won = Math.random() < warOdds(state, w);
+  warFlash = 70;
+
+  state.militaryReadiness = clamp(state.militaryReadiness - 22, 0, 100);
+  state.treasury = clamp(state.treasury - 1800, -20000, 100000);
+  state.lastWarTurn = state.turn;
+  worldReactsToWar(name, 22, 12);
+
+  if(won){
+    const spoils = Math.max(0, Math.round(w.treasury * 0.6));
+    w.conquered = true;
+    w.headline = 'נכבשה בידי ' + state.country.name + '.';
+    w.approval = 5; w.stability = 5; w.borderTension = 100;
+    state.treasury = clamp(state.treasury + spoils, -20000, 100000);
+    state.conquests.push(name);
+    state.approval = clamp(state.approval + 12, 0, 100);
+    state.borderTension = clamp(state.borderTension + 18, 0, 100);
+    state.relations[name] = -100;
+    addLog(`<b>מלחמה:</b> 🏆 ${name} נכבשה. שלל מלחמה: ${spoils} מיל' ₪.`);
+  } else {
+    state.defeatMessage = `הובסת במלחמה מול ${name} — כוחותיה נכנסו לבירה וכהונתך הסתיימה.`;
+    addLog(`<b>מלחמה:</b> 💥 המתקפה על ${name} נכשלה.`);
+  }
+  closeWorldView();
+  render();
+}
+
+/* Every quarter the countries that have come to hate you weigh a move.
+   Relations are the trigger; the balance of power decides whether they dare. */
+function botAggressionCheck(){
+  if(typeof MP !== 'undefined' && MP.started) return null;   // multiplayer runs its own wars
+  if(state.turn - (state.lastAttackedTurn||0) < 3) return null;
+  const mine = warPower(state);
+  const threats = [];
+  Object.keys(worldState).forEach(name => {
+    const w = worldState[name];
+    if(w.conquered || state.allies.includes(name)) return;
+    const rel = state.relations[name] || 0;
+    if(rel > -30) return;                                    // only real enemies move
+    let chance = ((-rel - 30)/70) * 0.13
+               + clamp((warPower(w) - mine)/140, 0, 1) * 0.14
+               + (w.borderTension/100) * 0.04;
+    if(state.peaceAgreements[name]) chance *= 0.15;
+    if(Math.random() < chance) threats.push(name);
+  });
+  return threats.length ? threats[Math.floor(Math.random()*threats.length)] : null;
+}
+
+function botDeclaresWar(name){
+  const w = worldState[name];
+  if(!w) return;
+  state.lastAttackedTurn = state.turn;
+  const rel = state.relations[name] || 0;
+  const hold = Math.round((1 - warOdds(w, state, 1.45))*100);
+  addLog(`<b>מלחמה:</b> ⚔️ ${name} הכריזה עליך מלחמה (יחסים: ${rel}).`);
+  MP.ask({
+    icon:'⚔️',
+    title: name + ' הכריזה עליך מלחמה',
+    from: 'יחסים איתה: ' + rel + ' · סיכוי לעמוד בהתבצרות: ' + hold + '%',
+    text:'כוחותיה חצו את הגבול. הפסד במלחמה מסיים את כהונתך.',
+    choices:[
+      { title:'🛡️ להתבצר בהגנה', desc:'מחזק אותך מאוד בקרב, במחיר תקציבי כבד', tone:'good',
+        pick:()=>resolveDefense(name,'fortify') },
+      { title:'⚔️ מתקפת נגד', desc:'מנצל מהמלאי — מחליש אותה משמעותית, אך גם אותך', tone:'bad',
+        pick:()=>resolveDefense(name,'counter') },
+      { title:'🕊️ לבקש הפסקת אש', desc:'מסיים את העימות מיד, במחיר כסף ואישור ציבורי',
+        pick:()=>resolveDefense(name,'ceasefire') },
+    ]
+  });
+}
+
+function resolveDefense(name, how){
+  const w = worldState[name];
+  if(!w) return;
+  warFlash = 70;
+
+  if(how === 'ceasefire'){
+    state.treasury = clamp(state.treasury - 2200, -20000, 100000);
+    state.approval = clamp(state.approval - 10, 0, 100);
+    state.borderTension = clamp(state.borderTension - 15, 0, 100);
+    state.relations[name] = clamp((state.relations[name]||0) + 25, -100, 100);
+    state.peaceAgreements[name] = true;
+    addLog(`<b>מלחמה:</b> 🕊️ הושגה הפסקת אש מול ${name} — יקרה, אך איש לא הודח.`);
+    render(); return;
+  }
+
+  const bonus = how === 'fortify' ? 1.45 : 1.10;
+  const survived = Math.random() > warOdds(w, state, bonus);
+
+  state.treasury = clamp(state.treasury - (how==='fortify' ? 2000 : 1200), -20000, 100000);
+  state.militaryReadiness = clamp(state.militaryReadiness - 15, 0, 100);
+  if(how === 'counter'){
+    state.bombInventory.conventional = Math.max(0, state.bombInventory.conventional - 1);
+    w.militaryReadiness = clamp((w.militaryReadiness??50) - 25, 0, 100);
+    w.stability = clamp(w.stability - 18, 0, 100);
+  }
+
+  if(survived){
+    state.approval = clamp(state.approval + 14, 0, 100);
+    state.stability = clamp(state.stability - 6, 0, 100);
+    state.borderTension = clamp(state.borderTension + 10, 0, 100);
+    w.approval = clamp(w.approval - 20, 0, 100);
+    addLog(`<b>מלחמה:</b> 🏆 הדפת את הפלישה של ${name} — הציבור מריע.`);
+  } else {
+    state.defeatMessage = `${name} הכריעה אותך במלחמה — כהונתך הסתיימה בתבוסה צבאית.`;
+    addLog(`<b>מלחמה:</b> 💥 ההגנה מול ${name} נשברה.`);
+  }
+  render();
+}
+
+/* ================= THE ARMY ================= */
+/* Everything here is a trade the player makes with open eyes: readiness and
+   weapons are bought with money, public patience and the world's goodwill. */
+const ARMY_ACTIONS = [
+  { id:'recruit', icon:'🎖️', title:'גיוס מילואים', cost:900,
+    desc:'+12 מוכנות צבאית · -4 אישור ציבורי',
+    run: s => { s.militaryReadiness = clamp(s.militaryReadiness+12,0,100); s.approval = clamp(s.approval-4,0,100); } },
+  { id:'drill', icon:'🏋️', title:'תרגיל אימונים רחב', cost:500,
+    desc:'+8 מוכנות צבאית · +3 מתיחות בגבול',
+    run: s => { s.militaryReadiness = clamp(s.militaryReadiness+8,0,100); s.borderTension = clamp(s.borderTension+3,0,100); } },
+  { id:'shells', icon:'💣', title:'רכש תחמושת', cost:700,
+    desc:'+2 פצצות קונבנציונליות',
+    run: s => { s.bombInventory.conventional += 2; } },
+  { id:'airdef', icon:'🛡️', title:'סוללת יירוט', cost:1400,
+    desc:'+6 יציבות · +5 מוכנות צבאית',
+    run: s => { s.stability = clamp(s.stability+6,0,100); s.militaryReadiness = clamp(s.militaryReadiness+5,0,100); } },
+  { id:'chem', icon:'☣️', title:'תוכנית נשק כימי', cost:2600,
+    desc:'+1 נשק כימי · -15 יחסים מול כל העולם',
+    run: s => { s.bombInventory.chemical += 1;
+      COUNTRIES.forEach(c => { if(c.name!==s.country.name) s.relations[c.name] = clamp((s.relations[c.name]||0)-15,-100,100); }); } },
+  { id:'nuke', icon:'☢️', title:'תוכנית גרעינית', cost:6000,
+    desc:'+1 ראש קרב · -30 יחסים מול כל העולם · +20 מתיחות',
+    run: s => { s.bombInventory.nuclear += 1; s.borderTension = clamp(s.borderTension+20,0,100);
+      COUNTRIES.forEach(c => { if(c.name!==s.country.name) s.relations[c.name] = clamp((s.relations[c.name]||0)-30,-100,100); }); } },
+  { id:'cut', icon:'✂️', title:'קיצוץ בתקציב הצבא', cost:0,
+    desc:'+1200 לקופה · -14 מוכנות צבאית · +5 אישור ציבורי',
+    run: s => { s.treasury = clamp(s.treasury+1200,-20000,100000);
+      s.militaryReadiness = clamp(s.militaryReadiness-14,0,100); s.approval = clamp(s.approval+5,0,100); } },
+];
+
+function openArmyView(){
+  const inv = state.bombInventory;
+  document.getElementById('armyReadout').innerHTML = `
+    <div class="army-stat"><span>מוכנות צבאית</span><b>${state.militaryReadiness.toFixed(0)}%</b>
+      <div class="bar"><div style="width:${clamp(state.militaryReadiness,0,100)}%;background:var(--gold)"></div></div></div>
+    <div class="army-stat"><span>עוצמה כוללת</span><b>${warPower(state).toFixed(0)}</b>
+      <div class="bar"><div style="width:${clamp(warPower(state)/2.5,0,100)}%;background:var(--warn)"></div></div></div>
+    <div class="army-stat"><span>קופה זמינה</span><b>${state.treasury.toFixed(0)} מיל' ₪</b>
+      <div class="bar"><div style="width:${clamp((state.treasury+5000)/150,0,100)}%;background:${state.treasury<0?'var(--bad)':'var(--good)'}"></div></div></div>
+    <div class="army-arsenal">
+      <span>💣 קונבנציוני <b>${inv.conventional}</b></span>
+      <span>☣️ כימי <b>${inv.chemical}</b></span>
+      <span>☢️ גרעיני <b>${inv.nuclear}</b></span>
+    </div>`;
+
+  document.getElementById('armyActions').innerHTML = ARMY_ACTIONS.map(a => {
+    const tooPoor = a.cost > 0 && state.treasury < a.cost;
+    return `<button class="army-btn" ${tooPoor?'disabled':''} onclick="runArmyAction('${a.id}')">
+      <span class="ab-icon">${a.icon}</span>
+      <span class="ab-body"><span class="ab-title">${a.title}</span><span class="ab-desc">${a.desc}</span></span>
+      <span class="ab-cost">${a.cost ? a.cost + " מיל' ₪" : 'חינם'}</span>
+    </button>`;
+  }).join('');
+
+  document.getElementById('armyOverlay').classList.add('open');
+}
+window.openArmyView = openArmyView;
+
+function closeArmyView(){ document.getElementById('armyOverlay').classList.remove('open'); }
+window.closeArmyView = closeArmyView;
+
+function runArmyAction(id){
+  const a = ARMY_ACTIONS.find(x => x.id === id);
+  if(!a) return;
+  if(a.cost > 0){
+    if(state.treasury < a.cost) return;
+    state.treasury = clamp(state.treasury - a.cost, -20000, 100000);
+  }
+  a.run(state);
+  addLog(`<b>צבא:</b> ${a.icon} ${a.title}.`);
+  openArmyView();
+  render();
+}
+window.runArmyAction = runArmyAction;
+
+/* ================= THE QUARTER CLOCK =================
+   Five minutes per quarter. The country keeps running while you deliberate:
+   each second pays out a slice of the quarter's baseline, and the settle-up
+   at the end of the turn pays only what the clock has not already paid. */
+const TURN_SECONDS = 300;
+let turnClockId = null, turnSecondsLeft = TURN_SECONDS;
+
+function quarterlyBaseline(){
+  const b = state.budget;
+  return {
+    treasury: 2200 - (b.defense + b.education + b.health + b.welfare + b.infra) * 15,
+    approval: -state.inflation * 0.15,
+  };
+}
+
+function stopTurnClock(){
+  if(turnClockId){ clearInterval(turnClockId); turnClockId = null; }
+}
+
+function startTurnClock(){
+  stopTurnClock();
+  turnSecondsLeft = TURN_SECONDS;
+  state.driftApplied = { treasury: 0, approval: 0 };
+  paintTurnClock();
+  turnClockId = setInterval(() => {
+    if(document.body.classList.contains('mp-waiting')) return;   // held for the others
+    if(checkGameOver()){ stopTurnClock(); return; }
+    turnSecondsLeft -= 1;
+    driftLiveMetrics();
+    paintTurnClock();
+    if(turnSecondsLeft <= 0){ stopTurnClock(); cabinetDecides(); }
+  }, 1000);
+}
+
+function driftLiveMetrics(){
+  const base = quarterlyBaseline(), slice = 1/TURN_SECONDS;
+  const dT = base.treasury * slice, dA = base.approval * slice;
+  state.treasury = clamp(state.treasury + dT, -20000, 100000);
+  state.approval = clamp(state.approval + dA, 0, 100);
+  state.driftApplied.treasury += dT;
+  state.driftApplied.approval += dA;
+  renderMetricsOnly();
+}
+
+function paintTurnClock(){
+  const el = document.getElementById('turnClockTime');
+  if(!el) return;
+  const m = Math.floor(Math.max(0,turnSecondsLeft)/60), sec = Math.max(0,turnSecondsLeft)%60;
+  el.textContent = m + ':' + String(sec).padStart(2,'0');
+  const box = document.getElementById('turnClock');
+  const low = turnSecondsLeft <= 60;
+  if(box) box.classList.toggle('low', low);
+  const fill = document.getElementById('turnClockFill');
+  if(fill) fill.style.width = (Math.max(0,turnSecondsLeft)/TURN_SECONDS*100) + '%';
+}
+
+/* An expired clock is a cost, not a catastrophe: the cabinet takes the
+   safest option on the table and the public notices you did not decide. */
+function cabinetDecides(){
+  const ev = state.currentEvent;
+  if(!ev || checkGameOver()) return;
+  let best = 0, bestScore = -Infinity;
+  ev.choices.forEach((c,i) => {
+    const sc = c.impact.approval + c.impact.stability + c.impact.treasury - c.impact.tension;
+    if(sc > bestScore){ bestScore = sc; best = i; }
+  });
+  state.approval = clamp(state.approval - 5, 0, 100);
+  addLog(`<b>הזמן אזל:</b> הקבינט החליט במקומך — "${ev.choices[best].title}" (-5 אישור).`);
+  makeChoice(best);
+}
+
 /* ---------- GAME FLOW ---------- */
 function newTurn(){
   processDelayed();
@@ -2489,6 +3026,10 @@ function newTurn(){
     state.currentEvent = pickEvent();
   }
   render();
+  startTurnClock();
+  /* Somebody out there may have decided this is the quarter they move. */
+  const aggressor = botAggressionCheck();
+  if(aggressor) setTimeout(() => botDeclaresWar(aggressor), 700);
 }
 
 function makeChoice(i){
@@ -2499,6 +3040,7 @@ function makeChoice(i){
                         treasury: state.treasury, borderTension: state.borderTension };
 
   clearUrgentTimer();
+  stopTurnClock();
   choice.effect(state);
   gainXp(state, 1);
 
@@ -2527,14 +3069,16 @@ function makeChoice(i){
 
   // budget policy has ongoing quarterly consequences, not just the one-time effect
   const b = state.budget;
-  state.treasury += 2200; // baseline quarterly tax revenue
-  state.treasury -= (b.defense + b.education + b.health + b.welfare + b.infra) * 15; // upkeep
+  /* The clock already paid out part of this quarter's baseline second by
+     second; settle only the remainder so the drift never double-charges. */
+  const base = quarterlyBaseline();
+  state.treasury += base.treasury - state.driftApplied.treasury;
+  state.driftApplied = { treasury: 0, approval: 0 };
   state.militaryReadiness = clamp(state.militaryReadiness + (b.defense-20)*0.15, 0, 100);
   state.approval = clamp(state.approval + (b.welfare-20)*0.05, 0, 100);
 
   state.debtToGdp += (state.treasury < 0 ? 1.5 : -0.5);
   state.inflation = clamp(state.inflation + (state.debtToGdp>100?0.5:-0.2), 0, 60);
-  state.approval = clamp(state.approval - state.inflation*0.15, 0, 100);
   state.stability = clamp(state.stability, 0, 100);
   state.borderTension = clamp(state.borderTension, 0, 100);
   state.treasury = clamp(state.treasury, -20000, 100000);
