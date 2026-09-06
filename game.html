@@ -460,6 +460,7 @@
     ocean:     { name: 'Ocean',     col: '#3d8a97' },
     coast:     { name: 'Coast',     col: '#5fb0b8' },
     river:     { name: 'River',     col: '#57a8bd' },
+    lake:      { name: 'Lake',      col: '#4a9ec4' },
     snow:      { name: 'Snow',      col: '#e2f2f2' },
     tundra:    { name: 'Tundra',    col: '#9fa892' },
     grassland: { name: 'Grassland', col: '#66933c' },
@@ -544,47 +545,139 @@
     return grid;
   }
 
+  // How much of the world is what. The bands are targets, and they are HIT
+  // rather than hoped for: every threshold below is a quantile of a smooth
+  // field, so the share is exact and the shapes still come out organic.
+  //
+  //   water   at most 65%   sea 30-50%, lakes and rivers 10-30%
+  //   land    at most 45%   ordinary 8-35%, desert 8-25%, ice 8-25%
+  //
+  // Those two caps together pin water into 55-65% and land into 35-45%,
+  // since the two must add to a hundred.
+  function pickComposition() {
+    const U = (a, b) => a + Math.random() * (b - a);
+    const water = U(55, 65);
+    const sea = U(Math.max(30, water - 30), Math.min(50, water - 10));
+    const lake = water - sea;                       // lakes AND rivers together
+    const land = 100 - water;
+    let ice, desert, normal;
+    do {
+      ice = U(8, 25); desert = U(8, 25); normal = land - ice - desert;
+    } while (normal < 8 || normal > 35);
+    return { sea: sea / 100, lake: lake / 100,
+             ice: ice / 100, desert: desert / 100, normal: normal / 100 };
+  }
+
+  // Take the `frac` lowest-scoring cells out of a list. Because the score is
+  // a smooth field, "the lowest tenth" is a handful of basins rather than a
+  // tenth of the tiles scattered everywhere — which is what keeps oceans,
+  // lakes, deserts and ice sheets in one piece instead of speckled.
+  function lowest(cells, score, count) {
+    cells.sort((a, b) => score(a) - score(b));
+    return cells.slice(0, Math.max(0, Math.min(cells.length, count)));
+  }
+
   function generateMap() {
     heatGrid  = blobField([[2, 0.88, 1.0], [2, 0.0, 0.12], [2, 0.38, 0.62]], 3.6, 1.55);
     elevGrid  = blobField([[2, 0.88, 1.0], [3, 0.0, 0.15], [2, 0.40, 0.60]], 3.0, 1.35);
     moistGrid = blobField([[3, 0.85, 1.0], [3, 0.0, 0.18]], 3.2, 1.25);
+    const mix = pickComposition();
+    const total = COLS * ROWS;
 
+    // Everything starts as land; the sea is then flooded into it.
     tiles = [];
+    const all = [];
     for (let c = 0; c < COLS; c++) {
       const col = [];
       for (let r = 0; r < ROWS; r++) {
-        const heat = heatGrid[c][r], elev = elevGrid[c][r], moist = moistGrid[c][r];
-        // One solid continent: ocean only rings the outside of the map, so
-        // no lakes or seas ever break up the middle. The shoreline wobbles
-        // with the elevation field so the coast isn't a straight rectangle.
-        // Only north and south have an edge — east-west the world wraps, so
-        // putting ocean there would cut the continent with a strange band of
-        // sea and beach running down the middle of the world.
-        const edge = Math.min(r, ROWS - 1 - r);
-        const shore = 2.4 + (elev - 0.5) * 2.2;
-        let t, feature = null;
-        if (edge < shore - 1.1) { t = TERRA.ocean; }
-        else if (edge < shore)  { t = TERRA.coast; }
-        else {
-          if (heat < 0.15)      t = TERRA.snow;
-          else if (heat < 0.32) t = TERRA.tundra;
-          else if (heat < 0.58) t = TERRA.grassland;
-          else if (heat < 0.78) t = TERRA.plains;
-          else                  t = TERRA.desert;
-          if (elev > 0.72) feature = 'hill';
-          // Forests grow on cool-to-mild land, never in desert/snow.
-          else if (heat > 0.20 && heat < 0.66 && moist > 0.56) feature = 'forest';
-          else if (t === TERRA.desert && Math.random() < 0.12) feature = 'rock';
-        }
-        const water = (t === TERRA.ocean || t === TERRA.coast);
-        col.push({ terrain: t, feature, heat, elev, water,
+        col.push({ terrain: TERRA.grassland, feature: null,
+                   heat: heatGrid[c][r], elev: elevGrid[c][r], water: false,
                    variant: (Math.random() * 6) | 0, fseed: Math.random() });
+        all.push({ c, r });
       }
       tiles.push(col);
     }
 
+    // 1. THE SEA. The lowest ground floods, so the ocean is one connected
+    //    body with a wandering coast rather than a ring round the edge.
+    for (const t of lowest(all.slice(), t => elevGrid[t.c][t.r],
+                           Math.round(mix.sea * total))) {
+      const tl = tiles[t.c][t.r];
+      tl.terrain = TERRA.ocean; tl.water = true;
+    }
+    // Shallow water wherever the sea meets the land.
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        const tl = tiles[c][r];
+        if (tl.terrain !== TERRA.ocean) continue;
+        if (neighbors(c, r).some(n => !tiles[n.c][n.r].water)) tl.terrain = TERRA.coast;
+      }
+    }
+
     placeMountainRanges();
     carveRivers();
+
+    // 2. LAKES fill up whatever the rivers left of the inland-water share.
+    //    They only form well away from the coast — a basin that touched the
+    //    sea would simply be a bay.
+    let inland = 0;
+    for (let c = 0; c < COLS; c++)
+      for (let r = 0; r < ROWS; r++) if (tiles[c][r].river) inland++;
+    const nearSea = (c, r) => neighbors(c, r).some(n => tiles[n.c][n.r].water);
+    const basins = [];
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        const tl = tiles[c][r];
+        if (tl.water || tl.river || tl.feature === 'mtn' || nearSea(c, r)) continue;
+        basins.push({ c, r });
+      }
+    }
+    for (const t of lowest(basins, t => elevGrid[t.c][t.r] - moistGrid[t.c][t.r] * 0.35,
+                           Math.round(mix.lake * total) - inland)) {
+      const tl = tiles[t.c][t.r];
+      tl.terrain = TERRA.lake; tl.water = true; tl.lake = true;
+    }
+
+    // 3. THE LAND, by its climate rather than by lot. Ice takes the coldest
+    //    ground, desert the hottest and driest of what is left, and the rest
+    //    is ordinary country — so each comes out as one region of the world
+    //    instead of speckles. Mountains are already standing and count as
+    //    ordinary land.
+    const open = [];
+    let mountains = 0;
+    for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < ROWS; r++) {
+        const tl = tiles[c][r];
+        if (tl.water || tl.river) continue;
+        if (tl.feature === 'mtn') { mountains++; continue; }
+        open.push({ c, r });
+      }
+    }
+    const iceCells = lowest(open, t => heatGrid[t.c][t.r], Math.round(mix.ice * total));
+    const iced = new Set(iceCells.map(t => t.c + ',' + t.r));
+    for (const t of iceCells) tiles[t.c][t.r].terrain = TERRA.snow;
+
+    const rest = open.filter(t => !iced.has(t.c + ',' + t.r));
+    // Hot and dry: negate so the driest, hottest ground sorts to the front.
+    const dryCells = lowest(rest, t => moistGrid[t.c][t.r] - heatGrid[t.c][t.r],
+                            Math.round(mix.desert * total));
+    const dried = new Set(dryCells.map(t => t.c + ',' + t.r));
+    for (const t of dryCells) {
+      const tl = tiles[t.c][t.r];
+      tl.terrain = TERRA.desert;
+      if (Math.random() < 0.12) tl.feature = 'rock';
+    }
+
+    for (const t of rest) {
+      if (dried.has(t.c + ',' + t.r)) continue;
+      const tl = tiles[t.c][t.r];
+      const heat = tl.heat, moist = moistGrid[t.c][t.r];
+      tl.terrain = heat < 0.34 ? TERRA.tundra : heat < 0.68 ? TERRA.grassland : TERRA.plains;
+      if (tl.elev > 0.72) tl.feature = 'hill';
+      else if (heat > 0.20 && heat < 0.66 && moist > 0.56) tl.feature = 'forest';
+    }
+
+    markShores();
     pickStartHex();
     placeResources();
   }
@@ -692,7 +785,6 @@
         if (tl.river && !tl.water) { tl.terrain = TERRA.river; tl.feature = null; }
       }
     }
-    markShores();
   }
 
   // How far each land tile is from the nearest water — sea or river — up to
@@ -1002,7 +1094,7 @@
     };
   }
 
-  const TEX_KIND = { ocean: 'water', coast: 'water', river: 'water', snow: 'snow', tundra: 'tundra',
+  const TEX_KIND = { ocean: 'water', coast: 'water', river: 'water', lake: 'water', snow: 'snow', tundra: 'tundra',
                      grassland: 'grass', plains: 'dry', desert: 'sand', mountain: 'rock' };
 
   function makeTexture(kind, base, variant) {
@@ -2494,6 +2586,33 @@
   };
   window.__elevs = () => { const o=[]; for(let c=0;c<COLS;c+=3) for(let r=0;r<ROWS;r+=3) o.push(tiles[c][r].elev); return o; };
   window.__heights = () => heightMap;
+  window.__mix = () => {
+    const n = COLS * ROWS, o = { sea: 0, lake: 0, river: 0, ice: 0, desert: 0, normal: 0, mountain: 0 };
+    for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++) {
+      const t = tiles[c][r];
+      if (t.terrain === TERRA.ocean || t.terrain === TERRA.coast) o.sea++;
+      else if (t.terrain === TERRA.lake) o.lake++;
+      else if (t.river) o.river++;
+      else if (t.terrain === TERRA.snow) o.ice++;
+      else if (t.terrain === TERRA.desert) o.desert++;
+      else if (t.feature === 'mtn') o.mountain++;
+      else o.normal++;
+    }
+    const pc = k => +(o[k] / n * 100).toFixed(1);
+    return { sea: pc('sea'), lakeRiver: +(pc('lake') + pc('river')).toFixed(1),
+             water: +(pc('sea') + pc('lake') + pc('river')).toFixed(1),
+             ice: pc('ice'), desert: pc('desert'),
+             normal: +(pc('normal') + pc('mountain')).toFixed(1),
+             land: +(pc('ice') + pc('desert') + pc('normal') + pc('mountain')).toFixed(1) };
+  };
+  window.__landmass = () => {
+    const seen = new Set([startHex.c+','+startHex.r]); const q=[startHex]; let n=0;
+    while(q.length){ const t=q.pop(); n++;
+      for(const nb of neighbors(t.c,t.r)){ const k=nb.c+','+nb.r;
+        if(seen.has(k)) continue; const x=tiles[nb.c][nb.r];
+        if(x.water && !x.river) continue; seen.add(k); q.push(nb); } }
+    return n;
+  };
   window.__hexDist = hexDist;
   window.__dims = { COLS, ROWS };
 
