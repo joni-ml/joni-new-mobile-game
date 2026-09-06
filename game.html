@@ -1404,7 +1404,12 @@
     const def = resDef(key);
     // Unknown, or known but with no artwork yet -> missing-texture + question
     // mark. That way anything still waiting on a texture is obvious on sight.
-    const showIcon = isKnown(key) && def.icon;
+    // The artwork shows from the moment you find the thing. What you do NOT
+    // get until you have studied it is its NAME and what it is worth — so the
+    // discovery still has to be made, you simply see the plant rather than an
+    // anonymous marker. Only a resource with no artwork drawn yet falls back
+    // to the missing-texture question mark.
+    const showIcon = !!def.icon;
     const isArt = !!(showIcon && def.icon.startsWith('data:'));
     d.classList.toggle('missing', !showIcon);
     d.classList.toggle('art', isArt);
