@@ -1,37 +1,46 @@
 /*
- * Builds the single-file Artifact edition:
- *   original prototype  +  multiplayer UI  +  multiplayer logic
+ * Builds the self-contained copies of the game from the live one.
  *
- * The artifact host wraps the file in its own <!doctype>/<head>/<body>
- * skeleton, so the document scaffolding is dropped and the page's RTL
- * direction is applied to the real <html> element at runtime instead.
- * Everything else of the original is copied through byte-for-byte, and
- * the build fails loudly if any of it is removed or altered.
+ * prime-minister/index.html is the game as it is served, and it loads two
+ * files beside it. Those get inlined here so the whole game — including
+ * multiplayer — travels as a single file:
+ *
+ *   ../standalone.html   a complete page: open it, or send it to someone
+ *   ../artifact.html     the same, minus the document scaffolding that the
+ *                        artifact host supplies itself
+ *
+ * The build fails loudly if a single line of the original prototype is ever
+ * missing from the result, so the game it was grown from stays intact.
  */
 const fs = require('fs');
 const path = require('path');
 
-const STANDALONE = process.argv.includes('--standalone');
-const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
-const ORIGINAL = args[0] || '/root/.claude/uploads/380178b8-d7cf-5df9-a01c-8260baf0f2e4/50a55cbb-prototype2.html';
-const OUT = path.join(__dirname, '..', STANDALONE ? 'standalone.html' : 'artifact.html');
+const HERE = __dirname;
+const DIR = path.join(HERE, '..');
+const ORIGINAL = process.argv[2] || '/root/.claude/uploads/380178b8-d7cf-5df9-a01c-8260baf0f2e4/50a55cbb-prototype2.html';
 
+const live = fs.readFileSync(path.join(DIR, 'index.html'), 'utf8');
 const original = fs.readFileSync(ORIGINAL, 'utf8');
-const ui = fs.readFileSync(path.join(__dirname, 'artifact-ui.html'), 'utf8');
-const mp = fs.readFileSync(path.join(__dirname, 'artifact-mp.js'), 'utf8');
 
-// the host supplies these; carrying our own would nest a document inside a document
+/* ---- 1. inline what the served page loads from beside it ---- */
+const EXTERNALS = [
+  ['<script src="vendor/peerjs.min.js"></script>', 'vendor/peerjs.min.js'],
+  ['<script src="mp-room.js"></script>', 'mp-room.js'],
+];
+let single = live;
+for (const [tag, file] of EXTERNALS) {
+  if (!single.includes(tag)) throw new Error('missing script tag for ' + file);
+  const body = fs.readFileSync(path.join(DIR, file), 'utf8');
+  // a literal </script> inside the source would close this block early
+  if (/<\/script/i.test(body)) throw new Error(file + ' contains a closing script tag');
+  single = single.replace(tag, '<script>\n/* inlined from ' + file + ' */\n' + body + '\n</script>');
+}
+
+/* ---- 2. the artifact host owns the document scaffolding ---- */
 const SCAFFOLD = new Set([
   '<!DOCTYPE html>', '<html lang="he" dir="rtl">', '<head>',
   '<meta charset="UTF-8">', '</head>', '<body>', '</body>', '</html>',
 ]);
-
-// standalone keeps the whole document (it is opened directly, not framed)
-const body = STANDALONE
-  ? original
-  : original.split('\n').filter(l => !SCAFFOLD.has(l.trim())).join('\n');
-
-// the original set RTL on <html>; that element now belongs to the host
 const RTL = `<script>
   // The original document carried dir="rtl" on its root element; the
   // artifact host owns that element now, so the direction is set here.
@@ -39,37 +48,31 @@ const RTL = `<script>
   document.documentElement.setAttribute('lang', 'he');
 </script>
 `;
+const artifact = RTL + single.split('\n').filter(l => !SCAFFOLD.has(l.trim())).join('\n');
 
-const scriptTag = '<script>\n/* ---------- COUNTRIES ---------- */';
-if (!body.includes(scriptTag)) throw new Error('anchor: game script');
-let out = (STANDALONE ? '' : RTL) + body.replace(scriptTag, ui + '\n' + scriptTag);
-
-if (STANDALONE) {
-  const tail = '</script>\n</body>\n</html>';
-  if (!out.includes(tail)) throw new Error('anchor: closing tags');
-  out = out.replace(tail, '</script>\n\n<script>\n' + mp + '</script>\n</body>\n</html>');
-} else {
-  if (!out.trimEnd().endsWith('</script>')) throw new Error('anchor: trailing script');
-  out = out.trimEnd() + '\n\n<script>\n' + mp + '</script>\n';
+/* ---- 3. nothing of the original game may go missing ---- */
+function check(name, out, allowScaffoldLoss) {
+  const wanted = original.split('\n').filter(l => !(allowScaffoldLoss && SCAFFOLD.has(l.trim())));
+  const got = out.split('\n');
+  let i = 0; const missing = [];
+  for (const line of wanted) {
+    const at = got.indexOf(line, i);
+    if (at === -1) { missing.push(line.slice(0, 70)); if (missing.length > 3) break; }
+    else i = at + 1;
+  }
+  if (missing.length) { console.error('❌ ' + name + ' lost original lines:', missing); process.exit(1); }
+  return wanted.length;
 }
 
-fs.writeFileSync(OUT, out);
+fs.writeFileSync(path.join(DIR, 'standalone.html'), single);
+fs.writeFileSync(path.join(DIR, 'artifact.html'), artifact);
 
-// prove every non-scaffold line of the original survived, in order
-const wanted = STANDALONE ? original.split('\n') : original.split('\n').filter(l => !SCAFFOLD.has(l.trim()));
-const got = out.split('\n');
-let i = 0; const missing = [];
-for (const line of wanted) {
-  const at = got.indexOf(line, i);
-  if (at === -1) { missing.push(line.slice(0, 70)); if (missing.length > 3) break; }
-  else i = at + 1;
-}
-if (missing.length) { console.error('❌ original lines missing/altered:', missing); process.exit(1); }
+const kept = check('standalone.html', single, false);
+check('artifact.html', artifact, true);
 
-console.log('✅ built ' + OUT);
-console.log('   original game lines kept : ' + wanted.length + ' / ' + original.split('\n').length +
-            ' (dropped only ' + (original.split('\n').length - wanted.length) + ' scaffold tags)');
-console.log('   built lines              : ' + got.length);
-console.log('   size                     : ' + (Buffer.byteLength(out) / 1024).toFixed(0) + ' KB');
-if (!STANDALONE) console.log('   no nested document       : ' + !/<\/?(html|head|body)\b/i.test(out));
-else console.log('   charset / rtl kept       : ' + (/<meta charset="UTF-8">/.test(out) && /<html lang="he" dir="rtl">/.test(out)));
+const kb = t => (Buffer.byteLength(t) / 1024).toFixed(0) + ' KB';
+console.log('✅ standalone.html — complete page, ' + kb(single));
+console.log('✅ artifact.html   — same, host supplies the scaffolding, ' + kb(artifact));
+console.log('   original game lines kept : ' + kept + '/' + original.split('\n').length);
+console.log('   external files inlined   : ' + EXTERNALS.map(e => e[1]).join(', '));
+console.log('   no leftover script srcs  : ' + !/<script src=/.test(single));
