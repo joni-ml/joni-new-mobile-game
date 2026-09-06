@@ -1,0 +1,47 @@
+# Publishes the game to GitHub Pages.
+#
+# This also turns Pages on by itself (configure-pages: enablement), so the
+# site goes live from a push instead of from the repository settings screen.
+name: Deploy game to Pages
+
+on:
+  push:
+    branches:
+      - claude/survival-monster-game-t1m97b
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# let a running deploy finish; queue at most one behind it
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Turn Pages on if it is not already
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Package the site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
