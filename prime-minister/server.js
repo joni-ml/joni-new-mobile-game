@@ -1,24 +1,27 @@
 /*
- * משרד ראש הממשלה — שרת מולטיפלייר
- * Prime Minister game — multiplayer server.
+ * משרד ראש הממשלה — שרת מולטיפלייר (אופציונלי)
+ * Prime Minister game — optional multiplayer server.
  *
- * A single Node process that does two things:
- *   1. Serves the game (index.html) over HTTP.
- *   2. Runs a WebSocket hub that connects players into shared "rooms",
- *      relays each player's country state to the others, and forwards
- *      diplomatic actions (trade / aid / sanction / spy) between players.
+ * The game normally connects players device-to-device and needs no server
+ * at all; this exists for anyone who would rather run a central one. It
+ * does two things:
+ *   1. Serves the game over HTTP.
+ *   2. Carries messages between players.
+ *
+ * It deliberately holds no game rules of its own: every room is an
+ * MPRoom from mp-room.js, the same rulebook the browser host runs, so
+ * both ways of playing behave identically and are covered by the same
+ * tests.
  *
  * Run it with:   npm install   &&   npm start
- * Then open      http://localhost:8080      in the browser.
- *
- * No database, no config — state lives in memory for as long as the
- * server is running. Perfect for a game night with friends.
+ * Then open      http://localhost:8080
  */
 
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
+const MPRoom = require('./mp-room.js');
 
 const PORT = process.env.PORT || 8080;
 const ROOT = __dirname;
@@ -48,14 +51,12 @@ const server = http.createServer((req, res) => {
   });
 });
 
-/* ---------------- multiplayer hub ---------------- */
+/* ---------------- rooms ---------------- */
 const wss = new WebSocketServer({ server });
-const rooms = new Map(); // roomCode -> { players: Map<id, player> }
-let nextId = 1;
+const rooms = new Map(); // code -> { room, sockets: Map<playerId, ws> }
 
-/* Room codes are short 2-digit numbers (10-99) so they are easy to read
-   out loud to a friend. Only a couple of games run at a time, so 90 codes
-   is far more than enough; a code is recycled as soon as its room empties. */
+/* Room codes are short 2-digit numbers (10-99) so they are easy to read out
+   loud. A code is recycled as soon as its room empties. */
 function allocCode() {
   const free = [];
   for (let n = 10; n <= 99; n++) if (!rooms.has(String(n))) free.push(String(n));
@@ -63,124 +64,52 @@ function allocCode() {
   return free[Math.floor(Math.random() * free.length)];
 }
 
-function roomSnapshot(room) {
-  const players = {};
-  for (const p of room.players.values()) {
-    players[p.id] = { id: p.id, name: p.name, country: p.country };
-  }
-  return players;
-}
-
 function send(ws, obj) {
-  if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
+  if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
 }
 
-function broadcastRoom(room) {
-  const msg = { t: 'room', players: roomSnapshot(room), host: room.hostId, started: !!room.started };
-  for (const p of room.players.values()) send(p.ws, msg);
+function openRoom(code) {
+  const sockets = new Map();
+  const room = MPRoom.createRoom(code, (pid, msg) => send(sockets.get(pid), msg));
+  const entry = { room, sockets };
+  rooms.set(code, entry);
+  return entry;
 }
 
 wss.on('connection', (ws) => {
-  const player = { id: nextId++, name: 'שחקן', country: null, room: null, lastSummary: null, ws };
-
-  send(ws, { t: 'welcome', playerId: player.id });
+  let entry = null;   // the room this socket belongs to
+  let pid = null;     // this socket's player id inside that room
 
   ws.on('message', (raw) => {
     let m;
     try { m = JSON.parse(raw.toString()); } catch (_) { return; }
 
-    // "create" opens a brand-new game and hands back its 2-digit code;
-    // "join" enters an existing game by that code.
     if (m.t === 'create' || m.t === 'join') {
-      player.name = String(m.name || 'שחקן').slice(0, 24);
-      let code, room;
-
+      if (entry) return;                       // already seated
+      let code;
       if (m.t === 'create') {
         code = allocCode();
         if (!code) { send(ws, { t: 'error', code: 'full', msg: 'אין כרגע מקום למשחק חדש' }); return; }
-        room = { players: new Map(), hostId: player.id, started: false };
-        rooms.set(code, room);
+        entry = openRoom(code);
       } else {
         code = String(m.room || '').trim();
-        room = rooms.get(code);
-        if (!room) { send(ws, { t: 'error', code: 'noroom', msg: 'לא נמצא משחק עם המספר הזה' }); return; }
+        entry = rooms.get(code) || null;
+        if (!entry) { send(ws, { t: 'error', code: 'noroom', msg: 'לא נמצא משחק עם המספר הזה' }); return; }
       }
-
-      player.room = code;
-      room.players.set(player.id, player);
-      send(ws, { t: m.t === 'create' ? 'created' : 'joined', room: code });
-      // hand the newcomer every country snapshot already in the room
-      for (const other of room.players.values()) {
-        if (other.id !== player.id && other.lastSummary) {
-          send(ws, { t: 'world', summary: other.lastSummary });
-        }
-      }
-      broadcastRoom(room);
+      // bind the socket before anything is delivered, or 'welcome' has nowhere to go
+      entry.room.add(m.name, m.t === 'create', (id) => { pid = id; entry.sockets.set(id, ws); });
       return;
     }
 
-    const room = player.room ? rooms.get(player.room) : null;
-    if (!room) return;
-
-    // only the host decides when the game begins
-    if (m.t === 'start') {
-      if (player.id !== room.hostId) return;
-      room.started = true;
-      for (const p of room.players.values()) send(p.ws, { t: 'start' });
-      broadcastRoom(room);
-      return;
-    }
-
-    if (m.t === 'claim') {
-      const wanted = String(m.country || '');
-      // reject if another player in the room already holds this country
-      for (const other of room.players.values()) {
-        if (other.id !== player.id && other.country === wanted) {
-          send(ws, { t: 'error', msg: 'המדינה כבר נתפסה' });
-          broadcastRoom(room);
-          return;
-        }
-      }
-      player.country = wanted;
-      broadcastRoom(room);
-      return;
-    }
-
-    if (m.t === 'state') {
-      player.lastSummary = m.summary || null;
-      if (player.lastSummary) {
-        for (const other of room.players.values()) {
-          if (other.id !== player.id) send(other.ws, { t: 'world', summary: player.lastSummary });
-        }
-      }
-      return;
-    }
-
-    if (m.t === 'diplo') {
-      const target = room.players.get(Number(m.target));
-      if (target) {
-        send(target.ws, {
-          t: 'diplo', type: m.type,
-          fromName: player.name, fromCountry: player.country,
-        });
-      }
-      return;
-    }
+    if (!entry || pid == null) return;
+    entry.room.handle(pid, m);                 // every other rule lives in mp-room.js
   });
 
   ws.on('close', () => {
-    const room = player.room ? rooms.get(player.room) : null;
-    if (room) {
-      room.players.delete(player.id);
-      if (room.players.size === 0) {
-        rooms.delete(player.room);
-      } else {
-        if (room.hostId === player.id) {
-          room.hostId = room.players.keys().next().value; // promote the next player
-        }
-        broadcastRoom(room);
-      }
-    }
+    if (!entry || pid == null) return;
+    entry.sockets.delete(pid);
+    entry.room.remove(pid);
+    if (entry.room.size === 0) rooms.delete(entry.room.code);
   });
 });
 

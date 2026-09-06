@@ -489,6 +489,46 @@
 }
 </style>
 
+<style>
+  /* an offer or a war landing on you: you decide, it is not done to you */
+  #mpAsk .mp-box{ max-width:480px; }
+  #mpAsk .mp-ask-from{ font-size:13px; color:var(--gold); margin-bottom:14px; }
+  .mp-ask-btn{ display:block; width:100%; text-align:right; background:var(--surface-2);
+    border:1px solid var(--line); color:var(--text); padding:14px 16px; border-radius:10px;
+    margin-bottom:10px; cursor:pointer; font-family:'Assistant',sans-serif; transition:border-color .15s; }
+  .mp-ask-btn:hover{ border-color:var(--gold); }
+  .mp-ask-btn .t{ font-size:16px; font-weight:700; display:block; }
+  .mp-ask-btn .d{ font-size:13px; color:var(--muted); margin-top:4px; display:block; line-height:1.5; }
+  .mp-ask-btn.bad:hover{ border-color:var(--bad); }
+  .mp-ask-btn.good:hover{ border-color:var(--good); }
+  /* declaring war sits apart from trade and aid */
+  .wact-war{ background:rgba(180,72,63,0.14); border-color:var(--bad) !important; color:#e9b0aa; }
+  /* the quarter is shared: once you commit, you wait for the others */
+  body.mp-waiting #eventCard .choice{ pointer-events:none; opacity:.40; filter:grayscale(.6); }
+  #mpWaitPanel{ display:none; position:fixed; bottom:16px; left:50%; transform:translateX(-50%);
+    z-index:1600; background:var(--surface); border:1px solid var(--gold); border-radius:12px;
+    padding:12px 18px; text-align:center; font-family:'Assistant',sans-serif;
+    box-shadow:0 8px 20px rgba(0,0,0,.55); max-width:92vw; }
+  body.mp-waiting #mpWaitPanel{ display:block; }
+  #mpWaitPanel .w-t{ font-size:14px; color:var(--good); font-weight:700; }
+  #mpWaitPanel .w-s{ font-size:12.5px; color:var(--muted); margin-top:4px; }
+</style>
+
+<div id="mpAsk" class="mp-overlay">
+  <div class="mp-box">
+    <div class="emblem" id="mpAskIcon">📩</div>
+    <h1 id="mpAskTitle"></h1>
+    <div class="mp-ask-from" id="mpAskFrom"></div>
+    <p class="sub" id="mpAskText"></p>
+    <div id="mpAskChoices"></div>
+  </div>
+</div>
+
+<div id="mpWaitPanel">
+  <div class="w-t">✔️ ההחלטה שלך נשלחה</div>
+  <div class="w-s" id="mpWaitNames"></div>
+</div>
+
 <div id="mpPill"></div>
 
 <script>
@@ -1974,6 +2014,7 @@ const MP = {
   //            'ws'  = a Node server somewhere, entered under "כתובת שרת"
   transport:'p2p', PEER_PREFIX:'pmgov-mp-',
   peer:null, conn:null, hostRoom:null, hostPid:null, connsByPid:{}, _codeTries:0, _joinTimer:null,
+  roomTurn:1, submittedFor:null, lastSeenTurn:null,
 
   /* ----- tiny helpers ----- */
   $(id){ return document.getElementById(id); },
@@ -2232,9 +2273,18 @@ const MP = {
       case 'world':
         MP.applyWorldUpdate(m.summary);
         break;
-      case 'diplo':
-        MP.receiveDiplo(m);
-        break;
+      case 'proposal':      MP.onProposal(m); break;
+      case 'resolution':    MP.onResolution(m); break;
+      case 'warDeclared':   MP.onWarDeclared(m); break;
+      case 'warSent':       MP.onWarSent(m); break;
+      case 'ceasefireAsked':MP.onCeasefireAsked(m); break;
+      case 'warResult':     MP.onWarResult(m); break;
+      case 'warNews':       MP.onWarNews(m); break;
+      case 'warEnded':      MP.onWarEnded(m); break;
+      case 'eliminated':    MP.onEliminated(m); break;
+      case 'turnState':     MP.onTurnState(m); break;
+      case 'turnAdvance':   MP.onTurnAdvance(m); break;
+      case 'proposalSent':  break;
       case 'start':
         MP.goPickCountry();
         break;
@@ -2303,6 +2353,27 @@ const MP = {
     });
   },
 
+  /* the world screen is drawn by the original game; add the one action it
+     has no concept of — war against another player — onto those cards */
+  addWarButtons(){
+    document.querySelectorAll('#worldGrid .world-card').forEach(card=>{
+      if(card.querySelector('.wact-war')) return;
+      const nameEl=card.querySelector('.wname'); if(!nameEl) return;
+      const label=nameEl.textContent;
+      const country=Object.keys(MP.humanCountries).find(c=>label.indexOf(c)>=0);
+      if(!country || !MP.isHuman(country)) return;
+      const p=MP.players[MP.humanCountries[country]];
+      if(p && p.alive===false) return;
+      const row=document.createElement('div');
+      row.className='wactions';
+      const b=document.createElement('button');
+      b.className='wact-btn wact-war';
+      b.textContent='⚔️ הכרז מלחמה על '+country;
+      b.onclick=()=>MP.declareWar(country);
+      row.appendChild(b);
+      card.appendChild(row);
+    });
+  },
   goPickCountry(){
     MP.tutorialClose();
     MP.$('mpSetupOverlay').classList.remove('open');
@@ -2312,6 +2383,8 @@ const MP = {
 
   onGameStart(){
     MP.started=true;
+    MP.lastSeenTurn = state ? state.turn : 1;
+    if(!MP._turnWatcher){ MP._turnWatcher=true; MP.watchTurn(); }
     MP.tutorialClose();
     const pill=MP.$('mpPill'); if(pill) pill.classList.add('open');
     MP.updatePill();
@@ -2328,6 +2401,7 @@ const MP = {
       country:s.country.name, flag:s.country.flag,
       approval:s.approval, stability:s.stability, borderTension:s.borderTension,
       treasury:s.treasury, debtToGdp:s.debtToGdp, turn:s.turn,
+      militaryReadiness:s.militaryReadiness,
       name:MP.name, alive:!checkGameOver()
     }});
   },
@@ -2355,38 +2429,221 @@ const MP = {
     });
   },
 
-  /* ----- receiving a diplomatic action from another player ----- */
-  receiveDiplo(m){
-    if(!state) return;
-    const from=m.fromName||'שחקן'; const fromCountry=m.fromCountry;
-    const rel = fromCountry!=null ? (state.relations[fromCountry]||0) : 0;
-    let msg='';
-    switch(m.type){
-      case 'trade':
-        state.treasury=clamp(state.treasury+350,-20000,100000);
-        state.approval=clamp(state.approval+2,0,100);
-        if(fromCountry!=null) state.relations[fromCountry]=clamp(rel+15,-100,100);
-        msg=`🤝 ${from} חתם/ה איתך על הסכם סחר (+קופה, +יחסים)`; break;
-      case 'aid':
-        state.treasury=clamp(state.treasury+500,-20000,100000);
-        state.stability=clamp(state.stability+8,0,100);
-        state.approval=clamp(state.approval+4,0,100);
-        if(fromCountry!=null) state.relations[fromCountry]=clamp(rel+20,-100,100);
-        msg=`📦 ${from} שלח/ה לך סיוע הומניטרי (+קופה, +יציבות)`; break;
-      case 'sanction':
-        state.treasury=clamp(state.treasury-800,-20000,100000);
-        state.approval=clamp(state.approval-6,0,100);
-        if(fromCountry===state.neighborName) state.borderTension=clamp(state.borderTension+6,0,100);
-        if(fromCountry!=null) state.relations[fromCountry]=clamp(rel-25,-100,100);
-        msg=`⛔ ${from} הטיל/ה עליך סנקציות! (-קופה, -אישור)`; break;
-      case 'spy':
-        state.approval=clamp(state.approval-1,0,100);
-        msg=`🕵️ זוהתה פעילות ריגול של ${from} נגד מדינתך`; break;
-      default: return;
+  /* ================= diplomacy between real players =================
+     Against a bot the original game applies an action at once. Against a
+     person that would be something done *to* them, so it is sent as an
+     offer instead and nothing happens until they answer. */
+
+  // what each answer costs and pays. sender = who acted, target = who answered.
+  OUTCOMES:{
+    trade:{
+      accept:{ sender:{treasury:+350, relations:+15}, target:{treasury:+350, approval:+2, relations:+15},
+               senderMsg:c=>'🤝 '+c+' חתם/ה איתך על הסכם סחר', targetMsg:c=>'🤝 חתמת על הסכם סחר עם '+c },
+      decline:{ sender:{approval:-1, relations:-10}, target:{},
+               senderMsg:c=>'🤝 '+c+' דחה/תה את הצעת הסחר שלך', targetMsg:c=>'דחית את הצעת הסחר של '+c },
+    },
+    aid:{
+      accept:{ sender:{treasury:-500, approval:+2, relations:+20},
+               target:{treasury:+500, stability:+8, approval:+4, relations:+20},
+               senderMsg:c=>'📦 '+c+' קיבל/ה את הסיוע ההומניטרי שלך', targetMsg:c=>'📦 קיבלת סיוע הומניטרי מ'+c },
+      decline:{ sender:{relations:-5}, target:{approval:+1},
+               senderMsg:c=>'📦 '+c+' סירב/ה לקבל את הסיוע שלך', targetMsg:c=>'סירבת לסיוע של '+c },
+    },
+    sanction:{
+      absorb:{ sender:{approval:+2, relations:-25}, target:{treasury:-800, approval:-6, relations:-25, tensionIfNeighbor:+6},
+               senderMsg:c=>'⛔ הסנקציות שלך על '+c+' נכנסו לתוקף', targetMsg:c=>'⛔ ספגת את הסנקציות של '+c },
+      counter:{ sender:{treasury:-500, approval:-3, relations:-40}, target:{treasury:-500, approval:-3, relations:-40, tensionIfNeighbor:+10},
+               senderMsg:c=>'⛔ '+c+' השיב/ה בסנקציות נגד — שני הצדדים נפגעו', targetMsg:c=>'⛔ השבת בסנקציות נגד '+c },
+      appeal:{ sender:{relations:-10}, target:{treasury:-400, approval:-3, relations:-10},
+               senderMsg:c=>'🕊️ '+c+' פנה/תה בערוץ דיפלומטי והסנקציות רוככו', targetMsg:c=>'🕊️ פנית דיפלומטית ל'+c+' והנזק רוכך' },
+    },
+    spy:{
+      expel:{ sender:{approval:-3, relations:-20}, target:{approval:+2, relations:-20},
+               senderMsg:c=>'🕵️ '+c+' חשף/ה וגירש/ה את המרגל שלך — שערורייה', targetMsg:c=>'🕵️ גירשת את המרגל של '+c },
+      ignore:{ sender:{}, target:{approval:-1},
+               senderMsg:c=>'🕵️ '+c+' העדיף/ה לא להגיב על הריגול', targetMsg:c=>'התעלמת מהריגול של '+c },
+    },
+  },
+
+  isHuman(country){
+    const owner=MP.humanCountries[country];
+    return !!(owner && owner!==MP.playerId);
+  },
+  propose(ownerId, kind, country){
+    MP.send({t:'propose', target:ownerId, kind:kind});
+    const label={trade:'הצעת סחר',aid:'סיוע הומניטרי',sanction:'סנקציות',spy:'ריגול'}[kind]||kind;
+    MP.toast('נשלח ל'+country+': '+label+' — ממתינים לתשובה');
+  },
+
+  /* apply one side of an agreed outcome to our own country */
+  applyEffects(e, otherCountry){
+    if(!state || !e) return;
+    const rel = otherCountry!=null ? (state.relations[otherCountry]||0) : 0;
+    if(e.treasury) state.treasury=clamp(state.treasury+e.treasury,-20000,100000);
+    if(e.approval) state.approval=clamp(state.approval+e.approval,0,100);
+    if(e.stability) state.stability=clamp(state.stability+e.stability,0,100);
+    if(e.relations!=null && otherCountry!=null) state.relations[otherCountry]=clamp(rel+e.relations,-100,100);
+    if(e.tensionIfNeighbor && otherCountry===state.neighborName){
+      state.borderTension=clamp(state.borderTension+e.tensionIfNeighbor,0,100);
     }
+  },
+  onResolution(m){
+    const table=MP.OUTCOMES[m.kind]; if(!table) return;
+    const row=table[m.choice]; if(!row) return;
+    const iAmSender = m.side==='sender';
+    const other = iAmSender ? m.toCountry : m.fromCountry;
+    const otherName = iAmSender ? m.toName : m.fromName;
+    MP.applyEffects(iAmSender ? row.sender : row.target, other);
+    const msg = (iAmSender ? row.senderMsg : row.targetMsg)(otherName);
     if(typeof addLog==='function') addLog('<b>יחסי חוץ:</b> '+msg);
-    MP.toast(msg, m.type==='sanction'?'bad':(m.type==='spy'?'':'good'));
-    if(typeof render==='function' && !checkGameOver()) render();
+    MP.toast(msg, /דחה|סירב|ספגת|נגד|גירש|שערורייה/.test(msg)?'bad':'good');
+    MP.afterChange();
+  },
+
+  /* ---------- the question panel ---------- */
+  ask(opts){
+    MP.$('mpAskIcon').textContent=opts.icon||'📩';
+    MP.$('mpAskTitle').textContent=opts.title||'';
+    MP.$('mpAskFrom').textContent=opts.from||'';
+    MP.$('mpAskText').textContent=opts.text||'';
+    const box=MP.$('mpAskChoices'); box.innerHTML='';
+    (opts.choices||[]).forEach(c=>{
+      const b=document.createElement('button');
+      b.className='mp-ask-btn'+(c.tone?' '+c.tone:'');
+      b.innerHTML='<span class="t">'+c.title+'</span><span class="d">'+c.desc+'</span>';
+      b.onclick=()=>{ MP.$('mpAsk').classList.remove('open'); c.pick(); };
+      box.appendChild(b);
+    });
+    MP.$('mpAsk').classList.add('open');
+  },
+
+  onProposal(m){
+    const who=m.fromName+' ('+(m.fromCountry||'')+')';
+    const answer=(choice)=>()=>MP.send({t:'respond', id:m.id, choice:choice});
+    if(m.kind==='trade') MP.ask({icon:'🤝', title:'הצעת הסכם סחר', from:'מאת '+who,
+      text:'הסכם סחר יכניס קופה לשני הצדדים וישפר את היחסים ביניכם.',
+      choices:[{title:'✅ לחתום על ההסכם',desc:'+350 לקופה, +2 אישור, +15 ליחסים',tone:'good',pick:answer('accept')},
+               {title:'❌ לדחות',desc:'לא מקבלים כלום; היחסים עם '+m.fromName+' נפגעים קלות',tone:'bad',pick:answer('decline')}]});
+    else if(m.kind==='aid') MP.ask({icon:'📦', title:'הצעת סיוע הומניטרי', from:'מאת '+who,
+      text:m.fromName+' מציע/ה לשלוח לך סיוע על חשבון הקופה שלו/ה.',
+      choices:[{title:'✅ לקבל את הסיוע',desc:'+500 לקופה, +8 יציבות, +4 אישור, +20 ליחסים',tone:'good',pick:answer('accept')},
+               {title:'🙅 לסרב בכבוד',desc:'לא מקבלים סיוע; היחסים נפגעים קלות',pick:answer('decline')}]});
+    else if(m.kind==='sanction') MP.ask({icon:'⛔', title:'הוטלו עליך סנקציות!', from:'מאת '+who,
+      text:'הסנקציות בדרך. איך את/ה מגיב/ה?',
+      choices:[{title:'🛡️ לספוג',desc:'-800 קופה, -6 אישור. לא מסלים מעבר לזה',pick:answer('absorb')},
+               {title:'⚔️ סנקציות נגד',desc:'שני הצדדים מפסידים 500 ו-3 אישור, והיחסים קורסים',tone:'bad',pick:answer('counter')},
+               {title:'🕊️ פנייה דיפלומטית',desc:'הנזק מרוכך ל-400 ו-3 אישור, והיחסים נפגעים פחות',tone:'good',pick:answer('appeal')}]});
+    else if(m.kind==='spy') MP.ask({icon:'🕵️', title:'נתפס מרגל', from:'מטעם '+who,
+      text:'שירותי הביטחון תפסו מרגל שפעל מטעם '+m.fromName+'.',
+      choices:[{title:'📢 לחשוף ולגרש',desc:'+2 אישור אצלך, שערורייה אצלו/ה, היחסים נפגעים',pick:answer('expel')},
+               {title:'🤫 לטפל בשקט',desc:'-1 אישור, בלי משבר דיפלומטי',pick:answer('ignore')}]});
+  },
+
+  /* ---------- war ---------- */
+  declareWar(country){
+    const owner=MP.humanCountries[country];
+    if(!owner || owner===MP.playerId) return;
+    MP.ask({icon:'⚔️', title:'להכריז מלחמה על '+country+'?', from:'',
+      text:'זו הכרעה. המנצח ממשיך, והמפסיד — המשחק שלו נגמר.',
+      choices:[{title:'⚔️ להכריז מלחמה',desc:'הכוח נקבע לפי מוכנות צבאית, יציבות ואישור ציבורי',tone:'bad',
+                pick:()=>MP.send({t:'declareWar', target:owner})},
+               {title:'↩️ להתחרט',desc:'חוזרים בלי לעשות כלום',pick:()=>{}}]});
+  },
+  onWarSent(m){
+    if(state){ state.borderTension=clamp(state.borderTension+10,0,100);
+               state.militaryReadiness=clamp(state.militaryReadiness-5,0,100); }
+    if(typeof addLog==='function') addLog('<b>מלחמה:</b> ⚔️ הכרזת מלחמה על '+m.toCountry+' ('+m.toName+')');
+    MP.toast('⚔️ הכרזת מלחמה על '+m.toName+' — ממתינים לתגובה','bad');
+    MP.afterChange();
+  },
+  onWarDeclared(m){
+    if(state) state.borderTension=clamp(state.borderTension+15,0,100);
+    if(typeof addLog==='function') addLog('<b>מלחמה:</b> ⚔️ '+m.fromName+' הכריז/ה עליך מלחמה!');
+    const send=(posture)=>()=>MP.send({t:'warDefend', id:m.id, posture:posture});
+    MP.ask({icon:'⚔️', title:m.fromName+' הכריז/ה עליך מלחמה', from:'מ'+(m.fromCountry||''),
+      text:'עליך להחליט איך להיערך. המפסיד במלחמה מודח מהמשחק.',
+      choices:[{title:'🛡️ להתבצר בהגנה',desc:'מחזק אותך משמעותית בקרב — הבחירה הבטוחה',tone:'good',pick:send('defend')},
+               {title:'⚔️ מתקפת נגד',desc:'מחליש את היריב אך גם אותך — הימור',tone:'bad',pick:send('counter')},
+               {title:'🕊️ לבקש הפסקת אש',desc:'אם יסכים — נגמר בלי הרוגים. אם יסרב — תילחם/י מעמדה חלשה יותר',pick:send('ceasefire')}]});
+    MP.afterChange();
+  },
+  onCeasefireAsked(m){
+    const send=(choice)=>()=>MP.send({t:'ceasefireAnswer', id:m.id, choice:choice});
+    MP.ask({icon:'🕊️', title:m.fromName+' מבקש/ת הפסקת אש', from:'מ'+(m.fromCountry||''),
+      text:'אפשר לסיים כאן, או להמשיך במתקפה מול יריב שהיסס.',
+      choices:[{title:'🕊️ להסכים להפסקת אש',desc:'המלחמה נגמרת, אף אחד לא מודח, המתיחות יורדת',tone:'good',pick:send('accept')},
+               {title:'⚔️ לסרב ולתקוף',desc:'הקרב מוכרע — והיריב נחלש מההיסוס',tone:'bad',pick:send('refuse')}]});
+  },
+  onWarResult(m){
+    if(!state) return;
+    if(m.side==='winner'){
+      state.approval=clamp(state.approval+12,0,100);
+      state.stability=clamp(state.stability+5,0,100);
+      state.borderTension=clamp(state.borderTension-20,0,100);
+      state.militaryReadiness=clamp(state.militaryReadiness-15,0,100);
+      if(typeof addLog==='function') addLog('<b>מלחמה:</b> 🏆 ניצחת במלחמה מול '+m.loserName+' ('+m.loserCountry+')');
+      MP.toast('🏆 ניצחת במלחמה מול '+m.loserName+'!','good');
+    } else {
+      // the original game already ends a term when the border is fully ablaze
+      state.borderTension=100;
+      if(typeof addLog==='function') addLog('<b>מלחמה:</b> 💥 הפסדת במלחמה מול '+m.winnerName+' — מדינתך נכבשה');
+      MP.toast('💥 הפסדת במלחמה מול '+m.winnerName,'bad');
+    }
+    MP.afterChange();
+  },
+  onWarEnded(m){
+    if(!state) return;
+    const other = m.side==='attacker' ? m.defenderCountry : m.attackerCountry;
+    const otherName = m.side==='attacker' ? m.defenderName : m.attackerName;
+    state.borderTension=clamp(state.borderTension-10,0,100);
+    if(other!=null) state.relations[other]=clamp((state.relations[other]||0)+15,-100,100);
+    if(typeof addLog==='function') addLog('<b>מלחמה:</b> 🕊️ הושגה הפסקת אש מול '+otherName);
+    MP.toast('🕊️ הפסקת אש מול '+otherName,'good');
+    MP.afterChange();
+  },
+  onWarNews(m){
+    if(m.winnerId===MP.playerId || m.loserId===MP.playerId) return; // already told directly
+    if(typeof addLog==='function') addLog('<b>העולם:</b> ⚔️ '+m.winnerName+' ניצח/ה במלחמה מול '+m.loserName);
+    MP.toast('⚔️ '+m.winnerCountry+' ניצחה במלחמה מול '+m.loserCountry);
+  },
+  onEliminated(){
+    MP.unlockTurn();
+    MP.toast('המשחק שלך נגמר','bad');
+  },
+
+  /* ---------- the shared quarter ---------- */
+  submitTurn(){
+    if(!MP.active || !MP.started) return;
+    if(MP.submittedFor===MP.roomTurn) return;
+    if(typeof checkGameOver==='function' && checkGameOver()) return;
+    MP.submittedFor=MP.roomTurn;
+    MP.send({t:'turnDone', turn:MP.roomTurn});
+    document.body.classList.add('mp-waiting');
+  },
+  unlockTurn(){ document.body.classList.remove('mp-waiting'); },
+  onTurnState(m){
+    const names=(m.waiting||[]).filter(n=>n!==MP.name);
+    const el=MP.$('mpWaitNames');
+    if(el) el.textContent = names.length ? 'ממתינים ל: '+names.join(', ') : 'כולם סיימו — ממשיכים…';
+  },
+  onTurnAdvance(m){
+    MP.roomTurn=m.turn;
+    MP.submittedFor=null;
+    MP.unlockTurn();
+  },
+  /* the urgent-event timer can advance a quarter without going through the
+     buttons, so watch the turn counter as well and report that too */
+  watchTurn(){
+    setInterval(()=>{
+      if(!MP.active || !MP.started || !state) return;
+      if(MP.lastSeenTurn==null){ MP.lastSeenTurn=state.turn; return; }
+      if(state.turn!==MP.lastSeenTurn){ MP.lastSeenTurn=state.turn; MP.submitTurn(); }
+    }, 400);
+  },
+
+  afterChange(){
+    if(typeof render==='function' && !(typeof checkGameOver==='function' && checkGameOver())) render();
+    else if(typeof render==='function') render();
     MP.pushState();
   },
 };
@@ -2412,25 +2669,30 @@ window.MP = MP;
   const _makeChoice = window.makeChoice;
   window.makeChoice = function(i){
     _makeChoice(i);
-    if(MP.active){ MP.restoreHumans(); MP.pushState(); if(MP.worldOpen) { try{ openWorldView(); }catch(_){}} }
+    if(MP.active){
+      MP.restoreHumans(); MP.pushState();
+      if(state) MP.lastSeenTurn=state.turn;
+      MP.submitTurn();
+      if(MP.worldOpen){ try{ openWorldView(); }catch(_){} }
+    }
   };
 
   const _worldAction = window.worldAction;
   window.worldAction = function(name, type){
+    // Against a person this is an offer they answer, so nothing is applied
+    // here. Against a bot the original behaviour is untouched.
+    if(MP.active && MP.isHuman(name)){ MP.propose(MP.humanCountries[name], type, name); return; }
     _worldAction(name, type);
-    if(MP.active){
-      const owner=MP.humanCountries[name];
-      if(owner && owner!==MP.playerId){ MP.send({t:'diplo', target:owner, type}); }
-      MP.pushState();
-    }
+    if(MP.active) MP.pushState();
   };
 
   const _sendSpy = window.sendSpy;
   window.sendSpy = function(name){
+    // spying still works exactly as before — the intel is ours either way —
+    // but a real target now learns about it and can act on it
     _sendSpy(name);
     if(MP.active){
-      const owner=MP.humanCountries[name];
-      if(owner && owner!==MP.playerId){ MP.send({t:'diplo', target:owner, type:'spy'}); }
+      if(MP.isHuman(name)) MP.send({t:'propose', target:MP.humanCountries[name], kind:'spy'});
       MP.pushState();
     }
   };
@@ -2439,7 +2701,10 @@ window.MP = MP;
   window.filterCountries = function(){ _filterCountries(); if(MP.active) MP.decorateGrid(); };
 
   const _openWorldView = window.openWorldView;
-  window.openWorldView = function(){ _openWorldView(); MP.worldOpen=true; };
+  window.openWorldView = function(){
+    _openWorldView(); MP.worldOpen=true;
+    if(MP.active) MP.addWarButtons();
+  };
   const _closeWorldView = window.closeWorldView;
   window.closeWorldView = function(){ _closeWorldView(); MP.worldOpen=false; };
 })();
