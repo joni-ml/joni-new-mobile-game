@@ -29,13 +29,17 @@
   .country-card .ctag{font-size:11px;color:var(--muted);margin-top:3px;}
   .search-box{width:100%;max-width:340px;margin:16px auto 0;display:block;background:var(--surface-2);border:1px solid var(--line);color:var(--text);padding:9px 12px;border-radius:8px;font-family:'Assistant',sans-serif;font-size:14px;}
 
+  /* the situation-room monitor: a warm rim and a faint bloom, so the scene
+     reads as a live broadcast rather than an image dropped on the page */
   .pixel-frame{
-    border:2px solid var(--line); border-radius:10px; overflow:hidden; margin-bottom:16px;
+    border:1px solid #4a3f28; border-radius:10px; overflow:hidden; margin-bottom:16px;
     background:#000; position:relative; width:100%;
+    box-shadow:0 0 0 1px rgba(0,0,0,0.6), 0 10px 28px -12px rgba(0,0,0,0.9),
+               0 0 34px -14px rgba(184,147,75,0.55);
   }
   .pixel-frame::after{
-    content:""; position:absolute; inset:0; pointer-events:none;
-    box-shadow:inset 0 0 0 2px rgba(184,147,75,0.15);
+    content:""; position:absolute; inset:0; pointer-events:none; border-radius:9px;
+    box-shadow:inset 0 0 0 1px rgba(184,147,75,0.22), inset 0 0 26px -6px rgba(0,0,0,0.85);
   }
   #pixelCanvas{
     width:100%; height:auto; display:block; aspect-ratio:320/140;
@@ -45,8 +49,10 @@
   .pixel-frame:-webkit-full-screen #pixelCanvas{
     width:100vw; height:100vh; aspect-ratio:unset; object-fit:contain;
   }
+  /* controls ride along the top edge — the street, the crowd and the
+     border installations all live along the bottom of the scene */
   .pixel-controls{
-    position:absolute; bottom:8px; left:8px; display:flex; gap:8px;
+    position:absolute; top:8px; left:8px; display:flex; gap:8px; flex-wrap:wrap;
   }
   .pixel-btn{
     background:rgba(18,21,28,0.85); color:var(--text); border:1px solid var(--gold);
@@ -95,12 +101,19 @@
   .espionage-info{ font-size:10.5px; color:var(--gold); background:rgba(184,147,75,0.08); border:1px solid var(--line); border-radius:5px; padding:5px 7px; margin-top:8px; }
 
 
-  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px;}
+  /* eight readings, four to a row: two clean rows rather than a stray tile */
+  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
   .metric{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 10px;}
-  .metric .label{font-size:12px;color:var(--muted);margin-bottom:6px;}
-  .metric .value{font-family:'Frank Ruhl Libre',serif;font-size:19px;margin-bottom:8px;}
+  .metric .label{font-size:12px;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:6px;}
+  .metric .value{font-family:'Frank Ruhl Libre',serif;font-size:19px;margin-bottom:8px;font-variant-numeric:tabular-nums;}
   .bar{height:6px;border-radius:4px;background:var(--surface-2);overflow:hidden;}
   .bar > div{height:100%;border-radius:4px;transition:width .4s ease;}
+  /* how far the number moved this quarter, and the shape of the whole term */
+  .mdelta{font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:20px;
+    font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .mdelta.up{color:#8fe3b0;background:rgba(76,140,123,0.20);}
+  .mdelta.down{color:#f0a094;background:rgba(180,72,63,0.20);}
+  .metric .spark{display:block;width:100%;height:16px;margin-top:7px;opacity:.5;}
 
   .narrative{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--muted);margin-bottom:18px;font-style:italic;}
 
@@ -663,7 +676,20 @@ function freshState(country){
     mediaApprovalBoost: 0,
     bombInventory: { conventional: Math.floor(Math.random()*5), chemical: 0, nuclear: 0 },
     siegeCapability: 0,
+    prevMetrics: null,   // last quarter's headline numbers, for the trend chips
+    metricHistory: { approval:[], stability:[], treasury:[], borderTension:[] },
   };
+}
+
+/* Keep the last 14 quarters of each headline number so the tiles can draw
+   the shape of the term, not just today's reading. */
+function pushMetricHistory(){
+  const h = state.metricHistory;
+  if(!h) return;
+  Object.keys(h).forEach(key => {
+    h[key].push(state[key]);
+    if(h[key].length > 14) h[key].shift();
+  });
 }
 
 function pickNeighbor(playerCountryName){
@@ -1150,161 +1176,162 @@ const eventPool = [
         effect: s => { s.approval -= 6; s.stability -= 3; } },
     ]
   },
-  /* ========== TOURISM INCOME ========== */
+  /* ========== TOURISM ========== */
   {
     id:"tourism_boom",
-    title:"תיירות בעלייה - הכנסות משפחות גדלות",
-    desc: s => `רף תיירי גבוה השנה. המדיניות ההזמנה תרומה של פעילות תרבותית ותיירות הולכת ועולה.`,
+    title:"עונת תיירות חזקה",
+    desc: s => `מספר המבקרים במדינה זינק ברבעון האחרון. משרד התיירות מבקש להחליט כמה להשקיע כדי לתרגם את הגל הזה להכנסות קבועות.`,
     weight: s => s.budget.infra > 20 ? 2 : 1,
     choices: [
-      { title:"השקעה בתשתיות תיירותיות", desc:"מעלה הכנסות מתיירות מיידי, דורש השקעה ראשונית.",
+      { title:"להשקיע בתשתיות תיירות", desc:"נמלי תעופה, מלונות ואתרי מורשת — עולה מיד, ומחזיר בכל רבעון מכאן והלאה.",
         tags:["spending"], impact:{approval:1,stability:0,treasury:1,tension:0},
-        effect: s => { s.treasury -= 400; s.tourism += 15; s.tourismIncome += Math.floor(s.tourism*2); } },
-      { title:"לעודד התיירות בשיטות קלות", desc:"הכנסה מתונה, תוך כדי הפחתת עלות.",
+        effect: s => { s.treasury -= 400; s.tourism += 15; } },
+      { title:"קמפיין שיווק בלבד", desc:"זול ומהיר, אך התוספת להכנסות צנועה ולא מחזיקה לאורך זמן.",
         tags:[], impact:{approval:0,stability:0,treasury:0,tension:0},
-        effect: s => { s.tourism += 5; s.tourismIncome += Math.floor(s.tourism*0.8); } },
+        effect: s => { s.tourism += 5; } },
     ]
   },
+  /* ========== DISEASE ========== */
   {
     id:"disease_outbreak",
-    title:"התפרצות מחלה חדשה בתחום הציבור",
+    title:"התפרצות מחלה",
     desc: s => {
-      const diseases = ["שפעת קשה","חום כדורי","וירוס קשה"];
-      const disease = diseases[Math.floor(Math.random()*diseases.length)];
-      return `בדיקות מה מצביעות על התפרצות ${disease}. משרד הבריאות דורש תגובה מיידית.`;
+      const list = ["שפעת עונתית חריפה","נגיף נשימתי חדש","זיהום מעיים נרחב"];
+      const disease = list[Math.floor(Math.random()*list.length)];
+      return `משרד הבריאות מדווח על התפרצות של ${disease}. בתי החולים מתחילים להתמלא${s.budget.health>=25?", אך מערכת הבריאות המחוזקת קונה לך זמן":""}.`;
     },
     weight: s => 1.5,
     choices: [
-      { title:"תעניקת חיסון למסתו", desc:"מעלה הוצאות בריאות, אך עוצרת את התפשטות המחלה.",
+      { title:"מבצע חיסונים ארצי", desc:"יקר, אך עוצר את ההתפרצות במקום ומשפר את אמון הציבור.",
         tags:["spending"], impact:{approval:2,stability:1,treasury:-1,tension:0},
         effect: s => { s.treasury -= 800; s.diseaseRisk.level = 0; s.approval += 5; } },
-      { title:"הנחיות בריאות בלבד", desc:"פחות עלות, פחות יעיל.",
+      { title:"הנחיות והמלצות בלבד", desc:"עלות נמוכה, אך ההתפרצות נבלמת רק חלקית וממשיכה לגלוש.",
         tags:[], impact:{approval:0,stability:-1,treasury:0,tension:0},
         effect: s => { s.treasury -= 200; s.diseaseRisk.level = Math.max(0, s.diseaseRisk.level-1); s.approval -= 2; } },
-      { title:"להתעלם ולייחס זאת לתעיתות",
+      { title:"לטעון שהדיווחים מוגזמים", desc:"חוסך תקציב היום — והמחלה מתפשטת בלי בלימה.",
         tags:["manipulation"], impact:{approval:-1,stability:-1,treasury:0,tension:0},
         effect: s => { s.diseaseRisk.level = 3; s.stability -= 8; s.approval -= 6; } },
     ]
   },
-  /* ========== COUNTRY PERSONALITY ========== */
+  /* ========== NATIONAL CHARACTER ========== */
   {
     id:"personality_reveal",
-    title:"אופי משדדי - השפעה על היכולות שלך",
-    desc: s => `אופי האומה שלך משפיע על יכולותיך בתחומים מסוימים. הכרה עמוקה של זהותך תשפר את ביצועיך.`,
+    title:"אופייה של המדינה",
+    desc: s => `אחרי הרבעונים הראשונים בשלטון מתבררת נטייתה של ${s.country.name}. הכיוון שתבחר/י יקבע באיזה תחום תהיה/י חזק/ה לשארית הכהונה.`,
     weight: s => s.turn === 2 ? 1 : 0,
     choices: [
-      { title:"קבל את אופיך יציב - חוזק בכלכלה",
+      { title:"מדינה יציבה — עוצמה כלכלית", desc:"מעלה את כישור הידע הכלכלי ואת אמון הציבור בניהול.",
         tags:["economics"], impact:{approval:1,stability:1,treasury:1,tension:0},
-        effect: s => { s.skills.economics += 1; s.approval += 3; s.countryPersonality.traits.push("יציב כלכלי"); } },
-      { title:"קבל את אופיך אגרסיבי - חוזק בצבא",
+        effect: s => { s.skills.economics = clamp(s.skills.economics+1,1,5); s.approval += 3; s.countryPersonality.type = "יציבה"; s.countryPersonality.traits.push("עוצמה כלכלית"); } },
+      { title:"מדינה תקיפה — עוצמה צבאית", desc:"מקפיץ את המוכנות הצבאית, במחיר תדמית לוחמנית.",
         tags:["military"], impact:{approval:0,stability:0,treasury:0,tension:0},
-        effect: s => { s.militaryReadiness += 10; s.countryPersonality.traits.push("אגרסיבי צבאי"); } },
-      { title:"קבל את אופיך דיפלומטי - חוזק בשיחות",
+        effect: s => { s.militaryReadiness = clamp(s.militaryReadiness+10,0,100); s.countryPersonality.type = "תקיפה"; s.countryPersonality.traits.push("עוצמה צבאית"); } },
+      { title:"מדינה דיפלומטית — עוצמה בשיחות", desc:"מעלה את כישור הדיפלומטיה ומשפר את היחסים עם השכנה.",
         tags:["diplomacy_soft"], impact:{approval:1,stability:1,treasury:0,tension:-1},
-        effect: s => { s.skills.diplomacy += 1; s.relations[s.neighborName] = (s.relations[s.neighborName]||0) + 20; } },
+        effect: s => { s.skills.diplomacy = clamp(s.skills.diplomacy+1,1,5); s.relations[s.neighborName] = clamp((s.relations[s.neighborName]||0)+20,-100,100); s.countryPersonality.type = "דיפלומטית"; s.countryPersonality.traits.push("עוצמה דיפלומטית"); } },
     ]
   },
   /* ========== ALLIES & PEACE ========== */
   {
     id:"alliance_request",
-    title:"בקשה לברית צבאית",
-    desc: s => {
-      const otherCountries = COUNTRIES.filter(c => c.name !== s.country.name);
-      const ally = otherCountries[Math.floor(Math.random()*otherCountries.length)];
-      return `${ally.name} מציעה ברית צבאית עם מדינתך לקבלת הגנה הדדית.`;
-    },
-    weight: s => s.relations[s.neighborName] > 20 ? 2 : 0.5,
+    title:"הצעת ברית הגנה",
+    desc: s => `${s.neighborName} מציעה ברית הגנה הדדית: תקיפה על אחת מכן תיחשב תקיפה על שתיכן.`,
+    weight: s => (s.relations[s.neighborName]||0) > 20 ? 2 : 0.5,
     choices: [
-      { title:"קבל את הברית", desc:"משפר יחסים, מחזק הגנה משותפת.",
+      { title:"לחתום על הברית", desc:"מחזק את ההגנה ומקפיץ את היחסים — אך קושר אותך לגורלה.",
         tags:["diplomacy_soft"], impact:{approval:1,stability:1,treasury:0,tension:-1},
-        effect: s => { s.allies.push(s.neighborName); s.relations[s.neighborName] = 100; s.militaryReadiness += 5; } },
-      { title:"דחה בנימוס", desc:"לא פוגע, אך לא משפר קשרים.",
+        effect: s => { if(!s.allies.includes(s.neighborName)) s.allies.push(s.neighborName);
+          s.relations[s.neighborName] = 100; s.militaryReadiness = clamp(s.militaryReadiness+5,0,100); } },
+      { title:"לדחות בנימוס", desc:"שומר על חופש פעולה מלא, במחיר צינון קל ביחסים.",
         tags:[], impact:{approval:0,stability:0,treasury:0,tension:0},
         effect: s => { s.relations[s.neighborName] = clamp((s.relations[s.neighborName]||0)-10, -100, 100); } },
     ]
   },
   {
     id:"peace_treaty",
-    title:"הסכם שלום עם אויב",
-    desc: s => {
-      const otherCountries = COUNTRIES.filter(c => c.name !== s.country.name);
-      const enemy = otherCountries[Math.floor(Math.random()*otherCountries.length)];
-      return `${enemy.name} מציעה הסכם שלום וסחר להנמכת מתיחויות.`;
-    },
+    title:"הצעת הסכם שלום",
+    desc: s => `${s.neighborName} פונה בערוץ אחורי ומציעה הסכם שלום וסחר שיסיים את העימות בגבול.`,
     weight: s => s.borderTension > 50 ? 2 : 0,
     choices: [
-      { title:"חתום על הסכם", desc:"מורידה מתיחות משמעותית, משפרת יחסים.",
+      { title:"לחתום על ההסכם", desc:"מוריד את המתיחות בגבול משמעותית ומשקם את היחסים.",
         tags:["diplomacy_soft"], impact:{approval:1,stability:1,treasury:0,tension:-2},
-        effect: s => { s.borderTension -= 25; s.relations[s.neighborName] = 50; s.peaceAgreements[s.neighborName] = true; } },
-      { title:"הם לא מעניינים אותך", desc:"ממשיכה מתיחות.",
-        tags:[], impact:{approval:0,stability:0,treasury:0,tension:0},
-        effect: s => { s.borderTension += 5; } },
+        effect: s => { s.borderTension = clamp(s.borderTension-25,0,100); s.relations[s.neighborName] = 50;
+          s.peaceAgreements[s.neighborName] = true; } },
+      { title:"לדחות את ההצעה", desc:"שומר על עמדת כוח, אך המתיחות ממשיכה לטפס.",
+        tags:[], impact:{approval:0,stability:0,treasury:0,tension:1},
+        effect: s => { s.borderTension = clamp(s.borderTension+5,0,100); } },
     ]
   },
-  /* ========== MOLE (HIDDEN SPY) ========== */
+  /* ========== THE MOLE ========== */
   {
     id:"mole_discovered",
-    title:"חשיפת מרגל חדור עמוק במשרדך",
-    desc: s => `מודיעין חשף מרגל עמוק במוקדי הממשלה! האם זה היה אימון או חתרנות?`,
+    title:"חפרפרת בלשכה",
+    desc: s => `שירות הביטחון חשף גורם בכיר בלשכתך שמעביר מידע למדינה זרה. ההחלטה מה לעשות איתו היא שלך בלבד.`,
     weight: s => Math.random() < 0.05 ? 1 : 0,
     choices: [
-      { title:"גרש מיד - הגדל את הבטחון", desc:"מעלה אמון בביטחון ממלכתי.",
+      { title:"לעצור ולגרש מיד", desc:"מסר חד לכל מי שחשב לנסות — מחזק את אמון הציבור ואת המודיעין.",
         tags:["authoritarian"], impact:{approval:1,stability:1,treasury:0,tension:0},
-        effect: s => { s.moleDiscovered = true; s.skills.intelligence += 1; s.approval += 6; } },
-      { title:"השתמש בו כמקור מידע כפול", desc:"סיכום גבוה אך רווח מודיעיני משמעותי.",
+        effect: s => { s.moleDiscovered = true; s.skills.intelligence = clamp(s.skills.intelligence+1,1,5); s.approval += 6; } },
+      { title:"להפעיל אותו כסוכן כפול", desc:"מסוכן מאוד אם ייחשף, אך שווה זהב מודיעינית.",
         tags:["intelligence"], impact:{approval:0,stability:-1,treasury:1,tension:0},
-        effect: s => { s.moleActive = true; s.moleDiscovered = true; s.xp += 5; } },
+        effect: s => { s.moleActive = true; s.moleDiscovered = true; gainXp(s,5); } },
     ]
   },
-  /* ========== NEWS INTERVIEWS ========== */
+  /* ========== MEDIA ========== */
   {
     id:"media_interview",
-    title:"הזמנה לראיון טלוויזיוני",
-    desc: s => "ערוץ טלוויזיוני בכיר מזמין אותך לראיון לשיחה על ניסיון הכהונה שלך.",
+    title:"הזמנה לראיון בפריים־טיים",
+    desc: s => `ערוץ החדשות המוביל מזמין אותך לראיון אולפן. מיליון צופים, בשידור חי, בלי עריכה.`,
     weight: s => 1,
     choices: [
-      { title:"קבל תנאי חזקים", desc:"דורש כריזמה, עלול להגביר אישור משמעותית.",
+      { title:"לתת ראיון נוקב", desc:"דורש כריזמה — רווח גדול באישור הציבורי אם תעמוד/י בלחץ.",
         tags:["rhetoric"], impact:{approval:2,stability:0,treasury:0,tension:0},
-        effect: s => { const bonus = s.skills.rhetoric*2; s.approval += 8+bonus; s.mediaAppearances.push('חזק'); s.mediaApprovalBoost += 5; } },
-      { title:"תן ראיון מאוזן", desc:"ראיון בטוח, רווח מתון בעזרת משאבים כלא.",
+        effect: s => { s.approval += 8 + s.skills.rhetoric*2; s.mediaAppearances.push("ראיון נוקב"); s.mediaApprovalBoost += 5; } },
+      { title:"לתת ראיון זהיר", desc:"בלי סיכון ובלי הפתעות — רווח קטן אך בטוח.",
         tags:[], impact:{approval:1,stability:0,treasury:0,tension:0},
-        effect: s => { s.approval += 3; s.mediaAppearances.push('מאוזן'); } },
-      { title:"התעלם מההזמנה", desc:"שומר זמן, אך לא מנצל הזדמנות.",
+        effect: s => { s.approval += 3; s.mediaAppearances.push("ראיון זהיר"); } },
+      { title:"לוותר על הראיון", desc:"חוסך את הסיכון, ומפספס את ההזדמנות מול מיליון צופים.",
         tags:[], impact:{approval:0,stability:0,treasury:0,tension:0},
-        effect: s => { } },
+        effect: s => { s.approval -= 1; } },
     ]
   },
-  /* ========== BOMB SIEGE MECHANICS ========== */
+  /* ========== MISSILE BARRAGE ========== */
   {
-    id:"bomb_siege",
-    title:"מתקפת צפצפים - טקטיקה חדשה בשדה הקרב",
-    desc: s => `היריב משתמש בטקטיקת צפצפים לחומר אזורי. צריך להחליט בין גנה פעילה לפינוי יזום.`,
+    id:"missile_barrage",
+    title:"מטח טילים על העורף",
+    desc: s => `הצד השני פתח במטח טילים לעבר ערי העורף. פיקוד העורף ממתין להנחיה, והזמן קצר.`,
+    urgent:true,
     weight: s => s.borderTension > 60 ? 2 : 0,
     choices: [
-      { title:"הקם הגנה אווירית - מחירון משאבים",
+      { title:"להפעיל מערך יירוט", desc:"מגן על העורף ביעילות גבוהה, במחיר תקציבי כבד ושחיקת מלאי.",
         tags:["military","spending"], impact:{approval:0,stability:1,treasury:-2,tension:0},
-        effect: s => { s.treasury -= 1200; s.stability += 3; s.militaryReadiness -= 10; s.approval -= 2; } },
-      { title:"פנה את התושבים - בעלות חברתית",
+        effect: s => { s.treasury -= 1200; s.stability += 3; s.militaryReadiness = clamp(s.militaryReadiness-10,0,100); s.approval -= 2; } },
+      { title:"לפנות את התושבים", desc:"מציל חיים ללא עלות צבאית, אך משדר חולשה ופוגע קשות באישור.",
         tags:["spending"], impact:{approval:-2,stability:-1,treasury:0,tension:0},
         effect: s => { s.approval -= 8; s.stability -= 5; } },
-      { title:"הגנה קונבנציונלית מלאה", desc:"השתמש בחימוש",
-        tags:["military","force"], impact:{approval:1,stability:1,treasury:-1,tension:1},
-        effect: s => { s.treasury -= 800; s.bombInventory.conventional = Math.max(0, s.bombInventory.conventional-1); s.militaryReadiness += 5; } },
+      { title:"להשיב באש ארטילרית", desc:"מנצל מהמלאי ומרתיע — ומסלים את העימות משמעותית.",
+        tags:["military","force"], impact:{approval:1,stability:1,treasury:-1,tension:2},
+        effect: s => { s.treasury -= 800; s.bombInventory.conventional = Math.max(0, s.bombInventory.conventional-1);
+          s.borderTension = clamp(s.borderTension+12,0,100); s.approval += 3; } },
     ]
   },
-  /* ========== NUCLEAR & CHEMICAL WEAPONS ========== */
+  /* ========== CHEMICAL WEAPONS ========== */
   {
     id:"chemical_weapons_threat",
-    title:"זיהום כימי בגבול",
-    desc: s => `בדיקות זיהו זיהום כימי בגבול שלך. אויב טוען זה תאונה, אך כשמועה עולה מתח.`,
-    weight: s => Math.random() < 0.3 ? 1 : 0,
+    title:"חשד לנשק כימי בגבול",
+    desc: s => `דגימות שנלקחו בגבול מצביעות על חומר כימי אסור. הצד השני טוען שמדובר בתקלה תעשייתית.`,
+    weight: s => s.borderTension > 40 ? 1 : 0.2,
     choices: [
-      { title:"הגש תביעה בחוקי בינלאומיים",
+      { title:"לפנות לבית הדין הבינלאומי", desc:"מהלך איטי ומכובד — הצלחתו תלויה בכישור הדיפלומטיה.",
         tags:["diplomacy_soft"], impact:{approval:1,stability:1,treasury:0,tension:-1},
-        effect: s => { s.approval += 4; const chance = 0.6 + s.skills.diplomacy*0.08; if(Math.random()<chance){ s.borderTension -= 20; } else { s.borderTension += 10; }} },
-      { title:"הטל מתקפת נגד כימית", desc:"מסוכן וממוזמן אך מדהים.",
+        effect: s => { s.approval += 4;
+          if(Math.random() < 0.6 + s.skills.diplomacy*0.08){ s.borderTension = clamp(s.borderTension-20,0,100); gainXp(s,2); }
+          else { s.borderTension = clamp(s.borderTension+10,0,100); } } },
+      { title:"להשיב בתקיפה כימית", desc:"מרתיע לטווח הקצר, וגובה מחיר בינלאומי כבד לטווח הארוך.",
         tags:["military","force"], impact:{approval:0,stability:-1,treasury:-1,tension:2},
-        effect: s => { s.treasury -= 1500; s.bombInventory.chemical = Math.max(0, s.bombInventory.chemical-1); s.borderTension += 30; s.approval -= 6; } },
+        effect: s => { s.treasury -= 1500; s.bombInventory.chemical = Math.max(0, s.bombInventory.chemical-1);
+          s.borderTension = clamp(s.borderTension+30,0,100); s.approval -= 6;
+          COUNTRIES.forEach(c => { if(c.name !== s.country.name) s.relations[c.name] = clamp((s.relations[c.name]||0)-25,-100,100); }); } },
     ]
   },
 ];
@@ -1317,12 +1344,6 @@ function generateTourismIncome(state){
   return Math.floor(baseTourism * stabilityFactor * infrastructureFactor);
 }
 
-function updateTourismMetrics(){
-  if(state && state.tourismIncome) {
-    state.treasury += state.tourismIncome;
-    state.tourismIncome = generateTourismIncome(state);
-  }
-}
 
 /* ---------- YEARLY CYCLE: BUDGET & ELECTIONS ---------- */
 const budgetEvent = {
@@ -1597,149 +1618,433 @@ function shade(hex, amt){
 
 let pixelFrame = 0;
 const buildingsCache = {};
+
+/* ---------- colour helpers for the scene ---------- */
+function toRgb(c){
+  if(c[0] === '#'){ const n = parseInt(c.slice(1),16); return [(n>>16)&255,(n>>8)&255,n&255]; }
+  const m = c.match(/\d+/g); return m ? [+m[0],+m[1],+m[2]] : [0,0,0];
+}
+/* Blend two colours and hand back hex, so the result can be fed straight
+   back into mix() or shade() without either of them choking on rgb(). */
+function mix(a, b, t){
+  const A = toRgb(a), B = toRgb(b); t = clamp(t,0,1);
+  const f = i => Math.round(A[i] + (B[i]-A[i])*t).toString(16).padStart(2,'0');
+  return '#' + f(0) + f(1) + f(2);
+}
+
+/* A city is laid out once per country and reused every frame. Each building
+   carries a silhouette type so the skyline reads as a place rather than a bar
+   chart, and the tallest one becomes the seat of government. */
 function getBuildings(country, W){
-  if(!buildingsCache[country.name]){
-    const seed = seedFromName(country.name);
-    const buildings = [];
-    let x = Math.round(W*0.02);
-    let s = seed;
-    const maxX = W - Math.round(W*0.05);
+  const key = country.name + '@' + W;   // the same country is drawn at two sizes
+  if(!buildingsCache[key]){
+    let s = seedFromName(country.name);
+    const next = () => { s = (s*1103515245 + 12345) >>> 0; return seededRand(s); };
+    const list = [];
+    let x = Math.round(W*0.015);
+    const maxX = W - Math.round(W*0.04);
     while(x < maxX){
-      s = (s*1103515245 + 12345) >>> 0;
-      const w = Math.round(W*0.03) + (seededRand(s) * Math.round(W*0.035) | 0);
-      s = (s*1103515245 + 12345) >>> 0;
-      const h = Math.round(W*0.045) + (seededRand(s) * Math.round(W*0.09) | 0);
-      buildings.push({ x, w, h });
-      x += w + Math.round(W*0.01)+1;
+      const w = Math.round(W*0.028) + (next() * Math.round(W*0.042) | 0);
+      const h = Math.round(W*0.05)  + (next() * Math.round(W*0.115) | 0);
+      const r = next();
+      const type = r<0.13 ? 'spire' : r<0.26 ? 'factory' : r<0.42 ? 'stepped' : 'block';
+      list.push({ x, w, h, type, seed: s>>>0 });
+      x += w + Math.round(W*0.012) + 1;
     }
-    buildingsCache[country.name] = buildings;
+    let t = 0;
+    list.forEach((b,i) => { if(b.h > list[t].h) t = i; });
+    if(list[t]){ list[t].type = 'capitol'; }
+    buildingsCache[key] = list;
   }
-  return buildingsCache[country.name];
+  return buildingsCache[key];
 }
 
 /**
- * Generic pixel-scene renderer. Draws into any canvas for any country,
- * driven purely by the simState numbers passed in (works for the
- * player's own live state, or a background-simulated "other country").
+ * Pixel-scene renderer. Everything on screen is driven by the numbers in
+ * simState, so the city is a readable dashboard: the sky turns with the
+ * quarter, windows go dark as approval falls, planes only arrive when
+ * tourism is worth it, and a searchlight sweeps the border when it heats up.
+ * Works for the player's own live state and for background-simulated rivals.
  */
 function drawPixelScene(canvas, country, simState, frame){
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
   const W = canvas.width, H = canvas.height;
+  const R = Math.round;
+  const k = W/320;                     // everything is authored at 320 wide
+  const P = n => Math.max(1, R(n*k));  // scale a pixel measurement
   const [c1, c2] = country.colors || ["#b8934b","#1b2029"];
   const buildings = getBuildings(country, W);
-  const groundY = H*0.72;
+  const horizon = R(H*0.50);
+  const groundY = R(H*0.76);
+  const seed0 = seedFromName(country.name);
 
-  const calm = simState.stability >= 45 && simState.approval >= 35;
-  const skyTop = calm ? "#1b2a4a" : (simState.stability < 20 ? "#3a1414" : "#3a2a14");
-  const skyBottom = calm ? "#3d5a8a" : (simState.stability < 20 ? "#7a2a20" : "#7a5a20");
-  const grad = ctx.createLinearGradient(0,0,0,groundY);
-  grad.addColorStop(0, skyTop);
-  grad.addColorStop(1, skyBottom);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0,0,W,groundY);
+  /* ---- read the state once; every visual below is driven by these ---- */
+  const approval  = clamp(simState.approval ?? 50, 0, 100);
+  const stability = clamp(simState.stability ?? 50, 0, 100);
+  const tension   = clamp(simState.borderTension ?? 0, 0, 100);
+  const treasury  = simState.treasury ?? 0;
+  const debt      = simState.debtToGdp ?? 60;
+  const turn      = simState.turn ?? 1;
+  const military  = clamp(simState.militaryReadiness ?? 50, 0, 100);
+  const tourism   = simState.tourism ?? 0;
+  const disease   = simState.diseaseRisk ? simState.diseaseRisk.level : 0;
+  const nukes     = simState.bombInventory ? simState.bombInventory.nuclear : 0;
+  const green     = simState.budget ? (simState.budget.welfare + simState.budget.education)/2 : 20;
 
-  ctx.fillStyle = calm ? "#f4d35e" : "#d97b4f";
-  ctx.fillRect(W-Math.round(W*0.09), H*0.08, Math.round(W*0.025), Math.round(W*0.025));
+  const unrest = clamp((55 - stability)/55, 0, 1);
+  const anger  = clamp((50 - approval)/50, 0, 1);
+  const wealth = clamp((treasury + 4000)/26000, 0, 1);
 
-  if(!calm){
-    let s = seedFromName(country.name) ^ 77;
-    for(let i=0;i<12;i++){
-      s = (s*1103515245+12345)>>>0;
-      const sx = (seededRand(s)*W)|0;
-      s = (s*1103515245+12345)>>>0;
-      const sy = (seededRand(s)*H*0.3)|0;
-      ctx.fillStyle = "rgba(255,255,255,0.6)";
+  /* ---- the quarter sets the light, so a term visibly passes ---- */
+  const phase = (turn - 1) % 4;                     // 0 dawn · 1 noon · 2 dusk · 3 night
+  const night = phase === 3, dusk = phase === 2;
+  const dark  = night ? 1 : dusk ? 0.55 : phase === 0 ? 0.3 : 0;
+
+  /* ---------- 1. sky ---------- */
+  const skyTop = mix(['#263d70','#2f6aa8','#221a4e','#060a1a'][phase], '#3a0e0e', unrest*0.55);
+  const skyMid = mix(['#7d6b9c','#6fa8d8','#8a3f66','#101832'][phase], '#6b1f14', unrest*0.50);
+  const skyLow = mix(['#e8a06a','#bcd9ef','#e8703f','#1b2846'][phase], '#8f3a1c', unrest*0.45);
+  const sky = ctx.createLinearGradient(0,0,0,horizon+P(12));
+  sky.addColorStop(0, skyTop); sky.addColorStop(0.55, skyMid); sky.addColorStop(1, skyLow);
+  ctx.fillStyle = sky; ctx.fillRect(0,0,W,groundY);
+
+  /* ---------- 2. stars ---------- */
+  if(dark > 0.25){
+    let s = seed0 ^ 77;
+    const n = R(55*k);
+    for(let i=0;i<n;i++){
+      s=(s*1103515245+12345)>>>0; const sx=(seededRand(s)*W)|0;
+      s=(s*1103515245+12345)>>>0; const sy=(seededRand(s)*horizon*0.9)|0;
+      s=(s*1103515245+12345)>>>0; const tw=seededRand(s);
+      const a = (0.2 + 0.65*tw) * dark * (Math.sin(frame*0.05 + tw*9) > -0.4 ? 1 : 0.3);
+      ctx.fillStyle = 'rgba(255,252,235,' + a.toFixed(2) + ')';
       ctx.fillRect(sx, sy, 1, 1);
     }
   }
 
-  const groundColor = simState.treasury < 0 ? "#4a3a2a" : (simState.debtToGdp > 110 ? "#5a4a30" : "#2f4a34");
-  ctx.fillStyle = groundColor;
-  ctx.fillRect(0, groundY, W, H-groundY);
-  ctx.fillStyle = shade(groundColor, -12);
-  ctx.fillRect(0, groundY, W, 2);
+  /* ---------- 3. sun or moon, tracking across the term ---------- */
+  const bodyX = R(W*(0.16 + 0.60*(phase/3)));
+  const bodyY = R(horizon*(night?0.28:dusk?0.66:0.34));
+  const bodyR = P(night?4:6);
+  const glow = ctx.createRadialGradient(bodyX,bodyY,0,bodyX,bodyY,bodyR*4.5);
+  glow.addColorStop(0, night ? 'rgba(214,228,255,0.30)' : 'rgba(255,224,146,0.42)');
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(bodyX,bodyY,bodyR*4.5,0,6.2832); ctx.fill();
+  ctx.fillStyle = night ? '#e8eeff' : mix('#ffd75e','#ff7a3c', dusk?0.65:unrest*0.5);
+  ctx.beginPath(); ctx.arc(bodyX,bodyY,bodyR,0,6.2832); ctx.fill();
+  if(night){                                   // bite a crescent out of the moon
+    ctx.fillStyle = skyTop;
+    ctx.beginPath(); ctx.arc(bodyX+bodyR*0.6, bodyY-bodyR*0.4, bodyR*0.9, 0, 6.2832); ctx.fill();
+  }
 
-  const dim = simState.stability < 30;
+  /* ---------- 4. drifting cloud bank ---------- */
+  const cover = clamp(0.3 + unrest*0.6, 0, 1);
+  let cs = seed0 ^ 4242;
+  const clouds = R(4 + cover*5);
+  for(let i=0;i<clouds;i++){
+    cs=(cs*1103515245+12345)>>>0; const cy = P(4) + (seededRand(cs)*horizon*0.6)|0;
+    cs=(cs*1103515245+12345)>>>0; const cw = P(16) + (seededRand(cs)*P(28))|0;
+    cs=(cs*1103515245+12345)>>>0; const sp = 0.05 + seededRand(cs)*0.13;
+    cs=(cs*1103515245+12345)>>>0; const off = seededRand(cs)*W;
+    const cx = ((off + frame*sp) % (W + cw)) - cw;
+    const ch = Math.max(2, R(cw*0.2));
+    ctx.fillStyle = unrest > 0.5
+      ? 'rgba(64,56,62,' + (0.45 + dark*0.2).toFixed(2) + ')'
+      : (night ? 'rgba(140,152,184,0.30)' : 'rgba(246,244,238,' + (0.30 + cover*0.28).toFixed(2) + ')');
+    ctx.fillRect(cx, cy, cw, ch);
+    ctx.fillRect(R(cx+cw*0.22), R(cy-ch*0.6), R(cw*0.5), R(ch*0.8));
+  }
+
+  /* ---------- 5. two mountain ridges behind the bay ---------- */
+  for(let layer=0; layer<2; layer++){
+    const base = horizon - P(layer ? 2 : 8);
+    const amp  = P(layer ? 10 : 18);
+    const ph   = seededRand(seed0 ^ (layer?31:17)) * 6.28;
+    ctx.fillStyle = mix(night ? '#111a30' : '#4a5f80', skyLow, layer ? 0.42 : 0.22);
+    ctx.beginPath(); ctx.moveTo(0, groundY);
+    for(let x=0; x<=W; x+=2){
+      const y = base - amp*(0.42 + 0.34*Math.sin(x*(layer?0.031:0.019) + ph) + 0.22*Math.sin(x*0.062 + ph*2));
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(W, groundY); ctx.closePath(); ctx.fill();
+  }
+
+  /* ---------- 6. the bay, with the sky laid on it ---------- */
+  const waterTop = horizon + P(3), waterH = groundY - waterTop;
+  if(waterH > 3){
+    const wg = ctx.createLinearGradient(0,waterTop,0,groundY);
+    wg.addColorStop(0, mix(skyLow, '#0d2740', 0.5));
+    wg.addColorStop(1, mix(skyLow, '#04121f', 0.82));
+    ctx.fillStyle = wg; ctx.fillRect(0, waterTop, W, waterH);
+    for(let y=waterTop; y<groundY; y+=2){        // shimmering column under the sun
+      const t = (y-waterTop)/waterH;
+      const sway = Math.sin(frame*0.06 + y*0.55)*P(2)*t;
+      ctx.fillStyle = night ? 'rgba(220,230,255,0.14)' : 'rgba(255,224,150,0.18)';
+      ctx.fillRect(R(bodyX - P(3) + sway), y, R(P(6)*(0.5+t)), 1);
+    }
+  }
+
+  /* ---------- 7. the skyline ---------- */
+  const winLit = approval > 40 ? '#ffd98a' : '#6a5f45';
   buildings.forEach((b,i) => {
-    const base = i % 2 === 0 ? "#2a3242" : "#232a38";
-    ctx.fillStyle = dim ? shade(base, -14) : base;
-    ctx.fillRect(b.x, groundY - b.h, b.w, b.h);
-    ctx.fillStyle = simState.approval > 40 ? "#e8c96b" : "#4a4a3a";
-    for(let wy = groundY - b.h + 4; wy < groundY - 4; wy += 6){
-      for(let wx = b.x + 2; wx < b.x + b.w - 2; wx += 5){
-        if(seededRand((wx*13+wy*7+seedFromName(country.name))>>>0) > 0.35){
-          ctx.fillRect(wx, wy, 2, 2);
+    const face = mix(i%2 ? '#2c3648' : '#232c3c', '#0b0f1a', dark*0.42 + unrest*0.18);
+    const roofY = groundY - b.h;
+
+    if(b.type === 'stepped'){
+      ctx.fillStyle = face;
+      ctx.fillRect(b.x, R(roofY + b.h*0.30), b.w, R(b.h*0.70));
+      ctx.fillRect(R(b.x + b.w*0.18), roofY, R(b.w*0.64), R(b.h*0.34));
+    } else {
+      ctx.fillStyle = face;
+      ctx.fillRect(b.x, roofY, b.w, b.h);
+    }
+    ctx.fillStyle = shade(face, -18);            // shaded edge gives them depth
+    ctx.fillRect(b.x + b.w - P(1.5), roofY, P(1.5), b.h);
+
+    if(b.type === 'capitol'){                    // dome and standard: the government
+      const cx = R(b.x + b.w/2), dr = R(b.w*0.44);
+      ctx.fillStyle = mix('#d8cdb4', '#241f16', dark*0.62);
+      ctx.beginPath(); ctx.arc(cx, roofY, dr, Math.PI, 0); ctx.fill();
+      ctx.fillRect(cx-dr, roofY, dr*2, P(2));
+      const poleTop = roofY - dr - P(6);
+      ctx.fillStyle = '#c9c9c9'; ctx.fillRect(cx, poleTop, P(1), P(6));
+      const wave = Math.sin(frame*0.11) > 0 ? 0 : P(1);
+      ctx.fillStyle = c1; ctx.fillRect(cx+P(1), poleTop,        P(8)-wave, P(2));
+      ctx.fillStyle = c2; ctx.fillRect(cx+P(1), poleTop+P(2),   P(8)-wave, P(2));
+    }
+    if(b.type === 'spire'){
+      ctx.fillStyle = face;
+      ctx.fillRect(R(b.x+b.w*0.40), R(roofY-b.h*0.30), Math.max(2,R(b.w*0.20)), R(b.h*0.30));
+      if(frame % 60 < 22){                       // aircraft warning light
+        ctx.fillStyle = '#ff5a4a';
+        ctx.fillRect(R(b.x+b.w*0.42), R(roofY-b.h*0.30)-P(2), P(2), P(2));
+      }
+    }
+    if(b.type === 'factory'){                    // chimneys smoke while the economy runs
+      for(let c=0;c<2;c++){
+        const chx = R(b.x + b.w*(0.20 + c*0.46));
+        ctx.fillStyle = shade(face,-10); ctx.fillRect(chx, roofY-P(6), P(3), P(6));
+        if(wealth > 0.2){
+          for(let p=0;p<3;p++){
+            const rise = (frame*0.5 + p*7 + i*3) % P(20);
+            ctx.fillStyle = 'rgba(188,188,188,' + (0.28 - p*0.07).toFixed(2) + ')';
+            ctx.fillRect(chx + R(Math.sin(frame*0.05 + p)*P(1)), R(roofY-P(6)-rise), P(2), P(2));
+          }
         }
+      }
+    }
+
+    /* windows — each keeps its own clock, so the block breathes */
+    const step = P(5), wsz = P(2);
+    for(let wy = roofY + P(4); wy < groundY - P(3); wy += step){
+      for(let wx = b.x + P(2); wx < b.x + b.w - P(3); wx += step){
+        const r = seededRand((wx*13 + wy*7 + b.seed)>>>0);
+        if(r < 0.28) continue;
+        const on = r > 0.44 - dark*0.36 && Math.sin(frame*0.03 + r*40) > -0.88;
+        ctx.fillStyle = on ? mix(winLit, '#ff9b5a', unrest*0.55) : 'rgba(10,14,24,0.82)';
+        ctx.fillRect(wx, wy, wsz, wsz);
       }
     }
   });
 
-  const tallest = buildings.reduce((a,b)=> b.h>a.h?b:a, buildings[0]);
-  if(tallest){
-    const poleX = tallest.x + Math.floor(tallest.w/2);
-    const poleH = Math.round(H*0.09);
-    const poleTop = groundY - tallest.h - poleH;
-    ctx.fillStyle = "#c9c9c9";
-    ctx.fillRect(poleX, poleTop, 1, poleH);
-    const wave = Math.sin(frame/8) > 0 ? 0 : 1;
-    const flagW = Math.round(W*0.03);
-    ctx.fillStyle = c1;
-    ctx.fillRect(poleX+1, poleTop, flagW-wave, 3);
-    ctx.fillStyle = c2;
-    ctx.fillRect(poleX+1, poleTop+3, flagW-wave, 3);
-  }
-
-  let cs = seedFromName(country.name) ^ 999;
-  const totalCitizens = Math.round(W*0.06);
-  const happyRatio = clamp(simState.approval/100, 0.05, 0.95);
-  for(let i=0;i<totalCitizens;i++){
-    cs = (cs*1103515245+12345)>>>0;
-    const cx = 4 + (seededRand(cs) * (W-8) | 0);
-    const cy = groundY + 3 + ((i%3)*2);
-    const happy = (i / totalCitizens) < happyRatio;
-    ctx.fillStyle = happy ? "#7fd8a0" : "#d86a5a";
-    ctx.fillRect(cx, cy, 2, 3);
-  }
-
-  if(simState.stability < 40){
-    let ss = seedFromName(country.name) ^ 55;
-    const smokeCount = simState.stability < 20 ? 5 : 2;
-    for(let i=0;i<smokeCount;i++){
-      ss = (ss*1103515245+12345)>>>0;
-      const bIdx = Math.floor(seededRand(ss) * buildings.length);
-      const b = buildings[bIdx];
+  /* ---------- 8. fire where the country is coming apart ---------- */
+  if(stability < 28){
+    let fs = seed0 ^ 55;
+    const fires = stability < 15 ? 3 : 1;
+    for(let i=0;i<fires;i++){
+      fs=(fs*1103515245+12345)>>>0;
+      const b = buildings[Math.floor(seededRand(fs)*buildings.length)];
       if(!b) continue;
-      const baseY = groundY - b.h;
-      for(let k=0;k<3;k++){
-        const offset = (frame + k*3) % 12;
-        ctx.fillStyle = `rgba(140,140,140,${0.5 - k*0.12})`;
-        ctx.fillRect(b.x + b.w/2, baseY - offset, 2, 2);
+      const fx = R(b.x + b.w*0.35), fy = groundY - b.h;
+      for(let f=0; f<6; f++){
+        const rise = (frame*0.45 + f*4 + i*9) % P(16);
+        const a = (1 - rise/P(16)) * 0.8;
+        ctx.fillStyle = 'rgba(255,' + (90+f*22) + ',48,' + a.toFixed(2) + ')';
+        ctx.fillRect(fx + R(Math.sin(frame*0.15 + f)*P(2)), R(fy - rise), P(3), P(3));
       }
     }
   }
 
-  if(simState.borderTension > 60){
-    const alertSide = 2;
-    ctx.fillStyle = "#7a2a20";
-    ctx.fillRect(alertSide, groundY-6, 8, 4);
-    ctx.fillRect(alertSide+2, groundY-9, 3, 3);
-    if(simState.borderTension > 80 && frame % 10 < 5){
-      ctx.fillStyle = "#d94f3a";
-      ctx.fillRect(alertSide+9, groundY-9, 2, 2);
+  /* ---------- 9. land, road and traffic ---------- */
+  const soil = debt > 110 ? '#4a3a26' : treasury < 0 ? '#41372b' : '#26402e';
+  ctx.fillStyle = mix(soil, '#000', dark*0.35);
+  ctx.fillRect(0, groundY, W, H-groundY);
+  ctx.fillStyle = mix(soil, skyLow, 0.22*(1-dark));
+  ctx.fillRect(0, groundY, W, P(1.5));
+
+  const roadY = groundY + P(5);
+  ctx.fillStyle = mix('#1b2029','#000', dark*0.45);
+  ctx.fillRect(0, roadY, W, P(6));
+  ctx.fillStyle = 'rgba(214,204,168,0.30)';
+  for(let x = -(frame % P(14)); x < W; x += P(14)) ctx.fillRect(R(x), roadY + P(2.5), P(5), 1);
+
+  const cars = R(2 + wealth*4);
+  for(let i=0;i<cars;i++){
+    const sp = 0.30 + (i%3)*0.24;
+    const right = i%2 === 0;
+    const travel = ((frame*sp + i*(W/cars)) % (W + P(16))) - P(16);
+    const cx = R(right ? travel : W - travel - P(9));
+    const cy = roadY + (right ? 0 : P(3.5));
+    ctx.fillStyle = ['#c8503f','#3f7dc8','#d8c05a','#8a8f9c'][i%4];
+    ctx.fillRect(cx, cy, P(8), P(3));
+    ctx.fillStyle = 'rgba(10,14,22,0.55)'; ctx.fillRect(cx+P(2), cy, P(4), P(1.5));
+    if(dark > 0.4){                              // headlights carve the dusk
+      ctx.fillStyle = 'rgba(255,238,180,0.22)';
+      ctx.fillRect(right ? cx+P(8) : cx-P(7), cy+P(1), P(7), P(1));
     }
   }
 
-  if(simState.treasury > 20000){
-    let ts = seedFromName(country.name) ^ 321;
-    for(let i=0;i<4;i++){
-      ts = (ts*1103515245+12345)>>>0;
-      const gx = (seededRand(ts)*W)|0;
-      const gy = H*0.5 + (seededRand(ts+1)*H*0.15|0);
-      ctx.fillStyle = "#f4d35e";
-      ctx.fillRect(gx, gy, 1, 1);
+  /* ---------- 10. parks, where welfare and schooling are funded ---------- */
+  const trees = R(clamp((green - 15)/5, 0, 6));
+  let ts = seed0 ^ 606;
+  for(let i=0;i<trees;i++){
+    ts=(ts*1103515245+12345)>>>0;
+    const tx = R(P(6) + seededRand(ts)*(W-P(12)));
+    const ty = H - P(6);
+    ctx.fillStyle = mix('#3a2b1e','#000',dark*0.4); ctx.fillRect(tx, ty, P(1.5), P(4));
+    ctx.fillStyle = mix('#3f7a48','#0d2416',dark*0.5);
+    ctx.fillRect(tx-P(2), ty-P(4), P(6), P(4));
+    ctx.fillRect(tx-P(1), ty-P(6), P(4), P(2));
+  }
+
+  /* ---------- 11. the public ---------- */
+  const people = R(W*0.08);
+  const crowdY = H - P(6);
+  const happyRatio = clamp(approval/100, 0.05, 0.95);
+  let ps = seed0 ^ 999;
+  for(let i=0;i<people;i++){
+    ps=(ps*1103515245+12345)>>>0; const base = seededRand(ps);
+    ps=(ps*1103515245+12345)>>>0; const lane = (seededRand(ps)*P(5))|0;
+    const right = base > 0.5;
+    const speed = (0.12 + base*0.22) * (anger > 0.6 ? 0.25 : 1);  // an angry crowd stops to shout
+    const travel = ((base*W + frame*speed) % (W + P(8))) - P(4);
+    const x = R(right ? travel : W - travel);
+    const y = crowdY + lane;
+    const happy = (i/people) < happyRatio;
+    const bob = Math.floor(frame*speed*0.6 + i*3) % 2;
+    ctx.fillStyle = happy ? '#8fe3b0' : '#e0705c';
+    ctx.fillRect(x, y - bob, P(2), P(3));
+    ctx.fillStyle = happy ? '#dcf6e8' : '#f2bcb0';
+    ctx.fillRect(x, y - P(2) - bob, P(2), P(2));
+    if(anger > 0.55 && i % 3 === 0){             // placards go up when the street turns
+      ctx.fillStyle = '#e8e2d2'; ctx.fillRect(x, y - P(6) - bob, P(4), P(3));
+      ctx.fillStyle = '#8a2a22'; ctx.fillRect(x+P(1), y - P(5) - bob, P(2), 1);
     }
   }
+
+  /* ---------- 12. tourism arrives when the country is worth visiting ---------- */
+  if(tourism > 55){
+    const ax = R(((frame*0.5) % (W + P(52))) - P(26));
+    const ay = R(horizon*0.40);
+    ctx.fillStyle = 'rgba(255,255,255,0.09)'; ctx.fillRect(ax-P(24), ay, P(24), P(1));
+    ctx.fillStyle = night ? '#93a0ba' : '#eef1f7';
+    ctx.fillRect(ax, ay, P(12), P(2));
+    ctx.fillRect(ax+P(4), ay-P(2), P(3), P(2));
+    ctx.fillRect(ax+P(3), ay+P(2), P(5), P(1));
+    if(frame % 40 < 14){ ctx.fillStyle = '#ff5a4a'; ctx.fillRect(ax-P(1), ay, P(1), P(1)); }
+  }
+  if(tourism > 85){
+    const bx = R(W - ((frame*0.16) % (W + P(34))) + P(17));
+    const by = R(horizon*0.52 + Math.sin(frame*0.02)*P(4));
+    ctx.fillStyle = c1; ctx.fillRect(bx, by, P(7), P(6));
+    ctx.fillStyle = c2; ctx.fillRect(bx, by+P(6), P(7), P(2));
+    ctx.fillStyle = 'rgba(190,190,190,0.5)';
+    ctx.fillRect(bx+P(1), by+P(8), 1, P(2)); ctx.fillRect(bx+P(6), by+P(8), 1, P(2));
+    ctx.fillStyle = '#3a2f22'; ctx.fillRect(bx+P(2), by+P(10), P(3), P(2));
+  }
+
+  /* ---------- 13. quarantine tents while an outbreak runs ---------- */
+  if(disease > 0){
+    const tents = Math.min(3, Math.ceil(disease));
+    for(let i=0;i<tents;i++){
+      const tx = R(W*0.10 + i*P(15)), ty = H - P(8);
+      ctx.fillStyle = mix('#e8e4d8','#3a3830',dark*0.5);
+      ctx.beginPath(); ctx.moveTo(tx, ty+P(6)); ctx.lineTo(tx+P(5), ty); ctx.lineTo(tx+P(10), ty+P(6)); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#c8342a';
+      ctx.fillRect(tx+P(3.6), ty+P(3), P(3), P(1));
+      ctx.fillRect(tx+P(4.6), ty+P(2), P(1), P(3));
+    }
+  }
+
+  /* ---------- 14. a scrambled pair when the army is on its toes ---------- */
+  if(military > 68){
+    const jx = R(W - (((frame*1.5) % (W + P(64))) - P(32)));
+    const jy = R(horizon*0.26);
+    for(let j=0;j<2;j++){
+      const ox = P(10)*j, oy = P(4)*j;
+      ctx.fillStyle = mix('#2f3744','#141922',dark*0.4);
+      ctx.fillRect(jx+ox, jy+oy, P(9), P(2));
+      ctx.fillRect(jx+ox+P(2), jy+oy-P(2), P(3), P(2));
+      ctx.fillStyle = 'rgba(255,168,88,0.5)';
+      ctx.fillRect(jx+ox+P(9), jy+oy, P(5), P(1));
+    }
+  }
+
+  /* ---------- 15. the border watchtower ---------- */
+  if(tension > 50){
+    const tw = P(6), tx = W - P(15), ty = groundY - P(15);
+    ctx.save();
+    ctx.globalAlpha = 0.14 + (tension > 80 ? 0.12 : 0);
+    ctx.fillStyle = tension > 80 ? '#ff6a4a' : '#ffe9a8';
+    const sweep = Math.sin(frame*0.032)*P(34);
+    ctx.beginPath();
+    ctx.moveTo(tx+tw/2, ty);
+    ctx.lineTo(tx+tw/2 - P(46) + sweep, H);
+    ctx.lineTo(tx+tw/2 - P(26) + sweep, H);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = mix('#3a3a44','#10131a',dark*0.5);
+    ctx.fillRect(tx, ty, tw, P(17));
+    ctx.fillRect(tx-P(1.5), ty-P(3), tw+P(3), P(3));
+    if(tension > 80 && frame % 26 < 13){
+      ctx.fillStyle = '#ff4a3a'; ctx.fillRect(tx+P(2), ty-P(6), P(2), P(2));
+    }
+  }
+
+  /* ---------- 16. a silo, once the arsenal is real ---------- */
+  if(nukes > 0){
+    const sx = P(5), sy = H - P(9);
+    ctx.fillStyle = mix('#4a4f5a','#181b22',dark*0.45); ctx.fillRect(sx, sy, P(10), P(7));
+    ctx.fillStyle = mix('#2a2e36','#0d1016',dark*0.45); ctx.fillRect(sx+P(1), sy-P(2), P(8), P(2));
+    ctx.fillStyle = '#ffd34a'; ctx.fillRect(sx, sy+P(3), P(10), P(1));
+    if(frame % 50 < 18){ ctx.fillStyle = '#ff6a4a'; ctx.fillRect(sx+P(4), sy-P(4), P(2), P(2)); }
+  }
+
+  /* ---------- 17. rain over a country losing its grip ---------- */
+  if(unrest > 0.45){
+    const drops = R(70*unrest*k);
+    ctx.fillStyle = 'rgba(150,175,205,0.40)';
+    let rs = seed0 ^ 8181;
+    for(let i=0;i<drops;i++){
+      rs=(rs*1103515245+12345)>>>0; const rx=(seededRand(rs)*W)|0;
+      rs=(rs*1103515245+12345)>>>0; const ry=((seededRand(rs)*H + frame*5) % H)|0;
+      ctx.fillRect(rx, ry, 1, P(4));
+    }
+  }
+
+  /* ---------- 18. wealth glints over the city ---------- */
+  if(treasury > 20000){
+    let gs = seed0 ^ 321;
+    for(let i=0;i<6;i++){
+      gs=(gs*1103515245+12345)>>>0; const gx=(seededRand(gs)*W)|0;
+      gs=(gs*1103515245+12345)>>>0; const gy=(horizon*0.5 + seededRand(gs)*horizon*0.5)|0;
+      const tw = Math.sin(frame*0.08 + i*2);
+      if(tw > 0.2){
+        ctx.fillStyle = 'rgba(244,211,94,' + (tw*0.8).toFixed(2) + ')';
+        ctx.fillRect(gx, gy, 1, 1);
+      }
+    }
+  }
+
+  /* ---------- 19. vignette and scanlines: it is a broadcast, not a window ---------- */
+  const vig = ctx.createRadialGradient(W/2,H*0.45,H*0.22,W/2,H*0.5,H*0.95);
+  vig.addColorStop(0,'rgba(0,0,0,0)');
+  vig.addColorStop(1,'rgba(0,0,0,' + (0.34 + unrest*0.22).toFixed(2) + ')');
+  ctx.fillStyle = vig; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = 'rgba(0,0,0,0.055)';
+  for(let y=0;y<H;y+=2) ctx.fillRect(0,y,W,1);
 }
 
 function animatePixelWorld(){
@@ -1999,9 +2304,41 @@ function previewText(choice){
   return `${outlook} · ודאות ${confidence}`;
 }
 
-function metricBlock(label, value, pct, color){
-  return `<div class="metric"><div class="label">${label}</div><div class="value">${value}</div>
-    <div class="bar"><div style="width:${clamp(pct,0,100)}%;background:${color}"></div></div></div>`;
+/* How far a headline number moved this quarter. Returned as null when it
+   barely budged, so the tile stays quiet instead of showing "▲ 0". */
+function metricDelta(key){
+  const p = state.prevMetrics;
+  if(!p || p[key] === undefined) return null;
+  const d = state[key] - p[key];
+  return Math.abs(d) < 0.5 ? null : d;
+}
+
+/* A term is a trend, not a snapshot — every tile carries its own history. */
+function sparkline(key, color){
+  const h = (state.metricHistory && state.metricHistory[key]) || [];
+  if(h.length < 2) return '';
+  const min = Math.min(...h), max = Math.max(...h);
+  const span = (max - min) || 1;
+  const pts = h.map((v,i) =>
+    `${(i/(h.length-1)*100).toFixed(1)},${(100 - (v-min)/span*100).toFixed(1)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5"
+      vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>
+  </svg>`;
+}
+
+function metricBlock(label, value, pct, color, key){
+  const d = key ? metricDelta(key) : null;
+  const mag = Math.abs(d ?? 0);
+  const shown = mag >= 1000 ? (mag/1000).toFixed(1)+'K' : mag.toFixed(0);
+  const chip = d === null ? ''
+    : `<span class="mdelta ${d>0?'up':'down'}">${d>0?'▲':'▼'}${shown}</span>`;
+  return `<div class="metric">
+    <div class="label">${label}${chip}</div>
+    <div class="value">${value}</div>
+    <div class="bar"><div style="width:${clamp(pct,0,100)}%;background:${color}"></div></div>
+    ${key ? sparkline(key, color) : ''}
+  </div>`;
 }
 
 function arrow(v){
@@ -2014,14 +2351,14 @@ function render(){
   document.getElementById('turnBadge').textContent = `רבעון ${((state.turn-1)%4)+1} · שנה ${Math.ceil(state.turn/4)} · ${state.country.flag} ${state.country.name}`;
 
   document.getElementById('metrics').innerHTML =
-    metricBlock("אישור ציבורי", state.approval.toFixed(0)+"%", state.approval, state.approval<30?'var(--bad)':'var(--good)') +
-    metricBlock("יציבות", state.stability.toFixed(0)+"%", state.stability, state.stability<30?'var(--bad)':'var(--good)') +
-    metricBlock("קופת המדינה", state.treasury.toFixed(0)+" מיל' ₪", clamp((state.treasury+5000)/150,0,100), state.treasury<0?'var(--bad)':'var(--warn)') +
-    metricBlock("מתיחות גבולות", state.borderTension.toFixed(0)+"%", state.borderTension, state.borderTension>60?'var(--bad)':'var(--warn)') +
-    metricBlock("📍 תיירות", state.tourism.toFixed(0), clamp(state.tourism/100,0,100), 'var(--gold)') +
+    metricBlock("אישור ציבורי", state.approval.toFixed(0)+"%", state.approval, state.approval<30?'var(--bad)':'var(--good)', 'approval') +
+    metricBlock("יציבות", state.stability.toFixed(0)+"%", state.stability, state.stability<30?'var(--bad)':'var(--good)', 'stability') +
+    metricBlock("קופת המדינה", state.treasury.toFixed(0)+" מיל' ₪", clamp((state.treasury+5000)/150,0,100), state.treasury<0?'var(--bad)':'var(--warn)', 'treasury') +
+    metricBlock("מתיחות גבולות", state.borderTension.toFixed(0)+"%", state.borderTension, state.borderTension>60?'var(--bad)':'var(--warn)', 'borderTension') +
+    metricBlock("🧳 תיירות", state.tourism.toFixed(0), clamp(state.tourism/100,0,100), 'var(--gold)') +
     metricBlock("🦠 סיכון מחלה", state.diseaseRisk.level, state.diseaseRisk.level*25, state.diseaseRisk.level>2?'var(--bad)':'var(--warn)') +
     metricBlock("🤝 בעלי ברית", state.allies.length, Math.min(state.allies.length*20,100), 'var(--good)') +
-    metricBlock("💣 מלאי צפצפים", state.bombInventory.conventional + state.bombInventory.chemical + state.bombInventory.nuclear, clamp((state.bombInventory.conventional + state.bombInventory.chemical*2 + state.bombInventory.nuclear*3)/10,0,100), state.bombInventory.nuclear>0?'var(--bad)':'var(--warn)');
+    metricBlock("💣 מלאי פצצות", state.bombInventory.conventional + state.bombInventory.chemical + state.bombInventory.nuclear, clamp((state.bombInventory.conventional + state.bombInventory.chemical*2 + state.bombInventory.nuclear*3)/10,0,100), state.bombInventory.nuclear>0?'var(--bad)':'var(--warn)');
 
   document.getElementById('narrative').textContent = state.narrative;
 
@@ -2092,7 +2429,7 @@ function render(){
     </div>`;
   }).join('');
 
-  document.getElementById('log').innerHTML = state.log.map(l => `<div>${l}</div>`).join('') || '<div>אין עדיין אירועים ביומן.</div>';
+  document.getElementById('log').innerHTML = state.log.map(l => `<div>${l}</div>`).join('') || '<div>עדיין אין אירועים ביומן.</div>';
 
   // New features display
   const advancedStatsHTML = `
@@ -2103,7 +2440,7 @@ function render(){
       </div>
       <div style="background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;">
         <div style="color:var(--gold);font-weight:600;margin-bottom:6px;">🤝 בעלי ברית</div>
-        <div style="color:var(--text);">${state.allies.length > 0 ? state.allies.join(', ') : 'אין עדיין'}</div>
+        <div style="color:var(--text);">${state.allies.length > 0 ? state.allies.join(', ') : 'עדיין אין'}</div>
       </div>
       <div style="background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;">
         <div style="color:var(--gold);font-weight:600;margin-bottom:6px;">💣 ארסנל</div>
@@ -2111,11 +2448,11 @@ function render(){
       </div>
       <div style="background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;">
         <div style="color:var(--gold);font-weight:600;margin-bottom:6px;">📺 הופעות מדיה</div>
-        <div style="color:var(--text);">${state.mediaAppearances.length > 0 ? state.mediaAppearances.join(', ') : 'אף אחת עדיין'}</div>
+        <div style="color:var(--text);">${state.mediaAppearances.length > 0 ? state.mediaAppearances.join(', ') : 'עדיין לא'}</div>
       </div>
       ${state.moleDiscovered ? `<div style="background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;grid-column:1/-1;">
         <div style="color:${state.moleActive ? 'var(--warn)' : 'var(--good)'};font-weight:600;margin-bottom:6px;">🕵️ מרגל</div>
-        <div style="color:var(--text);">${state.moleActive ? 'פעיל - מספק מודיעין' : 'החוסל'}</div>
+        <div style="color:var(--text);">${state.moleActive ? 'פעיל — מספק מודיעין' : 'חוסל וגורש'}</div>
       </div>` : ''}
     </div>
   `;
@@ -2158,6 +2495,8 @@ function makeChoice(i){
   const ev = state.currentEvent;
   const choice = ev.choices[i];
   const prev = { approval: state.approval, stability: state.stability, borderTension: state.borderTension };
+  state.prevMetrics = { approval: state.approval, stability: state.stability,
+                        treasury: state.treasury, borderTension: state.borderTension };
 
   clearUrgentTimer();
   choice.effect(state);
@@ -2221,6 +2560,7 @@ function makeChoice(i){
   if(ev.id === 'election'){ resolveElection(); }
 
   tickWorld();
+  pushMetricHistory();
   state.turn += 1;
   newTurn();
 }
@@ -2589,7 +2929,7 @@ const MP = {
         const me=p.id===MP.playerId, host=p.id===MP.hostId;
         const c = p.country ? p.country : '— טרם בחר/ה מדינה —';
         return `<div class="mp-player${me?' me':''}"><span class="who">${host?'👑 ':''}${p.name}${me?' (אתה)':''}</span><span class="cc">${c}</span></div>`;
-      }).join('') : '<div class="mp-hint">אין עדיין שחקנים.</div>';
+      }).join('') : '<div class="mp-hint">עדיין אין שחקנים.</div>';
     }
     const isHost = MP.playerId!=null && MP.playerId===MP.hostId;
     const btn=MP.$('mpStartBtn'), hint=MP.$('mpLobbyHint');
