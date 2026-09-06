@@ -28,11 +28,48 @@
          + num(s.approval, 50) * 0.2;
   }
 
+  /* How a country votes on a resolution. Not a dice roll: it reads the
+     target the way a foreign ministry would, and the bar for authorising a
+     nuclear strike is set so high that only a country already on the edge of
+     war can clear it — which is why the answer is almost always "no". */
+  function botBallot(kind, voter, target) {
+    const n = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
+    const tension = n(target.borderTension, 50);
+    const approval = n(target.approval, 50);
+    const stability = n(target.stability, 55);
+    const treasury = n(target.treasury, 10000);
+    const voterStab = n(voter.stability, 55);
+    const reasons = [];
+    let score;
+
+    if (kind === 'nuclear') {
+      // Extreme tension alone is not enough: a country must be both on the
+      // brink of war and already isolated at home before anyone says yes.
+      score = (tension - 88) * 0.10 - 1.35;
+      if (tension > 88) reasons.push('המתיחות בגבולות ' + Math.round(tension) + '% מצדיקה צעד קיצוני');
+      else reasons.push('אין הצדקה לנשק גרעיני נגד מדינה שאינה על סף מלחמה');
+      if (approval < 25) { score += 0.30; reasons.push('המשטר שם מבודד גם בבית'); }
+    } else {
+      score = (tension - 55) * 0.05;
+      if (tension > 55) reasons.push('התנהגות תוקפנית בגבולות (' + Math.round(tension) + '%)');
+      else reasons.push('המדינה אינה מאיימת על אף אחד כרגע');
+      if (approval < 35) { score += 0.50; reasons.push('משטר מבודד ולא פופולרי'); }
+      score += (voterStab > 60 ? 0.30 : -0.30);
+      if (voterStab <= 60) reasons.push('מדינות לא יציבות נמנעות מעימות');
+      if (treasury > 40000) { score -= 0.80; reasons.push('שותפת סחר עשירה מדי לריב איתה'); }
+      else if (treasury > 25000) { score -= 0.30; reasons.push('קשרי מסחר משמעותיים מרסנים'); }
+      if (stability < 30) { score += 0.20; reasons.push('חוסר יציבות שם מדאיג את האזור'); }
+    }
+    return { vote: score > 0 ? 'for' : 'against', score: score, reasons: reasons };
+  }
+
   function createRoom(code, deliver, opts) {
     const rnd = (opts && opts.random) || Math.random;
     const players = new Map(); // id -> {id,name,country,lastSummary,alive}
     const proposals = new Map(); // id -> {from,to,kind}
     const wars = new Map();      // id -> {attacker,defender,stage,posture}
+    const votes = new Map();     // id -> an open UN resolution
+    const nukeAuth = new Map();  // playerId -> {country, untilTurn}
     let hostId = null;
     let started = false;
     let nextId = 1;
@@ -202,6 +239,67 @@
           return;
         }
 
+        /* ---------- the United Nations ----------
+           Bot countries are counted by the proposer's own client, which is
+           the only side that holds the whole world's numbers; every human
+           in the game answers for themselves. The room tallies both and
+           announces one result, so everyone applies the same outcome. */
+        if (m.t === 'unPropose') {
+          if (me.alive === false || !me.country) return;
+          const kind = m.kind === 'nuclear' ? 'nuclear' : 'sanctions';
+          const targetCountry = String(m.targetCountry || '');
+          if (!targetCountry || targetCountry === me.country) return;
+
+          const vid = 'u' + (seq++);
+          const voters = activePlayers().filter(p => p.id !== id);
+          const v = {
+            kind: kind, targetCountry: targetCountry, from: id,
+            botFor: Math.max(0, Number(m.botFor) || 0),
+            botAgainst: Math.max(0, Number(m.botAgainst) || 0),
+            reason: String(m.reason || ''),
+            pending: new Set(voters.map(p => p.id)),
+            ballots: [],
+          };
+          votes.set(vid, v);
+          deliver(id, { t: 'unProposed', id: vid, kind: kind, targetCountry: targetCountry, voters: voters.length });
+          for (const p of voters) {
+            deliver(p.id, {
+              t: 'unVote', id: vid, kind: kind, targetCountry: targetCountry,
+              fromName: me.name, fromCountry: me.country,
+              isTarget: p.country === targetCountry,
+            });
+          }
+          if (!voters.length) this._closeVote(vid);
+          return;
+        }
+
+        if (m.t === 'unBallot') {
+          const v = votes.get(String(m.id));
+          if (!v || !v.pending.has(id)) return;
+          v.pending.delete(id);
+          v.ballots.push({ name: me.name, country: me.country, vote: m.vote === 'for' ? 'for' : 'against' });
+          if (!v.pending.size) this._closeVote(String(m.id));
+          return;
+        }
+
+        if (m.t === 'nukeLaunch') {
+          const auth = nukeAuth.get(id);
+          const targetCountry = String(m.targetCountry || '');
+          if (!auth || auth.country !== targetCountry) {
+            deliver(id, { t: 'error', msg: 'אין אישור של האו"ם לתקיפה הזו' });
+            return;
+          }
+          nukeAuth.delete(id);
+          const victim = [...players.values()].find(p => p.country === targetCountry && p.alive !== false);
+          const news = {
+            t: 'nukeUsed', byName: me.name, byCountry: me.country,
+            targetCountry: targetCountry, victimId: victim ? victim.id : null,
+          };
+          broadcast(news);
+          if (victim) { eliminate(victim, 'nuke'); broadcastRoom(); maybeAdvanceTurn(); }
+          return;
+        }
+
         /* ---------- war ---------- */
         if (m.t === 'declareWar') {
           const target = players.get(Number(m.target));
@@ -261,6 +359,30 @@
         }
       },
 
+      /* Count a resolution and tell the whole room the same answer. */
+      _closeVote(vid) {
+        const v = votes.get(vid);
+        if (!v) return;
+        votes.delete(vid);
+        const proposer = players.get(v.from);
+        const humanFor = v.ballots.filter(b => b.vote === 'for').length;
+        const humanAgainst = v.ballots.filter(b => b.vote === 'against').length;
+        const forCount = v.botFor + humanFor + 1;            // the proposer votes for it
+        const againstCount = v.botAgainst + humanAgainst;
+        const passed = forCount > againstCount;
+
+        if (passed && v.kind === 'nuclear' && proposer) {
+          nukeAuth.set(proposer.id, { country: v.targetCountry, untilTurn: turn + 3 });
+        }
+        broadcast({
+          t: 'unResult', id: vid, kind: v.kind, targetCountry: v.targetCountry,
+          passed: passed, forCount: forCount, againstCount: againstCount,
+          fromId: v.from, fromName: proposer ? proposer.name : 'שחקן',
+          fromCountry: proposer ? proposer.country : null,
+          ballots: v.ballots, reason: v.reason,
+        });
+      },
+
       /* Decide a war and tell both sides. The loser is out of the game. */
       _resolveWar(wid) {
         const war = wars.get(wid);
@@ -300,5 +422,5 @@
     };
   }
 
-  return { createRoom: createRoom, warStrength: warStrength };
+  return { createRoom: createRoom, warStrength: warStrength, botBallot: botBallot };
 });

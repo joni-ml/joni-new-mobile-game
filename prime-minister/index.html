@@ -524,6 +524,45 @@
   </div>
 </div>
 
+<style>
+  #mpUN .mp-box{ max-width:520px; }
+  .un-field{ text-align:right; margin:14px 0; }
+  .un-field label{ display:block; font-size:12px; color:var(--muted); margin-bottom:6px; }
+  .un-field select{ width:100%; background:var(--surface-2); border:1px solid var(--line);
+    color:var(--text); padding:11px 12px; border-radius:8px; font-family:'Assistant',sans-serif; font-size:16px; }
+  .un-cost{ font-size:12px; color:var(--muted); margin-top:10px; line-height:1.6; }
+  .un-tally{ display:flex; gap:10px; margin:14px 0; }
+  .un-tally div{ flex:1; background:var(--surface-2); border:1px solid var(--line);
+    border-radius:9px; padding:12px 8px; }
+  .un-tally .n{ font-family:'Frank Ruhl Libre',serif; font-size:30px; }
+  .un-tally .l{ font-size:11.5px; color:var(--muted); }
+  .un-for .n{ color:var(--good); } .un-against .n{ color:var(--bad); }
+  .un-verdict{ font-family:'Frank Ruhl Libre',serif; font-size:19px; margin:6px 0 10px; }
+  .un-verdict.pass{ color:var(--good); } .un-verdict.fail{ color:var(--bad); }
+  .un-why{ font-size:12.5px; color:var(--muted); line-height:1.6; text-align:right;
+    border-top:1px solid var(--line); padding-top:10px; margin-top:6px; }
+  .un-ballots{ font-size:12px; color:var(--muted); text-align:right; margin-top:8px; }
+  #mpNukeBar{ display:none; position:fixed; top:10px; right:10px; z-index:1500;
+    background:rgba(180,72,63,0.18); border:1px solid var(--bad); color:#e9b0aa;
+    font-size:12.5px; padding:8px 12px; border-radius:12px; cursor:pointer;
+    font-family:'Assistant',sans-serif; }
+  #mpNukeBar.open{ display:block; }
+</style>
+
+<div id="mpUN" class="mp-overlay">
+  <div class="mp-box">
+    <div class="emblem">🕊️</div>
+    <h1>האומות המאוחדות</h1>
+    <p class="sub">הצעת החלטה מובאת להצבעה של כל מדינות העולם</p>
+    <div id="mpUNBody"></div>
+    <div class="mp-row" style="margin-top:16px;">
+      <button class="mp-btn ghost" onclick="MP.UN.close()">סגור</button>
+    </div>
+  </div>
+</div>
+
+<div id="mpNukeBar" onclick="MP.UN.nukePrompt()"></div>
+
 <div id="mpWaitPanel">
   <div class="w-t">✔️ ההחלטה שלך נשלחה</div>
   <div class="w-s" id="mpWaitNames"></div>
@@ -2282,6 +2321,10 @@ const MP = {
       case 'warNews':       MP.onWarNews(m); break;
       case 'warEnded':      MP.onWarEnded(m); break;
       case 'eliminated':    MP.onEliminated(m); break;
+      case 'unVote':        MP.UN.onVote(m); break;
+      case 'unResult':      MP.UN.onResult(m); break;
+      case 'nukeUsed':      MP.UN.onNukeUsed(m); break;
+      case 'unProposed':    break;
       case 'turnState':     MP.onTurnState(m); break;
       case 'turnAdvance':   MP.onTurnAdvance(m); break;
       case 'proposalSent':  break;
@@ -2641,6 +2684,199 @@ const MP = {
     }, 400);
   },
 
+  /* ================= the United Nations =================
+     A resolution is put to every country in the world. People answer for
+     themselves; the rest vote by the rule in mp-room.js, which reads the
+     target the way a foreign ministry would rather than rolling dice. */
+  UN:{
+    COST:600,
+    lastProposalTurn:-1,
+    auth:null,          // {country} once a strike has been authorised
+
+    addButton(){
+      const bar=document.querySelector('.pixel-controls');
+      if(!bar || bar.querySelector('.un-btn')) return;
+      const b=document.createElement('button');
+      b.className='pixel-btn un-btn';
+      b.textContent='🕊️ האו"ם';
+      b.onclick=()=>MP.UN.open();
+      bar.appendChild(b);
+    },
+    close(){ MP.$('mpUN').classList.remove('open'); },
+
+    open(){
+      if(!state) return;
+      const mine=state.country.name;
+      const list=COUNTRIES.filter(c=>c.name!==mine).map(c=>{
+        const who=MP.humanCountries[c.name];
+        const tag=who ? ' — '+((MP.players[who]||{}).name||'שחקן') : '';
+        return '<option value="'+c.name.replace(/"/g,'&quot;')+'">'+c.flag+' '+c.name+tag+'</option>';
+      }).join('');
+      const spent = MP.UN.lastProposalTurn===state.turn;
+      MP.$('mpUNBody').innerHTML =
+        '<div class="un-field"><label>נגד איזו מדינה?</label>'+
+        '<select id="unTarget">'+list+'</select></div>'+
+        (spent ? '<div class="un-cost">כבר הגשת הצעה ברבעון הזה. אפשר להגיש הצעה חדשה ברבעון הבא.</div>'
+               : '<button class="mp-ask-btn" onclick="MP.UN.propose(\'sanctions\')">'+
+                 '<span class="t">⛔ סנקציות בינלאומיות</span>'+
+                 '<span class="d">כל העולם מטיל סנקציות על המדינה. עובר אם רוב המדינות משוכנעות שהיא מסוכנת.</span></button>'+
+                 '<button class="mp-ask-btn bad" onclick="MP.UN.propose(\'nuclear\')">'+
+                 '<span class="t">⚛️ אישור לתקיפה גרעינית</span>'+
+                 '<span class="d">הרף גבוה מאוד — האו"ם מאשר רק נגד מדינה שכבר על סף מלחמה ומבודדת לגמרי.</span></button>'+
+                 '<div class="un-cost">עלות הגשה: '+MP.UN.COST+" מיל' ₪ · הצעה אחת לרבעון</div>");
+      MP.$('mpUN').classList.add('open');
+    },
+
+    /* every country that is not a person votes by the shared rule */
+    computeBotVotes(kind, targetCountry){
+      const t = (typeof worldState!=='undefined' && worldState[targetCountry]) || null;
+      if(!t || typeof MPRoom==='undefined') return {for:0, against:0, reason:''};
+      const tally={}; let f=0,a=0;
+      Object.keys(worldState).forEach(c=>{
+        if(c===targetCountry){ a++; return; }              // nobody votes to sanction itself
+        if(MP.humanCountries[c]) return;                    // a person answers for themselves
+        const b=MPRoom.botBallot(kind, worldState[c], t);
+        if(b.vote==='for') f++; else a++;
+        b.reasons.forEach(r=>{ tally[r]=(tally[r]||0)+1; });
+      });
+      const top=Object.keys(tally).sort((x,y)=>tally[y]-tally[x])[0]||'';
+      return {for:f, against:a, reason:top};
+    },
+
+    propose(kind){
+      if(!state) return;
+      const sel=MP.$('unTarget'); if(!sel) return;
+      const target=sel.value;
+      if(MP.UN.lastProposalTurn===state.turn){ MP.toast('כבר הגשת הצעה ברבעון הזה','bad'); return; }
+      if(state.treasury < MP.UN.COST){ MP.toast('אין מספיק בקופה להגשת ההצעה','bad'); return; }
+      state.treasury = clamp(state.treasury - MP.UN.COST, -20000, 100000);
+      MP.UN.lastProposalTurn = state.turn;
+      const bots = MP.UN.computeBotVotes(kind, target);
+      MP.UN.close();
+      if(typeof addLog==='function') addLog('<b>או"ם:</b> הגשת הצעת החלטה נגד '+target);
+
+      if(MP.active){
+        MP.send({t:'unPropose', kind:kind, targetCountry:target,
+                 botFor:bots.for, botAgainst:bots.against, reason:bots.reason});
+        MP.toast('ההצעה הוגשה — ההצבעה נפתחה');
+      } else {
+        // playing alone: only the world votes, so it is decided at once
+        MP.UN.onResult({ kind:kind, targetCountry:target, passed:(bots.for+1)>bots.against,
+          forCount:bots.for+1, againstCount:bots.against, fromId:MP.playerId,
+          fromName:'אתה', fromCountry:state.country.name, ballots:[], reason:bots.reason, solo:true });
+      }
+      MP.afterChange();
+    },
+
+    onVote(m){
+      const what = m.kind==='nuclear' ? 'אישור לתקיפה גרעינית' : 'סנקציות בינלאומיות';
+      MP.ask({icon:'🕊️', title:'הצבעה באו"ם', from:m.fromName+' ('+(m.fromCountry||'')+') מציע/ה',
+        text:what+' נגד '+m.targetCountry+(m.isTarget?' — כלומר נגדך.':'.')+' איך את/ה מצביע/ה?',
+        choices:[{title:'✅ בעד ההחלטה',desc:'תומך/ת בהצעה',tone:'good',
+                  pick:()=>MP.send({t:'unBallot', id:m.id, vote:'for'})},
+                 {title:'❌ נגד ההחלטה',desc:'מתנגד/ת להצעה',tone:'bad',
+                  pick:()=>MP.send({t:'unBallot', id:m.id, vote:'against'})}]});
+    },
+
+    onResult(m){
+      if(!state) return;
+      const iAmProposer = m.solo || m.fromId===MP.playerId;
+      const iAmTarget = state.country.name===m.targetCountry;
+      const what = m.kind==='nuclear' ? 'אישור לתקיפה גרעינית' : 'סנקציות בינלאומיות';
+      let note='';
+
+      if(m.passed && m.kind==='sanctions'){
+        if(iAmTarget){
+          state.treasury=clamp(state.treasury-2500,-20000,100000);
+          state.approval=clamp(state.approval-12,0,100);
+          state.stability=clamp(state.stability-8,0,100);
+          state.borderTension=clamp(state.borderTension+10,0,100);
+          note='העולם הטיל עליך סנקציות — הכלכלה והאישור נפגעו קשות';
+        } else {
+          state.relations[m.targetCountry]=clamp((state.relations[m.targetCountry]||0)-25,-100,100);
+          if(iAmProposer) state.approval=clamp(state.approval+3,0,100);
+          note='הסנקציות על '+m.targetCountry+' נכנסו לתוקף';
+        }
+      } else if(!m.passed && m.kind==='sanctions'){
+        if(iAmProposer){
+          state.approval=clamp(state.approval-4,0,100);
+          state.relations[m.targetCountry]=clamp((state.relations[m.targetCountry]||0)-10,-100,100);
+          note='ההצעה שלך נפלה — מביכה פוליטית';
+        } else note='ההצעה נפלה';
+      } else if(m.kind==='nuclear'){
+        if(m.passed && iAmProposer){
+          MP.UN.auth={country:m.targetCountry};
+          const bar=MP.$('mpNukeBar');
+          bar.textContent='⚛️ יש אישור או"ם לתקיפה על '+m.targetCountry+' — לחץ לשיגור';
+          bar.classList.add('open');
+          note='האו"ם אישר תקיפה גרעינית על '+m.targetCountry;
+        } else if(m.passed){
+          note='האו"ם אישר תקיפה גרעינית על '+m.targetCountry+' — העולם עוצר את נשימתו';
+        } else if(iAmProposer){
+          state.approval=clamp(state.approval-6,0,100);
+          state.stability=clamp(state.stability-3,0,100);
+          note='האו"ם דחה את בקשתך לנשק גרעיני — זעם בינלאומי על עצם הבקשה';
+        } else note='האו"ם דחה את הבקשה לתקיפה גרעינית';
+      }
+
+      MP.UN.showResult(m, what, note);
+      if(typeof addLog==='function') addLog('<b>או"ם:</b> '+what+' נגד '+m.targetCountry+' — '+
+        (m.passed?'התקבלה':'נדחתה')+' ('+m.forCount+' בעד, '+m.againstCount+' נגד)');
+      MP.afterChange();
+    },
+
+    showResult(m, what, note){
+      const ballots=(m.ballots||[]).map(b=>b.name+': '+(b.vote==='for'?'בעד':'נגד')).join(' · ');
+      MP.$('mpUNBody').innerHTML =
+        '<div class="un-verdict '+(m.passed?'pass':'fail')+'">'+
+          (m.passed?'✅ ההחלטה התקבלה':'❌ ההחלטה נדחתה')+'</div>'+
+        '<div style="font-size:13.5px;color:var(--muted)">'+what+' נגד '+m.targetCountry+'</div>'+
+        '<div class="un-tally">'+
+          '<div class="un-for"><div class="n">'+m.forCount+'</div><div class="l">בעד</div></div>'+
+          '<div class="un-against"><div class="n">'+m.againstCount+'</div><div class="l">נגד</div></div>'+
+        '</div>'+
+        (note?'<div style="font-size:14px;margin-bottom:8px">'+note+'</div>':'')+
+        (m.reason?'<div class="un-why"><b>הנימוק הרווח באולם:</b> '+m.reason+'</div>':'')+
+        (ballots?'<div class="un-ballots">שחקנים: '+ballots+'</div>':'');
+      MP.$('mpUN').classList.add('open');
+    },
+
+    nukePrompt(){
+      const t=MP.UN.auth && MP.UN.auth.country; if(!t) return;
+      MP.ask({icon:'⚛️', title:'לשגר תקיפה גרעינית על '+t+'?', from:'באישור האו"ם',
+        text:'זה מסיים את המשחק עבור '+t+'. גם עם אישור, העולם לא יסלח לך על זה בקלות.',
+        choices:[{title:'⚛️ לשגר',desc:'המדינה מודחת. אתה סופג מכה קשה באישור, ביציבות וביחסים',tone:'bad',
+                  pick:()=>{ MP.UN.auth=null; MP.$('mpNukeBar').classList.remove('open');
+                             if(MP.active) MP.send({t:'nukeLaunch', targetCountry:t});
+                             else MP.UN.onNukeUsed({byName:'אתה', byCountry:state.country.name, targetCountry:t, solo:true}); }},
+                 {title:'↩️ לא לשגר',desc:'האישור נשמר להמשך',pick:()=>{}}]});
+    },
+
+    onNukeUsed(m){
+      if(!state) return;
+      const iAmLauncher = m.solo || m.byCountry===state.country.name;
+      const iAmVictim = state.country.name===m.targetCountry;
+      if(iAmVictim){
+        state.borderTension=100;   // an end-of-term condition the game already has
+        if(typeof addLog==='function') addLog('<b>או"ם:</b> ☢️ '+m.byName+' שיגר/ה תקיפה גרעינית על מדינתך');
+        MP.toast('☢️ מדינתך הותקפה בנשק גרעיני','bad');
+      } else if(iAmLauncher){
+        state.approval=clamp(state.approval-20,0,100);
+        state.stability=clamp(state.stability-15,0,100);
+        state.borderTension=clamp(state.borderTension+30,0,100);
+        Object.keys(state.relations).forEach(c=>{ state.relations[c]=clamp(state.relations[c]-50,-100,100); });
+        if(typeof addLog==='function') addLog('<b>או"ם:</b> ☢️ שיגרת תקיפה גרעינית על '+m.targetCountry+' — העולם מזועזע');
+        MP.toast('☢️ התקיפה בוצעה — המחיר הבינלאומי כבד','bad');
+      } else {
+        if(state.relations[m.byCountry]!=null) state.relations[m.byCountry]=clamp(state.relations[m.byCountry]-40,-100,100);
+        state.borderTension=clamp(state.borderTension+10,0,100);
+        if(typeof addLog==='function') addLog('<b>העולם:</b> ☢️ '+m.byName+' שיגר/ה תקיפה גרעינית על '+m.targetCountry);
+        MP.toast('☢️ '+m.byCountry+' תקפה את '+m.targetCountry+' בנשק גרעיני','bad');
+      }
+      MP.afterChange();
+    },
+  },
+
   afterChange(){
     if(typeof render==='function' && !(typeof checkGameOver==='function' && checkGameOver())) render();
     else if(typeof render==='function') render();
@@ -2663,12 +2899,15 @@ window.MP = MP;
       MP.send({t:'claim', country:name});
     }
     _selectCountry(name);
+    MP.UN.addButton();
     if(MP.active){ MP.onGameStart(); }
   };
 
   const _makeChoice = window.makeChoice;
   window.makeChoice = function(i){
     _makeChoice(i);
+    // the original game awards one point a quarter; the second is added here
+    if(state && typeof state.xp==='number'){ state.xp += 1; if(typeof render==='function') render(); }
     if(MP.active){
       MP.restoreHumans(); MP.pushState();
       if(state) MP.lastSeenTurn=state.turn;
