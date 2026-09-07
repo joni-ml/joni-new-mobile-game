@@ -211,6 +211,13 @@
     clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
     transition: opacity 0.25s ease;
   }
+  /* A hull is the icon-sheet glyph, white on the unit's disc. */
+  .unit.hull {
+    background-repeat: no-repeat; background-position: 50% 52%;
+    background-size: 86% 86%; color: transparent;
+  }
+  .unit.laden { box-shadow: 0 0 0 2px #ffd76a, 0 3px 0 rgba(0,0,0,0.45); }
+
   .city {
     position: absolute; border-radius: 50%;
     background: radial-gradient(circle at 35% 30%, #f0d9a0, #b8873c);
@@ -326,6 +333,32 @@
   }
   #citiesBar.on { display: flex; }
   #citiesBar .uname { min-width: 92px; text-align: center; }
+  #buildBtn {
+    background: #2f6f4f; color: #fff; border: none; border-radius: 7px;
+    padding: 4px 9px; font-size: 12px; font-weight: 700; margin-left: 8px;
+  }
+  #buildBtn:disabled { opacity: 0.4; }
+  #yard {
+    position: fixed; inset: 0; z-index: 60; display: none;
+    background: rgba(4,10,18,0.94); padding: 20px; overflow-y: auto;
+  }
+  #yard.on { display: block; }
+  #yardName { font-size: 20px; font-weight: 700; }
+  #yardClose { margin-left: auto; background: none; border: none; color: var(--ink); font-size: 20px; }
+  .ship {
+    display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+    background: var(--panel); color: var(--ink); border: 1px solid var(--stroke);
+    border-radius: 10px; padding: 11px 13px; margin-bottom: 7px; font-size: 14px;
+  }
+  .ship .hullpic {
+    width: 34px; height: 34px; flex: none;
+    background-repeat: no-repeat; background-position: 50%; background-size: contain;
+  }
+  .ship .sname { font-weight: 700; }
+  .ship .sinfo { font-size: 11px; opacity: 0.6; }
+  .ship .scost { margin-left: auto; font-size: 12px; opacity: 0.75; white-space: nowrap; }
+  .ship.on { border-color: #2f6f4f; background: #16311f; }
+
   #overview {
     position: fixed; inset: 0; z-index: 60; display: none;
     background: rgba(4,10,18,0.94); padding: 20px; overflow-y: auto;
@@ -413,6 +446,12 @@
 
 <div id="citiesBar">
   <span class="nav" id="prevCity">◀</span><span class="uname" id="cityLabel">—</span><span class="nav" id="nextCity">▶</span>
+  <button id="buildBtn">⚒ Build</button>
+</div>
+
+<div id="yard">
+  <div class="ovhead"><span id="yardName"></span><button id="yardClose">✕</button></div>
+  <div id="yardBody"></div>
 </div>
 
 <div id="overview">
@@ -1609,10 +1648,32 @@
   }
 
   // ---- UNITS ----
+  // The three hulls, cut from the icon sheet as white glyphs.
+  const BOAT_ART = {
+    boat: "data:image/png;base64,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",
+    ldboat: "data:image/png;base64,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",
+    warboat: "data:image/png;base64,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",
+  };
   const UNIT_TYPES = {
     warrior: { name: 'Warrior', icon: '🗡', moves: 2, sight: 2 },
     settler: { name: 'Home pack', icon: '🎒', moves: 2, sight: 2 },
+    boat:    { name: 'Ancient boat',     cls: 'boats', art: BOAT_ART.boat,
+               moves: 3, sight: 2, prod: 10 },
+    ldboat:  { name: 'Ancient LD boat',  cls: 'boats', art: BOAT_ART.ldboat,
+               moves: 4, sight: 2, prod: 18 },
+    warboat: { name: 'Ancient war boat', cls: 'boats', art: BOAT_ART.warboat,
+               moves: 3, sight: 3, prod: 14 },
   };
+  const BUILDABLE = ['boat', 'ldboat', 'warboat'];
+  const clsOf = t => UNIT_TYPES[t].cls || 'land';
+  const isBoat = u => clsOf(u.type) === 'boats';
+
+  // Class: CARRIER. A boat may only cross land where something in this class
+  // is standing. Nothing is in it yet — no unit or building in the game
+  // carries a hull overland — so today a boat simply cannot leave the water.
+  // The rule is here so that whatever joins the class later works at once.
+  const CARRIERS = [];
+  const carrierAt = (c, r) => CARRIERS.some(k => k.c === c && k.r === r);
   let units = [], cities = [], sel = 0;
   let unitSelected = false;
   let reachable = new Map();   // "c,r" -> movement points spent to get there
@@ -1626,7 +1687,7 @@
     addUnit('warrior', startHex.c, startHex.r);
     // The settler starts on the first open tile beside the warrior.
     const spot = neighbors(startHex.c, startHex.r)
-      .find(n => isFinite(moveCost(tiles[n.c][n.r])));
+      .find(n => isFinite(moveCost(n.c, n.r)));
     addUnit('settler', spot ? spot.c : startHex.c, spot ? spot.r : startHex.r);
     sel = 0;
     updateUnitBar();
@@ -1639,10 +1700,16 @@
     el.style.width = unitSize + 'px';
     el.style.height = unitSize + 'px';
     el.style.fontSize = (unitSize * 0.55) + 'px';
-    el.textContent = def.icon;
+    if (def.art) {
+      el.classList.add('hull');
+      el.style.backgroundImage = 'url(' + def.art + ')';
+    } else {
+      el.textContent = def.icon;
+    }
     colWrap[c].appendChild(el);
     const u = { type, c, r, name: def.name, icon: def.icon,
-                max: def.moves, moves: def.moves, sight: def.sight, el };
+                max: def.moves, moves: def.moves, sight: def.sight, el,
+                cargo: null, aboard: null };
     units.push(u);
     placeUnit(u);
     return u;
@@ -2034,6 +2101,34 @@
     runEconomy(pl);
   }
 
+  // A city on the water can lay down a hull. Production piles up turn by
+  // turn until the cost is met, and the finished boat is launched onto a
+  // water tile beside the city — a boat cannot be built inland because it
+  // would have nowhere to float.
+  function coastal(ct) {
+    return neighbors(ct.c, ct.r).some(n => tiles[n.c][n.r].water || tiles[n.c][n.r].river);
+  }
+  function launchSpot(ct) {
+    return neighbors(ct.c, ct.r).find(n =>
+      (tiles[n.c][n.r].water || tiles[n.c][n.r].river) && !occupied(n.c, n.r, null));
+  }
+  function buildStep(ct, pl) {
+    if (!ct.building) return;
+    const def = UNIT_TYPES[ct.building];
+    if ((ct.prod || 0) < def.prod) return;
+    const spot = launchSpot(ct);
+    if (!spot) return;                       // nowhere to float it yet
+    ct.prod -= def.prod;
+    const made = ct.building;
+    ct.building = null;
+    if (pl.human) {
+      addUnit(made, spot.c, spot.r);
+      updateUnitBar();
+      showNotice(def.name + ' launched at ' + ct.name + '.');
+    }
+    updateCityBar();
+  }
+
   function allCities() {
     const out = cities.slice();
     for (const pl of players) if (!pl.human) out.push(...pl.cities);
@@ -2113,11 +2208,23 @@
 
   // ---- MOVEMENT ----
   // Terrain costs movement points; mountains and water can't be entered.
-  function moveCost(tl) {
+  // What a tile costs THIS unit. A boat wants open water and a river to sail;
+  // everyone else wants dry ground, and can wade a river but not a sea.
+  function moveCost(c, r, u) {
+    const tl = tiles[c][r];
+    if (u && isBoat(u)) {
+      if (tl.water || tl.river) return 1;
+      return carrierAt(c, r) ? 1 : Infinity;   // land needs a carrier
+    }
     if (tl.water || tl.feature === 'mtn') return Infinity;
     if (tl.feature === 'forest' || tl.feature === 'hill') return 2;
     return 1;
   }
+  // A boat standing here with its one berth free.
+  function boatWithRoom(c, r) {
+    return units.find(u => isBoat(u) && u.c === c && u.r === r && !u.cargo);
+  }
+
   function occupied(c, r, self) {
     return units.some(u => u !== self && u.c === c && u.r === r);
   }
@@ -2127,6 +2234,16 @@
     reachable = new Map();
     const u = curUnit();
     if (!u || u.moves <= 0) return;
+    // Aboard a boat you are a passenger, not a walker: the only move you have
+    // is to step ashore onto a neighbouring tile.
+    if (u.aboard) {
+      for (const n of neighbors(u.c, u.r)) {
+        if (isFinite(moveCost(n.c, n.r)) && !occupied(n.c, n.r, u)) {
+          reachable.set(n.c + ',' + n.r, 1);
+        }
+      }
+      return;
+    }
     const key = (c, r) => c + ',' + r;
     const best = new Map([[key(u.c, u.r), 0]]);
     const queue = [{ c: u.c, r: u.r, cost: 0 }];
@@ -2134,16 +2251,24 @@
       queue.sort((a, b) => a.cost - b.cost);
       const cur = queue.shift();
       for (const n of neighbors(cur.c, cur.r)) {
-        const step = moveCost(tiles[n.c][n.r]);
-        if (!isFinite(step)) continue;
-        if (occupied(n.c, n.r, u)) continue;
-        const cost = cur.cost + step;
+        const step = moveCost(n.c, n.r, u);
+        const ferry = boatWithRoom(n.c, n.r);
+        // A land unit may step onto a friendly boat that has room — that is
+        // how it boards — even though the water itself is closed to it.
+        const boarding = !isBoat(u) && !u.aboard && ferry && cur.c === u.c && cur.r === u.r;
+        if (!isFinite(step) && !boarding) continue;
+        if (occupied(n.c, n.r, u) && !boarding) continue;
+        // Rowing out to the boat costs one. Taken as the water's own cost it
+        // was infinite, so boarding was always rejected as too far.
+        const cost = cur.cost + (boarding && !isFinite(step) ? 1 : step);
         if (cost > u.moves) continue;
         const k = key(n.c, n.r);
         if (best.has(k) && best.get(k) <= cost) continue;
         best.set(k, cost);
         reachable.set(k, cost);
-        queue.push({ c: n.c, r: n.r, cost });
+        // Once aboard you are a passenger; the journey does not carry on
+        // from the boat's tile on foot.
+        if (!boarding) queue.push({ c: n.c, r: n.r, cost });
       }
     }
   }
@@ -2173,6 +2298,16 @@
   // moves the selected unit, and anything else is ignored while one is
   // selected so the dots never get cancelled by a stray tap.
   function onTapHex(c, r) {
+    // Tapping a boat with a land unit selected BOARDS it. Without this the
+    // tap fell through to "there is a unit here, select it" and the passenger
+    // could never get on, because the boat is always standing on the tile you
+    // have to tap.
+    const boarder = curUnit();
+    if (unitSelected && boarder && !isBoat(boarder) && !boarder.aboard &&
+        reachable.has(c + ',' + r) && boatWithRoom(c, r)) {
+      moveSelected(c, r);
+      return;
+    }
     const idx = units.findIndex(u => u.c === c && u.r === r);
     if (idx >= 0) {
       if (idx === sel) unitSelected = !unitSelected;
@@ -2183,22 +2318,43 @@
       selectHex(c, r);
       return;
     }
-    if (unitSelected) {
+    if (unitSelected) { moveSelected(c, r); return; }
+    selectHex(c, r);       // nothing selected — just inspect the tile
+  }
+
+  function moveSelected(c, r) {
+    {
       const k = c + ',' + r;
       if (!reachable.has(k)) return;
       const u = curUnit();
       u.moves -= reachable.get(k);
+      const ferry = boatWithRoom(c, r);
+      if (u.aboard) {
+        // Stepping ashore: the berth is free again.
+        u.aboard.cargo = null;
+        u.aboard.el.classList.remove('laden');
+        u.aboard = null;
+        u.el.style.display = '';
+      } else if (!isBoat(u) && ferry) {
+        // Boarding: a boat carries ONE passenger, and the passenger rides
+        // with it rather than standing on the water.
+        ferry.cargo = u;
+        u.aboard = ferry;
+        ferry.el.classList.add('laden');
+        u.el.style.display = 'none';
+        showNotice(u.name + ' boards the ' + ferry.name + '.');
+      }
       u.c = c; u.r = r;
       placeUnit(u);
+      // A loaded boat takes its passenger with it.
+      if (isBoat(u) && u.cargo) { u.cargo.c = c; u.cargo.r = r; placeUnit(u.cargo); }
       updateFog();
       computeReachable();
       renderMoves();
       updateUnitBar();
       if (u.moves <= 0) { unitSelected = false; renderMoves(); }
       selectHex(c, r);
-      return;
     }
-    selectHex(c, r);       // nothing selected — just inspect the tile
   }
 
   // ---- PAN / ZOOM ----
@@ -2675,6 +2831,7 @@
         }
       }
       const dry = wet ? 1 : 1 + mod('dryCity', pl);
+      let cityProd = 1;                       // a city always makes something
       for (let c = 0; c < COLS; c++) {
         for (let r = 0; r < ROWS; r++) {
           const tl = tiles[c][r];
@@ -2687,8 +2844,11 @@
                      ? 1 + mod('riverFood', pl) : 1;
           resGold += resDef(tl.res).gold * dry;
           resFood += resDef(tl.res).food * bank * dry;
+          cityProd += resDef(tl.res).prod;
         }
       }
+      ct.prod = (ct.prod || 0) + cityProd;
+      buildStep(ct, pl);
     }
     const earned = (5 + own.length * 2 + resGold) * (1 + mod('trade', pl));
     pl.gold += Math.round(earned);
@@ -2792,6 +2952,41 @@
     document.getElementById('ovBody').innerHTML = html;
     document.getElementById('overview').classList.add('on');
   }
+  function showYard() {
+    if (!cities.length) return;
+    const ct = cities[citySel];
+    document.getElementById('yardName').textContent = '⚒  ' + ct.name;
+    let html = '';
+    if (!coastal(ct)) {
+      html = '<div class="ship">' + ct.name + ' is inland. A boat needs water beside ' +
+             'the city to be launched into.</div>';
+    } else {
+      html = `<div class="ship"><span class="sinfo">Production stored: ` +
+             `${Math.round(ct.prod || 0)}</span></div>`;
+      for (const key of BUILDABLE) {
+        const d = UNIT_TYPES[key];
+        const on = ct.building === key;
+        html += `<button class="ship${on ? ' on' : ''}" data-ship="${key}">` +
+          `<span class="hullpic" style="background-image:url(${d.art})"></span>` +
+          `<span><span class="sname">${d.name}</span><br>` +
+          `<span class="sinfo">${d.moves} tiles a turn · carries 1</span></span>` +
+          `<span class="scost">${d.prod} prod${on ? ' · building' : ''}</span></button>`;
+      }
+    }
+    document.getElementById('yardBody').innerHTML = html;
+    document.querySelectorAll('#yardBody [data-ship]').forEach(b => {
+      b.addEventListener('click', () => {
+        ct.building = b.dataset.ship;
+        showNotice(ct.name + ' begins an ' + UNIT_TYPES[ct.building].name + '.');
+        showYard();
+      });
+    });
+    document.getElementById('yard').classList.add('on');
+  }
+  document.getElementById('buildBtn').addEventListener('click', showYard);
+  document.getElementById('yardClose').addEventListener('click',
+    () => document.getElementById('yard').classList.remove('on'));
+
   document.getElementById('overviewBtn').addEventListener('click', showOverview);
   document.getElementById('ovClose').addEventListener('click',
     () => document.getElementById('overview').classList.remove('on'));
@@ -3101,6 +3296,22 @@
   window.__owned = () => { let n = 0;
     for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++) if (tiles[c][r].owned) n++;
     return n; };
+  window.__unitDefs = () => Object.keys(UNIT_TYPES).map(k => ({ key: k,
+    name: UNIT_TYPES[k].name, cls: clsOf(k), moves: UNIT_TYPES[k].moves,
+    prod: UNIT_TYPES[k].prod || 0 }));
+  window.__findWater = () => { for (let c = 0; c < COLS; c++) for (let r = 0; r < ROWS; r++)
+    if (tiles[c][r].water && neighbors(c, r).some(n => !tiles[n.c][n.r].water)) return { c, r };
+    return null; };
+  window.__spawn = (t, c, r) => addUnit(t, c, r);
+  window.__place = (type, c, r) => { const u = units.find(x => x.type === type);
+    if (u) { u.c = c; u.r = r; placeUnit(u); } return !!u; };
+  window.__addCarrier = (c, r) => CARRIERS.push({ c, r });
+  window.__clearCarriers = () => { CARRIERS.length = 0; };
+  window.__cargo = () => { const boats = units.filter(isBoat);
+    return { aboard: units.filter(u => u.aboard).length,
+             free: boats.filter(bt => !bt.cargo).length }; };
+  window.__selInfo = () => { const u = curUnit(); return u ? { type: u.type, at: u.c+","+u.r, moves: u.moves, selected: unitSelected } : null; };
+  window.__cityInfo = () => cities.length ? { name: cities[0].name, coastal: coastal(cities[0]), prod: cities[0].prod||0, building: cities[0].building } : null;
   window.__hexDist = hexDist;
   window.__dims = { COLS, ROWS };
 
