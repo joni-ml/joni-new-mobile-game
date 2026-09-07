@@ -65,12 +65,16 @@ let fails=0; const ok=(c,m)=>{console.log((c?'✅':'❌')+' '+m); if(!c)fails++;
     state.bombInventory={conventional:9,chemical:3,nuclear:3};
     worldState[t].militaryReadiness=1; worldState[t].stability=3; worldState[t].approval=3;
     declareWarOnCountry(t); }, target);
+  /* No war is ever a certainty — the odds are clamped to 95% either way — so
+     the roll is pinned here rather than left to fail one run in twenty. */
+  await pg.evaluate(()=>{ window.__realRandom = Math.random; Math.random = () => 0; });
   await w(600);
   ok(await pg.locator('#mpAsk.open').count()===1, 'declaring war asks first, with the odds on the table');
   const odds = await pg.textContent('#mpAskFrom');
   ok(/\d+%/.test(odds), 'the dialog quotes a win chance ("'+odds.trim()+'")');
   await pg.screenshot({ path:'tests/shots/5-war.png' });
   await pg.click('.mp-ask-btn:has-text("לצאת למתקפה")'); await w(1400);
+  await pg.evaluate(()=>{ Math.random = window.__realRandom; });
   const conquered = await pg.evaluate(t=>({ c: worldState[t].conquered, list: state.conquests, over: !!state.defeatMessage }), target);
   ok(conquered.c === true && conquered.list.length === 1, 'an overwhelming attack conquers the country');
   await pg.screenshot({ path:'tests/shots/6-conquest.png' });
@@ -83,7 +87,9 @@ let fails=0; const ok=(c,m)=>{console.log((c?'✅':'❌')+' '+m); if(!c)fails++;
   await pg.evaluate(()=>{ const t=Object.keys(worldState).find(n=>!worldState[n].conquered);
     state.militaryReadiness=1; state.stability=2; state.approval=2; state.bombInventory={conventional:0,chemical:0,nuclear:0};
     worldState[t].militaryReadiness=100; worldState[t].stability=99; worldState[t].approval=99;
-    resolveWarWithBot(t); });
+    const real = Math.random; Math.random = () => 0.999;   // pin the roll to a loss
+    resolveWarWithBot(t);
+    Math.random = real; });
   await w(900);
   ok(await pg.evaluate(()=>!!state.defeatMessage), 'losing a war you started ends the term');
   const overTxt = await pg.textContent('#mainArea');

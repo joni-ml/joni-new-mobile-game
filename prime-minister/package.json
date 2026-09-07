@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node tests/warfare.test.js && node tests/mechanics.test.js && node tests/multiplayer.test.js"
+    "test": "node tests/warfare.test.js && node tests/mechanics.test.js && node tests/effects.test.js && node tests/multiplayer.test.js"
   },
   "dependencies": {
     "ws": "^8.18.0"

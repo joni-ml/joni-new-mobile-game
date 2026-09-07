@@ -167,6 +167,46 @@
     font-variant-numeric:tabular-nums; }
   @media (max-width:720px){ .army-wrap{ grid-template-columns:1fr; } }
 
+  /* ---- the national address takes over the monitor ---- */
+  #pixelCanvas{ transition:transform .9s cubic-bezier(.2,.7,.2,1); }
+  .pixel-frame.cinema #pixelCanvas{ transform:scale(1.14); }
+  .pixel-frame.cinema{ box-shadow:0 0 0 1px rgba(0,0,0,0.6), 0 10px 28px -12px rgba(0,0,0,0.9),
+                                  0 0 60px -10px rgba(184,147,75,0.9); }
+  .pixel-frame.cinema-bars::before, .pixel-frame.cinema-bars::after{
+    content:""; position:absolute; left:0; right:0; height:9%; background:#000; z-index:2;
+    pointer-events:none; animation:barsIn .5s ease both;
+  }
+  .pixel-frame.cinema-bars::before{ top:0; } .pixel-frame.cinema-bars::after{ bottom:0; }
+  @keyframes barsIn{ from{ height:0; } to{ height:9%; } }
+  @media (prefers-reduced-motion:reduce){
+    #pixelCanvas{ transition:none; }
+    .pixel-frame.cinema #pixelCanvas{ transform:none; }
+    .pixel-frame.cinema-bars::before, .pixel-frame.cinema-bars::after{ animation:none; }
+  }
+  .pixel-btn:disabled{ opacity:.42; cursor:not-allowed; border-color:var(--line); }
+
+  /* ---- effects ---- */
+  .fx-wrap{ max-width:620px; margin:0 auto; display:flex; flex-direction:column; gap:16px; }
+  .fx-note{ font-size:12.5px; color:var(--muted); line-height:1.6; margin:0; }
+  .fx-presets{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .fx-preset{ display:flex; flex-direction:column; gap:4px; align-items:center; padding:13px 8px;
+    background:var(--surface); border:1px solid var(--line); border-radius:9px; cursor:pointer;
+    color:var(--text); font-family:'Assistant',sans-serif; transition:border-color .15s; }
+  .fx-preset:hover{ border-color:var(--gold); }
+  .fx-preset.on{ border-color:var(--gold); background:rgba(184,147,75,0.12); }
+  .fx-preset .fp-title{ font-size:13.5px; font-weight:700; }
+  .fx-preset .fp-sub{ font-size:11px; color:var(--muted); }
+  .fx-toggles{ display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:9px; }
+  .fx-toggle{ display:flex; align-items:center; gap:9px; padding:10px 12px; text-align:start;
+    background:var(--surface); border:1px solid var(--line); border-radius:8px; cursor:pointer;
+    color:var(--muted); font-family:'Assistant',sans-serif; font-size:12.5px; transition:color .15s,border-color .15s; }
+  .fx-toggle:hover{ border-color:var(--gold); }
+  .fx-toggle.on{ color:var(--text); border-color:rgba(184,147,75,0.45); }
+  .fx-toggle .ft-dot{ width:9px; height:9px; border-radius:50%; background:var(--line); flex:none;
+    transition:background .15s, box-shadow .15s; }
+  .fx-toggle.on .ft-dot{ background:var(--gold); box-shadow:0 0 8px -1px var(--gold); }
+  @media (max-width:560px){ .fx-presets{ grid-template-columns:1fr; } }
+
   /* ---- where the cabinet stands, on the choice itself ---- */
   .cbackers{ display:flex; flex-wrap:wrap; gap:5px; margin-top:8px; }
   .backer{ font-size:10.5px; color:var(--gold); background:rgba(184,147,75,0.10);
@@ -280,6 +320,8 @@
         <button class="pixel-btn" onclick="toggleFullscreen()">⛶ מסך מלא</button>
         <button class="pixel-btn" onclick="openWorldView()">🌍 מה קורה בעולם</button>
         <button class="pixel-btn" onclick="openArmyView()">🎖️ הצבא</button>
+        <button class="pixel-btn" id="addressBtn" onclick="openAddress()">📢 נאום לאומי</button>
+        <button class="pixel-btn" onclick="openFxView()">✨ אפקטים</button>
         <button class="pixel-btn" onclick="exportSave()">💾 שמור</button>
         <button class="pixel-btn" onclick="document.getElementById('importFile').click()">📂 טען</button>
         <button class="pixel-btn" onclick="openTutorial()">❓ עזרה</button>
@@ -316,6 +358,18 @@
     <button class="pixel-btn" onclick="closeWorldView()">✕ סגור</button>
   </div>
   <div class="world-grid" id="worldGrid"></div>
+</div>
+
+<div id="fxOverlay" class="world-overlay">
+  <div class="world-header">
+    <h2>✨ אפקטים</h2>
+    <button class="pixel-btn" onclick="closeFxView()">✕ סגור</button>
+  </div>
+  <div class="fx-wrap">
+    <p class="fx-note">ככל שיש יותר אפקטים, כך המסך יפה יותר ועובד קשה יותר. במכשיר איטי כדאי "חסכוני".</p>
+    <div class="fx-presets" id="fxPresets"></div>
+    <div class="fx-toggles" id="fxToggles"></div>
+  </div>
 </div>
 
 <div id="armyOverlay" class="world-overlay">
@@ -788,6 +842,7 @@ function freshState(country){
     driftApplied: { treasury: 0, approval: 0 },
     ledger: [],          // what moved each number this quarter, and why
     currentAdvice: null, // where the cabinet stands on the dilemma on screen
+    lastAddressTurn: -99,// the national address is a once-a-year event
   };
 }
 
@@ -2045,7 +2100,7 @@ function drawPixelScene(canvas, country, simState, frame){
 
   /* ---------- 10. the city's own glow bleeds into the sky ---------- */
   const litFrac = litCount/litTotal;
-  if(dark > 0.3 && litFrac > 0.05){
+  if(dark > 0.3 && litFrac > 0.05 && FX.bloom){
     const bloom = ctx.createLinearGradient(0, quayY - P(50), 0, quayY);
     bloom.addColorStop(0, 'rgba(255,190,110,0)');
     bloom.addColorStop(1, 'rgba(255,190,110,' + (litFrac*dark*0.16).toFixed(3) + ')');
@@ -2055,7 +2110,7 @@ function drawPixelScene(canvas, country, simState, frame){
   /* ---------- 11. the harbour, with the city mirrored in it ----------
      The canvas is drawn back onto itself one rippling strip at a time, so the
      reflection is the actual skyline rather than a second-guess of it. */
-  if(refH > 3){
+  if(refH > 3 && FX.reflections){
     ctx.save();
     ctx.globalAlpha = 0.46;
     for(let i=0; i<refH; i+=2){
@@ -2092,6 +2147,15 @@ function drawPixelScene(canvas, country, simState, frame){
     }
     ctx.fillStyle = mix('#1b2029','#000',dark*0.4);
     ctx.fillRect(0, waterY - P(1), W, P(1));     // the quay wall
+  }
+
+  if(refH > 3 && !FX.reflections){
+    const wg2 = ctx.createLinearGradient(0,quayY,0,waterY);
+    wg2.addColorStop(0, mix(skyLow,'#0d2740',0.55));
+    wg2.addColorStop(1, mix(skyLow,'#04121f',0.86));
+    ctx.fillStyle = wg2; ctx.fillRect(0, quayY, W, refH);
+    ctx.fillStyle = mix('#1b2029','#000',dark*0.4);
+    ctx.fillRect(0, waterY - P(1), W, P(1));
   }
 
   /* ---------- 12. the near towers, in front of the water ---------- */
@@ -2250,7 +2314,7 @@ function drawPixelScene(canvas, country, simState, frame){
   }
 
   /* ---------- 18. weather ---------- */
-  if(unrest > 0.45){
+  if(unrest > 0.45 && FX.weather){
     ctx.fillStyle = 'rgba(150,175,205,0.40)';
     let rs = seed0 ^ 8181;
     for(let i=0, n=R(70*unrest*k); i<n; i++){
@@ -2258,7 +2322,7 @@ function drawPixelScene(canvas, country, simState, frame){
       rs=(rs*1103515245+12345)>>>0; const ry=((seededRand(rs)*H + frame*5) % H)|0;
       ctx.fillRect(rx, ry, 1, P(4));
     }
-  } else if(((simState.turn ?? 1) - 1) % 4 === 0){
+  } else if(FX.weather && ((simState.turn ?? 1) - 1) % 4 === 0){
     let ns = seed0 ^ 3131;
     for(let i=0, n=R(38*k); i<n; i++){
       ns=(ns*1103515245+12345)>>>0; const fx0=seededRand(ns)*W;
@@ -2321,21 +2385,44 @@ function drawPixelScene(canvas, country, simState, frame){
     }
   }
 
-  /* ---------- 20. it is a broadcast, not a window ---------- */
+  /* ---------- 20. the national address ---------- */
+  if(simState === state) drawCinema(ctx, W, H, P, frame, quayY);
+
+  /* ---------- 21. it is a broadcast, not a window ---------- */
   const vig = ctx.createRadialGradient(W/2,H*0.45,H*0.22,W/2,H*0.5,H*0.95);
   vig.addColorStop(0,'rgba(0,0,0,0)');
   vig.addColorStop(1,'rgba(0,0,0,' + (0.34 + unrest*0.22).toFixed(2) + ')');
   ctx.fillStyle = vig; ctx.fillRect(0,0,W,H);
-  ctx.fillStyle = 'rgba(0,0,0,0.055)';
-  for(let y=0;y<H;y+=2) ctx.fillRect(0,y,W,1);
+  if(FX.scanlines){
+    ctx.fillStyle = 'rgba(0,0,0,0.055)';
+    for(let y=0;y<H;y+=2) ctx.fillRect(0,y,W,1);
+  }
+  if(FX.grain){
+    let gr = (frame*2654435761) >>> 0;
+    for(let i=0, n=R(210*k); i<n; i++){
+      gr = (gr*1103515245+12345)>>>0; const gx = (seededRand(gr)*W)|0;
+      gr = (gr*1103515245+12345)>>>0; const gy = (seededRand(gr)*H)|0;
+      gr = (gr*1103515245+12345)>>>0;
+      ctx.fillStyle = seededRand(gr) > 0.5 ? 'rgba(255,255,255,0.035)' : 'rgba(0,0,0,0.05)';
+      ctx.fillRect(gx, gy, 1, 1);
+    }
+  }
 }
 
 function animatePixelWorld(){
   pixelFrame += 1;
+  if(pixelFrame % 2 === 0) tickMetricNumbers();
+  const ab = document.getElementById('addressBtn');
+  if(ab) ab.disabled = !addressAvailable();
+  const fr = document.getElementById('pixelFrame');
   if(warFlash > 0){
     warFlash -= 1;
-    const fr = document.getElementById('pixelFrame');
-    if(fr) fr.classList.toggle('shaking', warFlash > 40);
+    if(fr) fr.classList.toggle('shaking', FX.shake && warFlash > 40);
+  }
+  if(cinema > 0){
+    cinema -= 1;
+    if(fr){ fr.classList.add('cinema'); fr.classList.toggle('cinema-bars', FX.letterbox); }
+    if(cinema === 0 && fr) fr.classList.remove('cinema','cinema-bars');
   }
   const canvas = document.getElementById('pixelCanvas');
   if(state && canvas && !checkGameOver()){ drawPixelScene(canvas, state.country, state, pixelFrame); }
@@ -2625,6 +2712,26 @@ function sparkline(key, color){
   </svg>`;
 }
 
+/* The four headline numbers ease toward their new reading rather than
+   snapping, so a quarter that cost you eight points reads as eight points
+   draining away. The bars already glide; this is their label catching up. */
+const METRIC_SUFFIX = { approval:'%', stability:'%', treasury:" מיל' ₪", borderTension:'%' };
+const metricDisplay = {};
+
+function tickMetricNumbers(){
+  if(!state) return;
+  const nodes = document.querySelectorAll('#metrics .value[data-mk]');
+  for(let i=0;i<nodes.length;i++){
+    const el = nodes[i], key = el.dataset.mk, target = state[key];
+    if(typeof target !== 'number') continue;
+    let cur = metricDisplay[key];
+    if(cur === undefined) cur = target;
+    cur = Math.abs(target - cur) < 0.05 ? target : cur + (target - cur)*0.14;
+    metricDisplay[key] = cur;
+    el.textContent = cur.toFixed(0) + (METRIC_SUFFIX[key] || '');
+  }
+}
+
 function metricBlock(label, value, pct, color, key){
   const d = key ? metricDelta(key) : null;
   const mag = Math.abs(d ?? 0);
@@ -2633,7 +2740,7 @@ function metricBlock(label, value, pct, color, key){
     : `<span class="mdelta ${d>0?'up':'down'}">${d>0?'▲':'▼'}${shown}</span>`;
   return `<div class="metric">
     <div class="label">${label}${chip}</div>
-    <div class="value">${value}</div>
+    <div class="value"${key ? ` data-mk="${key}"` : ''}>${value}</div>
     <div class="bar"><div style="width:${clamp(pct,0,100)}%;background:${color}"></div></div>
     ${key ? sparkline(key, color) : ''}
   </div>`;
@@ -2788,6 +2895,166 @@ function tagLabel(t){
   const map = { austerity:"צנע", spending:"הוצאה חברתית", military:"עוצמה צבאית", force:"שימוש בכוח",
     diplomacy_soft:"דיפלומטיה רכה", social:"רווחה חברתית", authoritarian:"שליטה מרכזית" };
   return map[t] || t;
+}
+
+/* ================= EFFECTS =================
+   The scene draws reflections, bloom, weather and particles every frame.
+   That is cheap on a laptop and expensive on a phone, so the cost is the
+   player's to set. Presets first, individual switches for anyone who wants
+   them, and the choice is remembered on the device. */
+const FX_PRESETS = {
+  cinematic:   { reflections:true,  weather:true,  bloom:true,  scanlines:true,  grain:true,  shake:true,  letterbox:true  },
+  standard:    { reflections:true,  weather:true,  bloom:true,  scanlines:true,  grain:false, shake:true,  letterbox:false },
+  performance: { reflections:false, weather:false, bloom:false, scanlines:false, grain:false, shake:false, letterbox:false },
+};
+const FX_LABELS = {
+  reflections:'השתקפות במים', weather:'גשם ושלג', bloom:'זוהר העיר',
+  scanlines:'קווי סריקה', grain:'גרעיניות פילם', shake:'רעידת מסך', letterbox:'פסים קולנועיים',
+};
+let FX = Object.assign({ preset:'standard' }, FX_PRESETS.standard);
+
+function loadFx(){
+  try {
+    const raw = localStorage.getItem('pm-fx');
+    if(raw) FX = Object.assign(FX, JSON.parse(raw));
+  } catch(_){ /* private window, blocked storage — the defaults are fine */ }
+}
+function saveFx(){
+  try { localStorage.setItem('pm-fx', JSON.stringify(FX)); } catch(_){}
+}
+loadFx();
+
+function setFxPreset(name){
+  if(!FX_PRESETS[name]) return;
+  FX = Object.assign({ preset:name }, FX_PRESETS[name]);
+  saveFx(); paintFxView();
+}
+window.setFxPreset = setFxPreset;
+
+function toggleFx(key){
+  FX[key] = !FX[key];
+  FX.preset = 'custom';          // once a switch is touched it is no longer a preset
+  saveFx(); paintFxView();
+}
+window.toggleFx = toggleFx;
+
+/* Repainting the panel must not be able to open it — changing a setting from
+   anywhere else should never throw the overlay in the player's face. */
+function paintFxView(){
+  const presets = [['cinematic','🎬 קולנועי','הכול דלוק'],
+                   ['standard','⚖️ רגיל','ברירת המחדל'],
+                   ['performance','⚡ חסכוני','לטלפונים איטיים']];
+  document.getElementById('fxPresets').innerHTML = presets.map(([id,title,sub]) =>
+    `<button class="fx-preset ${FX.preset===id?'on':''}" onclick="setFxPreset('${id}')">
+      <span class="fp-title">${title}</span><span class="fp-sub">${sub}</span>
+    </button>`).join('');
+  document.getElementById('fxToggles').innerHTML = Object.keys(FX_LABELS).map(key =>
+    `<button class="fx-toggle ${FX[key]?'on':''}" onclick="toggleFx('${key}')" role="switch" aria-checked="${!!FX[key]}">
+      <span class="ft-dot"></span><span>${FX_LABELS[key]}</span>
+    </button>`).join('');
+}
+
+function openFxView(){
+  paintFxView();
+  document.getElementById('fxOverlay').classList.add('open');
+}
+window.openFxView = openFxView;
+function closeFxView(){ document.getElementById('fxOverlay').classList.remove('open'); }
+window.closeFxView = closeFxView;
+
+/* ================= THE NATIONAL ADDRESS =================
+   The one moment in a term where the country stops and listens. It is a real
+   gamble — rhetoric and standing decide whether it lands — and the scene
+   turns cinematic while it plays: searchlights up, press flashes, the crowd
+   filling the promenade. Once a year, so it stays an event. */
+let cinema = 0;           // frames of the broadcast left to play
+let cinemaOutcome = 0;    // +1 it landed, -1 it did not
+
+function addressAvailable(){
+  return state && !checkGameOver() && (state.turn - (state.lastAddressTurn || -99)) >= 4;
+}
+
+function openAddress(){
+  if(!addressAvailable()){
+    const wait = 4 - (state.turn - (state.lastAddressTurn || -99));
+    MP.ask({ icon:'📢', title:'נאום לאומי', from:'',
+      text:`אפשר לנאום פעם בשנה. הבא יהיה זמין בעוד ${Math.max(1,wait)} רבעונים.`,
+      choices:[{ title:'הבנתי', desc:'', pick:()=>{} }] });
+    return;
+  }
+  const odds = Math.round(addressOdds()*100);
+  MP.ask({
+    icon:'📢', title:'לפנות אל האומה?',
+    from:'סיכוי שהנאום ייקלט: ' + odds + '%',
+    text:'שידור חי לכל המדינה. נאום שנוחת מקפיץ אישור ויציבות; נאום שנופל נזכר לרעה עוד הרבה זמן. פעם בשנה.',
+    choices:[
+      { title:'📢 לעלות לשידור', desc:'הסיכוי נקבע לפי כריזמה, יציבות והאישור שיש לך כרגע', tone:'good',
+        pick:()=>deliverAddress() },
+      { title:'↩️ לא עכשיו', desc:'הנאום נשמר לפעם אחרת', pick:()=>{} },
+    ]
+  });
+}
+window.openAddress = openAddress;
+
+/* Charisma is the biggest lever, but a country that has stopped listening is
+   hard to reach however well you speak. */
+function addressOdds(){
+  return clamp(0.22 + state.skills.rhetoric*0.11 + state.stability*0.002 + state.approval*0.002, 0.1, 0.92);
+}
+
+function deliverAddress(){
+  const landed = Math.random() < addressOdds();
+  state.lastAddressTurn = state.turn;
+  cinema = 200;
+  cinemaOutcome = landed ? 1 : -1;
+
+  if(landed){
+    state.approval = clamp(state.approval + 12 + state.skills.rhetoric*2, 0, 100);
+    state.stability = clamp(state.stability + 8, 0, 100);
+    state.rival.threat = clamp(state.rival.threat - 10, 0, 100);
+    state.mediaAppearances.push('נאום לאומי');
+    addLog('<b>נאום לאומי:</b> 📢 הנאום נחת — הרחוב מגיב בהתלהבות.');
+  } else {
+    state.approval = clamp(state.approval - 9, 0, 100);
+    state.rival.threat = clamp(state.rival.threat + 8, 0, 100);
+    addLog('<b>נאום לאומי:</b> 📢 הנאום לא נקלט — הפרשנים קורעים אותו לגזרים.');
+  }
+  render();
+}
+
+/* Drawn over the finished scene, and only over the player's own. */
+function drawCinema(ctx, W, H, P, frame, quayY){
+  if(cinema <= 0) return;
+  const t = 1 - cinema/200;
+  const good = cinemaOutcome > 0;
+
+  for(let i=0;i<4;i++){                       // searchlights raked across the sky
+    const sweep = Math.sin(frame*0.02 + i*1.7);
+    const baseX = W*(0.12 + i*0.25);
+    ctx.save();
+    ctx.globalAlpha = 0.13 * (1 - Math.abs(t-0.5)*1.2);
+    ctx.fillStyle = good ? '#ffe6a8' : '#c8b0b0';
+    ctx.beginPath();
+    ctx.moveTo(baseX, quayY);
+    ctx.lineTo(baseX - P(30) + sweep*P(46), 0);
+    ctx.lineTo(baseX + P(14) + sweep*P(46), 0);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  if(frame % 7 === 0 || frame % 11 === 0){    // press flashes along the promenade
+    for(let i=0;i<3;i++){
+      const fx = ((frame*37 + i*97) % 100)/100 * W;
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.fillRect(Math.round(fx), H - P(9), P(2), P(2));
+    }
+  }
+  if(t < 0.12){                                // the cut to broadcast
+    ctx.fillStyle = 'rgba(255,255,255,' + ((0.12-t)*4).toFixed(2) + ')';
+    ctx.fillRect(0,0,W,H);
+  }
+  ctx.fillStyle = good ? 'rgba(255,214,140,0.06)' : 'rgba(120,120,150,0.08)';
+  ctx.fillRect(0,0,W,H);
 }
 
 /* ================= CAUSALITY =================
