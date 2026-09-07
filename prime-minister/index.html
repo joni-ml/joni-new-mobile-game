@@ -167,6 +167,28 @@
     font-variant-numeric:tabular-nums; }
   @media (max-width:720px){ .army-wrap{ grid-template-columns:1fr; } }
 
+  /* ---- where the cabinet stands, on the choice itself ---- */
+  .cbackers{ display:flex; flex-wrap:wrap; gap:5px; margin-top:8px; }
+  .backer{ font-size:10.5px; color:var(--gold); background:rgba(184,147,75,0.10);
+    border:1px solid rgba(184,147,75,0.30); border-radius:20px; padding:2px 8px; white-space:nowrap; }
+
+  /* ---- what is already coming, and where the numbers went ---- */
+  .pending-box, .ledger-box{ display:flex; flex-direction:column; gap:6px; }
+  .ledger-empty{ font-size:12px; color:var(--muted); }
+  .pending-row{ display:flex; gap:9px; align-items:baseline; font-size:11.5px;
+    background:var(--surface-2); border:1px solid var(--line); border-inline-start:2px solid var(--line);
+    border-radius:6px; padding:7px 9px; }
+  .pending-row.soon{ border-inline-start-color:var(--warn); }
+  .pending-row .pr-when{ color:var(--warn); font-weight:700; white-space:nowrap; }
+  .pending-row .pr-what{ color:var(--muted); line-height:1.45; }
+  .ledger-row{ display:flex; flex-direction:column; gap:5px; font-size:11.5px;
+    background:var(--surface-2); border:1px solid var(--line); border-radius:6px; padding:7px 9px; }
+  .ledger-row .lr-label{ color:var(--text); font-weight:600; }
+  .ledger-row .lr-deltas{ display:flex; flex-wrap:wrap; gap:5px; }
+  .lr-d{ font-size:10.5px; padding:1px 6px; border-radius:20px; font-variant-numeric:tabular-nums; }
+  .lr-d.up{ color:#8fe3b0; background:rgba(76,140,123,0.18); }
+  .lr-d.down{ color:#f0a094; background:rgba(180,72,63,0.18); }
+
   /* ---- conquest ---- */
   .wact-war{ border-color:rgba(180,72,63,0.5) !important; }
   .wact-war:hover{ border-color:var(--bad) !important; background:rgba(180,72,63,0.14); }
@@ -278,6 +300,10 @@
           <div class="xp-line" id="xpLine"></div>
           <div id="skillsList"></div>
         </div>
+        <h3 style="margin-top:14px;">מה כבר בדרך</h3>
+        <div id="pendingBody" class="pending-box"></div>
+        <h3 style="margin-top:14px;">למה המספרים זזו</h3>
+        <div id="ledgerBody" class="ledger-box"></div>
         <div class="log" id="log"></div>
       </div>
     </div>
@@ -760,6 +786,8 @@ function freshState(country){
     /* What the quarter's baseline has already paid out while the clock ran,
        so the settle-up at the end of the turn never double-charges. */
     driftApplied: { treasury: 0, approval: 0 },
+    ledger: [],          // what moved each number this quarter, and why
+    currentAdvice: null, // where the cabinet stands on the dilemma on screen
   };
 }
 
@@ -1703,73 +1731,100 @@ function shade(hex, amt){
 let pixelFrame = 0;
 const buildingsCache = {};
 
-/* ---------- colour helpers for the scene ---------- */
+/* ---------- colour helpers ---------- */
 function toRgb(c){
   if(c[0] === '#'){ const n = parseInt(c.slice(1),16); return [(n>>16)&255,(n>>8)&255,n&255]; }
   const m = c.match(/\d+/g); return m ? [+m[0],+m[1],+m[2]] : [0,0,0];
 }
-/* Blend two colours and hand back hex, so the result can be fed straight
-   back into mix() or shade() without either of them choking on rgb(). */
+/* Returns hex so the result can be fed back into mix() or shade(). */
 function mix(a, b, t){
   const A = toRgb(a), B = toRgb(b); t = clamp(t,0,1);
   const f = i => Math.round(A[i] + (B[i]-A[i])*t).toString(16).padStart(2,'0');
   return '#' + f(0) + f(1) + f(2);
 }
 
-/* A city is laid out once per country and reused every frame. Each building
-   carries a silhouette type so the skyline reads as a place rather than a bar
-   chart, and the tallest one becomes the seat of government. */
+/* The four corners of the day. The scene never sits on one of these — it is
+   always somewhere between two of them, moving while the clock runs. */
+const SKY_KEYS = [
+  { top:'#27406f', mid:'#7e6c9b', low:'#eda36b', dark:0.34 },   // dawn
+  { top:'#2f6aa8', mid:'#74acda', low:'#c3dcef', dark:0.00 },   // noon
+  { top:'#221a4e', mid:'#8a3f66', low:'#ea6d3c', dark:0.58 },   // dusk
+  { top:'#05081a', mid:'#0e1730', low:'#1a2745', dark:1.00 },   // night
+];
+
+/* How far through the day we are, 0..1. The quarter sets the hour and the
+   turn clock moves the minutes, so the light shifts while you deliberate. */
+function dayFraction(simState){
+  const q = ((simState.turn ?? 1) - 1) % 4;
+  let within = 0;
+  if(simState === state && typeof turnSecondsLeft === 'number'){
+    within = clamp(1 - turnSecondsLeft/TURN_SECONDS, 0, 1);
+  }
+  return (q + within) / 4;
+}
+
+/* A city is laid out once per country and reused. Three depths of skyline:
+   a hazy far bank, the main street wall, and a couple of near towers that
+   frame the shot. The tallest of the main row becomes the seat of government. */
 function getBuildings(country, W){
-  const key = country.name + '@' + W;   // the same country is drawn at two sizes
+  const key = country.name + '@' + W;
   if(!buildingsCache[key]){
     let s = seedFromName(country.name);
     const next = () => { s = (s*1103515245 + 12345) >>> 0; return seededRand(s); };
-    const list = [];
-    let x = Math.round(W*0.015);
-    const maxX = W - Math.round(W*0.04);
-    while(x < maxX){
-      const w = Math.round(W*0.028) + (next() * Math.round(W*0.042) | 0);
-      const h = Math.round(W*0.05)  + (next() * Math.round(W*0.115) | 0);
-      const r = next();
-      const type = r<0.13 ? 'spire' : r<0.26 ? 'factory' : r<0.42 ? 'stepped' : 'block';
-      list.push({ x, w, h, type, seed: s>>>0 });
-      x += w + Math.round(W*0.012) + 1;
-    }
-    let t = 0;
-    list.forEach((b,i) => { if(b.h > list[t].h) t = i; });
-    if(list[t]){ list[t].type = 'capitol'; }
-    buildingsCache[key] = list;
+    const band = (count, wMin, wVar, hMin, hVar, depth) => {
+      const list = []; let x = -Math.round(W*0.02);
+      for(let i=0;i<count;i++){
+        const w = Math.round(W*wMin) + (next()*Math.round(W*wVar)|0);
+        const h = Math.round(W*hMin) + (next()*Math.round(W*hVar)|0);
+        const r = next();
+        const type = r<0.13 ? 'spire' : r<0.26 ? 'factory' : r<0.42 ? 'stepped' : 'block';
+        list.push({ x, w, h, type, depth, seed: s>>>0 });
+        x += w + Math.round(W*0.012) + 1;
+        if(x > W) break;
+      }
+      return list;
+    };
+    const far  = band(30, 0.020, 0.030, 0.030, 0.070, 0);
+    const main = band(30, 0.028, 0.042, 0.050, 0.115, 1);
+    let t = 0; main.forEach((b,i)=>{ if(b.h > main[t].h) t = i; });
+    if(main[t]) main[t].type = 'capitol';
+    const near = [
+      { x: -Math.round(W*0.01), w: Math.round(W*0.075), h: Math.round(W*0.20), type:'block', depth:2, seed:(s^7)>>>0 },
+      { x: W - Math.round(W*0.07), w: Math.round(W*0.075), h: Math.round(W*0.23), type:'block', depth:2, seed:(s^13)>>>0 },
+    ];
+    buildingsCache[key] = { far, main, near };
   }
   return buildingsCache[key];
 }
 
 /**
- * Pixel-scene renderer. Everything on screen is driven by the numbers in
- * simState, so the city is a readable dashboard: the sky turns with the
- * quarter, windows go dark as approval falls, planes only arrive when
- * tourism is worth it, and a searchlight sweeps the border when it heats up.
- * Works for the player's own live state and for background-simulated rivals.
+ * The situation-room monitor. Every mark on it is driven by a number in
+ * simState, so the picture is a dashboard: the light moves with the clock,
+ * windows go dark as approval falls, the harbour fills as trade grows, and
+ * the skyline is mirrored in the water below it.
  */
 function drawPixelScene(canvas, country, simState, frame){
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
   const W = canvas.width, H = canvas.height;
   const R = Math.round;
-  const k = W/320;                     // everything is authored at 320 wide
-  const P = n => Math.max(1, R(n*k));  // scale a pixel measurement
+  const k = W/320;
+  const P = n => Math.max(1, R(n*k));
   const [c1, c2] = country.colors || ["#b8934b","#1b2029"];
-  const buildings = getBuildings(country, W);
-  const horizon = R(H*0.50);
-  const groundY = R(H*0.76);
+  const city = getBuildings(country, W);
   const seed0 = seedFromName(country.name);
 
-  /* ---- read the state once; every visual below is driven by these ---- */
+  const horizon  = R(H*0.42);   // where the mountains meet the sky
+  const quayY    = R(H*0.66);   // the city stands on this line
+  const waterY   = R(H*0.775);  // harbour ends, promenade begins
+  const refH     = waterY - quayY;
+
+  /* ---- the state, read once ---- */
   const approval  = clamp(simState.approval ?? 50, 0, 100);
   const stability = clamp(simState.stability ?? 50, 0, 100);
   const tension   = clamp(simState.borderTension ?? 0, 0, 100);
   const treasury  = simState.treasury ?? 0;
   const debt      = simState.debtToGdp ?? 60;
-  const turn      = simState.turn ?? 1;
   const military  = clamp(simState.militaryReadiness ?? 50, 0, 100);
   const tourism   = simState.tourism ?? 0;
   const disease   = simState.diseaseRisk ? simState.diseaseRisk.level : 0;
@@ -1780,38 +1835,40 @@ function drawPixelScene(canvas, country, simState, frame){
   const anger  = clamp((50 - approval)/50, 0, 1);
   const wealth = clamp((treasury + 4000)/26000, 0, 1);
 
-  /* ---- the quarter sets the light, so a term visibly passes ---- */
-  const phase = (turn - 1) % 4;                     // 0 dawn · 1 noon · 2 dusk · 3 night
-  const night = phase === 3, dusk = phase === 2;
-  const dark  = night ? 1 : dusk ? 0.55 : phase === 0 ? 0.3 : 0;
+  /* ---- continuous light ---- */
+  const dayF = dayFraction(simState);
+  const f = dayF*4, i0 = Math.floor(f)%4, i1 = (i0+1)%4, tw = f - Math.floor(f);
+  const A = SKY_KEYS[i0], B = SKY_KEYS[i1];
+  const dark   = A.dark + (B.dark - A.dark)*tw;
+  const skyTop = mix(mix(A.top, B.top, tw), '#3a0e0e', unrest*0.55);
+  const skyMid = mix(mix(A.mid, B.mid, tw), '#6b1f14', unrest*0.50);
+  const skyLow = mix(mix(A.low, B.low, tw), '#8f3a1c', unrest*0.45);
+  const night  = dark > 0.75;
 
   /* ---------- 1. sky ---------- */
-  const skyTop = mix(['#263d70','#2f6aa8','#221a4e','#060a1a'][phase], '#3a0e0e', unrest*0.55);
-  const skyMid = mix(['#7d6b9c','#6fa8d8','#8a3f66','#101832'][phase], '#6b1f14', unrest*0.50);
-  const skyLow = mix(['#e8a06a','#bcd9ef','#e8703f','#1b2846'][phase], '#8f3a1c', unrest*0.45);
-  const sky = ctx.createLinearGradient(0,0,0,horizon+P(12));
+  const sky = ctx.createLinearGradient(0,0,0,quayY);
   sky.addColorStop(0, skyTop); sky.addColorStop(0.55, skyMid); sky.addColorStop(1, skyLow);
-  ctx.fillStyle = sky; ctx.fillRect(0,0,W,groundY);
+  ctx.fillStyle = sky; ctx.fillRect(0,0,W,quayY);
 
-  /* ---------- 2. stars ---------- */
-  if(dark > 0.25){
+  /* ---------- 2. stars, fading in as the light goes ---------- */
+  if(dark > 0.2){
     let s = seed0 ^ 77;
-    const n = R(55*k);
+    const n = R(60*k);
     for(let i=0;i<n;i++){
       s=(s*1103515245+12345)>>>0; const sx=(seededRand(s)*W)|0;
-      s=(s*1103515245+12345)>>>0; const sy=(seededRand(s)*horizon*0.9)|0;
-      s=(s*1103515245+12345)>>>0; const tw=seededRand(s);
-      const a = (0.2 + 0.65*tw) * dark * (Math.sin(frame*0.05 + tw*9) > -0.4 ? 1 : 0.3);
+      s=(s*1103515245+12345)>>>0; const sy=(seededRand(s)*horizon*1.05)|0;
+      s=(s*1103515245+12345)>>>0; const q=seededRand(s);
+      const a = (0.2 + 0.7*q) * (dark-0.2)/0.8 * (Math.sin(frame*0.05 + q*9) > -0.4 ? 1 : 0.3);
       ctx.fillStyle = 'rgba(255,252,235,' + a.toFixed(2) + ')';
       ctx.fillRect(sx, sy, 1, 1);
     }
   }
 
-  /* ---------- 2b. aurora — only a calm, solvent country earns one ---------- */
-  if(night && stability > 70 && wealth > 0.5){
+  /* ---------- 3. aurora — a calm, solvent country earns one ---------- */
+  if(dark > 0.8 && stability > 70 && wealth > 0.5){
     for(let band=0; band<3; band++){
-      const baseY = horizon*(0.16 + band*0.10);
       ctx.fillStyle = band%2 ? 'rgba(96,220,170,0.10)' : 'rgba(120,170,240,0.09)';
+      const baseY = horizon*(0.14 + band*0.10);
       for(let x=0; x<W; x+=2){
         const h = P(7) + Math.sin(x*0.035 + frame*0.012 + band*2)*P(6)
                        + Math.sin(x*0.011 - frame*0.007)*P(4);
@@ -1820,28 +1877,31 @@ function drawPixelScene(canvas, country, simState, frame){
     }
   }
 
-  /* ---------- 3. sun or moon, tracking across the term ---------- */
-  const bodyX = R(W*(0.16 + 0.60*(phase/3)));
-  const bodyY = R(horizon*(night?0.28:dusk?0.66:0.34));
-  const bodyR = P(night?4:6);
-  const glow = ctx.createRadialGradient(bodyX,bodyY,0,bodyX,bodyY,bodyR*4.5);
-  glow.addColorStop(0, night ? 'rgba(214,228,255,0.30)' : 'rgba(255,224,146,0.42)');
-  glow.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = glow;
-  ctx.beginPath(); ctx.arc(bodyX,bodyY,bodyR*4.5,0,6.2832); ctx.fill();
-  ctx.fillStyle = night ? '#e8eeff' : mix('#ffd75e','#ff7a3c', dusk?0.65:unrest*0.5);
-  ctx.beginPath(); ctx.arc(bodyX,bodyY,bodyR,0,6.2832); ctx.fill();
-  if(night){                                   // bite a crescent out of the moon
-    ctx.fillStyle = skyTop;
-    ctx.beginPath(); ctx.arc(bodyX+bodyR*0.6, bodyY-bodyR*0.4, bodyR*0.9, 0, 6.2832); ctx.fill();
+  /* ---------- 4. sun and moon on one arc ---------- */
+  const ang = dayF*6.2832 - 1.5708;
+  const bodyX = R(W*0.5 + Math.cos(ang)*W*0.42);
+  const bodyY = R(horizon*0.62 - Math.sin(ang)*horizon*0.52);
+  const isSun = Math.sin(ang) > -0.15;
+  const bodyR = P(isSun ? 6 : 4);
+  if(bodyY < quayY + P(10)){
+    const glow = ctx.createRadialGradient(bodyX,bodyY,0,bodyX,bodyY,bodyR*5);
+    glow.addColorStop(0, isSun ? 'rgba(255,224,146,0.45)' : 'rgba(214,228,255,0.28)');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(bodyX,bodyY,bodyR*5,0,6.2832); ctx.fill();
+    ctx.fillStyle = isSun ? mix('#ffd75e','#ff7040', clamp(dark*1.4,0,1)) : '#e8eeff';
+    ctx.beginPath(); ctx.arc(bodyX,bodyY,bodyR,0,6.2832); ctx.fill();
+    if(!isSun){                                  // bite a crescent out of the moon
+      ctx.fillStyle = skyTop;
+      ctx.beginPath(); ctx.arc(bodyX+bodyR*0.6, bodyY-bodyR*0.4, bodyR*0.9, 0, 6.2832); ctx.fill();
+    }
   }
 
-  /* ---------- 4. drifting cloud bank ---------- */
+  /* ---------- 5. cloud bank ---------- */
   const cover = clamp(0.3 + unrest*0.6, 0, 1);
   let cs = seed0 ^ 4242;
-  const clouds = R(4 + cover*5);
-  for(let i=0;i<clouds;i++){
-    cs=(cs*1103515245+12345)>>>0; const cy = P(4) + (seededRand(cs)*horizon*0.6)|0;
+  for(let i=0, n=R(4+cover*5); i<n; i++){
+    cs=(cs*1103515245+12345)>>>0; const cy = P(4) + (seededRand(cs)*horizon*0.7)|0;
     cs=(cs*1103515245+12345)>>>0; const cw = P(16) + (seededRand(cs)*P(28))|0;
     cs=(cs*1103515245+12345)>>>0; const sp = 0.05 + seededRand(cs)*0.13;
     cs=(cs*1103515245+12345)>>>0; const off = seededRand(cs)*W;
@@ -1849,165 +1909,212 @@ function drawPixelScene(canvas, country, simState, frame){
     const ch = Math.max(2, R(cw*0.2));
     ctx.fillStyle = unrest > 0.5
       ? 'rgba(64,56,62,' + (0.45 + dark*0.2).toFixed(2) + ')'
-      : (night ? 'rgba(140,152,184,0.30)' : 'rgba(246,244,238,' + (0.30 + cover*0.28).toFixed(2) + ')');
+      : (night ? 'rgba(140,152,184,0.28)' : 'rgba(246,244,238,' + (0.30 + cover*0.28).toFixed(2) + ')');
     ctx.fillRect(cx, cy, cw, ch);
     ctx.fillRect(R(cx+cw*0.22), R(cy-ch*0.6), R(cw*0.5), R(ch*0.8));
   }
 
-  /* ---------- 4b. birds cross a settled sky ---------- */
-  if(!night && stability > 45 && unrest < 0.4){
+  /* ---------- 6. birds cross a settled sky ---------- */
+  if(dark < 0.5 && stability > 45 && unrest < 0.4){
     const bx = ((frame*0.34) % (W + P(40))) - P(20);
-    const by = horizon*0.30 + Math.sin(frame*0.02)*P(3);
-    ctx.fillStyle = night ? 'rgba(180,190,210,0.5)' : 'rgba(30,36,52,0.55)';
+    const by = horizon*0.34 + Math.sin(frame*0.02)*P(3);
+    ctx.fillStyle = 'rgba(30,36,52,0.55)';
     for(let b=0;b<4;b++){
       const ox = P(7)*b, oy = P(3)*Math.abs(b-1.5);
       const flap = Math.sin(frame*0.22 + b) > 0 ? P(1) : 0;
-      ctx.fillRect(R(bx+ox),        R(by+oy),        P(2), 1);
-      ctx.fillRect(R(bx+ox-P(2)),   R(by+oy-flap),   P(2), 1);
-      ctx.fillRect(R(bx+ox+P(2)),   R(by+oy-flap),   P(2), 1);
+      ctx.fillRect(R(bx+ox), R(by+oy), P(2), 1);
+      ctx.fillRect(R(bx+ox-P(2)), R(by+oy-flap), P(2), 1);
+      ctx.fillRect(R(bx+ox+P(2)), R(by+oy-flap), P(2), 1);
     }
   }
 
-  /* ---------- 5. two mountain ridges behind the bay ---------- */
+  /* ---------- 7. mountain ridges ---------- */
   for(let layer=0; layer<2; layer++){
-    const base = horizon - P(layer ? 2 : 8);
-    const amp  = P(layer ? 10 : 18);
+    const base = horizon + P(layer ? 8 : 0);
+    const amp  = P(layer ? 9 : 17);
     const ph   = seededRand(seed0 ^ (layer?31:17)) * 6.28;
-    ctx.fillStyle = mix(night ? '#111a30' : '#4a5f80', skyLow, layer ? 0.42 : 0.22);
-    ctx.beginPath(); ctx.moveTo(0, groundY);
+    ctx.fillStyle = mix(night ? '#0f172c' : '#4a5f80', skyLow, layer ? 0.46 : 0.24);
+    ctx.beginPath(); ctx.moveTo(0, quayY);
     for(let x=0; x<=W; x+=2){
       const y = base - amp*(0.42 + 0.34*Math.sin(x*(layer?0.031:0.019) + ph) + 0.22*Math.sin(x*0.062 + ph*2));
       ctx.lineTo(x, y);
     }
-    ctx.lineTo(W, groundY); ctx.closePath(); ctx.fill();
+    ctx.lineTo(W, quayY); ctx.closePath(); ctx.fill();
   }
 
-  /* ---------- 6. the bay, with the sky laid on it ---------- */
-  const waterTop = horizon + P(3), waterH = groundY - waterTop;
-  if(waterH > 3){
-    const wg = ctx.createLinearGradient(0,waterTop,0,groundY);
-    wg.addColorStop(0, mix(skyLow, '#0d2740', 0.5));
-    wg.addColorStop(1, mix(skyLow, '#04121f', 0.82));
-    ctx.fillStyle = wg; ctx.fillRect(0, waterTop, W, waterH);
-    for(let y=waterTop; y<groundY; y+=2){        // shimmering column under the sun
-      const t = (y-waterTop)/waterH;
-      const sway = Math.sin(frame*0.06 + y*0.55)*P(2)*t;
-      ctx.fillStyle = night ? 'rgba(220,230,255,0.14)' : 'rgba(255,224,150,0.18)';
-      ctx.fillRect(R(bodyX - P(3) + sway), y, R(P(6)*(0.5+t)), 1);
-    }
-    /* freighters and cruise ships — the busier the economy, the fuller the bay */
-    const ships = R(clamp(wealth*3 + (tourism>70?1:0), 0, 4));
-    let hs = seed0 ^ 2718;
-    for(let i=0;i<ships;i++){
-      hs=(hs*1103515245+12345)>>>0; const lane = seededRand(hs);
-      hs=(hs*1103515245+12345)>>>0; const off  = seededRand(hs)*W;
-      const sp = 0.05 + lane*0.05;
-      const sy2 = R(waterTop + waterH*(0.35 + lane*0.5));
-      const sx2 = R(((off + frame*sp) % (W + P(26))) - P(13));
-      const bob = Math.sin(frame*0.04 + i)*1;
-      ctx.fillStyle = mix('#2b3444','#0a0f18', dark*0.5);
-      ctx.fillRect(sx2, R(sy2+bob), P(14), P(3));
-      ctx.fillRect(sx2+P(4), R(sy2+bob-P(3)), P(5), P(3));
-      if(dark > 0.4){ ctx.fillStyle='rgba(255,226,150,0.6)'; ctx.fillRect(sx2+P(5), R(sy2+bob-P(2)), P(1), P(1)); }
-    }
-  }
-
-  /* ---------- 7. the skyline ---------- */
+  /* ---------- 8. the city, three depths deep ----------
+     The far bank is washed toward the sky so the eye reads distance; the
+     main wall carries the detail; two near towers frame the shot. */
   const winLit = approval > 40 ? '#ffd98a' : '#6a5f45';
-  buildings.forEach((b,i) => {
-    const face = mix(i%2 ? '#2c3648' : '#232c3c', '#0b0f1a', dark*0.42 + unrest*0.18);
-    const roofY = groundY - b.h;
+  let litCount = 0, litTotal = 1;
 
-    if(b.type === 'stepped'){
-      ctx.fillStyle = face;
-      ctx.fillRect(b.x, R(roofY + b.h*0.30), b.w, R(b.h*0.70));
-      ctx.fillRect(R(b.x + b.w*0.18), roofY, R(b.w*0.64), R(b.h*0.34));
-    } else {
-      ctx.fillStyle = face;
-      ctx.fillRect(b.x, roofY, b.w, b.h);
-    }
-    ctx.fillStyle = shade(face, -18);            // shaded edge gives them depth
-    ctx.fillRect(b.x + b.w - P(1.5), roofY, P(1.5), b.h);
+  const drawBand = (list, depth) => {
+    /* Distance is carried by haze toward the sky, but only a little: the low
+       sky turns warm at dawn and dusk, and a heavy wash there paints the far
+       bank mud-brown instead of pushing it back. */
+    const haze  = depth === 0 ? 0.30 : depth === 2 ? 0 : 0.14;
+    const scale = depth === 0 ? 0.68 : 1;
+    const base  = depth === 0 ? quayY - P(4) : quayY;       // the far bank sits behind the quay
+    list.forEach((b,i) => {
+      const h = R(b.h*scale);
+      const roofY = base - h;
+      let face = mix(i%2 ? '#2c3648' : '#232c3c', '#0b0f1a', dark*0.42 + unrest*0.18);
+      face = mix(mix(face, skyMid, haze), '#0d1220', depth === 0 ? 0.28 : 0);
+      if(depth === 2) face = mix(face, '#05070d', 0.55);    // near towers read as silhouette
 
-    if(b.type === 'capitol'){                    // dome and standard: the government
-      const cx = R(b.x + b.w/2), dr = R(b.w*0.44);
-      ctx.fillStyle = mix('#d8cdb4', '#241f16', dark*0.62);
-      ctx.beginPath(); ctx.arc(cx, roofY, dr, Math.PI, 0); ctx.fill();
-      ctx.fillRect(cx-dr, roofY, dr*2, P(2));
-      const poleTop = roofY - dr - P(6);
-      ctx.fillStyle = '#c9c9c9'; ctx.fillRect(cx, poleTop, P(1), P(6));
-      const wave = Math.sin(frame*0.11) > 0 ? 0 : P(1);
-      ctx.fillStyle = c1; ctx.fillRect(cx+P(1), poleTop,        P(8)-wave, P(2));
-      ctx.fillStyle = c2; ctx.fillRect(cx+P(1), poleTop+P(2),   P(8)-wave, P(2));
-    }
-    if(b.type === 'spire'){
-      ctx.fillStyle = face;
-      ctx.fillRect(R(b.x+b.w*0.40), R(roofY-b.h*0.30), Math.max(2,R(b.w*0.20)), R(b.h*0.30));
-      if(frame % 60 < 22){                       // aircraft warning light
-        ctx.fillStyle = '#ff5a4a';
-        ctx.fillRect(R(b.x+b.w*0.42), R(roofY-b.h*0.30)-P(2), P(2), P(2));
+      if(b.type === 'stepped'){
+        ctx.fillStyle = face;
+        ctx.fillRect(b.x, R(roofY + h*0.30), b.w, R(base - (roofY + h*0.30)));
+        ctx.fillRect(R(b.x + b.w*0.18), roofY, R(b.w*0.64), R(h*0.34));
+      } else {
+        ctx.fillStyle = face;
+        ctx.fillRect(b.x, roofY, b.w, h);
       }
-    }
-    if(b.type === 'factory'){                    // chimneys smoke while the economy runs
-      for(let c=0;c<2;c++){
-        const chx = R(b.x + b.w*(0.20 + c*0.46));
-        ctx.fillStyle = shade(face,-10); ctx.fillRect(chx, roofY-P(6), P(3), P(6));
-        if(wealth > 0.2){
-          for(let p=0;p<3;p++){
-            const rise = (frame*0.5 + p*7 + i*3) % P(20);
-            ctx.fillStyle = 'rgba(188,188,188,' + (0.28 - p*0.07).toFixed(2) + ')';
-            ctx.fillRect(chx + R(Math.sin(frame*0.05 + p)*P(1)), R(roofY-P(6)-rise), P(2), P(2));
+      ctx.fillStyle = shade(face, -18);
+      ctx.fillRect(b.x + b.w - P(1.5), roofY, P(1.5), h);
+
+      if(b.type === 'capitol'){
+        const cx = R(b.x + b.w/2), dr = R(b.w*0.44);
+        ctx.fillStyle = mix('#d8cdb4', '#241f16', dark*0.62);
+        ctx.beginPath(); ctx.arc(cx, roofY, dr, Math.PI, 0); ctx.fill();
+        ctx.fillRect(cx-dr, roofY, dr*2, P(2));
+        const poleTop = roofY - dr - P(6);
+        ctx.fillStyle = '#c9c9c9'; ctx.fillRect(cx, poleTop, P(1), P(6));
+        const wv = Math.sin(frame*0.11) > 0 ? 0 : P(1);
+        ctx.fillStyle = c1; ctx.fillRect(cx+P(1), poleTop,      P(8)-wv, P(2));
+        ctx.fillStyle = c2; ctx.fillRect(cx+P(1), poleTop+P(2), P(8)-wv, P(2));
+      }
+      if(b.type === 'spire'){
+        ctx.fillStyle = face;
+        ctx.fillRect(R(b.x+b.w*0.40), R(roofY-h*0.30), Math.max(2,R(b.w*0.20)), R(h*0.30));
+        if(frame % 60 < 22){
+          ctx.fillStyle = '#ff5a4a';
+          ctx.fillRect(R(b.x+b.w*0.42), R(roofY-h*0.30)-P(2), P(2), P(2));
+        }
+      }
+      if(b.type === 'factory' && depth === 1){
+        for(let c=0;c<2;c++){
+          const chx = R(b.x + b.w*(0.20 + c*0.46));
+          ctx.fillStyle = shade(face,-10); ctx.fillRect(chx, roofY-P(6), P(3), P(6));
+          if(wealth > 0.2){
+            for(let p=0;p<3;p++){
+              const rise = (frame*0.5 + p*7 + i*3) % P(20);
+              ctx.fillStyle = 'rgba(188,188,188,' + (0.28 - p*0.07).toFixed(2) + ')';
+              ctx.fillRect(chx + R(Math.sin(frame*0.05 + p)*P(1)), R(roofY-P(6)-rise), P(2), P(2));
+            }
           }
         }
       }
-    }
 
-    /* windows — each keeps its own clock, so the block breathes */
-    const step = P(5), wsz = P(2);
-    for(let wy = roofY + P(4); wy < groundY - P(3); wy += step){
-      for(let wx = b.x + P(2); wx < b.x + b.w - P(3); wx += step){
-        const r = seededRand((wx*13 + wy*7 + b.seed)>>>0);
-        if(r < 0.28) continue;
-        const on = r > 0.44 - dark*0.36 && Math.sin(frame*0.03 + r*40) > -0.88;
-        ctx.fillStyle = on ? mix(winLit, '#ff9b5a', unrest*0.55) : 'rgba(10,14,24,0.82)';
-        ctx.fillRect(wx, wy, wsz, wsz);
+      if(depth === 0) return;                                // too far for windows
+      const step = P(5), wsz = P(2);
+      for(let wy = roofY + P(4); wy < base - P(3); wy += step){
+        for(let wx = b.x + P(2); wx < b.x + b.w - P(3); wx += step){
+          const r = seededRand((wx*13 + wy*7 + b.seed)>>>0);
+          if(r < 0.28) continue;
+          litTotal++;
+          const on = r > 0.44 - dark*0.36 && Math.sin(frame*0.03 + r*40) > -0.88;
+          if(on) litCount++;
+          ctx.fillStyle = on ? mix(winLit, '#ff9b5a', unrest*0.55) : 'rgba(10,14,24,0.82)';
+          ctx.fillRect(wx, wy, wsz, wsz);
+        }
       }
-    }
-  });
+    });
+  };
+  drawBand(city.far, 0);
+  drawBand(city.main, 1);
 
-  /* ---------- 8. fire where the country is coming apart ---------- */
+  /* ---------- 9. fire where the country is coming apart ---------- */
   if(stability < 28){
     let fs = seed0 ^ 55;
-    const fires = stability < 15 ? 3 : 1;
-    for(let i=0;i<fires;i++){
+    for(let i=0, n=(stability<15?3:1); i<n; i++){
       fs=(fs*1103515245+12345)>>>0;
-      const b = buildings[Math.floor(seededRand(fs)*buildings.length)];
+      const b = city.main[Math.floor(seededRand(fs)*city.main.length)];
       if(!b) continue;
-      const fx = R(b.x + b.w*0.35), fy = groundY - b.h;
-      for(let f=0; f<6; f++){
-        const rise = (frame*0.45 + f*4 + i*9) % P(16);
-        const a = (1 - rise/P(16)) * 0.8;
-        ctx.fillStyle = 'rgba(255,' + (90+f*22) + ',48,' + a.toFixed(2) + ')';
-        ctx.fillRect(fx + R(Math.sin(frame*0.15 + f)*P(2)), R(fy - rise), P(3), P(3));
+      const fx = R(b.x + b.w*0.35), fy = quayY - b.h;
+      const fg = ctx.createRadialGradient(fx,fy,0,fx,fy,P(18));
+      fg.addColorStop(0,'rgba(255,140,60,0.30)'); fg.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(fx,fy,P(18),0,6.2832); ctx.fill();
+      for(let p=0; p<6; p++){
+        const rise = (frame*0.45 + p*4 + i*9) % P(16);
+        ctx.fillStyle = 'rgba(255,' + (90+p*22) + ',48,' + ((1-rise/P(16))*0.8).toFixed(2) + ')';
+        ctx.fillRect(fx + R(Math.sin(frame*0.15 + p)*P(2)), R(fy - rise), P(3), P(3));
       }
     }
   }
 
-  /* ---------- 9. land, road and traffic ---------- */
+  /* ---------- 10. the city's own glow bleeds into the sky ---------- */
+  const litFrac = litCount/litTotal;
+  if(dark > 0.3 && litFrac > 0.05){
+    const bloom = ctx.createLinearGradient(0, quayY - P(50), 0, quayY);
+    bloom.addColorStop(0, 'rgba(255,190,110,0)');
+    bloom.addColorStop(1, 'rgba(255,190,110,' + (litFrac*dark*0.16).toFixed(3) + ')');
+    ctx.fillStyle = bloom; ctx.fillRect(0, quayY - P(50), W, P(50));
+  }
+
+  /* ---------- 11. the harbour, with the city mirrored in it ----------
+     The canvas is drawn back onto itself one rippling strip at a time, so the
+     reflection is the actual skyline rather than a second-guess of it. */
+  if(refH > 3){
+    ctx.save();
+    ctx.globalAlpha = 0.46;
+    for(let i=0; i<refH; i+=2){
+      const srcY = quayY - i - 2;
+      if(srcY < 0) break;
+      const wob = Math.sin(frame*0.05 + i*0.42) * (1 + i*0.14) * k;
+      ctx.drawImage(canvas, 0, srcY, W, 2, wob, quayY + i, W, 2);
+    }
+    ctx.restore();
+    const wg = ctx.createLinearGradient(0,quayY,0,waterY);
+    wg.addColorStop(0, 'rgba(10,26,44,0.30)');
+    wg.addColorStop(1, mix(skyLow,'#04121f',0.86));
+    ctx.fillStyle = wg; ctx.fillRect(0, quayY, W, refH);
+
+    for(let y=quayY; y<waterY; y+=2){            // the sun's column on the water
+      const t = (y-quayY)/refH;
+      const sway = Math.sin(frame*0.06 + y*0.55)*P(2)*t;
+      ctx.fillStyle = isSun ? 'rgba(255,224,150,0.16)' : 'rgba(220,230,255,0.12)';
+      ctx.fillRect(R(bodyX - P(3) + sway), y, R(P(6)*(0.5+t)), 1);
+    }
+
+    /* freighters and cruise ships — the busier the economy, the fuller the port */
+    let hs = seed0 ^ 2718;
+    for(let i=0, n=R(clamp(wealth*3 + (tourism>70?1:0), 0, 4)); i<n; i++){
+      hs=(hs*1103515245+12345)>>>0; const lane = seededRand(hs);
+      hs=(hs*1103515245+12345)>>>0; const off  = seededRand(hs)*W;
+      const sy2 = R(quayY + refH*(0.30 + lane*0.5));
+      const sx2 = R(((off + frame*(0.05+lane*0.05)) % (W + P(26))) - P(13));
+      const bob = Math.sin(frame*0.04 + i);
+      ctx.fillStyle = mix('#2b3444','#0a0f18', dark*0.5);
+      ctx.fillRect(sx2, R(sy2+bob), P(14), P(3));
+      ctx.fillRect(sx2+P(4), R(sy2+bob-P(3)), P(5), P(3));
+      if(dark > 0.4){ ctx.fillStyle='rgba(255,226,150,0.65)'; ctx.fillRect(sx2+P(5), R(sy2+bob-P(2)), P(1), P(1)); }
+    }
+    ctx.fillStyle = mix('#1b2029','#000',dark*0.4);
+    ctx.fillRect(0, waterY - P(1), W, P(1));     // the quay wall
+  }
+
+  /* ---------- 12. the near towers, in front of the water ---------- */
+  drawBand(city.near, 2);
+
+  /* ---------- 13. promenade, road and traffic ---------- */
   const soil = debt > 110 ? '#4a3a26' : treasury < 0 ? '#41372b' : '#26402e';
   ctx.fillStyle = mix(soil, '#000', dark*0.35);
-  ctx.fillRect(0, groundY, W, H-groundY);
+  ctx.fillRect(0, waterY, W, H-waterY);
   ctx.fillStyle = mix(soil, skyLow, 0.22*(1-dark));
-  ctx.fillRect(0, groundY, W, P(1.5));
+  ctx.fillRect(0, waterY, W, P(1.5));
 
-  const roadY = groundY + P(5);
+  const roadY = waterY + P(5);
   ctx.fillStyle = mix('#1b2029','#000', dark*0.45);
   ctx.fillRect(0, roadY, W, P(6));
   ctx.fillStyle = 'rgba(214,204,168,0.30)';
   for(let x = -(frame % P(14)); x < W; x += P(14)) ctx.fillRect(R(x), roadY + P(2.5), P(5), 1);
+  if(unrest > 0.45){                              // wet tarmac catches the lights
+    ctx.fillStyle = 'rgba(120,150,190,0.10)';
+    ctx.fillRect(0, roadY, W, P(6));
+  }
 
-  const cars = R(2 + wealth*4);
-  for(let i=0;i<cars;i++){
+  for(let i=0, cars=R(2 + wealth*4); i<cars; i++){
     const sp = 0.30 + (i%3)*0.24;
     const right = i%2 === 0;
     const travel = ((frame*sp + i*(W/cars)) % (W + P(16))) - P(16);
@@ -2016,33 +2123,30 @@ function drawPixelScene(canvas, country, simState, frame){
     ctx.fillStyle = ['#c8503f','#3f7dc8','#d8c05a','#8a8f9c'][i%4];
     ctx.fillRect(cx, cy, P(8), P(3));
     ctx.fillStyle = 'rgba(10,14,22,0.55)'; ctx.fillRect(cx+P(2), cy, P(4), P(1.5));
-    if(dark > 0.4){                              // headlights carve the dusk
-      ctx.fillStyle = 'rgba(255,238,180,0.22)';
+    if(dark > 0.4){
+      ctx.fillStyle = 'rgba(255,238,180,0.24)';
       ctx.fillRect(right ? cx+P(8) : cx-P(7), cy+P(1), P(7), P(1));
     }
   }
 
-  /* ---------- 9b. armour rolls toward the border when it heats up ---------- */
+  /* ---------- 14. armour rolls toward the border when it heats up ---------- */
   if(tension > 65){
-    const columns = tension > 85 ? 3 : 2;
-    for(let i=0;i<columns;i++){
-      const sp = 0.22 + i*0.05;
-      const tx = R(W - (((frame*sp + i*W/columns) % (W + P(20))) - P(20)));
+    for(let i=0, n=(tension>85?3:2); i<n; i++){
+      const tx = R(W - (((frame*(0.22+i*0.05) + i*W/n) % (W + P(20))) - P(20)));
       const ty = roadY + P(7);
       ctx.fillStyle = mix('#3f4636','#141810', dark*0.45);
-      ctx.fillRect(tx, ty, P(11), P(4));                    // hull
-      ctx.fillRect(tx+P(3), ty-P(2), P(5), P(2));           // turret
-      ctx.fillRect(tx-P(4), ty-P(1), P(5), P(1));           // barrel
+      ctx.fillRect(tx, ty, P(11), P(4));
+      ctx.fillRect(tx+P(3), ty-P(2), P(5), P(2));
+      ctx.fillRect(tx-P(4), ty-P(1), P(5), P(1));
       ctx.fillStyle = mix('#22261c','#000', dark*0.4);
       ctx.fillRect(tx+P(1), ty+P(4), P(2), P(1));
       ctx.fillRect(tx+P(7), ty+P(4), P(2), P(1));
     }
   }
 
-  /* ---------- 10. parks, where welfare and schooling are funded ---------- */
-  const trees = R(clamp((green - 15)/5, 0, 6));
+  /* ---------- 15. parks, where welfare and schooling are funded ---------- */
   let ts = seed0 ^ 606;
-  for(let i=0;i<trees;i++){
+  for(let i=0, n=R(clamp((green - 15)/5, 0, 6)); i<n; i++){
     ts=(ts*1103515245+12345)>>>0;
     const tx = R(P(6) + seededRand(ts)*(W-P(12)));
     const ty = H - P(6);
@@ -2052,16 +2156,15 @@ function drawPixelScene(canvas, country, simState, frame){
     ctx.fillRect(tx-P(1), ty-P(6), P(4), P(2));
   }
 
-  /* ---------- 11. the public ---------- */
-  const people = R(W*0.08);
+  /* ---------- 16. the public ---------- */
   const crowdY = H - P(6);
   const happyRatio = clamp(approval/100, 0.05, 0.95);
   let ps = seed0 ^ 999;
-  for(let i=0;i<people;i++){
+  for(let i=0, people=R(W*0.08); i<people; i++){
     ps=(ps*1103515245+12345)>>>0; const base = seededRand(ps);
     ps=(ps*1103515245+12345)>>>0; const lane = (seededRand(ps)*P(5))|0;
     const right = base > 0.5;
-    const speed = (0.12 + base*0.22) * (anger > 0.6 ? 0.25 : 1);  // an angry crowd stops to shout
+    const speed = (0.12 + base*0.22) * (anger > 0.6 ? 0.25 : 1);
     const travel = ((base*W + frame*speed) % (W + P(8))) - P(4);
     const x = R(right ? travel : W - travel);
     const y = crowdY + lane;
@@ -2071,16 +2174,16 @@ function drawPixelScene(canvas, country, simState, frame){
     ctx.fillRect(x, y - bob, P(2), P(3));
     ctx.fillStyle = happy ? '#dcf6e8' : '#f2bcb0';
     ctx.fillRect(x, y - P(2) - bob, P(2), P(2));
-    if(anger > 0.55 && i % 3 === 0){             // placards go up when the street turns
+    if(anger > 0.55 && i % 3 === 0){
       ctx.fillStyle = '#e8e2d2'; ctx.fillRect(x, y - P(6) - bob, P(4), P(3));
       ctx.fillStyle = '#8a2a22'; ctx.fillRect(x+P(1), y - P(5) - bob, P(2), 1);
     }
   }
 
-  /* ---------- 12. tourism arrives when the country is worth visiting ---------- */
+  /* ---------- 17. everything the new subsystems put in the sky and the street ---------- */
   if(tourism > 55){
     const ax = R(((frame*0.5) % (W + P(52))) - P(26));
-    const ay = R(horizon*0.40);
+    const ay = R(horizon*0.42);
     ctx.fillStyle = 'rgba(255,255,255,0.09)'; ctx.fillRect(ax-P(24), ay, P(24), P(1));
     ctx.fillStyle = night ? '#93a0ba' : '#eef1f7';
     ctx.fillRect(ax, ay, P(12), P(2));
@@ -2090,18 +2193,15 @@ function drawPixelScene(canvas, country, simState, frame){
   }
   if(tourism > 85){
     const bx = R(W - ((frame*0.16) % (W + P(34))) + P(17));
-    const by = R(horizon*0.52 + Math.sin(frame*0.02)*P(4));
+    const by = R(horizon*0.55 + Math.sin(frame*0.02)*P(4));
     ctx.fillStyle = c1; ctx.fillRect(bx, by, P(7), P(6));
     ctx.fillStyle = c2; ctx.fillRect(bx, by+P(6), P(7), P(2));
     ctx.fillStyle = 'rgba(190,190,190,0.5)';
     ctx.fillRect(bx+P(1), by+P(8), 1, P(2)); ctx.fillRect(bx+P(6), by+P(8), 1, P(2));
     ctx.fillStyle = '#3a2f22'; ctx.fillRect(bx+P(2), by+P(10), P(3), P(2));
   }
-
-  /* ---------- 13. quarantine tents while an outbreak runs ---------- */
   if(disease > 0){
-    const tents = Math.min(3, Math.ceil(disease));
-    for(let i=0;i<tents;i++){
+    for(let i=0, n=Math.min(3, Math.ceil(disease)); i<n; i++){
       const tx = R(W*0.10 + i*P(15)), ty = H - P(8);
       ctx.fillStyle = mix('#e8e4d8','#3a3830',dark*0.5);
       ctx.beginPath(); ctx.moveTo(tx, ty+P(6)); ctx.lineTo(tx+P(5), ty); ctx.lineTo(tx+P(10), ty+P(6)); ctx.closePath(); ctx.fill();
@@ -2110,11 +2210,9 @@ function drawPixelScene(canvas, country, simState, frame){
       ctx.fillRect(tx+P(4.6), ty+P(2), P(1), P(3));
     }
   }
-
-  /* ---------- 14. a scrambled pair when the army is on its toes ---------- */
   if(military > 68){
     const jx = R(W - (((frame*1.5) % (W + P(64))) - P(32)));
-    const jy = R(horizon*0.26);
+    const jy = R(horizon*0.28);
     for(let j=0;j<2;j++){
       const ox = P(10)*j, oy = P(4)*j;
       ctx.fillStyle = mix('#2f3744','#141922',dark*0.4);
@@ -2124,29 +2222,25 @@ function drawPixelScene(canvas, country, simState, frame){
       ctx.fillRect(jx+ox+P(9), jy+oy, P(5), P(1));
     }
   }
-
-  /* ---------- 15. the border watchtower ---------- */
   if(tension > 50){
-    const tw = P(6), tx = W - P(15), ty = groundY - P(15);
+    const tw2 = P(6), tx = W - P(15), ty = waterY - P(15);
     ctx.save();
     ctx.globalAlpha = 0.14 + (tension > 80 ? 0.12 : 0);
     ctx.fillStyle = tension > 80 ? '#ff6a4a' : '#ffe9a8';
     const sweep = Math.sin(frame*0.032)*P(34);
     ctx.beginPath();
-    ctx.moveTo(tx+tw/2, ty);
-    ctx.lineTo(tx+tw/2 - P(46) + sweep, H);
-    ctx.lineTo(tx+tw/2 - P(26) + sweep, H);
+    ctx.moveTo(tx+tw2/2, ty);
+    ctx.lineTo(tx+tw2/2 - P(46) + sweep, H);
+    ctx.lineTo(tx+tw2/2 - P(26) + sweep, H);
     ctx.closePath(); ctx.fill();
     ctx.restore();
     ctx.fillStyle = mix('#3a3a44','#10131a',dark*0.5);
-    ctx.fillRect(tx, ty, tw, P(17));
-    ctx.fillRect(tx-P(1.5), ty-P(3), tw+P(3), P(3));
+    ctx.fillRect(tx, ty, tw2, P(17));
+    ctx.fillRect(tx-P(1.5), ty-P(3), tw2+P(3), P(3));
     if(tension > 80 && frame % 26 < 13){
       ctx.fillStyle = '#ff4a3a'; ctx.fillRect(tx+P(2), ty-P(6), P(2), P(2));
     }
   }
-
-  /* ---------- 16. a silo, once the arsenal is real ---------- */
   if(nukes > 0){
     const sx = P(5), sy = H - P(9);
     ctx.fillStyle = mix('#4a4f5a','#181b22',dark*0.45); ctx.fillRect(sx, sy, P(10), P(7));
@@ -2155,66 +2249,53 @@ function drawPixelScene(canvas, country, simState, frame){
     if(frame % 50 < 18){ ctx.fillStyle = '#ff6a4a'; ctx.fillRect(sx+P(4), sy-P(4), P(2), P(2)); }
   }
 
-  /* ---------- 17. rain over a country losing its grip ---------- */
+  /* ---------- 18. weather ---------- */
   if(unrest > 0.45){
-    const drops = R(70*unrest*k);
     ctx.fillStyle = 'rgba(150,175,205,0.40)';
     let rs = seed0 ^ 8181;
-    for(let i=0;i<drops;i++){
+    for(let i=0, n=R(70*unrest*k); i<n; i++){
       rs=(rs*1103515245+12345)>>>0; const rx=(seededRand(rs)*W)|0;
       rs=(rs*1103515245+12345)>>>0; const ry=((seededRand(rs)*H + frame*5) % H)|0;
       ctx.fillRect(rx, ry, 1, P(4));
     }
+  } else if(((simState.turn ?? 1) - 1) % 4 === 0){
+    let ns = seed0 ^ 3131;
+    for(let i=0, n=R(38*k); i<n; i++){
+      ns=(ns*1103515245+12345)>>>0; const fx0=seededRand(ns)*W;
+      ns=(ns*1103515245+12345)>>>0; const dr=seededRand(ns);
+      const fy=((dr*H + frame*(0.35+dr*0.5)) % H);
+      ctx.fillStyle = 'rgba(255,255,255,' + (0.35+dr*0.4).toFixed(2) + ')';
+      ctx.fillRect(R(fx0 + Math.sin(frame*0.02 + dr*8)*P(4)), R(fy), P(1.5), P(1.5));
+    }
   }
 
-  /* ---------- 18. wealth glints over the city ---------- */
+  /* ---------- 19. celebration and battle ---------- */
   if(treasury > 20000){
     let gs = seed0 ^ 321;
     for(let i=0;i<6;i++){
       gs=(gs*1103515245+12345)>>>0; const gx=(seededRand(gs)*W)|0;
       gs=(gs*1103515245+12345)>>>0; const gy=(horizon*0.5 + seededRand(gs)*horizon*0.5)|0;
-      const tw = Math.sin(frame*0.08 + i*2);
-      if(tw > 0.2){
-        ctx.fillStyle = 'rgba(244,211,94,' + (tw*0.8).toFixed(2) + ')';
-        ctx.fillRect(gx, gy, 1, 1);
-      }
+      const t = Math.sin(frame*0.08 + i*2);
+      if(t > 0.2){ ctx.fillStyle = 'rgba(244,211,94,' + (t*0.8).toFixed(2) + ')'; ctx.fillRect(gx, gy, 1, 1); }
     }
   }
-
-  /* ---------- 17b. snow in the opening quarter of the year ---------- */
-  if(phase === 0 && unrest <= 0.45){
-    const flakes = R(38*k);
-    let ns = seed0 ^ 3131;
-    for(let i=0;i<flakes;i++){
-      ns=(ns*1103515245+12345)>>>0; const fx0=seededRand(ns)*W;
-      ns=(ns*1103515245+12345)>>>0; const dr=seededRand(ns);
-      const fy=((dr*H + frame*(0.35+dr*0.5)) % H);
-      const fx=fx0 + Math.sin(frame*0.02 + dr*8)*P(4);
-      ctx.fillStyle = 'rgba(255,255,255,' + (0.35+dr*0.4).toFixed(2) + ')';
-      ctx.fillRect(R(fx), R(fy), P(1.5), P(1.5));
-    }
-  }
-
-  /* ---------- 18b. fireworks when the country genuinely loves you ---------- */
   if(approval > 82 && stability > 55){
     let fw = seed0 ^ 1717;
     for(let i=0;i<3;i++){
       fw=(fw*1103515245+12345)>>>0; const cx0=(seededRand(fw)*W)|0;
-      fw=(fw*1103515245+12345)>>>0; const cy0=(horizon*0.25 + seededRand(fw)*horizon*0.4)|0;
+      fw=(fw*1103515245+12345)>>>0; const cy0=(horizon*0.22 + seededRand(fw)*horizon*0.4)|0;
       fw=(fw*1103515245+12345)>>>0; const hue=seededRand(fw);
       const t = ((frame + i*40) % 90) / 90;
-      if(t > 0.55) continue;                       // most of the cycle is dark sky
+      if(t > 0.55) continue;
       const rad = P(3) + t*P(13), a = (1 - t/0.55) * 0.9;
       const col = hue<0.33 ? '255,214,110' : hue<0.66 ? '255,140,150' : '150,215,255';
       for(let sp=0; sp<10; sp++){
-        const ang = sp/10*6.2832;
+        const an = sp/10*6.2832;
         ctx.fillStyle = 'rgba(' + col + ',' + a.toFixed(2) + ')';
-        ctx.fillRect(R(cx0 + Math.cos(ang)*rad), R(cy0 + Math.sin(ang)*rad), P(1.5), P(1.5));
+        ctx.fillRect(R(cx0 + Math.cos(an)*rad), R(cy0 + Math.sin(an)*rad), P(1.5), P(1.5));
       }
     }
   }
-
-  /* ---------- 18c. the battle itself ---------- */
   if(warFlash > 0){
     const t = warFlash/70;
     ctx.fillStyle = 'rgba(255,90,50,' + (t*0.30).toFixed(2) + ')';
@@ -2222,7 +2303,7 @@ function drawPixelScene(canvas, country, simState, frame){
     let es = seed0 ^ 9090;
     for(let i=0;i<7;i++){
       es=(es*1103515245+12345)>>>0; const ex=(seededRand(es)*W)|0;
-      es=(es*1103515245+12345)>>>0; const ey=(groundY - seededRand(es)*H*0.35)|0;
+      es=(es*1103515245+12345)>>>0; const ey=(quayY - seededRand(es)*H*0.30)|0;
       es=(es*1103515245+12345)>>>0; const delay=seededRand(es)*40;
       const age = (70 - warFlash) - delay;
       if(age < 0 || age > 26) continue;
@@ -2231,10 +2312,16 @@ function drawPixelScene(canvas, country, simState, frame){
       ctx.beginPath(); ctx.arc(ex, ey, rad, 0, 6.2832); ctx.fill();
       ctx.fillStyle = 'rgba(40,36,34,' + (a*0.5).toFixed(2) + ')';
       ctx.beginPath(); ctx.arc(ex, ey - rad*0.5, rad*0.7, 0, 6.2832); ctx.fill();
+      for(let d=0; d<5; d++){                    // debris thrown clear of the blast
+        const da = (d/5)*6.2832 + i;
+        const dd = (age/26)*P(22);
+        ctx.fillStyle = 'rgba(60,52,46,' + (a*0.8).toFixed(2) + ')';
+        ctx.fillRect(R(ex + Math.cos(da)*dd), R(ey + Math.sin(da)*dd*0.6 + (age*age)*0.02), P(1.5), P(1.5));
+      }
     }
   }
 
-  /* ---------- 19. vignette and scanlines: it is a broadcast, not a window ---------- */
+  /* ---------- 20. it is a broadcast, not a window ---------- */
   const vig = ctx.createRadialGradient(W/2,H*0.45,H*0.22,W/2,H*0.5,H*0.95);
   vig.addColorStop(0,'rgba(0,0,0,0)');
   vig.addColorStop(1,'rgba(0,0,0,' + (0.34 + unrest*0.22).toFixed(2) + ')');
@@ -2604,6 +2691,8 @@ function render(){
   }
 
   const ev = state.currentEvent;
+  state.currentAdvice = cabinetAdvice(ev);
+  const backers = i => state.currentAdvice.filter(a => a.choice === i);
   document.getElementById('eventCard').innerHTML = `
     <h2>${ev.title}${ev.urgent ? ' ⚠️' : ''}</h2>
     <div class="sub">דילמה רבעונית — נדרשת החלטה</div>
@@ -2621,6 +2710,8 @@ function render(){
         </div>
         <div class="cdesc">${c.desc}</div>
         <div class="cpreview">${previewText(c)}</div>
+        ${backers(i).length ? `<div class="cbackers">${backers(i).map(a =>
+          `<span class="backer" title="${a.conviction}">🏛️ ${a.name}</span>`).join('')}</div>` : ''}
       </button>`).join('')}
   `;
   if(ev.urgent){ startUrgentTimer(ev); } else { clearUrgentTimer(); }
@@ -2653,6 +2744,8 @@ function render(){
   }).join('');
 
   document.getElementById('log').innerHTML = state.log.map(l => `<div>${l}</div>`).join('') || '<div>עדיין אין אירועים ביומן.</div>';
+  renderPending();
+  renderLedger();
 
   // New features display
   const advancedStatsHTML = `
@@ -2695,6 +2788,96 @@ function tagLabel(t){
   const map = { austerity:"צנע", spending:"הוצאה חברתית", military:"עוצמה צבאית", force:"שימוש בכוח",
     diplomacy_soft:"דיפלומטיה רכה", social:"רווחה חברתית", authoritarian:"שליטה מרכזית" };
   return map[t] || t;
+}
+
+/* ================= CAUSALITY =================
+   A quarter moves four headline numbers through half a dozen separate
+   mechanisms. Without a record of which mechanism moved what, a player who
+   loses eight points of approval has no way to learn anything from it — so
+   every stage of the turn is booked here and shown back to them. */
+function recordStage(label, fn){
+  const keys = ['approval','stability','treasury','borderTension'];
+  const before = {}; keys.forEach(k => before[k] = state[k]);
+  fn();
+  const d = {}; let any = false;
+  keys.forEach(k => {
+    const delta = state[k] - before[k];
+    if(Math.abs(delta) >= 0.5){ d[k] = delta; any = true; }
+  });
+  if(any) state.ledger.push({ label, d });
+}
+
+const LEDGER_LABELS = { approval:'אישור', stability:'יציבות', treasury:'קופה', borderTension:'מתיחות' };
+
+function renderLedger(){
+  const box = document.getElementById('ledgerBody');
+  if(!box) return;
+  if(!state.ledger || !state.ledger.length){
+    box.innerHTML = '<div class="ledger-empty">הרבעון הראשון עוד לא נסגר.</div>';
+    return;
+  }
+  box.innerHTML = state.ledger.map(e => `
+    <div class="ledger-row">
+      <span class="lr-label">${e.label}</span>
+      <span class="lr-deltas">${Object.keys(e.d).map(k => {
+        const v = e.d[k];
+        const shown = Math.abs(v) >= 1000 ? (Math.abs(v)/1000).toFixed(1)+'K' : Math.abs(v).toFixed(0);
+        return `<span class="lr-d ${v>0?'up':'down'}">${LEDGER_LABELS[k]} ${v>0?'+':'−'}${shown}</span>`;
+      }).join('')}</span>
+    </div>`).join('');
+}
+
+/* ================= THE CABINET SPEAKS =================
+   Ministers used to be three loyalty bars that drifted. Now each one reads
+   the dilemma through their own agenda and backs an option before you
+   choose, so the cabinet is information — and overruling it has a name. */
+function cabinetAdvice(ev){
+  return state.ministers.map(m => {
+    let best = 0, bestScore = -Infinity;
+    ev.choices.forEach((c,i) => {
+      let sc = 0;
+      (c.tags||[]).forEach(t => {
+        if(m.likes.includes(t)) sc += 2;
+        if(m.dislikes.includes(t)) sc -= 3;
+      });
+      sc += (c.impact.approval + c.impact.stability + c.impact.treasury - c.impact.tension) * 0.4;
+      sc += seededRand((seedFromName(m.name) ^ (state.turn*31 + i*7)) >>> 0) * 0.7;
+      if(sc > bestScore){ bestScore = sc; best = i; }
+    });
+    const conviction = bestScore > 1.8 ? 'נחרץ/ת' : bestScore > 0.5 ? 'נוטה' : 'מהסס/ת';
+    return { name: m.name, minister: m, choice: best, conviction };
+  });
+}
+
+/* Backing your cabinet buys loyalty; overruling it spends some. This runs
+   alongside the older agenda drift, not instead of it. */
+function applyAdviceLoyalty(pickedIndex){
+  (state.currentAdvice || []).forEach(a => {
+    const m = state.ministers.find(x => x.name === a.name);
+    if(!m) return;
+    m.loyalty = clamp(m.loyalty + (a.choice === pickedIndex ? 7 : -5), 0, 100);
+  });
+}
+
+/* ================= WHAT IS ALREADY COMING =================
+   Delayed consequences used to be invisible timebombs. A player cannot plan
+   around what they cannot see, so the queue is now on the board. */
+function renderPending(){
+  const box = document.getElementById('pendingBody');
+  if(!box) return;
+  const items = (state.delayed || []).slice().sort((a,b) => a.dueTurn - b.dueTurn);
+  if(!items.length){
+    box.innerHTML = '<div class="ledger-empty">אין כרגע השלכות בדרך.</div>';
+    return;
+  }
+  box.innerHTML = items.map(d => {
+    const inTurns = d.dueTurn - state.turn;
+    const when = inTurns <= 0 ? 'הרבעון הזה' : inTurns === 1 ? 'ברבעון הבא' : `בעוד ${inTurns} רבעונים`;
+    return `<div class="pending-row ${inTurns<=1?'soon':''}">
+      <span class="pr-when">${when}</span>
+      <span class="pr-what">${d.label}</span>
+    </div>`;
+  }).join('');
 }
 
 /* ================= WARFARE =================
@@ -3013,7 +3196,8 @@ function cabinetDecides(){
 
 /* ---------- GAME FLOW ---------- */
 function newTurn(){
-  processDelayed();
+  if(state.ledger) recordStage('החלטות מרבעונים קודמים', () => processDelayed());
+  else processDelayed();
   if(isYearStartTurn(state.turn)){
     state.currentEvent = budgetEvent;
   } else if(isYearEndTurn(state.turn)){
@@ -3041,7 +3225,9 @@ function makeChoice(i){
 
   clearUrgentTimer();
   stopTurnClock();
-  choice.effect(state);
+  state.ledger = [];
+
+  recordStage('ההחלטה: ' + choice.title, () => { choice.effect(state); });
   gainXp(state, 1);
 
   const key = histKey(ev.id, i);
@@ -3051,34 +3237,39 @@ function makeChoice(i){
     state.delayed.push({ dueTurn: state.turn + choice.delay.turns, effect: choice.delay.effect, label: choice.delay.label });
   }
 
-  applyMinisterReactions(choice);
+  recordStage('תגובת השרים', () => { applyAdviceLoyalty(i); applyMinisterReactions(choice); });
 
-  // New feature: Tourism income
-  const tourismIncome = generateTourismIncome(state);
-  state.treasury += tourismIncome;
-  if(tourismIncome > 0) addLog(`💰 <b>תיירות:</b> +${tourismIncome} מיל' ₪`);
+  recordStage('הכנסות מתיירות', () => {
+    const income = generateTourismIncome(state);
+    state.treasury += income;
+    if(income > 0) addLog(`💰 <b>תיירות:</b> +${income} מיל' ₪`);
+  });
 
-  // New feature: Disease progression and healing
-  if(state.diseaseRisk.level > 0){
+  recordStage('מצב הבריאות', () => {
+    if(state.diseaseRisk.level <= 0) return;
     if(state.budget.health >= 25) state.diseaseRisk.level = Math.max(0, state.diseaseRisk.level - 1);
     else {
       state.diseaseRisk.level += 0.3;
-      if(state.diseaseRisk.level > 3) { state.stability -= 5; state.approval -= 4; }
+      if(state.diseaseRisk.level > 3){ state.stability -= 5; state.approval -= 4; }
     }
-  }
+  });
 
-  // budget policy has ongoing quarterly consequences, not just the one-time effect
   const b = state.budget;
-  /* The clock already paid out part of this quarter's baseline second by
-     second; settle only the remainder so the drift never double-charges. */
-  const base = quarterlyBaseline();
-  state.treasury += base.treasury - state.driftApplied.treasury;
-  state.driftApplied = { treasury: 0, approval: 0 };
-  state.militaryReadiness = clamp(state.militaryReadiness + (b.defense-20)*0.15, 0, 100);
-  state.approval = clamp(state.approval + (b.welfare-20)*0.05, 0, 100);
+  recordStage('תקציב ומיסים', () => {
+    /* The clock already paid out part of this quarter's baseline second by
+       second; settle only the remainder so the drift never double-charges. */
+    const base = quarterlyBaseline();
+    state.treasury += base.treasury - state.driftApplied.treasury;
+    state.driftApplied = { treasury: 0, approval: 0 };
+    state.militaryReadiness = clamp(state.militaryReadiness + (b.defense-20)*0.15, 0, 100);
+    state.approval = clamp(state.approval + (b.welfare-20)*0.05, 0, 100);
+  });
 
-  state.debtToGdp += (state.treasury < 0 ? 1.5 : -0.5);
-  state.inflation = clamp(state.inflation + (state.debtToGdp>100?0.5:-0.2), 0, 60);
+  recordStage('אינפלציה וחוב', () => {
+    state.debtToGdp += (state.treasury < 0 ? 1.5 : -0.5);
+    state.inflation = clamp(state.inflation + (state.debtToGdp>100?0.5:-0.2), 0, 60);
+    state.approval = clamp(state.approval - state.inflation*0.05, 0, 100);
+  });
   state.stability = clamp(state.stability, 0, 100);
   state.borderTension = clamp(state.borderTension, 0, 100);
   state.treasury = clamp(state.treasury, -20000, 100000);
