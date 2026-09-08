@@ -355,6 +355,16 @@
     background: rgba(4,10,18,0.94); padding: 20px; overflow-y: auto;
   }
   #yard.on { display: block; }
+  #yardBody h3 {
+    font-size: 11px; letter-spacing: 0.6px; text-transform: uppercase;
+    opacity: 0.5; margin: 16px 0 6px; font-weight: 700;
+  }
+  #yardBody .figs { display: flex; flex-wrap: wrap; gap: 7px; }
+  #yardBody .fig {
+    background: var(--panel); border: 1px solid var(--stroke); border-radius: 8px;
+    padding: 6px 10px; font-size: 13px; font-weight: 700;
+  }
+  #yardBody .fig span { opacity: 0.55; font-weight: 400; font-size: 11px; }
   #yardName { font-size: 20px; font-weight: 700; }
   #yardClose { margin-left: auto; background: none; border: none; color: var(--ink); font-size: 20px; }
   .ship {
@@ -370,6 +380,7 @@
   .ship .sinfo { font-size: 11px; opacity: 0.6; }
   .ship .scost { margin-left: auto; font-size: 12px; opacity: 0.75; white-space: nowrap; }
   .ship.on { border-color: #2f6f4f; background: #16311f; }
+  .ship.locked { opacity: 0.45; }
 
   #tree {
     position: fixed; inset: 0; z-index: 60; display: none;
@@ -2055,6 +2066,55 @@
     }
   }
 
+  // ---- BUILDINGS ----
+  // A city's own tree. It starts at the food a city keeps, and each building
+  // needs the one before it.
+  //
+  // Three of these effects needed something the game did not have. A city now
+  // keeps a STORE of food up to a reservation limit, gains BELIEVERS as its
+  // religion takes hold, and each city has its own religion progress. Without
+  // those, "+50% food reservation", "+1 gold per believer" and "+10% religion
+  // progression in this city" would have been words on a card.
+  const CITY_FOOD_CAP = 20;      // what a city can keep before a granary
+  const BELIEVER_AT = 100;       // religion progress that wins one believer
+
+  const BUILDINGS = [
+    { key: 'food', name: 'Basic food', icon: '🌾', cost: 0, needs: [], free: true,
+      note: 'What the city keeps, and how fast it fills.' },
+    { key: 'granary', name: 'Granary', icon: '🏚', cost: 20, needs: ['food'],
+      effects: ['+2 food', '+50% food reservation'] },
+    { key: 'temple', name: 'Temple', icon: '⛩', cost: 30, needs: ['granary'],
+      effects: ['+1 faith', '+1 gold per believer', '+10% religion progress here'] },
+  ];
+  const bldOf = k => BUILDINGS.find(b => b.key === k);
+  const hasBld = (ct, k) => k === 'food' || (ct.built && ct.built.has(k));
+  const bldOpen = (ct, b) => !hasBld(ct, b.key) && !b.free && b.needs.every(k => hasBld(ct, k));
+
+  // What a city keeps: the reservation limit, widened by a granary.
+  const foodCap = ct => Math.round(CITY_FOOD_CAP * (1 + (hasBld(ct, 'granary') ? 0.5 : 0)));
+
+  // A city's own books, so the tree's promises are read from one place.
+  function cityYield(ct, pl) {
+    const food = 2 + (ct.tileFood || 0) + (hasBld(ct, 'granary') ? 2 : 0);
+    const faith = 1 + (hasBld(ct, 'temple') ? 1 : 0);
+    // A temple pays a coin for every believer it has won.
+    const gold = hasBld(ct, 'temple') ? (ct.believers || 0) : 0;
+    // Religion takes hold faster where there is a temple.
+    const relRate = faith * (1 + (hasBld(ct, 'temple') ? 0.10 : 0));
+    return { food, faith, gold, relRate };
+  }
+
+  function cityTurn(ct, pl) {
+    if (!ct.built) { ct.built = new Set(); ct.food = 0; ct.rel = 0; ct.believers = 0; }
+    const y = cityYield(ct, pl);
+    // Food fills the store and stops at the reservation limit; the rest is
+    // eaten by the year.
+    ct.food = Math.min(foodCap(ct), (ct.food || 0) + y.food);
+    ct.rel = (ct.rel || 0) + y.relRate;
+    while (ct.rel >= BELIEVER_AT) { ct.rel -= BELIEVER_AT; ct.believers++; }
+    return y;
+  }
+
   // ---- NATIONS ----
   // One is drawn at random when the world is made. Every nation carries its
   // own city names, and some carry traits.
@@ -2272,6 +2332,16 @@
   }
   function buildStep(ct, pl) {
     if (!ct.building) return;
+    const bld = bldOf(ct.building);
+    if (bld) {                               // a building
+      if ((ct.prod || 0) < bld.cost) return;
+      ct.prod -= bld.cost;
+      ct.built.add(bld.key);
+      ct.building = null;
+      if (pl.human) showNotice(bld.name + ' finished in ' + ct.name + '.');
+      updateCityBar();
+      return;
+    }
     const def = UNIT_TYPES[ct.building];
     if ((ct.prod || 0) < def.prod) return;
     const spot = launchSpot(ct);
@@ -2999,7 +3069,8 @@
     const y = runEconomy(pl, true);
     return {
       gold: y.gold, science: 1 + own.length,
-      faith: own.length,                    // faith comes from your people
+      // Faith comes from your people, and a temple adds its own.
+      faith: own.reduce((n, ct) => n + cityYield(ct, pl).faith, 0),
       culture: 1 + own.length,
     };
   }
@@ -3018,6 +3089,7 @@
       }
       const dry = wet ? 1 : 1 + mod('dryCity', pl);
       let cityProd = 1;                       // a city always makes something
+      let cityFood = 0;
       for (let c = 0; c < COLS; c++) {
         for (let r = 0; r < ROWS; r++) {
           const tl = tiles[c][r];
@@ -3030,11 +3102,16 @@
                      ? 1 + mod('riverFood', pl) : 1;
           resGold += resDef(tl.res).gold * dry;
           resFood += resDef(tl.res).food * bank * dry;
+          cityFood += resDef(tl.res).food * bank * dry;
           cityProd += resDef(tl.res).prod;
         }
       }
+      ct.tileFood = cityFood;
       if (!dryRun) {
         ct.prod = (ct.prod || 0) + cityProd;
+        // A city's store, its faith and its believers, before the yard runs.
+        const cy = cityTurn(ct, pl);
+        resGold += cy.gold;                 // a temple pays per believer
         buildStep(ct, pl);
       }
     }
@@ -3149,18 +3226,49 @@
   }
   function showYard() {
     if (!cities.length) return;
-    const ct = cities[citySel];
+    const ct = cities[citySel], pl = players[0];
+    if (!ct.built) { ct.built = new Set(); ct.food = 0; ct.rel = 0; ct.believers = 0; }
     document.getElementById('yardName').textContent = '⚒  ' + ct.name;
-    let html = '';
+    const y = cityYield(ct, pl);
+
+    // What the city keeps, which is what the food node is about.
+    let html = '<h3>Stores</h3><div class="figs">' +
+      `<div class="fig">${Math.round(ct.food)} / ${foodCap(ct)} <span>food kept</span></div>` +
+      `<div class="fig">+${y.food} <span>food a turn</span></div>` +
+      `<div class="fig">${Math.round(ct.prod || 0)} <span>production</span></div>` +
+      `<div class="fig">${ct.believers || 0} <span>believers</span></div>` +
+      `<div class="fig">${Math.round(ct.rel || 0)}% <span>to the next</span></div>` +
+      '</div>';
+
+    html += '<h3>Buildings</h3>';
+    for (const bl of BUILDINGS) {
+      const done = hasBld(ct, bl.key), open = bldOpen(ct, bl), now = ct.building === bl.key;
+      const missing = bl.needs.filter(k => !hasBld(ct, k)).map(k => bldOf(k).name);
+      const detail = bl.free ? bl.note
+        : (bl.effects || []).join(' · ') + (missing.length ? ' — needs ' + missing.join(', ') : '');
+      const right = bl.free ? '' : done ? 'built'
+        : now ? `${Math.round(ct.prod || 0)} / ${bl.cost}` : `${bl.cost} prod`;
+      html += `<button class="ship${done ? ' on' : ''}${open ? '' : ' locked'}" ` +
+        `${open ? `data-bld="${bl.key}"` : ''}>` +
+        `<span class="hullpic" style="display:flex;align-items:center;justify-content:center;` +
+        `font-size:20px">${bl.icon}</span>` +
+        `<span><span class="sname">${bl.name}</span><br>` +
+        `<span class="sinfo">${detail}</span></span>` +
+        `<span class="scost">${right}${now ? ' · building' : ''}</span></button>`;
+    }
+
+    html += '<h3>Boats</h3>';
     if (!coastal(ct)) {
-      html = '<div class="ship">' + ct.name + ' is inland. A boat needs water beside ' +
-             'the city to be launched into.</div>';
+      html += '<div class="ship"><span class="sinfo">' + ct.name + ' is inland. A boat needs ' +
+              'water beside the city to be launched into.</span></div>';
     } else {
-      html = `<div class="ship"><span class="sinfo">Production stored: ` +
-             `${Math.round(ct.prod || 0)}</span></div>`;
-      for (const key of BUILDABLE.filter(k => unlocked(players[0], k))) {
-        const d = UNIT_TYPES[key];
-        const on = ct.building === key;
+      const open = BUILDABLE.filter(k => unlocked(pl, k));
+      if (!open.length) {
+        html += '<div class="ship"><span class="sinfo">No hull is known yet. Research Sailing.' +
+                '</span></div>';
+      }
+      for (const key of open) {
+        const d = UNIT_TYPES[key], on = ct.building === key;
         html += `<button class="ship${on ? ' on' : ''}" data-ship="${key}">` +
           `<span class="hullpic" style="background-image:url(${d.art})"></span>` +
           `<span><span class="sname">${d.name}</span><br>` +
@@ -3169,10 +3277,11 @@
       }
     }
     document.getElementById('yardBody').innerHTML = html;
-    document.querySelectorAll('#yardBody [data-ship]').forEach(b => {
-      b.addEventListener('click', () => {
-        ct.building = b.dataset.ship;
-        showNotice(ct.name + ' begins an ' + UNIT_TYPES[ct.building].name + '.');
+    document.querySelectorAll('#yardBody [data-ship], #yardBody [data-bld]').forEach(bt => {
+      bt.addEventListener('click', () => {
+        ct.building = bt.dataset.ship || bt.dataset.bld;
+        const nm = bt.dataset.bld ? bldOf(ct.building).name : UNIT_TYPES[ct.building].name;
+        showNotice(ct.name + ' begins a ' + nm + '.');
         showYard();
       });
     });
@@ -3641,6 +3750,11 @@
   window.__boostInfo = (k) => { const t = techOf(k), pl = players[0];
     const base = techCost(pl, t); pl.boosts.add(k); const bc = techCost(pl, t);
     pl.boosts.delete(k); return { baseCost: base, boostedCost: bc }; };
+  window.__city = () => { const ct = cities[0], pl = players[0];
+    if (!ct) return null; const y = cityYield(ct, pl);
+    return { food: Math.round(ct.food||0), cap: foodCap(ct), foodPerTurn: y.food,
+             faith: y.faith, relRate: y.relRate, believers: ct.believers||0,
+             templeGold: y.gold, built: [...(ct.built||[])], prod: Math.round(ct.prod||0) }; };
   window.__hexDist = hexDist;
   window.__dims = { COLS, ROWS };
 
