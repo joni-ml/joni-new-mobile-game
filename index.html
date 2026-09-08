@@ -285,6 +285,17 @@
     background: #123a63; color: var(--ink); border: 1px solid var(--stroke);
     border-radius: 14px; padding: 5px 12px; font-size: 12px; font-weight: 600;
   }
+  /* Gold, science, faith and culture: what you have, and what the next turn
+     brings in from every city you hold. The icon carries the identity, so
+     the figures stay in ordinary ink rather than being colour-coded. */
+  #yields {
+    display: flex; justify-content: center; gap: 14px;
+    padding: 3px 6px 1px; flex-wrap: wrap;
+  }
+  #yields .y { display: flex; align-items: baseline; gap: 3px; font-size: 13px; font-weight: 700; }
+  #yields .y .ic { font-size: 12px; }
+  #yields .y .gain { font-size: 10px; font-weight: 700; opacity: 0.7; }
+
   #turnline { text-align: center; font-size: 11px; opacity: 0.85; padding-top: 2px; }
 
   /* ---- SIDE PANELS ---- */
@@ -426,6 +437,7 @@
     <div id="civ"><span class="emblem">⚜</span><span id="civName">France</span></div>
     <button id="overviewBtn">Overview</button>
   </div>
+  <div id="yields"></div>
   <div id="turnline"><span id="turnText">⏳ 1 | 1500 BC</span></div>
 </div>
 
@@ -2006,7 +2018,8 @@
       players.push({
         nation: pool[i % pool.length], human: i === 0,
         colour: i === 0 ? '#e6c169' : RIVAL_COLOURS[(i - 1) % RIVAL_COLOURS.length],
-        gold: 15, food: 4, happy: 5, cities: [], home: null,
+        gold: 15, food: 4, happy: 5, science: 0, faith: 0, culture: 0,
+        cities: [], home: null,
       });
     }
     nation = players[0].nation;
@@ -2789,7 +2802,20 @@
   // The counters along the top are gone; the turn and the year are all the
   // bar carries now. The values themselves are still tracked — cities still
   // earn gold and food each turn — they are simply not on screen.
+  const YIELDS = [
+    { key: 'gold',    ic: '🪙' },
+    { key: 'science', ic: '🔬' },
+    { key: 'faith',   ic: '🕊' },
+    { key: 'culture', ic: '🎵' },
+  ];
   function renderStats() {
+    const me = players[0];
+    if (me) {
+      const y = perTurn(me);
+      document.getElementById('yields').innerHTML = YIELDS.map(d =>
+        `<span class="y"><span class="ic">${d.ic}</span>${Math.round(me[d.key] || 0)}` +
+        `<span class="gain">+${y[d.key]}</span></span>`).join('');
+    }
     document.getElementById('turnText').textContent =
       `⏳ ${state.turn} | ${state.year > 0 ? state.year + ' BC' : (1 - state.year) + ' AD'}`;
   }
@@ -2818,7 +2844,20 @@
   // The same books for everyone, kept per nation and read through that
   // nation's own traits — so a bot Egypt eats better than a bot England for
   // exactly the reason you would.
-  function runEconomy(pl) {
+  // What a turn is worth to a nation, worked out WITHOUT changing anything —
+  // so the bar along the top can show the same numbers the turn will apply,
+  // instead of a second guess at them that could drift apart.
+  function perTurn(pl) {
+    const own = pl.human ? cities : pl.cities;
+    const y = runEconomy(pl, true);
+    return {
+      gold: y.gold, science: 1 + own.length,
+      faith: own.length,                    // faith comes from your people
+      culture: 1 + own.length,
+    };
+  }
+
+  function runEconomy(pl, dryRun) {
     const own = pl.human ? cities : pl.cities;
     let resGold = 0, resFood = 0;
     for (const ct of own) {
@@ -2847,11 +2886,14 @@
           cityProd += resDef(tl.res).prod;
         }
       }
-      ct.prod = (ct.prod || 0) + cityProd;
-      buildStep(ct, pl);
+      if (!dryRun) {
+        ct.prod = (ct.prod || 0) + cityProd;
+        buildStep(ct, pl);
+      }
     }
-    const earned = (5 + own.length * 2 + resGold) * (1 + mod('trade', pl));
-    pl.gold += Math.round(earned);
+    const earned = Math.round((5 + own.length * 2 + resGold) * (1 + mod('trade', pl)));
+    if (dryRun) return { gold: earned };
+    pl.gold += earned;
     pl.food = Math.round((4 + resFood) * (1 + mod('foodKeep', pl)));
 
     // Happiness follows the food on the table and the cities you hold. A
@@ -2864,10 +2906,16 @@
     // thirty percent bonus on a change of one tile disappeared entirely and
     // the trait did nothing.
     pl.happy = (pl.happy + change) * (1 + mod('happy', pl));
+    // Science, faith and culture all accrue every turn, so the bar can show a
+    // straight "+N" for each. Culture used to arrive once every four turns,
+    // which no per-turn figure could describe honestly.
+    const y = perTurn(pl);
+    pl.science = (pl.science || 0) + y.science;
+    pl.faith = (pl.faith || 0) + y.faith;
+    pl.culture = (pl.culture || 0) + y.culture;
     if (pl.human) {                       // the top bar reads these
       state.gold = pl.gold; state.food = pl.food; state.happy = pl.happy;
-      state.science += 1 + own.length;
-      if (state.turn % 4 === 0) state.culture += 1;
+      state.science = pl.science; state.faith = pl.faith; state.culture = pl.culture;
     }
   }
 
@@ -3279,7 +3327,8 @@
   window.__seat = (names) => {
     players = names.map((n, i) => ({ nation: NATIONS.find(x => x.name === n),
       human: false, colour: RIVAL_COLOURS[i % RIVAL_COLOURS.length],
-      gold: 15, food: 4, happy: 5, cities: [], home: null }));
+      gold: 15, food: 4, happy: 5, science: 0, faith: 0, culture: 0,
+      cities: [], home: null }));
     players[0].human = false;
     placeRivals();
     // every seat gets the same homeland spread, so only the traits differ
@@ -3312,6 +3361,8 @@
              free: boats.filter(bt => !bt.cargo).length }; };
   window.__selInfo = () => { const u = curUnit(); return u ? { type: u.type, at: u.c+","+u.r, moves: u.moves, selected: unitSelected } : null; };
   window.__cityInfo = () => cities.length ? { name: cities[0].name, coastal: coastal(cities[0]), prod: cities[0].prod||0, building: cities[0].building } : null;
+  window.__stateFull = () => ({ gold: players[0].gold, science: players[0].science||0, faith: players[0].faith||0, culture: players[0].culture||0 });
+  window.__perTurn = () => perTurn(players[0]);
   window.__hexDist = hexDist;
   window.__dims = { COLS, ROWS };
 
