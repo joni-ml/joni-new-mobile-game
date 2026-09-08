@@ -373,34 +373,45 @@
 
   #tree {
     position: fixed; inset: 0; z-index: 60; display: none;
-    background: rgba(4,10,18,0.95); padding: 18px; overflow-y: auto;
+    background: #060d17; padding: 14px;
+    flex-direction: column;
   }
-  #tree.on { display: block; }
+  #tree.on { display: flex; }
   #treeName { font-size: 20px; font-weight: 700; }
   #treeClose { margin-left: auto; background: none; border: none; color: var(--ink); font-size: 20px; }
-  #treeBody h3 {
-    font-size: 11px; letter-spacing: 0.6px; text-transform: uppercase;
-    opacity: 0.5; margin: 16px 0 6px; font-weight: 700;
+  /* The board is wider and taller than a phone, so this is the thing that
+     scrolls — in both directions. It needs to be the flex child that takes
+     the leftover height, or it sizes to its content and never scrolls. */
+  #treeBody { flex: 1; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; }
+  #treeCanvas { position: relative; }
+  #treeCanvas svg { position: absolute; left: 0; }
+  .eralabel {
+    position: absolute; top: 0; font-size: 10px; font-weight: 700;
+    letter-spacing: 0.6px; text-transform: uppercase; opacity: 0.45;
   }
   .tech {
-    display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left;
+    position: absolute; display: flex; align-items: flex-start; gap: 7px;
     background: var(--panel); color: var(--ink); border: 1px solid var(--stroke);
-    border-radius: 10px; padding: 9px 11px; margin-bottom: 6px; font-size: 13px;
+    border-radius: 9px; padding: 7px 8px; font-size: 12px; text-align: left;
+    overflow: hidden;
   }
   .tech .tic {
-    width: 30px; height: 30px; flex: none; border-radius: 7px; background: #0b2c4c;
-    display: flex; align-items: center; justify-content: center; font-size: 16px;
+    width: 26px; height: 26px; flex: none; border-radius: 6px; background: #0b2c4c;
+    display: flex; align-items: center; justify-content: center; font-size: 14px;
   }
-  .tech .tname { font-weight: 700; }
-  .tech .tsub { font-size: 11px; opacity: 0.6; margin-top: 1px; }
-  .tech .tturn { margin-left: auto; font-size: 11px; opacity: 0.75; white-space: nowrap; text-align: right; }
+  .tech .tbody { flex: 1; min-width: 0; }
+  .tech .tname { font-weight: 700; display: block; }
+  .tech .tsub, .tech .boost {
+    display: block; font-size: 10px; opacity: 0.6; margin-top: 1px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tech .boost.got { color: #7ec8e3; opacity: 1; }
+  .tech .tturn { font-size: 10px; opacity: 0.75; text-align: right; flex: none; }
   .tech.done { opacity: 0.55; }
   .tech.done .tic { background: #14432a; }
   .tech.now { border-color: #3987e5; background: #10243c; }
   .tech.locked { opacity: 0.45; }
-  .tech .boost { font-size: 11px; margin-top: 3px; }
-  .tech .boost.got { color: #7ec8e3; }
-  .tech .bar { height: 3px; border-radius: 2px; background: #24384f; margin-top: 5px; }
+  .tech .bar { display: block; height: 3px; border-radius: 2px; background: #24384f; margin-top: 4px; }
   .tech .bar i { display: block; height: 100%; border-radius: 2px; background: #3987e5; }
 
   #overview {
@@ -408,7 +419,7 @@
     background: rgba(4,10,18,0.94); padding: 20px; overflow-y: auto;
   }
   #overview.on { display: block; }
-  .ovhead { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .ovhead { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex: none; }
   #ovName { font-size: 20px; font-weight: 700; }
   #ovClose { margin-left: auto; background: none; border: none; color: var(--ink); font-size: 20px; }
   #ovBody h3 {
@@ -1962,34 +1973,34 @@
       boost: { text: 'Found a city', check: pl => ownCities(pl).length >= 1 } },
     { key: 'animal',    name: 'Animal husbandry', icon: '🐑', era: 'Ancient', cost: 25, needs: [],
       boost: { text: 'Identify a herd animal', check: () => isKnown('sheep') || isKnown('cattle') } },
-    { key: 'mining',    name: 'Mining',         icon: '⛏', era: 'Ancient', cost: 25, needs: [],
+    { key: 'mining',    name: 'Mining',         icon: '⛏️', era: 'Ancient', cost: 25, needs: [],
       boost: { text: 'Identify stone', check: () => isKnown('stone') } },
     { key: 'sailing',   name: 'Sailing',        icon: '⛵', era: 'Ancient', cost: 50, needs: ['pottery'],
       unlocks: ['boat'],
       boost: { text: 'Found a city on the coast', check: pl => ownCities(pl).some(coastal) } },
-    { key: 'astrology', name: 'Astrology',      icon: '☀', era: 'Ancient', cost: 50, needs: ['mining'],
+    { key: 'astrology', name: 'Astrology',      icon: '☀️', era: 'Ancient', cost: 50, needs: ['mining'],
       boost: { text: 'See a mountain range', check: () => seenMountains() >= 3 } },
     { key: 'irrigation', name: 'Irrigation',    icon: '🌱', era: 'Ancient', cost: 50, needs: ['pottery'],
       boost: { text: 'Identify a crop', check: () => ['wheat','rice','corn','potato','apple'].some(isKnown) } },
-    { key: 'writing',   name: 'Writing',        icon: '✍', era: 'Ancient', cost: 50, needs: ['pottery'],
+    { key: 'writing',   name: 'Writing',        icon: '✍️', era: 'Ancient', cost: 50, needs: ['pottery'],
       boost: { text: 'Meet another nation', check: () => metNations().length >= 1 } },
     { key: 'archery',   name: 'Archery',        icon: '🏹', era: 'Ancient', cost: 50, needs: ['animal'] },
     { key: 'masonry',   name: 'Masonry',        icon: '🧱', era: 'Ancient', cost: 80, needs: ['mining'] },
-    { key: 'bronze',    name: 'Bronze working', icon: '🛡', era: 'Ancient', cost: 80, needs: ['mining'] },
-    { key: 'wheel',     name: 'The wheel',      icon: '🛞', era: 'Ancient', cost: 80, needs: ['mining'] },
-    { key: 'celestial', name: 'Celestial navigation', icon: '⚓', era: 'Classical', cost: 120,
+    { key: 'bronze',    name: 'Bronze working', icon: '🛡️', era: 'Ancient', cost: 80, needs: ['mining'] },
+    { key: 'wheel',     name: 'The wheel',      icon: '☸️', era: 'Ancient', cost: 80, needs: ['mining'] },
+    { key: 'celestial', name: 'Celestial navigation', icon: '⚓️', era: 'Classical', cost: 120,
       needs: ['sailing', 'astrology'], unlocks: ['ldboat'],
       boost: { text: 'Own a boat', check: pl => pl.human && units.some(isBoat) } },
-    { key: 'currency',  name: 'Currency',       icon: '🪙', era: 'Classical', cost: 120, needs: ['writing'] },
+    { key: 'currency',  name: 'Currency',       icon: '💰', era: 'Classical', cost: 120, needs: ['writing'] },
     { key: 'horseback', name: 'Horseback riding', icon: '🐎', era: 'Classical', cost: 120, needs: ['animal'] },
-    { key: 'iron',      name: 'Iron working',   icon: '⚔', era: 'Classical', cost: 120, needs: ['bronze'] },
+    { key: 'iron',      name: 'Iron working',   icon: '⚔️', era: 'Classical', cost: 120, needs: ['bronze'] },
     { key: 'shipbuilding', name: 'Shipbuilding', icon: '🚢', era: 'Classical', cost: 200,
       needs: ['celestial'], unlocks: ['warboat'],
       boost: { text: 'Own 2 boats', check: pl => pl.human && units.filter(isBoat).length >= 2 } },
     { key: 'mathematics', name: 'Mathematics',  icon: '📐', era: 'Classical', cost: 200, needs: ['currency'] },
     { key: 'construction', name: 'Construction', icon: '🔨', era: 'Classical', cost: 200,
       needs: ['horseback', 'masonry'] },
-    { key: 'engineering', name: 'Engineering',  icon: '⚙', era: 'Classical', cost: 200, needs: ['wheel'] },
+    { key: 'engineering', name: 'Engineering',  icon: '⚙️', era: 'Classical', cost: 200, needs: ['wheel'] },
   ];
   const techOf = k => TECHS.find(t => t.key === k);
   const ownCities = pl => (pl.human ? cities : pl.cities);
@@ -2937,9 +2948,9 @@
   // bar carries now. The values themselves are still tracked — cities still
   // earn gold and food each turn — they are simply not on screen.
   const YIELDS = [
-    { key: 'gold',    ic: '🪙' },
+    { key: 'gold',    ic: '💰' },
     { key: 'science', ic: '🔬' },
-    { key: 'faith',   ic: '🕊' },
+    { key: 'faith',   ic: '🕊️' },
     { key: 'culture', ic: '🎵' },
   ];
   function renderStats() {
@@ -3173,34 +3184,99 @@
     const left = Math.max(0, techCost(pl, t) - (pl.researching === t.key ? pl.sci : 0));
     return Math.max(1, Math.ceil(left / rate)) + ' turns';
   }
+  // Where each technology sits on the board. A column is how many
+  // technologies deep it is — the longest chain of prerequisites behind it —
+  // so an arrow can only ever run left to right and never doubles back.
+  function treeLayout() {
+    const depth = {};
+    const depthOf = t => {
+      if (depth[t.key] !== undefined) return depth[t.key];
+      depth[t.key] = t.needs.length ? 1 + Math.max(...t.needs.map(k => depthOf(techOf(k)))) : 0;
+      return depth[t.key];
+    };
+    TECHS.forEach(depthOf);
+    const cols = [];
+    for (const t of TECHS) (cols[depth[t.key]] ||= []).push(t);
+    // Order each column by the average height of what feeds it, which is the
+    // ordinary way to keep the lines from crossing over each other.
+    const row = {};
+    cols.forEach((col, d) => {
+      if (d > 0) {
+        col.sort((x, y) => {
+          const m = t => t.needs.length
+            ? t.needs.reduce((a2, k) => a2 + (row[k] || 0), 0) / t.needs.length : 0;
+          return m(x) - m(y);
+        });
+      }
+      col.forEach((t, i) => { row[t.key] = i; });
+    });
+    return { cols, depth, row };
+  }
+
+  const CARD_W = 196, CARD_H = 74, GAP_X = 46, GAP_Y = 10;
+
   function showTree() {
     const pl = players[0];
     if (!pl.techs) { pl.techs = new Set(); pl.boosts = new Set(); pl.sci = 0; }
-    let html = '';
-    for (const era of ['Ancient', 'Classical']) {
-      html += `<h3>${era} era</h3>`;
-      for (const t of TECHS.filter(x => x.era === era)) {
-        const done = hasTech(pl, t.key), open = techOpen(pl, t), now = pl.researching === t.key;
-        const cls = done ? 'done' : now ? 'now' : open ? '' : 'locked';
-        const missing = t.needs.filter(k => !hasTech(pl, k)).map(k => techOf(k).name);
-        let sub = t.unlocks ? 'Unlocks the ' + UNIT_TYPES[t.unlocks[0]].name : '';
-        if (!done && missing.length) sub = 'Needs ' + missing.join(' and ');
-        const right = done ? 'known'
-          : now ? `${Math.round(pl.sci)} / ${techCost(pl, t)}<br>${turnsFor(pl, t)}`
-          : `${techCost(pl, t)} science<br>${turnsFor(pl, t)}`;
-        html += `<button class="tech ${cls}" data-tech="${t.key}">` +
-          `<span class="tic">${t.icon}</span><span>` +
-          `<span class="tname">${t.name}</span>` +
-          (sub ? `<div class="tsub">${sub}</div>` : '') +
-          (t.boost ? `<div class="boost${pl.boosts.has(t.key) ? ' got' : ''}">` +
-            (pl.boosts.has(t.key) ? '★ Boosted — half cost' : 'To boost: ' + t.boost.text) +
-            '</div>' : '') +
-          (now ? `<div class="bar"><i style="width:${Math.min(100,
-             Math.round(pl.sci / techCost(pl, t) * 100))}%"></i></div>` : '') +
-          `</span><span class="tturn">${right}</span></button>`;
+    const { cols, depth, row } = treeLayout();
+    const at = t => ({ x: depth[t.key] * (CARD_W + GAP_X), y: row[t.key] * (CARD_H + GAP_Y) });
+    const W = cols.length * (CARD_W + GAP_X) - GAP_X;
+    const H = Math.max(...cols.map(c => c.length)) * (CARD_H + GAP_Y) - GAP_Y;
+
+    // The connectors, drawn behind the cards. Each one leaves the right edge
+    // of what it needs, turns once in the gap between the columns, and comes
+    // in flat at the left edge of what it leads to — the elbow the reference
+    // uses, which reads far better than a diagonal when many share a column.
+    let lines = '';
+    for (const t of TECHS) {
+      const to = at(t);
+      for (const k of t.needs) {
+        const from = at(techOf(k)), lit = hasTech(pl, k);
+        const x1 = from.x + CARD_W, y1 = from.y + CARD_H / 2;
+        const x2 = to.x, y2 = to.y + CARD_H / 2, mx = x1 + GAP_X / 2;
+        lines += `<path d="M${x1} ${y1} H${mx} V${y2} H${x2}" fill="none" ` +
+          `stroke="${lit ? '#3987e5' : '#3c4c60'}" stroke-width="2" ` +
+          `stroke-dasharray="${lit ? '' : '5 4'}"/>`;
       }
     }
-    document.getElementById('treeBody').innerHTML = html;
+
+    let cards = '';
+    for (const t of TECHS) {
+      const q = at(t);
+      const done = hasTech(pl, t.key), open = techOpen(pl, t), now = pl.researching === t.key;
+      const cls = done ? 'done' : now ? 'now' : open ? '' : 'locked';
+      const right = done ? 'known'
+        : now ? `${Math.round(pl.sci)}/${techCost(pl, t)}`
+        : `${techCost(pl, t)}<br>${turnsFor(pl, t)}`;
+      cards += `<button class="tech ${cls}" data-tech="${t.key}" ` +
+        `style="left:${q.x}px;top:${q.y}px;width:${CARD_W}px;height:${CARD_H}px">` +
+        `<span class="tic">${t.icon}</span><span class="tbody">` +
+        `<span class="tname">${t.name}</span>` +
+        (t.unlocks ? `<span class="tsub">Unlocks ${UNIT_TYPES[t.unlocks[0]].name}</span>` : '') +
+        (t.boost ? `<span class="boost${pl.boosts.has(t.key) ? ' got' : ''}">` +
+          (pl.boosts.has(t.key) ? '★ boosted' : t.boost.text) + '</span>' : '') +
+        (now ? `<span class="bar"><i style="width:${Math.min(100,
+           Math.round(pl.sci / techCost(pl, t) * 100))}%"></i></span>` : '') +
+        `</span><span class="tturn">${right}</span></button>`;
+    }
+
+    // Era names run down the left of the columns they cover, as on the board.
+    let eras = '';
+    let seen = {};
+    cols.forEach((col, d) => {
+      const era = col[0] && col[0].era;
+      if (era && !seen[era]) {
+        seen[era] = true;
+        eras += `<div class="eralabel" style="left:${d * (CARD_W + GAP_X)}px">${era} era</div>`;
+      }
+    });
+
+    document.getElementById('treeBody').innerHTML =
+      `<div id="treeCanvas" style="width:${W}px;height:${H + 26}px">` +
+      `<svg width="${W}" height="${H}" style="top:26px">${lines}</svg>${eras}` +
+      `<div style="position:absolute;left:0;top:26px;width:${W}px;height:${H}px">${cards}</div>` +
+      `</div>`;
+
     document.querySelectorAll('#treeBody [data-tech]').forEach(btn => {
       btn.addEventListener('click', () => {
         const t = techOf(btn.dataset.tech);
@@ -3214,6 +3290,7 @@
     });
     document.getElementById('tree').classList.add('on');
   }
+
   function renderResearch() {
     const pl = players[0];
     const box = document.getElementById('research');
