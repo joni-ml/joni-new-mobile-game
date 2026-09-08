@@ -300,6 +300,7 @@
 
   /* ---- SIDE PANELS ---- */
   #research {
+    cursor: pointer;
     position: fixed; left: 8px; z-index: 25;
     background: var(--panel); border: 1px solid var(--stroke); border-radius: 8px;
     padding: 6px 8px; display: flex; align-items: center; gap: 8px; font-size: 12px;
@@ -369,6 +370,38 @@
   .ship .sinfo { font-size: 11px; opacity: 0.6; }
   .ship .scost { margin-left: auto; font-size: 12px; opacity: 0.75; white-space: nowrap; }
   .ship.on { border-color: #2f6f4f; background: #16311f; }
+
+  #tree {
+    position: fixed; inset: 0; z-index: 60; display: none;
+    background: rgba(4,10,18,0.95); padding: 18px; overflow-y: auto;
+  }
+  #tree.on { display: block; }
+  #treeName { font-size: 20px; font-weight: 700; }
+  #treeClose { margin-left: auto; background: none; border: none; color: var(--ink); font-size: 20px; }
+  #treeBody h3 {
+    font-size: 11px; letter-spacing: 0.6px; text-transform: uppercase;
+    opacity: 0.5; margin: 16px 0 6px; font-weight: 700;
+  }
+  .tech {
+    display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left;
+    background: var(--panel); color: var(--ink); border: 1px solid var(--stroke);
+    border-radius: 10px; padding: 9px 11px; margin-bottom: 6px; font-size: 13px;
+  }
+  .tech .tic {
+    width: 30px; height: 30px; flex: none; border-radius: 7px; background: #0b2c4c;
+    display: flex; align-items: center; justify-content: center; font-size: 16px;
+  }
+  .tech .tname { font-weight: 700; }
+  .tech .tsub { font-size: 11px; opacity: 0.6; margin-top: 1px; }
+  .tech .tturn { margin-left: auto; font-size: 11px; opacity: 0.75; white-space: nowrap; text-align: right; }
+  .tech.done { opacity: 0.55; }
+  .tech.done .tic { background: #14432a; }
+  .tech.now { border-color: #3987e5; background: #10243c; }
+  .tech.locked { opacity: 0.45; }
+  .tech .boost { font-size: 11px; margin-top: 3px; }
+  .tech .boost.got { color: #7ec8e3; }
+  .tech .bar { height: 3px; border-radius: 2px; background: #24384f; margin-top: 5px; }
+  .tech .bar i { display: block; height: 100%; border-radius: 2px; background: #3987e5; }
 
   #overview {
     position: fixed; inset: 0; z-index: 60; display: none;
@@ -464,6 +497,11 @@
 <div id="yard">
   <div class="ovhead"><span id="yardName"></span><button id="yardClose">✕</button></div>
   <div id="yardBody"></div>
+</div>
+
+<div id="tree">
+  <div class="ovhead"><span id="treeName">Technology</span><button id="treeClose">✕</button></div>
+  <div id="treeBody"></div>
 </div>
 
 <div id="overview">
@@ -1911,6 +1949,101 @@
   }
 
   // ---- CITIES ----
+  // ---- TECHNOLOGY ----
+  // An ancient and classical tree. Each tech costs science, needs the ones
+  // before it, and some unlock something you can actually build.
+  //
+  // A BOOST is the "To Boost:" line from the reference: do the thing and the
+  // tech costs half. Only boosts this game can actually check are given a
+  // test — the rest would be a promise the game cannot keep, so they are not
+  // written at all.
+  const TECHS = [
+    { key: 'pottery',   name: 'Pottery',        icon: '🏺', era: 'Ancient', cost: 25, needs: [],
+      boost: { text: 'Found a city', check: pl => ownCities(pl).length >= 1 } },
+    { key: 'animal',    name: 'Animal husbandry', icon: '🐑', era: 'Ancient', cost: 25, needs: [],
+      boost: { text: 'Identify a herd animal', check: () => isKnown('sheep') || isKnown('cattle') } },
+    { key: 'mining',    name: 'Mining',         icon: '⛏', era: 'Ancient', cost: 25, needs: [],
+      boost: { text: 'Identify stone', check: () => isKnown('stone') } },
+    { key: 'sailing',   name: 'Sailing',        icon: '⛵', era: 'Ancient', cost: 50, needs: ['pottery'],
+      unlocks: ['boat'],
+      boost: { text: 'Found a city on the coast', check: pl => ownCities(pl).some(coastal) } },
+    { key: 'astrology', name: 'Astrology',      icon: '☀', era: 'Ancient', cost: 50, needs: ['mining'],
+      boost: { text: 'See a mountain range', check: () => seenMountains() >= 3 } },
+    { key: 'irrigation', name: 'Irrigation',    icon: '🌱', era: 'Ancient', cost: 50, needs: ['pottery'],
+      boost: { text: 'Identify a crop', check: () => ['wheat','rice','corn','potato','apple'].some(isKnown) } },
+    { key: 'writing',   name: 'Writing',        icon: '✍', era: 'Ancient', cost: 50, needs: ['pottery'],
+      boost: { text: 'Meet another nation', check: () => metNations().length >= 1 } },
+    { key: 'archery',   name: 'Archery',        icon: '🏹', era: 'Ancient', cost: 50, needs: ['animal'] },
+    { key: 'masonry',   name: 'Masonry',        icon: '🧱', era: 'Ancient', cost: 80, needs: ['mining'] },
+    { key: 'bronze',    name: 'Bronze working', icon: '🛡', era: 'Ancient', cost: 80, needs: ['mining'] },
+    { key: 'wheel',     name: 'The wheel',      icon: '🛞', era: 'Ancient', cost: 80, needs: ['mining'] },
+    { key: 'celestial', name: 'Celestial navigation', icon: '⚓', era: 'Classical', cost: 120,
+      needs: ['sailing', 'astrology'], unlocks: ['ldboat'],
+      boost: { text: 'Own a boat', check: pl => pl.human && units.some(isBoat) } },
+    { key: 'currency',  name: 'Currency',       icon: '🪙', era: 'Classical', cost: 120, needs: ['writing'] },
+    { key: 'horseback', name: 'Horseback riding', icon: '🐎', era: 'Classical', cost: 120, needs: ['animal'] },
+    { key: 'iron',      name: 'Iron working',   icon: '⚔', era: 'Classical', cost: 120, needs: ['bronze'] },
+    { key: 'shipbuilding', name: 'Shipbuilding', icon: '🚢', era: 'Classical', cost: 200,
+      needs: ['celestial'], unlocks: ['warboat'],
+      boost: { text: 'Own 2 boats', check: pl => pl.human && units.filter(isBoat).length >= 2 } },
+    { key: 'mathematics', name: 'Mathematics',  icon: '📐', era: 'Classical', cost: 200, needs: ['currency'] },
+    { key: 'construction', name: 'Construction', icon: '🔨', era: 'Classical', cost: 200,
+      needs: ['horseback', 'masonry'] },
+    { key: 'engineering', name: 'Engineering',  icon: '⚙', era: 'Classical', cost: 200, needs: ['wheel'] },
+  ];
+  const techOf = k => TECHS.find(t => t.key === k);
+  const ownCities = pl => (pl.human ? cities : pl.cities);
+  const metNations = () => players.filter(pl => !pl.human &&
+    pl.cities.some(ct => tiles[ct.c][ct.r].seen));
+  function seenMountains() {
+    let n = 0;
+    for (const t of seenList) if (tiles[t.c][t.r].feature === 'mtn') n++;
+    return n;
+  }
+  const hasTech = (pl, k) => pl.techs && pl.techs.has(k);
+  const techOpen = (pl, t) => !hasTech(pl, t.key) && t.needs.every(k => hasTech(pl, k));
+  // A boosted tech costs half, which is what "To Boost" buys you.
+  const techCost = (pl, t) => Math.round(t.cost * (pl.boosts && pl.boosts.has(t.key) ? 0.5 : 1));
+  // Something is buildable once the tech that unlocks it is in. Anything no
+  // tech names is available from the start.
+  function unlocked(pl, unitKey) {
+    const t = TECHS.find(x => (x.unlocks || []).includes(unitKey));
+    return !t || hasTech(pl, t.key);
+  }
+
+  function researchTurn(pl) {
+    if (!pl.techs) { pl.techs = new Set(); pl.boosts = new Set(); pl.sci = 0; }
+    // Boosts are checked every turn: do the thing and the discount is yours
+    // whether you are researching it now or reach it later.
+    for (const t of TECHS) {
+      if (t.boost && !pl.boosts.has(t.key) && !hasTech(pl, t.key) && t.boost.check(pl)) {
+        pl.boosts.add(t.key);
+        if (pl.human) showNotice('Boost earned: ' + t.name + ' costs half.');
+      }
+    }
+    // A bot always takes the cheapest thing open to it.
+    if (!pl.researching || hasTech(pl, pl.researching)) {
+      pl.researching = null;
+      if (!pl.human) {
+        const open = TECHS.filter(t => techOpen(pl, t));
+        open.sort((a, b) => techCost(pl, a) - techCost(pl, b));
+        if (open.length) pl.researching = open[0].key;
+      }
+    }
+    pl.sci += perTurn(pl).science;
+    const t = pl.researching && techOf(pl.researching);
+    if (t && pl.sci >= techCost(pl, t)) {
+      pl.sci -= techCost(pl, t);
+      pl.techs.add(t.key);
+      pl.researching = null;
+      if (pl.human) {
+        showNotice(t.name + ' discovered.' +
+          ((t.unlocks || []).length ? ' You can now build the ' +
+            UNIT_TYPES[t.unlocks[0]].name + '.' : ''));
+      }
+    }
+  }
+
   // ---- NATIONS ----
   // One is drawn at random when the world is made. Every nation carries its
   // own city names, and some carry traits.
@@ -2019,6 +2152,7 @@
         nation: pool[i % pool.length], human: i === 0,
         colour: i === 0 ? '#e6c169' : RIVAL_COLOURS[(i - 1) % RIVAL_COLOURS.length],
         gold: 15, food: 4, happy: 5, science: 0, faith: 0, culture: 0,
+        techs: new Set(), boosts: new Set(), sci: 0, researching: null,
         cities: [], home: null,
       });
     }
@@ -2816,6 +2950,7 @@
         `<span class="y"><span class="ic">${d.ic}</span>${Math.round(me[d.key] || 0)}` +
         `<span class="gain">+${y[d.key]}</span></span>`).join('');
     }
+    renderResearch();
     document.getElementById('turnText').textContent =
       `⏳ ${state.turn} | ${state.year > 0 ? state.year + ' BC' : (1 - state.year) + ' AD'}`;
   }
@@ -2831,7 +2966,8 @@
     // Only resources you have identified are worth anything — an unknown
     // thing sitting in your borders earns you nothing until you study it.
     runEconomy(players[0]);
-    for (const pl of players) if (!pl.human) rivalTurn(pl);
+    researchTurn(players[0]);
+    for (const pl of players) if (!pl.human) { rivalTurn(pl); researchTurn(pl); }
     revealRivalCities();
     for (const u of units) u.moves = u.max;
     if (unitSelected) computeReachable();
@@ -3011,7 +3147,7 @@
     } else {
       html = `<div class="ship"><span class="sinfo">Production stored: ` +
              `${Math.round(ct.prod || 0)}</span></div>`;
-      for (const key of BUILDABLE) {
+      for (const key of BUILDABLE.filter(k => unlocked(players[0], k))) {
         const d = UNIT_TYPES[key];
         const on = ct.building === key;
         html += `<button class="ship${on ? ' on' : ''}" data-ship="${key}">` +
@@ -3031,6 +3167,65 @@
     });
     document.getElementById('yard').classList.add('on');
   }
+  function turnsFor(pl, t) {
+    const rate = perTurn(pl).science;
+    if (rate <= 0) return '—';
+    const left = Math.max(0, techCost(pl, t) - (pl.researching === t.key ? pl.sci : 0));
+    return Math.max(1, Math.ceil(left / rate)) + ' turns';
+  }
+  function showTree() {
+    const pl = players[0];
+    if (!pl.techs) { pl.techs = new Set(); pl.boosts = new Set(); pl.sci = 0; }
+    let html = '';
+    for (const era of ['Ancient', 'Classical']) {
+      html += `<h3>${era} era</h3>`;
+      for (const t of TECHS.filter(x => x.era === era)) {
+        const done = hasTech(pl, t.key), open = techOpen(pl, t), now = pl.researching === t.key;
+        const cls = done ? 'done' : now ? 'now' : open ? '' : 'locked';
+        const missing = t.needs.filter(k => !hasTech(pl, k)).map(k => techOf(k).name);
+        let sub = t.unlocks ? 'Unlocks the ' + UNIT_TYPES[t.unlocks[0]].name : '';
+        if (!done && missing.length) sub = 'Needs ' + missing.join(' and ');
+        const right = done ? 'known'
+          : now ? `${Math.round(pl.sci)} / ${techCost(pl, t)}<br>${turnsFor(pl, t)}`
+          : `${techCost(pl, t)} science<br>${turnsFor(pl, t)}`;
+        html += `<button class="tech ${cls}" data-tech="${t.key}">` +
+          `<span class="tic">${t.icon}</span><span>` +
+          `<span class="tname">${t.name}</span>` +
+          (sub ? `<div class="tsub">${sub}</div>` : '') +
+          (t.boost ? `<div class="boost${pl.boosts.has(t.key) ? ' got' : ''}">` +
+            (pl.boosts.has(t.key) ? '★ Boosted — half cost' : 'To boost: ' + t.boost.text) +
+            '</div>' : '') +
+          (now ? `<div class="bar"><i style="width:${Math.min(100,
+             Math.round(pl.sci / techCost(pl, t) * 100))}%"></i></div>` : '') +
+          `</span><span class="tturn">${right}</span></button>`;
+      }
+    }
+    document.getElementById('treeBody').innerHTML = html;
+    document.querySelectorAll('#treeBody [data-tech]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const t = techOf(btn.dataset.tech);
+        if (hasTech(pl, t.key) || !techOpen(pl, t)) return;
+        // Switching costs what you had put in — the science already spent on
+        // the old subject does not follow you to the new one.
+        if (pl.researching !== t.key) { pl.researching = t.key; pl.sci = 0; }
+        renderResearch();
+        showTree();
+      });
+    });
+    document.getElementById('tree').classList.add('on');
+  }
+  function renderResearch() {
+    const pl = players[0];
+    const box = document.getElementById('research');
+    const t = pl && pl.researching && techOf(pl.researching);
+    box.querySelector('.ricon').textContent = t ? t.icon : '❔';
+    box.querySelector('.rname').textContent = t ? t.name : 'Choose research';
+    box.querySelector('.rturns').textContent = t ? turnsFor(pl, t) : 'tap to open the tree';
+  }
+  document.getElementById('research').addEventListener('click', showTree);
+  document.getElementById('treeClose').addEventListener('click',
+    () => document.getElementById('tree').classList.remove('on'));
+
   document.getElementById('buildBtn').addEventListener('click', showYard);
   document.getElementById('yardClose').addEventListener('click',
     () => document.getElementById('yard').classList.remove('on'));
@@ -3363,6 +3558,12 @@
   window.__cityInfo = () => cities.length ? { name: cities[0].name, coastal: coastal(cities[0]), prod: cities[0].prod||0, building: cities[0].building } : null;
   window.__stateFull = () => ({ gold: players[0].gold, science: players[0].science||0, faith: players[0].faith||0, culture: players[0].culture||0 });
   window.__perTurn = () => perTurn(players[0]);
+  window.players_researching = () => players[0].researching;
+  window.__techs = () => [...players[0].techs];
+  window.__grant = (k) => { players[0].techs.add(k); };
+  window.__boostInfo = (k) => { const t = techOf(k), pl = players[0];
+    const base = techCost(pl, t); pl.boosts.add(k); const bc = techCost(pl, t);
+    pl.boosts.delete(k); return { baseCost: base, boostedCost: bc }; };
   window.__hexDist = hexDist;
   window.__dims = { COLS, ROWS };
 
