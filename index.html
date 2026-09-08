@@ -112,6 +112,13 @@
     box-shadow: 0 0 0 2px rgba(120, 200, 220, 0.35);
   }
   .rock { border-radius: 40% 45% 35% 50%; }
+  /* Worked ground: furrows across the tile. */
+  .farmplot {
+    left: 12%; top: 30%; width: 76%; height: 44%; border-radius: 3px;
+    background: repeating-linear-gradient(100deg,
+      rgba(120,84,40,0.85) 0 3px, rgba(196,158,92,0.85) 3px 7px);
+    box-shadow: 0 0 0 1px rgba(60,40,18,0.55);
+  }
 
   /* Anything unknown, or anything whose artwork hasn't been made yet, gets
      the classic missing-texture look: black and magenta checks with a ? */
@@ -239,6 +246,14 @@
     background: #2f6bb3; color: #fff; border: 1px solid #7fb2ff;
     border-radius: 10px; padding: 10px 16px; font-size: 14px; font-weight: 700;
     box-shadow: 0 3px 0 #1b4576;
+  }
+  #farmBtn {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 56px);
+    z-index: 26; display: none;
+    background: #3f7a35; color: #fff; border: 1px solid #8fd07f;
+    border-radius: 10px; padding: 10px 16px; font-size: 14px; font-weight: 700;
+    box-shadow: 0 3px 0 #27521f;
   }
   #foundCity {
     position: fixed; left: 50%; transform: translateX(-50%);
@@ -538,6 +553,7 @@
 
 <button id="foundCity">🏠 Build here</button>
 <button id="examineBtn">🔍 Study this</button>
+<button id="farmBtn">🌾 Build farm</button>
 <button id="labelsBtn" title="Show the name of every missing texture">🏷 names</button>
 <button id="revealBtn" title="Show the whole map, or only what you have explored">🗺 map</button>
 <button id="heightBtn" title="Colour every tile by how high the ground is">⛰ height</button>
@@ -1026,6 +1042,7 @@
     { key: 'sheep',   name: 'Sheep',    icon: ICONS.sheep, food: 2, prod: 0, gold: 1 },
     { key: 'cattle',  name: 'Cattle',   icon: ICONS.cattle, food: 3, prod: 0, gold: 1 },
     { key: 'grapes',  name: 'Grapes',   icon: null, food: 1, prod: 0, gold: 3 },
+    { key: 'olive',   name: 'Olives',   icon: null, food: 2, prod: 0, gold: 2 },
     { key: 'stone',   name: 'Stone',    icon: null, food: 0, prod: 3, gold: 0 },
   ];
   const resInfo = {};        // key -> { known }
@@ -1202,7 +1219,7 @@
     }
 
     // The other resources stay sparse and scattered as before.
-    const others = ['sheep', 'cattle', 'grapes', 'stone'];
+    const others = ['sheep', 'cattle', 'grapes', 'olive', 'stone'];
     const otherTarget = Math.round(10 * AREA_SCALE);
     let n = 0, guard3 = 0;
     while (n < otherTarget && guard3++ < otherTarget * 60) {
@@ -1552,6 +1569,7 @@
       hex.appendChild(wash);
     }
     addFeature(hex, tl);
+    if (tl.farm) addFarm(hex);
     if (tl.res) resEls[c][r] = addResource(hex, tl.res, tileW_, tileH_);
     colWrap[c].appendChild(hex);
     hexEls[c][r] = hex;
@@ -1729,6 +1747,7 @@
   const UNIT_TYPES = {
     warrior: { name: 'Warrior', icon: '🗡', moves: 2, sight: 2 },
     settler: { name: 'Home pack', icon: '🎒', moves: 2, sight: 2 },
+    worker:  { name: 'Worker', icon: '🛠️', moves: 2, sight: 2, prod: 17 },
     boat:    { name: 'Ancient boat',     cls: 'boats', art: BOAT_ART.boat,
                moves: 3, sight: 2, prod: 10 },
     ldboat:  { name: 'Ancient LD boat',  cls: 'boats', art: BOAT_ART.ldboat,
@@ -1736,7 +1755,15 @@
     warboat: { name: 'Ancient war boat', cls: 'boats', art: BOAT_ART.warboat,
                moves: 3, sight: 3, prod: 14 },
   };
-  const BUILDABLE = ['boat', 'ldboat', 'warboat'];
+  const BUILDABLE = ['worker', 'boat', 'ldboat', 'warboat'];
+  // Where a farm may go. A farm does nothing yet — it is the ground being
+  // worked, and what that is worth comes later.
+  const FARMABLE = ['wheat', 'olive', 'potato', 'grapes'];
+  const canFarm = (c, r) => {
+    const tl = tiles[c][r];
+    return !!tl.res && FARMABLE.includes(tl.res) && !tl.farm &&
+           !tl.water && tl.feature !== 'mtn';
+  };
   const clsOf = t => UNIT_TYPES[t].cls || 'land';
   const isBoat = u => clsOf(u.type) === 'boats';
 
@@ -1804,6 +1831,13 @@
     const ex = document.getElementById('examineBtn');
     const onUnknown = u && tiles[u.c][u.r].res && !isKnown(tiles[u.c][u.r].res) && u.moves > 0;
     ex.style.display = onUnknown ? 'block' : 'none';
+    // Only a worker builds a farm, only on ground that grows one of the four,
+    // and only once Basic farm is known.
+    const fb = document.getElementById('farmBtn');
+    const canDo = u && u.type === 'worker' && u.moves > 0 &&
+                  hasTech(players[0], 'farming') && canFarm(u.c, u.r);
+    fb.style.display = canDo ? 'block' : 'none';
+    if (canDo && onUnknown) ex.style.display = 'none';   // one button at a time
   }
 
   function cycleUnit(dir) {
@@ -1980,11 +2014,16 @@
   // test — the rest would be a promise the game cannot keep, so they are not
   // written at all.
   const TECHS = [
-    { key: 'pottery',   name: 'Pottery',        icon: '🏺', era: 'Ancient', cost: 25, needs: [],
+    { key: 'farming',   name: 'Basic farm',     icon: '🌾', era: 'Ancient', cost: 20, needs: [],
+      unlocks: ['worker'],
+      gives: ['Farms on wheat, olives, potatoes and grapes', 'The granary', 'What a city keeps'],
+      boost: { text: 'Identify a crop',
+               check: () => ['wheat','rice','corn','potato','apple','olive','grapes'].some(isKnown) } },
+    { key: 'pottery',   name: 'Pottery',        icon: '🏺', era: 'Ancient', cost: 25, needs: ['farming'],
       boost: { text: 'Found a city', check: pl => ownCities(pl).length >= 1 } },
-    { key: 'animal',    name: 'Animal husbandry', icon: '🐑', era: 'Ancient', cost: 25, needs: [],
+    { key: 'animal',    name: 'Animal husbandry', icon: '🐑', era: 'Ancient', cost: 25, needs: ['farming'],
       boost: { text: 'Identify a herd animal', check: () => isKnown('sheep') || isKnown('cattle') } },
-    { key: 'mining',    name: 'Mining',         icon: '⛏️', era: 'Ancient', cost: 25, needs: [],
+    { key: 'mining',    name: 'Mining',         icon: '⛏️', era: 'Ancient', cost: 25, needs: ['farming'],
       boost: { text: 'Identify stone', check: () => isKnown('stone') } },
     { key: 'sailing',   name: 'Sailing',        icon: '⛵', era: 'Ancient', cost: 50, needs: ['pottery'],
       unlocks: ['boat'],
@@ -2080,15 +2119,18 @@
 
   const BUILDINGS = [
     { key: 'food', name: 'Basic food', icon: '🌾', cost: 0, needs: [], free: true,
-      note: 'What the city keeps, and how fast it fills.' },
-    { key: 'granary', name: 'Granary', icon: '🏚', cost: 20, needs: ['food'],
+      tech: 'farming', note: 'What the city keeps, and how fast it fills.' },
+    { key: 'granary', name: 'Granary', icon: '🏚', cost: 20, needs: ['food'], tech: 'farming',
       effects: ['+2 food', '+50% food reservation'] },
     { key: 'temple', name: 'Temple', icon: '⛩', cost: 30, needs: ['granary'],
       effects: ['+1 faith', '+1 gold per believer', '+10% religion progress here'] },
   ];
   const bldOf = k => BUILDINGS.find(b => b.key === k);
   const hasBld = (ct, k) => k === 'food' || (ct.built && ct.built.has(k));
-  const bldOpen = (ct, b) => !hasBld(ct, b.key) && !b.free && b.needs.every(k => hasBld(ct, k));
+  // A building also waits on the technology that teaches it, if it has one.
+  const bldKnown = b => !b.tech || hasTech(players[0], b.tech);
+  const bldOpen = (ct, b) => !hasBld(ct, b.key) && !b.free && bldKnown(b) &&
+                             b.needs.every(k => hasBld(ct, k));
 
   // What a city keeps: the reservation limit, widened by a granary.
   const foodCap = ct => Math.round(CITY_FOOD_CAP * (1 + (hasBld(ct, 'granary') ? 0.5 : 0)));
@@ -3429,6 +3471,27 @@
     showNotice(heightMap ? 'Every tile coloured by how high the ground is.'
                          : 'Back to the terrain.');
   });
+  function buildFarm() {
+    const u = curUnit();
+    if (!u || u.type !== 'worker' || !hasTech(players[0], 'farming') || !canFarm(u.c, u.r)) return;
+    const tl = tiles[u.c][u.r];
+    tl.farm = true;
+    u.moves = 0;
+    // The farm is drawn on the tile itself, so it survives being scrolled
+    // away and rebuilt like any other thing on the ground.
+    const hex = hexEls[u.c][u.r];
+    if (hex) addFarm(hex);
+    unitSelected = false;
+    renderMoves();
+    updateUnitBar();
+    showNotice('Farm built on ' + resDef(tl.res).name.toLowerCase() + '.');
+  }
+  function addFarm(hex) {
+    const d = document.createElement('div');
+    d.className = 'feat farmplot';
+    hex.appendChild(d);
+  }
+  document.getElementById('farmBtn').addEventListener('click', buildFarm);
   document.getElementById('examineBtn').addEventListener('click', examineResource);
   document.getElementById('foundCity').addEventListener('click', () => {
     const u = curUnit();
@@ -3631,8 +3694,9 @@
     if (d !== undefined) ATLAS_MAX = d;
     boardEl._detail = null; applyTransform(); };
   window.__neighbors = (c, r) => neighbors(c, r);
-  window.__tile = (c, r) => { const t = tiles[c][r];
-    return { terrain: t.terrain.name, water: !!t.water, river: !!t.river, res: t.res, shore: t.shore }; };
+  window.__tile = (c, r) => { const t = tiles[c][r]; if (!t) return null;
+    return { terrain: t.terrain.name, water: !!t.water, river: !!t.river, res: t.res,
+             shore: t.shore, seen: !!t.seen, farm: !!t.farm, owned: !!t.owned }; };
   window.__hexAt = (x, y) => hexAtClient(x, y);
   window.__revealed = () => revealAll;
   window.__tileState = (c, r) => ({ seen: !!tiles[c][r].seen, built: !!hexEls[c][r],
@@ -3755,6 +3819,11 @@
     return { food: Math.round(ct.food||0), cap: foodCap(ct), foodPerTurn: y.food,
              faith: y.faith, relRate: y.relRate, believers: ct.believers||0,
              templeGold: y.gold, built: [...(ct.built||[])], prod: Math.round(ct.prod||0) }; };
+  window.__canFarm = (c, r) => canFarm(c, r);
+  window.__unlockedWorker = () => unlocked(players[0], 'worker');
+  window.__buildableNow = () => BUILDABLE.filter(k => clsOf(k) !== 'boats' && unlocked(players[0], k));
+  window.__selectUnit = (u) => { const i = units.findIndex(x => x.c === u.c && x.r === u.r);
+    if (i >= 0) { sel = i; unitSelected = true; computeReachable(); updateUnitBar(); } };
   window.__hexDist = hexDist;
   window.__dims = { COLS, ROWS };
 
