@@ -292,11 +292,23 @@
     box-shadow: 0 3px 0 rgba(0,0,0,0.45), 0 6px 8px rgba(0,0,0,0.45);
     z-index: 6;
   }
+  /* The name of a city is never hidden by what is standing near it: units
+     sit at 7, so the name sits above them, and it carries its own dark plate
+     rather than relying on a shadow over whatever ground is behind it. */
   .cityname {
     position: absolute; transform: translate(-50%, 0);
-    font-size: 11px; font-weight: 700; white-space: nowrap; z-index: 6;
-    color: #fff; text-shadow: 0 1px 3px #000, 0 0 6px #000;
+    font-size: 11px; font-weight: 700; white-space: nowrap; z-index: 9;
+    color: #fff; text-shadow: 0 1px 2px #000;
+    background: rgba(6, 18, 32, 0.72); border-radius: 5px; padding: 1px 5px;
     pointer-events: none;
+  }
+  /* Touched once, a city is marked; touched again, it opens. */
+  .cityname.marked {
+    background: #e6c169; color: #14202f; text-shadow: none;
+    box-shadow: 0 0 0 2px rgba(230, 193, 105, 0.4);
+  }
+  .city.marked {
+    box-shadow: 0 0 0 3px #e6c169, 0 3px 0 rgba(0,0,0,0.45), 0 6px 8px rgba(0,0,0,0.45);
   }
   #examineBtn {
     position: fixed; left: 50%; transform: translateX(-50%);
@@ -2628,6 +2640,12 @@
     city.lab = lab;
     colWrap[city.c].appendChild(lab);
     setRow(lab, city.r);
+    // A column is shifted with a transform to wrap the world, and a
+    // transform makes it a stacking context of its own — so a z-index inside
+    // one column cannot climb over the next one, and a name wider than a hex
+    // was being painted over by the neighbouring column's tiles. Lifting the
+    // whole column that holds a city is what actually puts the name on top.
+    colWrap[city.c].style.zIndex = '3';
   }
 
   // ---- MOVEMENT ----
@@ -2721,6 +2739,46 @@
   // Tapping: a unit's tile selects it (or toggles it off), a reachable tile
   // moves the selected unit, and anything else is ignored while one is
   // selected so the dots never get cancelled by a stray tap.
+  // A city is marked by the first touch and opened by the second. The mark
+  // is what tells you WHICH city the next touch will open — without it a
+  // second tap would open whatever the city bar happened to be showing.
+  let markedCity = null;
+  function clearCityMark() {
+    if (!markedCity) return;
+    if (markedCity.lab) markedCity.lab.classList.remove('marked');
+    if (markedCity.el) markedCity.el.classList.remove('marked');
+    markedCity = null;
+  }
+  function tapCity(ct) {
+    if (markedCity === ct) { clearCityMark(); showYard(); return; }
+    clearCityMark();
+    markedCity = ct;
+    citySel = Math.max(0, cities.indexOf(ct));
+    updateCityBar();
+    if (ct.lab) ct.lab.classList.add('marked');
+    if (ct.el) ct.el.classList.add('marked');
+    selectHex(ct.c, ct.r);
+    showNotice(ct.name + ' — touch it again to open the city.');
+  }
+  // The name is drawn below the city and hangs over the tile beneath it, so
+  // a touch on the name is matched against the label ITSELF rather than
+  // against whichever hex it happens to cover.
+  function cityLabelAt(x, y) {
+    for (const ct of cities) {
+      if (!ct.lab) continue;
+      const b = ct.lab.getBoundingClientRect();
+      if (b.width && x >= b.left && x <= b.right && y >= b.top && y <= b.bottom) return ct;
+    }
+    return null;
+  }
+
+  // A name hangs over the tile below the city, so with a unit selected a
+  // touch there might have been meant as a move. If that tile is somewhere
+  // the unit can actually reach, the move wins; otherwise the name does.
+  function movingOnto(h) {
+    return !!(h && unitSelected && reachable.has(h.c + ',' + h.r));
+  }
+
   function onTapHex(c, r) {
     // Tapping a boat with a land unit selected BOARDS it. Without this the
     // tap fell through to "there is a unit here, select it" and the passenger
@@ -2743,6 +2801,9 @@
       return;
     }
     if (unitSelected) { moveSelected(c, r); return; }
+    const here = cities.find(ct => ct.c === c && ct.r === r);
+    if (here) { tapCity(here); return; }
+    clearCityMark();
     selectHex(c, r);       // nothing selected — just inspect the tile
   }
 
@@ -3165,7 +3226,9 @@
     if (e.touches.length === 0) {
       if (!moved && downPt && Date.now() - downT < 300) {
         const h = hexAtClient(downPt.x, downPt.y);
-        if (h) onTapHex(h.c, h.r);
+        const ct = cityLabelAt(downPt.x, downPt.y);
+        if (ct && !movingOnto(h)) tapCity(ct);
+        else if (h) onTapHex(h.c, h.r);
       }
       if (moved) startGlide();
       lastPan = null; lastPinch = null;
@@ -3195,7 +3258,9 @@
     if (Date.now() - lastTouchAt < 700) { mDown = false; mLast = null; return; }
     if (mDown && !mMoved && mDownPt) {
       const h = hexAtClient(mDownPt.x, mDownPt.y);
-      if (h) onTapHex(h.c, h.r);
+      const ct = cityLabelAt(mDownPt.x, mDownPt.y);
+      if (ct && !movingOnto(h)) tapCity(ct);
+      else if (h) onTapHex(h.c, h.r);
     }
     if (mDown && mMoved) startGlide();
     mDown = false; mLast = null;
