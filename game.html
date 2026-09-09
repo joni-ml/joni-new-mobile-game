@@ -23,22 +23,81 @@
   }
 
   /* ---- MAP ---- */
+  /* The Create Game screen: one scrolling column of questions, each a row of
+     choices, with the answer you are holding lit up. */
   #startScreen {
     position: fixed; inset: 0; z-index: 100; background: #071120;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 10px; padding: 24px; text-align: center;
+    overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px 16px 96px;
   }
-  #startScreen h1 { margin: 0; font-size: 24px; letter-spacing: 0.5px; }
-  #startScreen p { margin: 0 0 10px; font-size: 13px; opacity: 0.7; max-width: 300px; line-height: 1.5; }
-  #sizeList { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 300px; }
-  .sizeBtn {
-    display: flex; align-items: baseline; gap: 8px; width: 100%;
+  #setupWrap { width: 100%; max-width: 460px; margin: 0 auto; }
+  #startScreen h1 {
+    margin: 4px 0 2px; font-size: 24px; letter-spacing: 0.5px; text-align: center;
+  }
+  #startScreen p.lede {
+    margin: 0 0 18px; font-size: 13px; opacity: 0.65; line-height: 1.5; text-align: center;
+  }
+  .setupSec { margin-bottom: 18px; }
+  .setupSec > h2 {
+    margin: 0 0 8px; font-size: 11px; font-weight: 700; letter-spacing: 1.2px;
+    text-transform: uppercase; opacity: 0.55;
+  }
+  /* Choices sit in a wrapping row: a phone gets two or three to a line, a
+     wider screen gets more, and nothing needs a horizontal scroll. */
+  .optRow { display: flex; flex-wrap: wrap; gap: 8px; }
+  .opt {
+    flex: 1 1 130px; display: flex; flex-direction: column; gap: 2px;
     background: var(--panel); color: var(--ink); border: 1px solid var(--stroke);
-    border-radius: 10px; padding: 12px 14px; font-size: 15px; font-weight: 700;
-    text-align: left;
+    border-radius: 10px; padding: 10px 12px; text-align: left;
+    font-size: 14px; font-weight: 700; line-height: 1.25;
   }
-  .sizeBtn .dim { font-weight: 400; font-size: 12px; opacity: 0.55; margin-left: auto; }
-  .sizeBtn .blurb { font-weight: 400; font-size: 12px; opacity: 0.7; }
+  .opt .blurb { font-weight: 400; font-size: 11px; opacity: 0.62; }
+  .opt .dim { font-weight: 400; font-size: 11px; opacity: 0.45; }
+  .opt.on { border-color: #e6c169; background: #1b2a3d; box-shadow: 0 0 0 1px #e6c169 inset; }
+  /* The civilization grid — emblem over name, the way the reference lays
+     leaders out, with Random first. */
+  #civGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
+  .civOpt {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    background: var(--panel); color: var(--ink); border: 1px solid var(--stroke);
+    border-radius: 10px; padding: 9px 4px; font-size: 11px; font-weight: 600;
+    text-align: center; line-height: 1.2;
+  }
+  .civOpt .glyph { font-size: 22px; line-height: 1; }
+  .civOpt.on { border-color: #e6c169; background: #1b2a3d; box-shadow: 0 0 0 1px #e6c169 inset; }
+  #startGame {
+    position: fixed; left: 16px; right: 16px; bottom: 16px; max-width: 460px;
+    margin: 0 auto; background: #e6c169; color: #14202f; border: none;
+    border-radius: 12px; padding: 15px; font-size: 16px; font-weight: 800;
+    letter-spacing: 0.5px; box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+  }
+  /* The leader screen, shown over the finished world before the first turn. */
+  #introScreen {
+    position: fixed; inset: 0; z-index: 99;
+    background: linear-gradient(160deg, #0b1a2c 0%, #071120 70%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; padding: 28px 20px; text-align: center; overflow-y: auto;
+  }
+  #introScreen .glyph { font-size: 58px; line-height: 1; }
+  #introScreen h1 { margin: 6px 0 0; font-size: 26px; letter-spacing: 0.5px; }
+  #introScreen .sub { font-size: 12px; opacity: 0.6; letter-spacing: 1.4px; text-transform: uppercase; }
+  #introScreen h2 {
+    margin: 20px 0 8px; font-size: 11px; font-weight: 700; letter-spacing: 1.4px;
+    text-transform: uppercase; opacity: 0.55;
+  }
+  #traitList { display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 340px; }
+  .traitRow {
+    display: flex; align-items: center; gap: 8px; text-align: left;
+    background: var(--panel); border: 1px solid var(--stroke);
+    border-radius: 10px; padding: 10px 12px; font-size: 13px;
+  }
+  /* A trait either runs today or is written down waiting for a system that
+     does not exist yet, and the card says which. */
+  .traitRow .tag { margin-left: auto; font-size: 10px; opacity: 0.5; white-space: nowrap; }
+  .traitRow.live .tag { color: #8fd6a8; opacity: 0.85; }
+  #beginBtn {
+    margin-top: 22px; background: #e6c169; color: #14202f; border: none;
+    border-radius: 12px; padding: 14px 34px; font-size: 16px; font-weight: 800;
+  }
 
   /* The far-zoom view. See the atlas comment in the script. */
   #atlas { position: absolute; inset: 0; display: none; z-index: 1; }
@@ -494,9 +553,16 @@
 <body>
 
 <div id="startScreen">
-  <h1>Found a world</h1>
-  <p>How big should it be? A bigger world takes longer to cross and longer to fill.</p>
-  <div id="sizeList"></div>
+  <div id="setupWrap">
+    <h1>Create Game</h1>
+    <p class="lede">Every answer here changes the game you are about to play.</p>
+    <div class="setupSec"><h2>Choose Civilization</h2><div id="civGrid"></div></div>
+    <div class="setupSec"><h2>Choose Game Difficulty</h2><div class="optRow" id="diffRow"></div></div>
+    <div class="setupSec"><h2>Choose Game Speed</h2><div class="optRow" id="speedRow"></div></div>
+    <div class="setupSec"><h2>Choose Map Type</h2><div class="optRow" id="mapRow"></div></div>
+    <div class="setupSec"><h2>Choose Map Size</h2><div class="optRow" id="sizeRow"></div></div>
+  </div>
+  <button id="startGame">Start Game</button>
 </div>
 
 <div id="viewport"><canvas id="atlas"></canvas><div id="board"></div></div>
@@ -618,6 +684,72 @@
     COLS = ROWS = n;
     AREA_SCALE = (COLS * ROWS) / 900;
     layout = computeLayout(BASE_HEX);
+  }
+
+  // ---- CREATE GAME ----
+  // Everything the opening screen asks for. Each answer has to CHANGE the
+  // game, or the question is decoration: the difficulty moves how many
+  // rivals there are and how fast they run, the speed moves every cost and
+  // the length of a turn in years, the map type moves the shape of the
+  // elevation field the world is carved out of.
+  const DIFFS = [
+    { key: 'settler',   name: 'Settler',   blurb: 'the rivals take it easy', rivals: -1, bonus: 0.80, gold: 60 },
+    { key: 'chieftain', name: 'Chieftain', blurb: 'a gentle world',          rivals:  0, bonus: 0.90, gold: 30 },
+    { key: 'prince',    name: 'Prince',    blurb: 'an even match',           rivals:  0, bonus: 1.00, gold:  0 },
+    { key: 'king',      name: 'King',      blurb: 'the rivals pull ahead',   rivals:  1, bonus: 1.30, gold:  0 },
+    { key: 'deity',     name: 'Deity',     blurb: 'they will not wait',      rivals:  2, bonus: 1.70, gold:  0 },
+  ];
+  // `cost` multiplies every research and every production; `years` is how
+  // much history one turn is worth. A long game moves slowly through time
+  // and gives you the turns to build in.
+  const SPEEDS = [
+    { key: 'online',   name: 'Online',   blurb: 'everything at half price', cost: 0.5,  years: 20 },
+    { key: 'quick',    name: 'Quick',    blurb: 'a short game',             cost: 0.75, years: 10 },
+    { key: 'standard', name: 'Standard', blurb: 'the usual pace',           cost: 1,    years:  5 },
+    { key: 'epic',     name: 'Epic',     blurb: 'time to build',            cost: 1.5,  years:  3 },
+    { key: 'marathon', name: 'Marathon', blurb: 'the very long road',       cost: 3,    years:  1 },
+  ];
+  // The seed spec is read by blobField: [count, low, high]. Many small high
+  // seeds break the land into islands; one wide one fuses it into a single
+  // continent. The composition bands are quantiles of whatever field comes
+  // out, so the water and land shares still land where they were told to —
+  // only the SHAPE of the land changes here.
+  const MAP_TYPES = [
+    { key: 'continents',  name: 'Continents',  blurb: 'a few large landmasses',
+      seeds: [[2, 0.88, 1.0], [3, 0.0, 0.15], [2, 0.40, 0.60]], warp: 3.0, contrast: 1.35 },
+    { key: 'pangaea',     name: 'Pangaea',     blurb: 'one crowded landmass',
+      // Few seeds and a gentle warp: very large, very smooth regions, so the
+      // land comes out as one compact block with little coastline.
+      seeds: [[0.6, 0.90, 1.0], [1.5, 0.0, 0.10], [0.8, 0.50, 0.65]], warp: 2.0, contrast: 1.70 },
+    { key: 'archipelago', name: 'Archipelago', blurb: 'many small islands',
+      // No middle band at all: small peaks standing in deep water, so the
+      // land breaks into islands instead of joining up through mid ground.
+      seeds: [[16, 0.85, 1.0], [8, 0.0, 0.10]], mtn: 0.6, warp: 4.2, contrast: 1.9 },
+    { key: 'highlands',   name: 'Highlands',   blurb: 'broken, rising ground',
+      seeds: [[5, 0.90, 1.0], [5, 0.0, 0.20], [4, 0.35, 0.65]], mtn: 2.4, warp: 5.0, contrast: 1.50 },
+  ];
+  const SETUP = {
+    civ: null,                    // null means "random leader"
+    diff: DIFFS[2], speed: SPEEDS[2], map: MAP_TYPES[0], size: MAP_SIZES[3],
+  };
+  // The speed rewrites the price list itself rather than being multiplied in
+  // at every place a price is read — one pass here and the tech tree, the
+  // yard and the turn counter all agree.
+  function applySpeed() {
+    const m = SETUP.speed.cost;
+    for (const t of TECHS) {
+      if (t.baseCost === undefined) t.baseCost = t.cost;
+      t.cost = Math.max(1, Math.round(t.baseCost * m));
+    }
+    for (const b of BUILDINGS) {
+      if (b.baseCost === undefined) b.baseCost = b.cost;
+      b.cost = Math.round(b.baseCost * m);
+    }
+    for (const k in UNIT_TYPES) {
+      const d = UNIT_TYPES[k];
+      if (d.baseProd === undefined) d.baseProd = d.prod;
+      d.prod = Math.max(1, Math.round(d.baseProd * m));
+    }
   }
 
   // ---- TERRAIN PALETTE (colors sampled from Unciv) ----
@@ -744,7 +876,7 @@
 
   function generateMap() {
     heatGrid  = blobField([[2, 0.88, 1.0], [2, 0.0, 0.12], [2, 0.38, 0.62]], 3.6, 1.55);
-    elevGrid  = blobField([[2, 0.88, 1.0], [3, 0.0, 0.15], [2, 0.40, 0.60]], 3.0, 1.35);
+    elevGrid  = blobField(SETUP.map.seeds, SETUP.map.warp, SETUP.map.contrast);
     moistGrid = blobField([[3, 0.85, 1.0], [3, 0.0, 0.18]], 3.2, 1.25);
     const mix = pickComposition();
     const total = COLS * ROWS;
@@ -863,7 +995,10 @@
     const usable = (c, r, mine) =>
       !tiles[c][r].water && !isMtn(c, r) && !touchesOther(c, r, mine);
 
-    const ranges = Math.round((7 + Math.random() * 4) * AREA_SCALE);
+    // How many ranges the world gets is part of the map type: Highlands is
+    // the one that actually rises, and an archipelago of small islands has
+    // little room for a chain.
+    const ranges = Math.round((7 + Math.random() * 4) * AREA_SCALE * (SETUP.map.mtn || 1));
     for (let n = 0; n < ranges; n++) {
       const mine = new Set();
 
@@ -2091,7 +2226,7 @@
         if (open.length) pl.researching = open[0].key;
       }
     }
-    pl.sci += perTurn(pl).science;
+    pl.sci += perTurn(pl).science * (pl.human ? 1 : SETUP.diff.bonus);
     const t = pl.researching && techOf(pl.researching);
     if (t && pl.sci >= techCost(pl, t)) {
       pl.sci -= techCost(pl, t);
@@ -2176,7 +2311,7 @@
     { name: 'China',       emblem: '🐉', cities: ['Beijing','Xian','Luoyang','Nanjing','Chengdu','Kaifeng','Hangzhou','Guangzhou'] },
     { name: 'The Inca',    emblem: '🌄', cities: ['Cusco','Machu Picchu','Quito','Tiwanaku','Ollantaytambo','Cajamarca','Pisac','Nazca'] },
     { name: 'The Huns',    emblem: '🏹', cities: ['Attila','Balamber','Uldin','Ruga','Bleda','Ellac','Dengizich','Ernak'] },
-    { name: 'Babylon',     emblem: '𒀭', cities: ['Babylon','Nippur','Uruk','Kish','Sippar','Borsippa','Lagash','Ur'] },
+    { name: 'Babylon',     emblem: '\u{1F319}', cities: ['Babylon','Nippur','Uruk','Kish','Sippar','Borsippa','Lagash','Ur'] },
     { name: 'Aztecs',      emblem: '🦅', cities: ['Tenochtitlan','Texcoco','Tlacopan','Xochimilco','Tlatelolco','Chalco','Azcapotzalco','Cholula'] },
     { name: 'Rome',        emblem: '🦂', cities: ['Rome','Ostia','Capua','Ravenna','Pompeii','Verona','Brundisium','Neapolis'] },
     {
@@ -2258,13 +2393,20 @@
     }
     // More of the world, more nations in it — but never more than the palette
     // has distinct colours for.
-    const rivals = Math.max(3, Math.min(6, Math.round(AREA_SCALE / 3)));
+    // A civilization picked on the setup screen is yours; the rest draw from
+    // what is left, so no two nations are ever the same nation.
+    if (SETUP.civ) {
+      const i = pool.indexOf(SETUP.civ);
+      if (i > 0) { pool[i] = pool[0]; pool[0] = SETUP.civ; }
+    }
+    const rivals = Math.max(2, Math.min(6, Math.round(AREA_SCALE / 3) + SETUP.diff.rivals));
     players = [];
     for (let i = 0; i <= rivals; i++) {
       players.push({
         nation: pool[i % pool.length], human: i === 0,
         colour: i === 0 ? '#e6c169' : RIVAL_COLOURS[(i - 1) % RIVAL_COLOURS.length],
-        gold: 15, food: 4, happy: 5, science: 0, faith: 0, culture: 0,
+        gold: 15 + (i === 0 ? SETUP.diff.gold : 0),
+        food: 4, happy: 5, science: 0, faith: 0, culture: 0,
         techs: new Set(), boosts: new Set(), sci: 0, researching: null,
         cities: [], home: null,
       });
@@ -2368,6 +2510,16 @@
   function coastal(ct) {
     return neighbors(ct.c, ct.r).some(n => tiles[n.c][n.r].water || tiles[n.c][n.r].river);
   }
+  // Where a land unit steps out: a free land tile beside the city, or the
+  // city square itself if the ring is full.
+  function walkSpot(ct) {
+    const n = neighbors(ct.c, ct.r).find(x => {
+      const tl = tiles[x.c][x.r];
+      return !tl.water && !tl.river && tl.feature !== 'mtn' && !occupied(x.c, x.r, null);
+    });
+    if (n) return n;
+    return occupied(ct.c, ct.r, null) ? null : { c: ct.c, r: ct.r };
+  }
   function launchSpot(ct) {
     return neighbors(ct.c, ct.r).find(n =>
       (tiles[n.c][n.r].water || tiles[n.c][n.r].river) && !occupied(n.c, n.r, null));
@@ -2386,15 +2538,17 @@
     }
     const def = UNIT_TYPES[ct.building];
     if ((ct.prod || 0) < def.prod) return;
-    const spot = launchSpot(ct);
-    if (!spot) return;                       // nowhere to float it yet
+    // A hull needs water to float in; anything that walks needs open ground,
+    // and failing that the city square itself.
+    const spot = clsOf(ct.building) === 'boats' ? launchSpot(ct) : walkSpot(ct);
+    if (!spot) return;                       // nowhere to put it yet
     ct.prod -= def.prod;
     const made = ct.building;
     ct.building = null;
     if (pl.human) {
       addUnit(made, spot.c, spot.r);
       updateUnitBar();
-      showNotice(def.name + ' launched at ' + ct.name + '.');
+      showNotice(def.name + (clsOf(made) === 'boats' ? ' launched at ' : ' ready at ') + ct.name + '.');
     }
     updateCityBar();
   }
@@ -3085,7 +3239,7 @@
   }
   document.getElementById('nextTurn').addEventListener('click', () => {
     state.turn++;
-    state.year -= 5;      // five years pass every turn
+    state.year -= SETUP.speed.years;   // how much history one turn is worth
     // Only resources you have identified are worth anything — an unknown
     // thing sitting in your borders earns you nothing until you study it.
     runEconomy(players[0]);
@@ -3150,14 +3304,16 @@
       }
       ct.tileFood = cityFood;
       if (!dryRun) {
-        ct.prod = (ct.prod || 0) + cityProd;
+        // The difficulty is the rivals' hand on the scale, never yours.
+        ct.prod = (ct.prod || 0) + cityProd * (pl.human ? 1 : SETUP.diff.bonus);
         // A city's store, its faith and its believers, before the yard runs.
         const cy = cityTurn(ct, pl);
         resGold += cy.gold;                 // a temple pays per believer
         buildStep(ct, pl);
       }
     }
-    const earned = Math.round((5 + own.length * 2 + resGold) * (1 + mod('trade', pl)));
+    const earned = Math.round((5 + own.length * 2 + resGold) * (1 + mod('trade', pl))
+                              * (pl.human ? 1 : SETUP.diff.bonus));
     if (dryRun) return { gold: earned };
     pl.gold += earned;
     pl.food = Math.round((4 + resFood) * (1 + mod('foodKeep', pl)));
@@ -3299,12 +3455,30 @@
         `<span class="scost">${right}${now ? ' · building' : ''}</span></button>`;
     }
 
+    // Land units. The worker lives here rather than under Boats: it is built
+    // in any city, coastal or not, and it walks out onto the ground.
+    html += '<h3>Units</h3>';
+    const landOpen = BUILDABLE.filter(k => clsOf(k) !== 'boats' && unlocked(pl, k));
+    if (!landOpen.length) {
+      html += '<div class="ship"><span class="sinfo">Nothing to raise yet. Research Basic farm ' +
+              'for the worker.</span></div>';
+    }
+    for (const key of landOpen) {
+      const d = UNIT_TYPES[key], on = ct.building === key;
+      html += `<button class="ship${on ? ' on' : ''}" data-ship="${key}">` +
+        `<span class="hullpic" style="display:flex;align-items:center;justify-content:center;` +
+        `font-size:20px">${d.icon}</span>` +
+        `<span><span class="sname">${d.name}</span><br>` +
+        `<span class="sinfo">${d.moves} tiles a turn · builds farms</span></span>` +
+        `<span class="scost">${d.prod} prod${on ? ' · building' : ''}</span></button>`;
+    }
+
     html += '<h3>Boats</h3>';
     if (!coastal(ct)) {
       html += '<div class="ship"><span class="sinfo">' + ct.name + ' is inland. A boat needs ' +
               'water beside the city to be launched into.</span></div>';
     } else {
-      const open = BUILDABLE.filter(k => unlocked(pl, k));
+      const open = BUILDABLE.filter(k => clsOf(k) === 'boats' && unlocked(pl, k));
       if (!open.length) {
         html += '<div class="ship"><span class="sinfo">No hull is known yet. Research Sailing.' +
                 '</span></div>';
@@ -3750,7 +3924,7 @@
     return { sea: pc('sea'), lakeRiver: +(pc('lake') + pc('river')).toFixed(1),
              water: +(pc('sea') + pc('lake') + pc('river')).toFixed(1),
              ice: pc('ice'), desert: pc('desert'),
-             normal: +(pc('normal') + pc('mountain')).toFixed(1),
+             normal: +(pc('normal') + pc('mountain')).toFixed(1), mountain: pc('mountain'),
              land: +(pc('ice') + pc('desert') + pc('normal') + pc('mountain')).toFixed(1) };
   };
   window.__landmass = () => {
@@ -3780,7 +3954,8 @@
   };
   window.__players = () => players.map(pl => ({ name: pl.nation.name, human: pl.human,
     cities: pl.human ? cities.length : pl.cities.length,
-    gold: pl.gold, food: pl.food, happy: +pl.happy.toFixed(2), colour: pl.colour }));
+    gold: pl.gold, food: pl.food, happy: +pl.happy.toFixed(2), colour: pl.colour,
+    techs: pl.techs ? pl.techs.size : 0, science: pl.science || 0 }));
   window.__nation = () => nation.name;
   window.__setNation = (n) => { nation = NATIONS.find(x => x.name === n) || nation;
     if (players[0]) players[0].nation = nation;
@@ -3825,30 +4000,101 @@
   window.__selectUnit = (u) => { const i = units.findIndex(x => x.c === u.c && x.r === u.r);
     if (i >= 0) { sel = i; unitSelected = true; computeReachable(); updateUnitBar(); } };
   window.__hexDist = hexDist;
-  window.__dims = { COLS, ROWS };
+  // Live, not a snapshot: the size is chosen after this line runs.
+  window.__dims = { get COLS() { return COLS; }, get ROWS() { return ROWS; } };
 
-  // Nothing is generated until a size is chosen — the whole world, its
-  // textures and its board all depend on it.
-  const sizeList = document.getElementById('sizeList');
-  for (const sz of MAP_SIZES) {
-    const btn = document.createElement('button');
-    btn.className = 'sizeBtn';
-    btn.innerHTML = `<span>${sz.name}</span><span class="blurb">${sz.blurb}</span>` +
-                    `<span class="dim">${sz.n}\u00d7${sz.n}</span>`;
-    btn.addEventListener('click', () => {
-      document.getElementById('startScreen').remove();
-      setMapSize(sz.n);
-      init();
+  // Nothing is generated until the setup screen is answered — the whole
+  // world, its textures and its board all depend on those answers.
+  //
+  // One builder for all four question rows: they differ only in the list
+  // they read, the SETUP field they write and the small grey line each
+  // choice carries on the right.
+  function buildRow(id, list, field, dim) {
+    const row = document.getElementById(id);
+    const paint = () => [...row.children].forEach((b, i) =>
+      b.classList.toggle('on', list[i] === SETUP[field]));
+    list.forEach(item => {
+      const btn = document.createElement('button');
+      btn.className = 'opt';
+      btn.innerHTML = `<span>${item.name}</span>` +
+        `<span class="blurb">${item.blurb}</span>` +
+        (dim ? `<span class="dim">${dim(item)}</span>` : '');
+      btn.addEventListener('click', () => { SETUP[field] = item; paint(); });
+      row.appendChild(btn);
     });
-    sizeList.appendChild(btn);
+    paint();
   }
-  // A test harness can skip the screen and go straight in at a given size.
-  window.__start = (n) => {
+  buildRow('diffRow',  DIFFS,     'diff');
+  buildRow('speedRow', SPEEDS,    'speed',
+           s => `${s.years} year${s.years === 1 ? '' : 's'} a turn · costs ×${s.cost}`);
+  buildRow('mapRow',   MAP_TYPES, 'map');
+  buildRow('sizeRow',  MAP_SIZES, 'size', z => `${z.n}×${z.n}`);
+
+  // The civilization grid. "Random" is a real choice, not the absence of
+  // one, so it gets a tile of its own and leaves SETUP.civ null.
+  const civGrid = document.getElementById('civGrid');
+  const civChoices = [{ name: 'Random', emblem: '?', nation: null }]
+    .concat(NATIONS.map(n => ({ name: n.name, emblem: n.emblem, nation: n })));
+  const paintCivs = () => [...civGrid.children].forEach((b, i) =>
+    b.classList.toggle('on', civChoices[i].nation === SETUP.civ));
+  for (const ch of civChoices) {
+    const btn = document.createElement('button');
+    btn.className = 'civOpt';
+    btn.innerHTML = `<span class="glyph">${ch.emblem}</span><span>${ch.name}</span>`;
+    btn.addEventListener('click', () => { SETUP.civ = ch.nation; paintCivs(); });
+    civGrid.appendChild(btn);
+  }
+  paintCivs();
+
+  // The leader screen. The world behind it is already generated, so this
+  // reads as a loading card rather than another menu: who you are, and what
+  // that is worth. A trait that nothing in the game reads yet says so.
+  function showIntro() {
+    const tr = nation.traits || [];
+    const rows = tr.length
+      ? tr.map(t => `<div class="traitRow${t.live ? ' live' : ''}"><span>${t.t}</span>` +
+                    `<span class="tag">${t.live ? 'in play' : 'not yet in play'}</span></div>`).join('')
+      : '<div class="traitRow"><span>No special abilities — a plain start.</span></div>';
+    const el = document.createElement('div');
+    el.id = 'introScreen';
+    el.innerHTML =
+      `<div class="glyph">${nation.emblem}</div><h1>${nation.name}</h1>` +
+      `<div class="sub">${SETUP.diff.name} · ${SETUP.speed.name} · ` +
+      `${SETUP.map.name} · ${SETUP.size.n}×${SETUP.size.n}</div>` +
+      `<h2>Features &amp; Abilities</h2><div id="traitList">${rows}</div>` +
+      `<button id="beginBtn">Begin</button>`;
+    document.body.appendChild(el);
+    document.getElementById('beginBtn').addEventListener('click', () => el.remove());
+  }
+
+  function startGame(intro, size) {
     const el = document.getElementById('startScreen');
     if (el) el.remove();
-    setMapSize(n || 200);
+    applySpeed();
+    setMapSize(size || SETUP.size.n);
     init();
+    if (intro !== false) showIntro();
+  }
+  document.getElementById('startGame').addEventListener('click', () => startGame(true));
+
+  // A test harness can skip the screen and go straight in, either at a size
+  // or with a whole setup: __start(150) or __start({ size: 100, diff: 'deity' }).
+  window.__start = (opt) => {
+    let n;
+    if (typeof opt === 'object' && opt) {
+      if (opt.diff) SETUP.diff = DIFFS.find(d => d.key === opt.diff) || SETUP.diff;
+      if (opt.speed) SETUP.speed = SPEEDS.find(x => x.key === opt.speed) || SETUP.speed;
+      if (opt.map) SETUP.map = MAP_TYPES.find(m => m.key === opt.map) || SETUP.map;
+      if (opt.civ) SETUP.civ = NATIONS.find(x => x.name === opt.civ) || null;
+      n = opt.size || SETUP.size.n;
+    } else n = opt || 200;
+    SETUP.size = MAP_SIZES.find(z => z.n === n) || SETUP.size;
+    startGame(false, n);            // an off-list size is honoured as given
   };
+  window.__setup = () => ({ civ: SETUP.civ && SETUP.civ.name, diff: SETUP.diff.key,
+    speed: SETUP.speed.key, map: SETUP.map.key, size: SETUP.size.n,
+    years: SETUP.speed.years, rivals: players.length - 1,
+    techCost: (TECHS.find(t => t.key === 'farming') || {}).cost });
 })();
 </script>
 </body>
