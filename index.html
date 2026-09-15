@@ -2211,7 +2211,8 @@
   const hasTech = (pl, k) => pl.techs && pl.techs.has(k);
   const techOpen = (pl, t) => !hasTech(pl, t.key) && t.needs.every(k => hasTech(pl, k));
   // A boosted tech costs half, which is what "To Boost" buys you.
-  const techCost = (pl, t) => Math.round(t.cost * (pl.boosts && pl.boosts.has(t.key) ? 0.5 : 1));
+  const techCost = (pl, t) => Math.round(t.cost * (pl.boosts && pl.boosts.has(t.key) ? 0.5 : 1)
+                                          * (1 + mod('sciCost', pl)));
   // Something is buildable once the tech that unlocks it is in. Anything no
   // tech names is available from the start.
   function unlocked(pl, unitKey) {
@@ -2380,6 +2381,23 @@
         { t: '\u221215% flexibility', live: false },
       ],
     },
+    // A CITY STATE. It plays like any other nation except for three things:
+    // it is never yours to choose, it never grows past a capital and one
+    // more city, and its homeland is always laid down in desert.
+    {
+      name: 'Tanganyika', emblem: '\u{1F98F}', cityState: true, maxCities: 2, biome: 'desert',
+      cities: ['Dar es Salaam','Dodoma','Arusha','Mwanza','Tabora','Kigoma','Moshi','Mbeya'],
+      mods: { trade: 0.20, unity: true, peace: true, defense: -0.10, sciCost: 0.10 },
+      traits: [
+        { t: 'A city state \u2014 a capital and one city, no more', live: true },
+        { t: 'Always founded in the desert', live: true },
+        { t: '+20% from trade', live: true },
+        { t: 'Unity', live: true },
+        { t: 'Research costs 10% more', live: true },
+        { t: 'Peace', live: false },
+        { t: '\u221210% defence for units', live: false },
+      ],
+    },
   ];
   // Every nation in the save. You are players[0]; the rest are rivals, each
   // drawn a DIFFERENT nation and keeping it, and its traits, for the whole
@@ -2390,6 +2408,13 @@
   const mod = (k, pl) => {
     const n = (pl || players[0] || { nation }).nation || nation;
     return (n.mods && n.mods[k]) || 0;
+  };
+  // Some traits are not a number but a yes or a no, and the difference
+  // between "no unity" and "unity was never mentioned" matters: mod() reads
+  // both as zero, so anything three-valued is read through here instead.
+  const trait = (k, pl) => {
+    const n = (pl || players[0] || { nation }).nation || nation;
+    return n.mods ? n.mods[k] : undefined;
   };
 
   // Rival marker colours, in the fixed order of a validated categorical
@@ -2410,6 +2435,13 @@
     if (SETUP.civ) {
       const i = pool.indexOf(SETUP.civ);
       if (i > 0) { pool[i] = pool[0]; pool[0] = SETUP.civ; }
+    }
+    // A city state is never yours. It is not offered on the setup screen, and
+    // if the shuffle deals one into your seat it is traded for the first
+    // nation behind it that you may actually play.
+    if (pool[0].cityState) {
+      const i = pool.findIndex(n => !n.cityState);
+      if (i > 0) { const cs = pool[0]; pool[0] = pool[i]; pool[i] = cs; }
     }
     const rivals = Math.max(2, Math.min(6, Math.round(AREA_SCALE / 3) + SETUP.diff.rivals));
     players = [];
@@ -2432,12 +2464,13 @@
   // Each rival gets a homeland of its own, as far from you and from each
   // other as the land allows.
   function placeRivals() {
-    const land = [];
+    const land = [], desert = [];
     for (let c = 0; c < COLS; c++) {
       for (let r = 0; r < ROWS; r++) {
         const tl = tiles[c][r];
         if (tl.water || tl.river || tl.feature === 'mtn') continue;
         land.push({ c, r });
+        if (tl.terrain === TERRA.desert) desert.push({ c, r });
       }
     }
     if (!land.length) return;
@@ -2446,10 +2479,18 @@
     // thousands of tiles and every seat would cost a full pass over all of it.
     const sample = [];
     for (let i = 0; i < 900; i++) sample.push(land[(Math.random() * land.length) | 0]);
+    // A nation that belongs to one ground is drawn from that ground alone.
+    // Every world carries at least 8% desert, so this list is never empty;
+    // if it somehow were, the nation falls back to ordinary land rather than
+    // to nowhere.
+    const desertSample = [];
+    for (let i = 0; i < 900 && desert.length; i++)
+      desertSample.push(desert[(Math.random() * desert.length) | 0]);
     for (const pl of players) {
       if (pl.human) { pl.home = { c: startHex.c, r: startHex.r }; continue; }
-      let best = sample[0], bestD = -1;
-      for (const cand of sample) {
+      const from = pl.nation.biome === 'desert' && desertSample.length ? desertSample : sample;
+      let best = from[0], bestD = -1;
+      for (const cand of from) {
         let d = Infinity;
         for (const t of taken) d = Math.min(d, hexDist(t.c, t.r, cand.c, cand.r));
         if (d > bestD) { bestD = d; best = cand; }
@@ -2488,7 +2529,9 @@
 
   // A rival founds a city every few turns, spreading out from its homeland.
   function rivalTurn(pl) {
-    if (pl.cities.length < 5 && (state.turn % 4 === 1 || !pl.cities.length)) {
+    // A city state stops at a capital and one more; everyone else at five.
+    const cap = pl.nation.maxCities || 5;
+    if (pl.cities.length < cap && (state.turn % 4 === 1 || !pl.cities.length)) {
       const spots = [];
       for (let dc = -6; dc <= 6; dc++) {
         const c = ((pl.home.c + dc) % COLS + COLS) % COLS;
@@ -3386,13 +3429,19 @@
     // Happiness follows the food on the table and the cities you hold. A
     // nation that is happier while it is rising gains more on the way up;
     // one that is simply less happy carries the loss whatever it does.
-    const target = 5 + own.length + Math.round((pl.food - 4) / 2);
+    // Unity, at last doing something. A nation held together never comes
+    // apart as it spreads; one that has none pulls a little further apart
+    // with every city past the first. A nation that says nothing either way
+    // sits between them, as it always has.
+    const spread = trait('unity', pl) === false ? 0.5 * Math.max(0, own.length - 1) : 0;
+    const target = 5 + own.length + Math.round((pl.food - 4) / 2) - spread;
     let change = target - pl.happy;
     if (change > 0) change *= 1 + mod('happyRise', pl);
     // Kept as a fraction and only rounded for display: rounded every turn, a
     // thirty percent bonus on a change of one tile disappeared entirely and
     // the trait did nothing.
     pl.happy = (pl.happy + change) * (1 + mod('happy', pl));
+    if (trait('unity', pl) === true) pl.happy = Math.max(pl.happy, 5);
     // Science, faith and culture all accrue every turn, so the bar can show a
     // straight "+N" for each. Culture used to arrive once every four turns,
     // which no per-turn figure could describe honestly.
@@ -3478,7 +3527,8 @@
     } else {
       html += met.map(pl =>
         `<div class="row"><span style="color:${pl.colour}">${pl.nation.emblem}</span> ` +
-        `${pl.nation.name}<span class="tag">${pl.cities.length} ` +
+        `${pl.nation.name}<span class="tag">` +
+        `${pl.nation.cityState ? 'city state \u00b7 ' : ''}${pl.cities.length} ` +
         `${pl.cities.length === 1 ? 'city' : 'cities'}</span></div>`).join('');
     }
     html += `<div class="row waiting">${players.length - 1 - met.length} more nation` +
@@ -4017,6 +4067,18 @@
     placeRivals();
     // every seat gets the same homeland spread, so only the traits differ
   };
+  // What a given nation pays for a given technology, so a trait that moves
+  // the price can be read off a bot as well as off you.
+  window.__costFor = (name, key) => {
+    const pl = players.find(x => x.nation.name === name), t = techOf(key);
+    return pl && t ? techCost(pl, t) : null;
+  };
+  window.__homeOf = (name) => {
+    const pl = players.find(x => x.nation.name === name);
+    if (!pl || !pl.home) return null;
+    const tl = tiles[pl.home.c][pl.home.r];
+    return { c: pl.home.c, r: pl.home.r, terrain: tl.terrain.name, cities: pl.cities.length };
+  };
   window.__players = () => players.map(pl => ({ name: pl.nation.name, human: pl.human,
     cities: pl.human ? cities.length : pl.cities.length,
     gold: pl.gold, food: pl.food, happy: +pl.happy.toFixed(2), colour: pl.colour,
@@ -4099,7 +4161,8 @@
   // one, so it gets a tile of its own and leaves SETUP.civ null.
   const civGrid = document.getElementById('civGrid');
   const civChoices = [{ name: 'Random', emblem: '?', nation: null }]
-    .concat(NATIONS.map(n => ({ name: n.name, emblem: n.emblem, nation: n })));
+    .concat(NATIONS.filter(n => !n.cityState)
+                   .map(n => ({ name: n.name, emblem: n.emblem, nation: n })));
   const paintCivs = () => [...civGrid.children].forEach((b, i) =>
     b.classList.toggle('on', civChoices[i].nation === SETUP.civ));
   for (const ch of civChoices) {
