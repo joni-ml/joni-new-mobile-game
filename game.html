@@ -64,6 +64,42 @@
   }
   .civOpt .glyph { font-size: 22px; line-height: 1; }
   .civOpt.on { border-color: #e6c169; background: #1b2a3d; box-shadow: 0 0 0 1px #e6c169 inset; }
+  /* The nations bar. A range input styled as one flat track so it reads as a
+     bar rather than as a form control. */
+  #nationBar {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 26px;
+    background: transparent; margin: 2px 0 8px;
+  }
+  #nationBar::-webkit-slider-runnable-track {
+    height: 8px; border-radius: 4px; background: var(--panel);
+    border: 1px solid var(--stroke);
+  }
+  #nationBar::-moz-range-track {
+    height: 8px; border-radius: 4px; background: var(--panel);
+    border: 1px solid var(--stroke);
+  }
+  #nationBar::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 22px; height: 22px;
+    margin-top: -8px; border-radius: 50%; background: #e6c169;
+    border: 2px solid #14202f; box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+  }
+  #nationBar::-moz-range-thumb {
+    width: 22px; height: 22px; border-radius: 50%; background: #e6c169;
+    border: 2px solid #14202f;
+  }
+  #nationRead { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+  #nationRead span { font-weight: 400; opacity: 0.6; }
+  /* One chip per seat: who is driving that nation. */
+  #seatList { display: flex; flex-wrap: wrap; gap: 6px; }
+  .seat {
+    display: flex; flex-direction: column; gap: 1px; align-items: flex-start;
+    background: var(--panel); color: var(--ink); border: 1px solid var(--stroke);
+    border-radius: 9px; padding: 6px 9px; font-size: 12px; font-weight: 700;
+    line-height: 1.2;
+  }
+  .seat span { font-weight: 400; font-size: 10px; opacity: 0.55; }
+  .seat.you { border-color: #e6c169; box-shadow: 0 0 0 1px #e6c169 inset; }
+  .seat.open { border-color: #6fa8dc; box-shadow: 0 0 0 1px #6fa8dc inset; }
   #startGame {
     position: fixed; left: 16px; right: 16px; bottom: 16px; max-width: 460px;
     margin: 0 auto; background: #e6c169; color: #14202f; border: none;
@@ -573,6 +609,11 @@
     <h1>Create Game</h1>
     <p class="lede">Every answer here changes the game you are about to play.</p>
     <div class="setupSec"><h2>Choose Civilization</h2><div id="civGrid"></div></div>
+    <div class="setupSec"><h2>Number of Nations</h2>
+      <input type="range" id="nationBar" min="2" max="18" step="1" value="4">
+      <div id="nationRead"></div>
+      <div id="seatList"></div>
+    </div>
     <div class="setupSec"><h2>Choose Game Difficulty</h2><div class="optRow" id="diffRow"></div></div>
     <div class="setupSec"><h2>Choose Game Speed</h2><div class="optRow" id="speedRow"></div></div>
     <div class="setupSec"><h2>Choose Map Type</h2><div class="optRow" id="mapRow"></div></div>
@@ -708,12 +749,16 @@
   // rivals there are and how fast they run, the speed moves every cost and
   // the length of a turn in years, the map type moves the shape of the
   // elevation field the world is carved out of.
+  // How hard a nation nobody is playing pushes, and what you start with.
+  // How MANY nations there are is no longer decided here — the bar on the
+  // setup screen owns that now, and a difficulty quietly adding a rival
+  // behind the player's back would be fighting it.
   const DIFFS = [
-    { key: 'settler',   name: 'Settler',   blurb: 'the rivals take it easy', rivals: -1, bonus: 0.80, gold: 60 },
-    { key: 'chieftain', name: 'Chieftain', blurb: 'a gentle world',          rivals:  0, bonus: 0.90, gold: 30 },
-    { key: 'prince',    name: 'Prince',    blurb: 'an even match',           rivals:  0, bonus: 1.00, gold:  0 },
-    { key: 'king',      name: 'King',      blurb: 'the rivals pull ahead',   rivals:  1, bonus: 1.30, gold:  0 },
-    { key: 'deity',     name: 'Deity',     blurb: 'they will not wait',      rivals:  2, bonus: 1.70, gold:  0 },
+    { key: 'settler',   name: 'Settler',   blurb: 'the rivals take it easy', bonus: 0.80, gold: 60 },
+    { key: 'chieftain', name: 'Chieftain', blurb: 'a gentle world',          bonus: 0.90, gold: 30 },
+    { key: 'prince',    name: 'Prince',    blurb: 'an even match',           bonus: 1.00, gold:  0 },
+    { key: 'king',      name: 'King',      blurb: 'the rivals pull ahead',   bonus: 1.30, gold:  0 },
+    { key: 'deity',     name: 'Deity',     blurb: 'they will not wait',      bonus: 1.70, gold:  0 },
   ];
   // `cost` multiplies every research and every production; `years` is how
   // much history one turn is worth. A long game moves slowly through time
@@ -747,7 +792,15 @@
   const SETUP = {
     civ: null,                    // null means "random leader"
     diff: DIFFS[2], speed: SPEEDS[2], map: MAP_TYPES[0], size: MAP_SIZES[3],
+    // How many nations are in the world, you included, and who drives each
+    // one. Seat 0 is always you; every other seat is either OPEN — kept for
+    // another player in a multiplayer game — or COMPUTER. An open seat that
+    // nobody has taken is run by the computer, so a game never stalls
+    // waiting for a player who is not there.
+    nations: 4,
+    open: new Set(),              // seat numbers held for other players
   };
+  const MAX_SEATS = 18;           // one per nation; there are no more to deal
   // The speed rewrites the price list itself rather than being multiplied in
   // at every place a price is read — one pass here and the tech tree, the
   // yard and the turn counter all agree.
@@ -2440,7 +2493,10 @@
   // Rival marker colours, in the fixed order of a validated categorical
   // palette — assigned by seat and never cycled, so a nation keeps its colour
   // for the whole save. Yours stays the gold one it has always been.
-  const RIVAL_COLOURS = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#9085e9'];
+  // Twelve that stay apart from each other on a dark map; a thirteenth
+  // nation reuses the first, which is the cost of dealing every seat.
+  const RIVAL_COLOURS = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#9085e9',
+                         '#2bb3c0', '#8fbf3f', '#b4653f', '#cf4040', '#7a8fa6', '#a463c9'];
 
   function setupPlayers() {
     const pool = NATIONS.slice();
@@ -2463,11 +2519,17 @@
       const i = pool.findIndex(n => !n.cityState);
       if (i > 0) { const cs = pool[0]; pool[0] = pool[i]; pool[i] = cs; }
     }
-    const rivals = Math.max(2, Math.min(6, Math.round(AREA_SCALE / 3) + SETUP.diff.rivals));
+    const seats = Math.max(2, Math.min(MAX_SEATS, SETUP.nations));
     players = [];
-    for (let i = 0; i <= rivals; i++) {
+    for (let i = 0; i < seats; i++) {
       players.push({
+        seat: i,
         nation: pool[i % pool.length], human: i === 0,
+        // Who drives it. 'you' is this device; 'open' is a seat kept for
+        // another player; 'ai' is nobody's. `taken` is the player sitting in
+        // an open seat, and while it is null the computer plays it.
+        control: i === 0 ? 'you' : (SETUP.open.has(i) ? 'open' : 'ai'),
+        taken: null,
         colour: i === 0 ? '#e6c169' : RIVAL_COLOURS[(i - 1) % RIVAL_COLOURS.length],
         gold: 15 + (i === 0 ? SETUP.diff.gold : 0),
         food: 4, happy: 5, science: 0, faith: 0, culture: 0,
@@ -2547,11 +2609,35 @@
     showNotice('🏠 ' + city.name + ' built! +2 gold, +1 science per turn.');
   }
 
+  // A nation nobody is playing is run by the computer. That is the whole
+  // rule: your own seat is yours, a seat another player has taken is theirs
+  // and waits for them, and everything else — including a seat left open
+  // that nobody has claimed — falls to the machine.
+  const playedBy = pl => pl.human ? 'you' : (pl.taken || null);
+  const runsOnAI = pl => !playedBy(pl);
+
+  // What the machine is thinking with. Three inputs, named here so the third
+  // has somewhere to land when it arrives:
+  //   the difficulty   how hard it pushes, chosen on the setup screen
+  //   the personality  the nation's own temperament. NOTHING carries one
+  //                    yet, so every nation reads the neutral profile and
+  //                    plays the same; when nations get personalities they
+  //                    are read from here and nothing else changes
+  //   the logic        everything below this line, which is what actually
+  //                    decides anything today
+  const NEUTRAL = { expand: 1, war: 1 };
+  const brainOf = pl => Object.assign({ drive: SETUP.diff.bonus },
+                                      NEUTRAL, pl.nation.personality || {});
+
   // A rival founds a city every few turns, spreading out from its homeland.
   function rivalTurn(pl) {
     // A city state stops at a capital and one more; everyone else at five.
     const cap = pl.nation.maxCities || 5;
-    if (pl.cities.length < cap && (state.turn % 4 === 1 || !pl.cities.length)) {
+    const brain = brainOf(pl);
+    // Every fourth turn at a neutral temperament; an eager nation looks more
+    // often, a reluctant one less.
+    const due = !pl.cities.length || state.turn % Math.max(1, Math.round(4 / brain.expand)) === 1;
+    if (pl.cities.length < cap && due) {
       const spots = [];
       for (let dc = -6; dc <= 6; dc++) {
         const c = ((pl.home.c + dc) % COLS + COLS) % COLS;
@@ -2587,7 +2673,8 @@
   // foreign soldier is standing next to one of theirs — which is the whole of
   // war in this game, and enough for a defence to be worth something.
   function rivalWar(pl) {
-    if (trait('peace', pl) === true) return;
+    if (trait('peace', pl) === true) return;     // peace is absolute, whatever the mood
+    if (Math.random() > brainOf(pl).war) return;
     for (const u of units.slice()) {
       if (!units.includes(u)) continue;            // already lost this turn
       if (ownerOf(u) !== pl || UNIT_TYPES[u.type].atk <= 0) continue;
@@ -3466,7 +3553,7 @@
     // thing sitting in your borders earns you nothing until you study it.
     runEconomy(players[0]);
     researchTurn(players[0]);
-    for (const pl of players) if (!pl.human) { rivalTurn(pl); researchTurn(pl); }
+    for (const pl of players) if (runsOnAI(pl)) { rivalTurn(pl); researchTurn(pl); }
     revealRivalCities();
     for (const u of units) u.moves = u.max;
     if (unitSelected) computeReachable();
@@ -4317,6 +4404,42 @@
     });
     paint();
   }
+  // The bar, and under it a seat for every nation it asks for. Seat one is
+  // you; tap any other to hold it open for a player instead of the computer.
+  const nationBar = document.getElementById('nationBar');
+  const nationRead = document.getElementById('nationRead');
+  const seatList = document.getElementById('seatList');
+  nationBar.max = MAX_SEATS;
+  function paintSeats() {
+    const n = SETUP.nations;
+    const openN = [...SETUP.open].filter(i => i < n).length;
+    nationRead.innerHTML = `${n} nations <span>\u2014 you, ` +
+      `${openN ? openN + ' open to players, ' : ''}` +
+      `${n - 1 - openN} run by the computer</span>`;
+    seatList.innerHTML = '';
+    for (let i = 0; i < n; i++) {
+      const btn = document.createElement('button');
+      const open = i > 0 && SETUP.open.has(i);
+      btn.className = 'seat' + (i === 0 ? ' you' : open ? ' open' : '');
+      btn.dataset.seat = i;
+      btn.innerHTML = i === 0
+        ? 'You<span>this device</span>'
+        : (open ? 'Open<span>held for a player</span>'
+                : 'Computer<span>tap to hold it open</span>');
+      if (i > 0) btn.addEventListener('click', () => {
+        if (SETUP.open.has(i)) SETUP.open.delete(i); else SETUP.open.add(i);
+        paintSeats();
+      });
+      seatList.appendChild(btn);
+    }
+  }
+  nationBar.value = SETUP.nations;
+  nationBar.addEventListener('input', () => {
+    SETUP.nations = +nationBar.value;
+    paintSeats();
+  });
+  paintSeats();
+
   buildRow('diffRow',  DIFFS,     'diff');
   buildRow('speedRow', SPEEDS,    'speed',
            s => `${s.years} year${s.years === 1 ? '' : 's'} a turn · costs ×${s.cost}`);
@@ -4354,7 +4477,8 @@
     el.innerHTML =
       `<div class="glyph">${nation.emblem}</div><h1>${nation.name}</h1>` +
       `<div class="sub">${SETUP.diff.name} · ${SETUP.speed.name} · ` +
-      `${SETUP.map.name} · ${SETUP.size.n}×${SETUP.size.n}</div>` +
+      `${SETUP.map.name} · ${SETUP.size.n}×${SETUP.size.n} · ` +
+      `${players.length} nations</div>` +
       `<h2>Features &amp; Abilities</h2><div id="traitList">${rows}</div>` +
       `<button id="beginBtn">Begin</button>`;
     document.body.appendChild(el);
@@ -4380,6 +4504,8 @@
       if (opt.speed) SETUP.speed = SPEEDS.find(x => x.key === opt.speed) || SETUP.speed;
       if (opt.map) SETUP.map = MAP_TYPES.find(m => m.key === opt.map) || SETUP.map;
       if (opt.civ) SETUP.civ = NATIONS.find(x => x.name === opt.civ) || null;
+      if (opt.nations) SETUP.nations = Math.max(2, Math.min(MAX_SEATS, opt.nations));
+      if (opt.open) { SETUP.open.clear(); for (const i of opt.open) SETUP.open.add(i); }
       n = opt.size || SETUP.size.n;
     } else n = opt || 200;
     SETUP.size = MAP_SIZES.find(z => z.n === n) || SETUP.size;
@@ -4387,8 +4513,26 @@
   };
   window.__setup = () => ({ civ: SETUP.civ && SETUP.civ.name, diff: SETUP.diff.key,
     speed: SETUP.speed.key, map: SETUP.map.key, size: SETUP.size.n,
-    years: SETUP.speed.years, rivals: players.length - 1,
+    years: SETUP.speed.years, nations: players.length, rivals: players.length - 1,
     techCost: (TECHS.find(t => t.key === 'farming') || {}).cost });
+  // The seat table: who holds each nation and who is actually playing it.
+  window.__seats = () => players.map(pl => ({
+    seat: pl.seat, nation: pl.nation.name, control: pl.control,
+    playedBy: playedBy(pl) || null, onAI: runsOnAI(pl) }));
+  // Multiplayer attaches here: a player takes a seat and the computer stops
+  // playing it that instant; let go and the computer picks it back up.
+  window.__takeSeat = (i, who) => {
+    const pl = players[i];
+    if (!pl || pl.human) return false;
+    pl.taken = who || 'player ' + i;
+    return true;
+  };
+  window.__releaseSeat = (i) => {
+    const pl = players[i];
+    if (!pl || pl.human) return false;
+    pl.taken = null;
+    return true;
+  };
 })();
 </script>
 </body>
