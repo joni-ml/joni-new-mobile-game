@@ -846,12 +846,20 @@
 
   // Smooth noise from sine octaves at incommensurate frequencies, so it never
   // lines up with the grid. Used to warp sampling coordinates.
+  // PERIODIC in both axes: every term is a whole number of waves across the
+  // world, so the value at column 0 is the value at column COLS and the same
+  // down the rows. A wobble that did not close on itself drew a line down
+  // the wrap seam — you could see exactly where the world was joined.
+  // The wave counts scale with the map so a feature stays the same size in
+  // tiles whether the world is 60 across or 200.
   function smoothNoise(x, y, seed) {
+    const kx = Math.max(2, Math.round(COLS / 30)), ky = Math.max(2, Math.round(ROWS / 30));
+    const u = 2 * Math.PI * x / COLS, v = 2 * Math.PI * y / ROWS;
     return (
-      Math.sin(x * 0.21 + y * 0.13 + seed * 1.7) +
-      Math.sin(x * -0.11 + y * 0.27 + seed * 3.1) * 0.8 +
-      Math.sin((x + y) * 0.17 + seed * 5.3) * 0.6 +
-      Math.sin((x - y) * 0.09 + seed * 7.9) * 0.5
+      Math.sin(kx * u + ky * v + seed * 1.7) +
+      Math.sin(-kx * u + 2 * ky * v + seed * 3.1) * 0.8 +
+      Math.sin(2 * kx * u + ky * v + seed * 5.3) * 0.6 +
+      Math.sin(kx * u - 2 * ky * v + seed * 7.9) * 0.5
     ) / 2.9;
   }
 
@@ -875,6 +883,11 @@
     // millions of operations. A seed 25 tiles away carries under 1% of a
     // near one's weight, so bucket the seeds and only read the buckets
     // around each tile — same field, a fraction of the work.
+    // Distance on a world that wraps is the SHORT way round: a seed near the
+    // last column is a near neighbour of the first, not the width of the
+    // world away. Without this the field had nothing in common across the
+    // seam and the two sides of the join did not match.
+    const wrapD = (d, n) => (d > n / 2 ? d - n : d < -n / 2 ? d + n : d);
     const CUT = 25, bw = Math.ceil(COLS / CUT), bh = Math.ceil(ROWS / CUT);
     const buckets = [];
     for (let i = 0; i < bw * bh; i++) buckets.push([]);
@@ -893,10 +906,13 @@
         // empty corner still gets a value instead of dividing by zero.
         for (let ring = 1; ring <= Math.max(bw, bh) && ws === 0; ring++) {
           const bc = (c / CUT) | 0, br = (r / CUT) | 0;
-          for (let bx = Math.max(0, bc - ring); bx <= Math.min(bw - 1, bc + ring); bx++) {
-            for (let by = Math.max(0, br - ring); by <= Math.min(bh - 1, br + ring); by++) {
+          // The bucket ring wraps too, so the columns at the edge read the
+          // buckets on the far side rather than running out of world.
+          for (let dx = -ring; dx <= ring; dx++) {
+            for (let dy = -ring; dy <= ring; dy++) {
+              const bx = ((bc + dx) % bw + bw) % bw, by = ((br + dy) % bh + bh) % bh;
               for (const sd of buckets[by * bw + bx]) {
-                const dc = sd.c - wc, dr = sd.r - wr;
+                const dc = wrapD(sd.c - wc, COLS), dr = wrapD(sd.r - wr, ROWS);
                 const w = 1 / (dc * dc + dr * dr + 6);   // wide falloff = big regions
                 ws += w; vs += w * sd.v;
               }
@@ -943,8 +959,33 @@
     return cells.slice(0, Math.max(0, Math.min(cells.length, count)));
   }
 
+  // THE HEAT MAP. Temperature is latitude first and weather second, which is
+  // the whole point: ice ends up beside tundra and tundra beside ordinary
+  // country, instead of a cold patch opening in the middle of a desert.
+  //
+  // On a world that wraps top to bottom, row 0 and the last row are the SAME
+  // PLACE — so they are both the pole. The band runs cold at that seam and
+  // hot at the middle of the map, on a cosine that closes on itself, and the
+  // ice cap crosses the join without a mark on it.
+  //
+  // Weather is then laid over the top: enough to bend a band into something
+  // ragged and coastal, never enough to move a pole to the equator.
+  function heatField() {
+    const weather = blobField([[3, 0.15, 0.85]], 3.2, 1.15);
+    const grid = [];
+    for (let c = 0; c < COLS; c++) {
+      const col = [];
+      for (let r = 0; r < ROWS; r++) {
+        const lat = (1 - Math.cos(2 * Math.PI * r / ROWS)) / 2;   // 0 pole, 1 equator
+        col.push(Math.max(0, Math.min(1, lat * 0.88 + (weather[c][r] - 0.5) * 0.30)));
+      }
+      grid.push(col);
+    }
+    return grid;
+  }
+
   function generateMap() {
-    heatGrid  = blobField([[2, 0.88, 1.0], [2, 0.0, 0.12], [2, 0.38, 0.62]], 3.6, 1.55);
+    heatGrid  = heatField();
     elevGrid  = blobField(SETUP.map.seeds, SETUP.map.warp, SETUP.map.contrast);
     moistGrid = blobField([[3, 0.85, 1.0], [3, 0.0, 0.18]], 3.2, 1.25);
     const mix = pickComposition();
@@ -1024,8 +1065,22 @@
     for (const t of iceCells) tiles[t.c][t.r].terrain = TERRA.snow;
 
     const rest = open.filter(t => !iced.has(t.c + ',' + t.r));
+    // A desert never opens against an ice cap. Ordinary country is kept
+    // between them — two rings of it — so the ground steps through tundra
+    // and grass on the way from one to the other rather than jumping the
+    // whole temperature range in a single tile. The share of the world that
+    // is desert is unchanged: the same count is taken, just never from here.
+    const nearIce = new Set();
+    for (const t of iceCells) {
+      nearIce.add(t.c + ',' + t.r);
+      for (const n of neighbors(t.c, t.r)) {
+        nearIce.add(n.c + ',' + n.r);
+        for (const n2 of neighbors(n.c, n.r)) nearIce.add(n2.c + ',' + n2.r);
+      }
+    }
+    const temperate = rest.filter(t => !nearIce.has(t.c + ',' + t.r));
     // Hot and dry: negate so the driest, hottest ground sorts to the front.
-    const dryCells = lowest(rest, t => moistGrid[t.c][t.r] - heatGrid[t.c][t.r],
+    const dryCells = lowest(temperate, t => moistGrid[t.c][t.r] - heatGrid[t.c][t.r],
                             Math.round(mix.desert * total));
     const dried = new Set(dryCells.map(t => t.c + ',' + t.r));
     for (const t of dryCells) {
@@ -3246,14 +3301,34 @@
     // hexagons, so switching to the atlas does not visibly change the map.
     // Once they are a few pixels across a hexagon and a rectangle are the
     // same picture, and rectangles are cheaper.
+    // The atlas works out for itself WHICH copy of a column and of a row to
+    // draw, and whether it is on screen. It used to borrow the board's
+    // answer — and the board drops a column it thinks you cannot see, which
+    // at the join left one column undrawn: a dark line down the world at
+    // exactly the place where the two ends of the map meet. Nothing about
+    // the world was wrong; the line was the atlas skipping a column.
+    const near = (pos, world, mid) => {
+      let bestV = 0, bestD = Infinity;
+      for (let k = -1; k <= 1; k++) {
+        const v = pos + k * world, d = Math.abs(v - mid);
+        if (d < bestD) { bestD = d; bestV = v; }
+      }
+      return bestV;
+    };
+    const colX = new Array(COLS), rowOff = new Array(ROWS);
+    for (let c = 0; c < COLS; c++)
+      colX[c] = near(bx + layout.positions[c][0].cx * sc, layout.worldW * sc, vw / 2);
+    for (let r = 0; r < ROWS; r++) {
+      const y0 = by + layout.positions[0][r].cy * sc;
+      rowOff[r] = near(y0, layout.worldH * sc, vh / 2) - y0;
+    }
     for (let c = 0; c < COLS; c++) {
-      const wrap = colWrap[c];
-      if (!wrap || !wrap._on) continue;
-      const cx = bx + (layout.positions[c][0].cx + wrap._k * layout.worldW) * sc;
+      const cx = colX[c];
+      if (cx < -w || cx > vw + w) continue;
       for (let r = 0; r < ROWS; r++) {
         const tl = tiles[c][r];
         if (!tl.seen && !revealAll) continue;
-        const cy = by + (layout.positions[c][r].cy + rowM[r] * layout.worldH) * sc;
+        const cy = by + layout.positions[c][r].cy * sc + rowOff[r];
         if (cy < -h || cy > vh + h) continue;
         const col = heightMap ? ELEV_RAMP[elevBand(tl.elev)] : tl.terrain.col;
         ctx.fillStyle = tl.seen ? col : dimCol(col);
@@ -4147,6 +4222,11 @@
     panX: Math.round(panX), panY: Math.round(panY),
     boardW: Math.round(layout.boardW), boardH: Math.round(layout.boardH),
     wpx: Math.round(layout.worldW * cellSize / BASE_HEX), hpx: Math.round(layout.worldH * cellSize / BASE_HEX) });
+  // The world's size on screen, UNROUNDED: panning by exactly this much is
+  // one full turn of the world, and a rounded value leaves a sub-pixel shift
+  // that shows up as a different picture.
+  window.__worldPx = () => ({ w: layout.worldW * cellSize / BASE_HEX,
+                              h: layout.worldH * cellSize / BASE_HEX });
   window.__units = () => units.map(u => ({ c: u.c, r: u.r, moves: u.moves, kind: u.kind }));
   window.__select = (c, r) => selectHex(c, r);
   window.__reach = () => { const u = curUnit(); if (!u) return [];
