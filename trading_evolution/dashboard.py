@@ -194,10 +194,35 @@ def bot_cards(world):
 
 def write_dashboard(path, title, runs, cfg, live=False):
     """runs: רשימה של (שם, עולם). הראשון הוא הראשי: ממנו המספרים והחלונות של הבוטים."""
+    data = build(title, runs, cfg, live)
+    if data:
+        write_page(path, title, data)
+
+
+def write_replay(path, title, frames):
+    """דף שמנגן את הבוטים כמו סרטון. frames: רשימה של מה ש-build החזיר, מהישן לחדש.
+    הקווים בגרפים נשמרים פעם אחת (מהתמונה האחרונה), וכל תמונה שומרת רק כמה נקודות מהם להראות."""
+    full = {k: frames[-1][k] for k in ("times", "money", "coins")}
+    keep = ("title", "rules", "tiles", "bots", "events", "updated")
+    write_page(path, title, {**frames[-1], "refresh": 0},
+               {"full": full, "frames": [{**{k: f[k] for k in keep}, "n": len(f["times"])} for f in frames]})
+
+
+def write_page(path, title, data, replay=None):
+    dump = lambda x: json.dumps(x, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+    page = (TEMPLATE.replace("__TITLE__", html.escape(title)).replace("__DATA__", dump(data))
+            .replace("__REPLAY__", dump(replay)))
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        f.write(page)
+    os.replace(path + ".tmp", path)   # כדי שהדפדפן לא יקרא חצי קובץ באמצע כתיבה
+
+
+def build(title, runs, cfg, live=False):
+    """כל מה שהדף צריך כדי להראות את המצב עכשיו (או None אם עוד אין כלום)."""
     world = runs[0][1]
     h = world.history
     if not h:
-        return
+        return None
     last = h[-1]
     pay, select = world.every(cfg.pay_every) * world.candle, world.every(cfg.select_every) * world.candle
     money = [{"name": runs[0][0], "values": net_series(world), "color": "--s1"},
@@ -216,7 +241,8 @@ def write_dashboard(path, title, runs, cfg, live=False):
     if live:
         tiles += [["התשלום הבא בעוד", human(world.next_in(cfg.pay_every))],
                   ["המבחן הבא בעוד", human(world.next_in(cfg.select_every))]]
-    data = {
+    return {
+        "title": title,
         "refresh": 30 if live else 0,
         "updated": datetime.now().strftime("%H:%M:%S"),
         "rules": ("המטרה: להחזיק כמה שיותר זמן, ולברוח רק כשרואים סכנה · " if cfg.goal == "hold" else "") +
@@ -230,11 +256,6 @@ def write_dashboard(path, title, runs, cfg, live=False):
         "bots": bot_cards(world),
         "events": world.events[::-1][:12],
     }
-    payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
-    page = TEMPLATE.replace("__TITLE__", html.escape(title)).replace("__DATA__", payload)
-    with open(path + ".tmp", "w", encoding="utf-8") as f:
-        f.write(page)
-    os.replace(path + ".tmp", path)   # כדי שהדפדפן לא יקרא חצי קובץ באמצע כתיבה
 
 
 TEMPLATE = r"""<!doctype html>
@@ -331,11 +352,23 @@ h2 { font-size: 16px; margin: 0 0 2px; }
 .events li:last-child { border-bottom: 0; }
 .events time { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .note { color: var(--muted); font-size: 13px; }
+.player { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+          background: var(--surface); box-shadow: 0 0 0 1px var(--ring); border-radius: 12px; padding: 8px 12px; margin-bottom: 16px; }
+.player button, .player select { font: inherit; color: var(--ink); background: var(--page); border: 1px solid var(--axis);
+                                 border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+.player input[type=range] { flex: 1; min-width: 120px; direction: ltr; }
+.player .when { font-weight: 600; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
 <main>
-  <h1>__TITLE__</h1>
+  <div class="player" id="player" hidden>
+    <button id="play" type="button" aria-label="נגן או עצור">⏸ עצור</button>
+    <span class="when" id="when"></span>
+    <input type="range" id="frame" min="0" value="0" aria-label="איזה יום להראות">
+    <select id="speed" aria-label="מהירות"><option value="1">רגיל</option><option value="2">מהר</option><option value="4">מהר מאוד</option></select>
+  </div>
+  <h1 id="title">__TITLE__</h1>
   <p class="rules" id="rules"></p>
   <div class="tiles" id="tiles"></div>
 
@@ -366,13 +399,17 @@ h2 { font-size: 16px; margin: 0 0 2px; }
 </main>
 
 <script>
-const DATA = __DATA__;
+let DATA = __DATA__;
+const REPLAY = __REPLAY__;   // בדף של הקלטה: כל התמונות, אחת אחרי השנייה
 const COIN_COLORS = ["--s2", "--s3", "--s4", "--s5", "--s6", "--s7", "--s8"];
-const coinColor = {};
-DATA.coins.forEach((c, i) => { c.color = COIN_COLORS[i]; coinColor[c.name] = c.color; });
-const T = DATA.times.map(s => new Date(s + "Z"));
-const SPAN = (T[T.length - 1] - T[0]) / 864e5;   // ימים
-const DAILY = T.every(t => t.getUTCHours() === 0 && t.getUTCMinutes() === 0);
+let coinColor = {}, T = [], SPAN = 0, DAILY = true;
+function prepare() {
+  coinColor = {};
+  DATA.coins.forEach((c, i) => { c.color = COIN_COLORS[i]; coinColor[c.name] = c.color; });
+  T = DATA.times.map(s => new Date(s + "Z"));
+  SPAN = (T[T.length - 1] - T[0]) / 864e5;   // ימים
+  DAILY = T.every(t => t.getUTCHours() === 0 && t.getUTCMinutes() === 0);
+}
 
 function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 function el(tag, attrs, parent) {
@@ -643,22 +680,59 @@ function render() {
   bots();
 }
 
-document.getElementById("rules").textContent = DATA.rules;
-DATA.tiles.forEach(([label, value], i) => {
-  const t = el("div", { class: "tile" + (i === 0 ? " hero" : "") }, document.getElementById("tiles"));
-  el("div", { class: "label" }, t).textContent = label;
-  el("div", { class: "value ltr" }, t).textContent = value;
-});
-const events = document.getElementById("events");
-if (!DATA.events.length) el("li", {}, events).textContent = "עוד לא קרה כלום";
-for (const [when, text] of DATA.events) {
-  const li = el("li", {}, events);
-  el("time", {}, li).textContent = when ? fmtTime(new Date(when + "Z"), true) : "";
-  el("span", {}, li).textContent = bidi(text);
+function renderAll() {
+  prepare();
+  document.getElementById("title").textContent = DATA.title;
+  document.getElementById("rules").textContent = DATA.rules;
+  const tiles = document.getElementById("tiles");
+  tiles.textContent = "";
+  DATA.tiles.forEach(([label, value], i) => {
+    const t = el("div", { class: "tile" + (i === 0 ? " hero" : "") }, tiles);
+    el("div", { class: "label" }, t).textContent = label;
+    el("div", { class: "value ltr" }, t).textContent = value;
+  });
+  const events = document.getElementById("events");
+  events.textContent = "";
+  if (!DATA.events.length) el("li", {}, events).textContent = "עוד לא קרה כלום";
+  for (const [when, text] of DATA.events) {
+    const li = el("li", {}, events);
+    el("time", {}, li).textContent = when ? fmtTime(new Date(when + "Z"), true) : "";
+    el("span", {}, li).textContent = bidi(text);
+  }
+  document.getElementById("updated").textContent = (REPLAY ? "הקלטה" : `עודכן ב-${DATA.updated}`) +
+    (DATA.refresh ? " · הדף מתרענן לבד" : "") + " · הכסף מזויף, והעבר לא מבטיח כלום לגבי העתיד.";
+  render();
 }
-document.getElementById("updated").textContent =
-  `עודכן ב-${DATA.updated}` + (DATA.refresh ? " · הדף מתרענן לבד" : "") + " · הכסף מזויף, והעבר לא מבטיח כלום לגבי העתיד.";
-render();
+
+// נגן ההקלטה: מחליף תמונה כל פעם, כמו סרטון
+let showFrame = () => {};
+if (REPLAY) {
+  const frames = REPLAY.frames, last = frames.length - 1;
+  const slider = document.getElementById("frame"), btn = document.getElementById("play");
+  let k = 0, playing = true, speed = 1;
+  document.getElementById("player").hidden = false;
+  slider.max = last;
+  showFrame = i => {
+    k = Math.max(0, Math.min(last, i));
+    const f = frames[k], full = REPLAY.full, cut = s => ({ ...s, values: s.values.slice(0, f.n) });
+    DATA = { ...DATA, ...f, times: full.times.slice(0, f.n), money: full.money.map(cut), coins: full.coins.map(cut) };
+    slider.value = k;
+    document.getElementById("when").textContent = `${k + 1} / ${frames.length}`;
+    renderAll();
+  };
+  const label = () => { btn.textContent = playing ? "⏸ עצור" : "▶ נגן"; };
+  btn.addEventListener("click", () => { if (!playing && k === last) showFrame(0); playing = !playing; label(); });
+  slider.addEventListener("input", () => { playing = false; label(); showFrame(+slider.value); });
+  document.getElementById("speed").addEventListener("change", e => { speed = +e.target.value; });
+  (function play() {
+    if (playing && k < last) showFrame(k + 1);
+    else if (playing) { playing = false; label(); }
+    setTimeout(play, 900 / speed);
+  })();
+  showFrame(0);
+} else {
+  renderAll();
+}
 
 let timer;
 addEventListener("resize", () => { clearTimeout(timer); timer = setTimeout(render, 100); });
