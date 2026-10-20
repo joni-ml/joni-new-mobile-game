@@ -10,6 +10,7 @@ import csv
 import json
 import math
 import random
+from collections import deque
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timedelta
 
@@ -22,6 +23,9 @@ SWITCH_RATE = 0.1       # הסיכוי ששכפול יעבור לסחור במט
 CHART_POINTS = 2000     # כמה נקודות לשמור לגרף של הבעלים
 BOT_POINTS = 300        # כמה נקודות לשמור לגרף של כל בוט
 EVENTS = 30             # כמה אירועים אחרונים לזכור (מוות, שכפול, מבחן)
+PATTERN_LEN = 5         # כמה נרות אחרונים יוצרים "דפוס"
+PATTERN_AHEAD = 5       # כמה נרות קדימה בודקים מה קרה אחרי כל דפוס
+PATTERN_MIN = 5         # כמה פעמים צריך לראות דפוס בעבר כדי לסמוך עליו
 
 
 # ---------- הגדרות ----------
@@ -38,6 +42,7 @@ class Settings:
     kill_percent: float = 50.0
     losers_money: str = "me"
     candle: str = "1h"
+    signals: list = field(default_factory=lambda: list(SIGNALS))
 
 
 def load_settings(path):
@@ -65,6 +70,10 @@ def load_settings(path):
         raise SystemExit(f"candle יכול להיות רק 1m, 5m, 15m או 1h (כתוב {s.candle!r})")
     if not s.assets:
         raise SystemExit("צריך לפחות מטבע אחד ב-assets")
+    bad = [x for x in s.signals if x not in SIGNALS]
+    if bad or not s.signals:
+        raise SystemExit(f"שיטה לא מוכרת ב-signals: {', '.join(bad) or 'הרשימה ריקה'}. "
+                         f"אפשר: {', '.join(SIGNALS)}")
     if s.losers_money not in ("me", "winners"):
         raise SystemExit(f"losers_money יכול להיות רק \"me\" או \"winners\" (כתוב {s.losers_money!r})")
     return s
@@ -158,30 +167,120 @@ def rsi_series(prices, n=14):
     return out
 
 
+def ema_series(xs, n):
+    """ממוצע נע "מעריכי": נותן יותר משקל למחירים האחרונים."""
+    k, e, out = 2 / (n + 1), xs[0], []
+    for x in xs:
+        e += k * (x - e)
+        out.append(e)
+    return out
+
+
+def rolling_extremes(xs, n):
+    """המחיר הכי גבוה והכי נמוך ב-n הנרות שלפני כל נר (בלי הנר עצמו)."""
+    hi, lo = [xs[0]] * len(xs), [xs[0]] * len(xs)
+    qh, ql = deque(), deque()
+    for i in range(1, len(xs)):
+        j = i - 1
+        while qh and xs[qh[-1]] <= xs[j]:
+            qh.pop()
+        while ql and xs[ql[-1]] >= xs[j]:
+            ql.pop()
+        qh.append(j)
+        ql.append(j)
+        while qh[0] < i - n:
+            qh.popleft()
+        while ql[0] < i - n:
+            ql.popleft()
+        hi[i], lo[i] = xs[qh[0]], xs[ql[0]]
+    return hi, lo
+
+
+def rolling_std(xs, n):
+    """כמה הערכים "קופצים" (סטיית תקן) ב-n האחרונים."""
+    s1 = s2 = 0.0
+    out = []
+    for i, x in enumerate(xs):
+        s1 += x
+        s2 += x * x
+        if i >= n:
+            s1 -= xs[i - n]
+            s2 -= xs[i - n] ** 2
+        k = min(i + 1, n)
+        out.append(math.sqrt(max(s2 / k - (s1 / k) ** 2, 0.0)))
+    return out
+
+
+def pattern_memory(prices, rets, vol):
+    """זיכרון דפוסים: מה קרה בעבר אחרי שהמחיר זז באותה צורה.
+    כל נר מסומן כעלייה, ירידה או "בערך אותו דבר" (לפי כמה המחיר זז בדרך כלל),
+    ו-PATTERN_LEN הנרות האחרונים יוצרים דפוס, למשל עלייה-עלייה-ירידה-אותו דבר-עלייה.
+    לכל נר מחזירים (הדפוס, כמה פעמים ראינו אותו קודם, כמה המחיר זז בממוצע ב-PATTERN_AHEAD הנרות שאחריו).
+    משתמשים רק במה שכבר קרה עד אותו נר - בלי להציץ לעתיד."""
+    n = len(prices)
+    codes = [None] * n
+    for i in range(PATTERN_LEN, n):
+        half, code = vol[i] / 2, 0
+        for r in rets[i - PATTERN_LEN + 1:i + 1]:
+            code = code * 3 + (2 if r > half else 0 if r < -half else 1)
+        codes[i] = code
+    seen, out = {}, [(None, 0, 0.0)] * n
+    for i in range(n):
+        j = i - PATTERN_AHEAD
+        if j >= 0 and codes[j] is not None:     # עכשיו כבר ידוע מה קרה אחרי הדפוס שנגמר בנר j
+            total, count = seen.get(codes[j], (0.0, 0))
+            seen[codes[j]] = (total + prices[i] / prices[j] - 1, count + 1)
+        if codes[i] is not None:
+            total, count = seen.get(codes[i], (0.0, 0))
+            out[i] = (codes[i], count, total / count if count else 0.0)
+    return out
+
+
 class Market:
     """מחירים של מטבע אחד + אינדיקטורים שמחושבים פעם אחת מראש, כדי שהכול ירוץ מהר."""
 
     def __init__(self, prices):
         self.p = prices
-        self.cum = [0.0]
+        self.cum, self.cum2 = [0.0], [0.0]
         for x in prices:
             self.cum.append(self.cum[-1] + x)
+            self.cum2.append(self.cum2[-1] + x * x)
         self.rsi = rsi_series(prices)
+        self.macd = [a - b for a, b in zip(ema_series(prices, 12), ema_series(prices, 26))]
+        self.macd_signal = ema_series(self.macd, 9)
+        self.hi20, self.lo20 = rolling_extremes(prices, 20)
+        self.hi55, self.lo55 = rolling_extremes(prices, 55)
+        rets = [0.0] + [b / a - 1 for a, b in zip(prices, prices[1:])]
+        self.vol14, self.vol50, self.vol100 = (rolling_std(rets, n) for n in (14, 50, 100))
+        self.pattern = pattern_memory(prices, rets, self.vol50)
 
     def ma(self, i, n):
         """ממוצע של n המחירים האחרונים, עד נר i כולל."""
         return (self.cum[i + 1] - self.cum[i + 1 - n]) / n
 
+    def std(self, i, n):
+        """כמה המחיר קופץ סביב הממוצע של n הנרות האחרונים (סטיית תקן)."""
+        mean = self.ma(i, n)
+        return math.sqrt(max((self.cum2[i + 1] - self.cum2[i + 1 - n]) / n - mean * mean, 0.0))
+
 
 # ---------- האסטרטגיה ("הגנום") ----------
 
-# כל בוט מסתכל על 4 סימנים, ומחליט כמה משקל לתת לכל אחד (משקל שלילי = ההפך).
-SIGNALS = ("trend", "dip", "momentum", "stretch")
+# כל בוט מסתכל על כמה סימנים (שיטות מסחר מוכרות), ומחליט כמה משקל לתת לכל אחד (משקל שלילי = ההפך).
+SIGNALS = ("trend", "dip", "momentum", "stretch",          # 4 השיטות הראשונות
+           "macd", "bollinger", "channel", "breakout",     # שיטות מוכרות מהאינטרנט
+           "calm", "pattern")                              # מצב רוח השוק + זיכרון דפוסים
 SIGNAL_WORDS = {
     "trend": ("עוקב אחרי המגמה", "הולך נגד המגמה"),
     "dip": ("קונה אחרי ירידות", "קונה כשהשוק חם"),
     "momentum": ("רודף אחרי עליות", "קונה אחרי נפילות"),
     "stretch": ("קונה כשהמחיר מעל הממוצע", "קונה כשהמחיר מתחת לממוצע"),
+    "macd": ("קונה כש-MACD מתחזק", "קונה כש-MACD נחלש"),
+    "bollinger": ("קונה בחלק העליון של רצועות בולינגר", "קונה בחלק התחתון של רצועות בולינגר"),
+    "channel": ("קונה ליד השיא של 20 נרות", "קונה ליד השפל של 20 נרות"),
+    "breakout": ("קונה בפריצה של שיא 55 נרות", "קונה ליד השפל של 55 נרות"),
+    "calm": ("קונה כשהשוק רגוע", "קונה כשהשוק סוער"),
+    "pattern": ("סומך על דפוסים מהעבר", "הולך נגד הדפוסים מהעבר"),
 }
 
 
@@ -204,6 +303,10 @@ class Genome:
     # ההחלטה אם להשתכפל אחרי שעבר מבחן. גם היא עוברת בתורשה ומשתנה לאט לאט:
     clone_min_return: float = 0.0   # משתכפל רק אם הרוויח לפחות כך מאז המבחן הקודם (0.05 = 5%)
     clone_min_money: float = 0.2    # ורק אם לכל חצי יישאר לפחות כך (כחלק מכסף ההתחלה)
+
+    def __post_init__(self):
+        # בוט מגרסה ישנה (עם פחות שיטות) מקבל משקל 0 לשיטות החדשות, אז הוא ממשיך להתנהג כמו קודם
+        self.weights = list(self.weights) + [0.0] * (len(SIGNALS) - len(self.weights))
 
     @staticmethod
     def random(rng, assets):
@@ -249,23 +352,38 @@ class Genome:
     def readings(self, m, i):
         """מה הבוט מודד עכשיו, במספרים שאדם מבין."""
         p, slow = m.p[i], m.ma(i, self.slow)
-        return [m.ma(i, self.fast) / slow - 1,   # כמה הממוצע הקצר מעל הממוצע הארוך
-                m.rsi[i],                         # RSI: מתחת ל-30 = ירד הרבה, מעל 70 = עלה הרבה
-                p / m.p[i - self.mom] - 1,        # כמה המחיר השתנה ב-mom הנרות האחרונים
-                p / slow - 1]                     # כמה המחיר מעל הממוצע הארוך
+        code, seen, ahead = m.pattern[i]
+        channel = lambda lo, hi: (p - lo) / (hi - lo) if hi > lo else 0.5
+        return {
+            "trend": m.ma(i, self.fast) / slow - 1,           # כמה הממוצע הקצר מעל הממוצע הארוך
+            "rsi": m.rsi[i],                                   # מתחת ל-30 = ירד הרבה, מעל 70 = עלה הרבה
+            "mom": p / m.p[i - self.mom] - 1,                  # כמה המחיר השתנה ב-mom הנרות האחרונים
+            "stretch": p / slow - 1,                           # כמה המחיר מעל הממוצע הארוך
+            "macd": (m.macd[i] - m.macd_signal[i]) / p,        # MACD מעל קו האות = התנופה מתחזקת
+            "z": (p - slow) / (m.std(i, self.slow) or 1e-9),   # כמה סטיות תקן מעל הממוצע (בולינגר)
+            "ch20": channel(m.lo20[i], m.hi20[i]),             # 0 = בשפל של 20 נרות, 1 = בשיא, מעל 1 = פריצה
+            "ch55": channel(m.lo55[i], m.hi55[i]),             # אותו דבר ל-55 נרות (שיטת הצבים)
+            "vol": m.vol14[i] / (m.vol100[i] or 1e-9),         # פי כמה השוק זז עכשיו לעומת הרגיל
+            "pattern": code, "seen": seen, "ahead": ahead,     # הדפוס, כמה פעמים נראה, מה קרה אחריו
+            "ahead_z": ahead / ((m.vol50[i] or 1e-9) * PATTERN_AHEAD ** 0.5),
+        }
 
     @staticmethod
     def signals(r):
         """הופך כל מדידה לסימן בין -1 ל-1 (1 = "תקנה!", -1 = "תמכור!")."""
-        return [clamp(r[0] * 20), (50 - r[1]) / 50, clamp(r[2] * 10), clamp(r[3] * 10)]
+        return [clamp(r["trend"] * 20), (50 - r["rsi"]) / 50, clamp(r["mom"] * 10), clamp(r["stretch"] * 10),
+                clamp(r["macd"] * 200), clamp(r["z"] / 2), clamp(r["ch20"] * 2 - 1), clamp(r["ch55"] * 2 - 1),
+                clamp(1 - r["vol"]), clamp(r["ahead_z"] * 3) if r["seen"] >= PATTERN_MIN else 0.0]
 
-    def parts(self, sig):
-        """כמה כל סימן תורם לציון: הסימן כפול המשקל שהבוט נותן לו. הציון הוא הסכום, בין -1 ל-1."""
-        total = sum(abs(w) for w in self.weights) or 1.0
-        return [w * s / total for w, s in zip(self.weights, sig)]
+    def parts(self, sig, allowed=SIGNALS):
+        """כמה כל סימן תורם לציון: הסימן כפול המשקל שהבוט נותן לו. הציון הוא הסכום, בין -1 ל-1.
+        שיטות שלא מופיעות ב-allowed (ההגדרה signals) לא נחשבות."""
+        w = [x if name in allowed else 0.0 for name, x in zip(SIGNALS, self.weights)]
+        total = sum(abs(x) for x in w) or 1.0
+        return [x * y / total for x, y in zip(w, sig)]
 
-    def describe(self):
-        top = sorted(zip(SIGNALS, self.weights), key=lambda sw: -abs(sw[1]))[:2]
+    def describe(self, allowed=SIGNALS):
+        top = sorted(((s, w) for s, w in zip(SIGNALS, self.weights) if s in allowed), key=lambda sw: -abs(sw[1]))[:2]
         style = " + ".join(SIGNAL_WORDS[s][0 if w > 0 else 1] for s, w in top)
         return (f"{style}; משקיע {self.bet:.0%} מהמזומן, "
                 f"סטופ-לוס {self.stop_loss:.0%}, לוקח רווח ב-{self.take_profit:.0%}")
@@ -302,7 +420,7 @@ class Bot:
     trades: int = 0
     values: list = field(default_factory=list)
     price: float = 0.0          # המחיר בנר האחרון
-    readings: list = field(default_factory=list)   # מה הוא מדד בנר האחרון
+    readings: dict = field(default_factory=dict)   # מה הוא מדד בנר האחרון
     score: float = None         # הציון שיצא לו בנר האחרון
     scores: list = field(default_factory=list)     # הציונים לאורך הזמן, בשביל הגרף
     last: list = field(default_factory=list)       # [מתי, מה הוא עשה ולמה]
@@ -317,14 +435,14 @@ class Bot:
         """צמיחה ממוצעת לנר. לבוט צעיר אין עדיין מספיק היסטוריה, אז הציון שלו קרוב ל-0."""
         return self.log_growth / max(tick - self.born, 30)
 
-    def step(self, m, i):
+    def step(self, m, i, allowed=SIGNALS):
         """מחשב ומחליט אם לקנות או למכור. מחזיר משפט שמסביר מה עשה ולמה (או None)."""
         g = self.genome
         if i < max(g.slow, g.mom):
             return None
         price = self.price = m.p[i]
         self.readings = g.readings(m, i)
-        self.score = sum(g.parts(Genome.signals(self.readings)))
+        self.score = sum(g.parts(Genome.signals(self.readings), allowed))
         if self.units > 0:
             change = price / self.entry - 1
             why = (f"הפסיד {-change:.0%} מהקנייה (הסטופ-לוס שלו {g.stop_loss:.0%})" if change < -g.stop_loss else
@@ -418,7 +536,7 @@ class World:
         self.now = when.isoformat(timespec="minutes")
         prices = {a: m.p[i] for a, m in markets.items()}
         for bot in self.bots:
-            did = bot.step(markets[bot.genome.asset], i)
+            did = bot.step(markets[bot.genome.asset], i, self.cfg.signals)
             if did:
                 bot.last = [self.now, did]
         self.tick += 1

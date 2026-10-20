@@ -9,7 +9,7 @@ import json
 import os
 from datetime import datetime
 
-from core import Genome, fmt_price, human
+from core import PATTERN_AHEAD, PATTERN_LEN, PATTERN_MIN, SIGNALS, Genome, fmt_price, human
 
 MAX_COINS = 7   # כמה מטבעות אפשר להראות בגרף המטבעות (יש 7 צבעים שקל להבדיל ביניהם)
 
@@ -46,22 +46,57 @@ def coin_series(world):
     return out
 
 
-def brain(b):
+NAMES = {"trend": "מגמה", "dip": "ירידה חדה (RSI)", "momentum": "תנופה", "stretch": "מרחק מהממוצע",
+         "macd": "MACD", "bollinger": "רצועות בולינגר", "channel": "ערוץ 20 נרות",
+         "breakout": "פריצה של 55 נרות (שיטת הצבים)", "calm": "כמה השוק סוער", "pattern": "זיכרון דפוסים"}
+
+
+def channel_text(x, n):
+    if x > 1:
+        return f"המחיר פרץ מעל השיא של {n} הנרות האחרונים"
+    if x < 0:
+        return f"המחיר נפל מתחת לשפל של {n} הנרות האחרונים"
+    return f"המחיר נמצא {x:.0%} מהדרך בין השפל לשיא של {n} הנרות האחרונים"
+
+
+def pattern_text(r):
+    if r["pattern"] is None:
+        return "עוד אין מספיק נרות כדי לזהות דפוס"
+    code, marks = r["pattern"], []
+    for _ in range(PATTERN_LEN):
+        code, d = divmod(code, 3)
+        marks.append("▲▬▼"[2 - d])
+    shape = " ".join(reversed(marks))
+    text = f"{PATTERN_LEN} הנרות האחרונים: {shape} (▲ עלייה, ▼ ירידה, ▬ כמעט בלי שינוי). "
+    if r["seen"] < PATTERN_MIN:
+        return text + f"ראה את הדפוס הזה רק {r['seen']} פעמים, אז עוד לא סומך עליו"
+    return (text + f"ראה אותו {r['seen']} פעמים, ואחריו המחיר {'עלה' if r['ahead'] >= 0 else 'ירד'} "
+            f"בממוצע ב-{abs(r['ahead']):.1%} ב-{PATTERN_AHEAD} הנרות הבאים")
+
+
+def brain(b, allowed):
     """מה הבוט חישב בנר האחרון, כדי להבין למה הוא קונה, מוכר או מחכה."""
     g, r = b.genome, b.readings
-    if not r:
+    if not isinstance(r, dict) or not r:
         return None
-    sees = [
-        f"הממוצע של {g.fast} הנרות האחרונים {'גבוה' if r[0] >= 0 else 'נמוך'} ב-{abs(r[0]):.1%} "
-        f"מהממוצע של {g.slow} נרות",
-        f"RSI = {r[1]:.0f} (מתחת ל-30: ירד הרבה לאחרונה, מעל 70: עלה הרבה)",
-        f"המחיר {'עלה' if r[2] >= 0 else 'ירד'} ב-{abs(r[2]):.1%} ב-{g.mom} הנרות האחרונים",
-        f"המחיר {'גבוה' if r[3] >= 0 else 'נמוך'} ב-{abs(r[3]):.1%} מהממוצע של {g.slow} נרות",
-    ]
-    names = ["מגמה", "ירידה חדה (RSI)", "תנופה", "מרחק מהממוצע"]
-    parts = g.parts(Genome.signals(r))
-    rows = [{"name": n, "sees": t, "weight": round(w, 2), "part": round(p, 3)}
-            for n, t, w, p in zip(names, sees, g.weights, parts)]
+    sees = {
+        "trend": f"הממוצע של {g.fast} הנרות האחרונים {'גבוה' if r['trend'] >= 0 else 'נמוך'} "
+                 f"ב-{abs(r['trend']):.1%} מהממוצע של {g.slow} נרות",
+        "dip": f"RSI = {r['rsi']:.0f} (מתחת ל-30: ירד הרבה לאחרונה, מעל 70: עלה הרבה)",
+        "momentum": f"המחיר {'עלה' if r['mom'] >= 0 else 'ירד'} ב-{abs(r['mom']):.1%} ב-{g.mom} הנרות האחרונים",
+        "stretch": f"המחיר {'גבוה' if r['stretch'] >= 0 else 'נמוך'} ב-{abs(r['stretch']):.1%} "
+                   f"מהממוצע של {g.slow} נרות",
+        "macd": "קו ה-MACD (12/26/9) " + ("מעל קו האות שלו: התנופה מתחזקת" if r["macd"] >= 0
+                                          else "מתחת לקו האות שלו: התנופה נחלשת"),
+        "bollinger": f"המחיר {abs(r['z']):.1f} סטיות תקן {'מעל ' if r['z'] >= 0 else 'מתחת ל'}ממוצע {g.slow} הנרות",
+        "channel": channel_text(r["ch20"], 20),
+        "breakout": channel_text(r["ch55"], 55),
+        "calm": f"השוק זז עכשיו פי {r['vol']:.1f} ממה שהוא זז בדרך כלל",
+        "pattern": pattern_text(r),
+    }
+    parts = g.parts(Genome.signals(r), allowed)
+    rows = [{"name": NAMES[s], "sees": sees[s], "weight": round(w, 2), "part": round(p, 3)}
+            for s, w, p in zip(SIGNALS, g.weights, parts) if s in allowed]
     score = b.score
     if b.units > 0:
         change = b.price / b.entry - 1
@@ -89,8 +124,8 @@ def bot_cards(world):
             "rank": rank, "id": b.id, "asset": b.genome.asset, "gen": b.generation,
             "value": round(b.value(p), 2), "change": round(b.period_return(p) * 100, 1),
             "paid": round(b.paid, 2), "holding": b.units > 0, "trades": b.trades,
-            "age": human((world.tick - b.born) * world.candle), "desc": b.genome.describe(),
-            "clone": b.genome.clone_rule(world.cfg.start_money), "brain": brain(b),
+            "age": human((world.tick - b.born) * world.candle), "desc": b.genome.describe(world.cfg.signals),
+            "clone": b.genome.clone_rule(world.cfg.start_money), "brain": brain(b, world.cfg.signals),
             "spark": b.values,
         })
     return cards
@@ -435,7 +470,7 @@ function sparkline(svg, values, color) {
 let openBots = new Set();
 try { openBots = new Set(JSON.parse(sessionStorage.getItem("openBots") || "[]")); } catch (e) {}
 function saveOpen() { try { sessionStorage.setItem("openBots", JSON.stringify([...openBots])); } catch (e) {} }
-const signed = v => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2);
+const signed = v => Math.abs(v) < 0.005 ? "0.00" : (v > 0 ? "+" : "−") + Math.abs(v).toFixed(2);
 // מספר עם סימן (+5%, -0.26) בתוך משפט בעברית: מבודדים אותו, אחרת הסימן קופץ לצד השני של המספר
 const bidi = t => t.replace(/(^|[\s(])([+\-−]\d+(?:[.,]\d+)*%?)/g, "$1\u2066$2\u2069");
 
@@ -475,7 +510,7 @@ function brainPanel(card, b, color) {
   scoreChart(el("svg", { class: "score", role: "img", "aria-label": "הציון לאורך הזמן" }, d), x, color);
   el("div", { class: "lbl" }, d).textContent = "איך יצא הציון עכשיו";
   el("p", { class: "desc" }, d).textContent =
-    "הבוט בודק 4 סימנים. כל סימן נותן מספר בין 1- ל-1, כפול המשקל שהבוט נותן לו (משקל שלילי = הוא עושה ההפך). " +
+    `הבוט בודק ${x.rows.length} סימנים. כל סימן נותן מספר בין 1- ל-1, כפול המשקל שהבוט נותן לו (משקל שלילי = הוא עושה ההפך). ` +
     "הסכום הוא הציון. כחול = דוחף לקנות, אדום = דוחף למכור.";
   for (const r of x.rows) {
     const row = el("div", { class: "sig" }, d);

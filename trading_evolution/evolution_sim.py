@@ -46,11 +46,11 @@ def load_data(kind, assets, seed):
 
 
 def cut_range(times, prices, start=None, end=None):
-    """מחזיר רק את התקופה המבוקשת, ועוד MAX_WINDOW נרות לפניה לחישוב אינדיקטורים."""
+    """מחזיר את התקופה המבוקשת, ועוד כל מה שלפניה בשביל האינדיקטורים. הבוטים סוחרים רק מ-start."""
     lo = next((i for i, t in enumerate(times) if start is None or t >= start), len(times))
     hi = next((i for i, t in enumerate(times) if end is not None and t >= end), len(times))
     lo = max(lo, min(MAX_WINDOW, hi - 1))   # בלי מספיק היסטוריה לפני, מתחילים קצת יותר מאוחר
-    warm = max(0, lo - MAX_WINDOW)
+    warm = 0   # כל מה שקרה לפני - בשביל האינדיקטורים וזיכרון הדפוסים (הבוטים לא סוחרים בזה)
     return times[warm:hi], {a: p[warm:hi] for a, p in prices.items()}, lo - warm
 
 
@@ -81,7 +81,7 @@ def summary(title, world, times, prices, warmup):
 def show_best(world, k=3):
     print("האסטרטגיות הכי מצליחות:")
     for b in world.best(k):
-        print(f"  בוט #{b.id} ({b.genome.asset}, דור {b.generation}): {b.genome.describe()}")
+        print(f"  בוט #{b.id} ({b.genome.asset}, דור {b.generation}): {b.genome.describe(world.cfg.signals)}")
         print(f"      {b.genome.clone_rule(world.cfg.start_money)}")
 
 

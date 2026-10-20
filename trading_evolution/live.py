@@ -19,13 +19,13 @@ import time
 from dataclasses import replace
 from datetime import datetime
 
-from core import MAX_WINDOW, Market, World, load_brains, load_settings, minutes
+from core import Market, World, load_brains, load_settings, minutes
 from dashboard import write_dashboard
 from exchanges import latest
 from phone import announce, serve
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HISTORY = MAX_WINDOW + 60   # כמה נרות אחרונים לזכור בשביל האינדיקטורים
+HISTORY = 720   # כמה נרות אחרונים לזכור בשביל האינדיקטורים וזיכרון הדפוסים (כמה שהבורסה נותנת)
 TITLE = "בוטי מסחר: מסחר חי על נייר"
 
 
