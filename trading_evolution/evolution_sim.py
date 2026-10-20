@@ -21,6 +21,7 @@ from datetime import datetime
 from core import (MAX_WINDOW, World, align, candle_minutes, load_brains, load_prices,
                   load_settings, run_history, save_brains, synthetic_prices)
 from dashboard import write_dashboard
+import internet as net
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -54,12 +55,18 @@ def cut_range(times, prices, start=None, end=None):
     return times[warm:hi], {a: p[warm:hi] for a, p in prices.items()}, lo - warm
 
 
+_extras = {}
+
+
 def simulate(times, prices, warmup, cfg, args, seeds=()):
+    key = (times[0], times[-1], len(times), tuple(cfg.assets))
+    if key not in _extras:     # החושים מהאינטרנט, מיושרים לנרות (מחשבים פעם אחת לכל תקופה)
+        _extras[key] = net.extras(cfg.assets, times, candle_minutes(times) < 1440)
     world = World(cfg, candle_minutes(times), args.seed, seeds)
     world.out = print if args.verbose else None
     world.verbose = args.verbose
     world.populate()
-    run_history(times, prices, world, warmup)
+    run_history(times, prices, world, warmup, _extras[key])
     return world
 
 

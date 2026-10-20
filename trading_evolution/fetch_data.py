@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 
 from core import load_settings
 from exchanges import binance_history
+import internet as net
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
@@ -64,6 +65,9 @@ def main():
             write("daily", asset, rows)
         except Exception as e:
             print(f"  {asset}: לא נמצא מחיר יומי ({e})")
+
+    print("חושים מהאינטרנט (data/internet):")
+    net.download_history(assets)
 
     if args.recent:
         print("מחיר לשעה, שנתיים אחרונות (data/hourly):")

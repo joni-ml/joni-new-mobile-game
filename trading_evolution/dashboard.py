@@ -9,7 +9,7 @@ import json
 import os
 from datetime import datetime
 
-from core import CLEAR, PATTERN_AHEAD, PATTERN_LEN, PATTERN_MIN, SIGNALS, Genome, fmt_price, human
+from core import CLEAR, NET_SIGNALS, PATTERN_AHEAD, PATTERN_LEN, PATTERN_MIN, SIGNALS, Genome, fmt_price, human
 
 MAX_COINS = 7   # כמה מטבעות אפשר להראות בגרף המטבעות (יש 7 צבעים שקל להבדיל ביניהם)
 
@@ -48,7 +48,36 @@ def coin_series(world):
 
 NAMES = {"trend": "מגמה", "dip": "ירידה חדה (RSI)", "momentum": "תנופה", "stretch": "מרחק מהממוצע",
          "macd": "MACD", "bollinger": "רצועות בולינגר", "channel": "ערוץ 20 נרות",
-         "breakout": "פריצה של 55 נרות (שיטת הצבים)", "calm": "כמה השוק סוער", "pattern": "זיכרון דפוסים"}
+         "breakout": "פריצה של 55 נרות (שיטת הצבים)", "calm": "כמה השוק סוער", "pattern": "זיכרון דפוסים",
+         "fear_greed": "פחד וחמדנות בקריפטו 🌐", "stock_fear": "פחד וחמדנות בבורסה האמריקאית 🌐",
+         "vix": "מדד הפחד של וול סטריט (VIX) 🌐", "attention": "התעניינות בביטקוין (ויקיפדיה) 🌐",
+         "activity": "פעילות ברשת של המטבע 🌐", "valuation": "כמה המטבע יקר (MVRV) 🌐"}
+
+
+def mood(v):
+    return ("פחד קיצוני" if v < 25 else "פחד" if v < 45 else "ניטרלי" if v <= 55 else
+            "חמדנות" if v <= 75 else "חמדנות קיצונית")
+
+
+def net_text(name, r, asset):
+    """מה הבוט רואה מהאינטרנט (המספר מאתמול, כי של היום עוד לא פורסם)."""
+    v, z = r.get(name + "_raw"), r.get(name)
+    if v is None:
+        return "אין נתון עדכני מהאתר, אז החוש הזה לא משפיע עכשיו"
+    if z is None:
+        return "עוד אין מספיק היסטוריה כדי לדעת אם זה הרבה או מעט"
+    usual = "גבוה מהרגיל" if z > 0.25 else "נמוך מהרגיל" if z < -0.25 else "בערך כרגיל"
+    return {
+        "fear_greed": f"המדד עומד על {v:.0f} מתוך 100: {mood(v)} (alternative.me)",
+        "stock_fear": f"המדד של CNN עומד על {v:.0f} מתוך 100: {mood(v)}",
+        "vix": f"VIX = {v:.1f}, {usual} לעומת השנה האחרונה (מעל 30 = פחד גדול בכלכלה)",
+        "attention": f"{v:,.0f} כניסות ביום לערך Bitcoin; בחודש האחרון " +
+                     ("ההתעניינות עלתה יותר מהרגיל" if z > 0.25 else "ההתעניינות ירדה יותר מהרגיל" if z < -0.25
+                      else "ההתעניינות כרגיל"),
+        "activity": f"{v:,.0f} כתובות פעילות ביום ברשת של {asset}; בחודש האחרון " +
+                    ("הרשת גדלה יותר מהרגיל" if z > 0.25 else "הרשת התכווצה יותר מהרגיל" if z < -0.25 else "בערך כרגיל"),
+        "valuation": f"MVRV = {v:.2f} ({usual} לשנה האחרונה; מתחת ל-1 = זול מאוד, מעל 3 = יקר מאוד)",
+    }[name]
 
 
 def channel_text(x, n):
@@ -116,6 +145,7 @@ def brain(b, allowed, goal="trade"):
         "breakout": channel_text(r["ch55"], 55),
         "calm": f"השוק זז עכשיו פי {r['vol']:.1f} ממה שהוא זז בדרך כלל",
         "pattern": pattern_text(r),
+        **{n: net_text(n, r, g.asset) for n in NET_SIGNALS},
     }
     parts = g.parts(Genome.signals(r), allowed)
     rows = [{"name": NAMES[s], "sees": sees[s], "weight": round(w, 2), "part": round(p, 3)}

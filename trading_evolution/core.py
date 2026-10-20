@@ -11,6 +11,8 @@ import json
 import math
 import random
 from collections import deque
+
+import internet
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timedelta
 
@@ -246,8 +248,9 @@ def pattern_memory(prices, rets, vol):
 class Market:
     """מחירים של מטבע אחד + אינדיקטורים שמחושבים פעם אחת מראש, כדי שהכול ירוץ מהר."""
 
-    def __init__(self, prices):
+    def __init__(self, prices, extras=None):
         self.p = prices
+        self.extras = extras or {}   # חושים מהאינטרנט: {שם: (המספרים, הסימנים)}, מיושרים לנרות
         self.cum, self.cum2 = [0.0], [0.0]
         for x in prices:
             self.cum.append(self.cum[-1] + x)
@@ -274,9 +277,10 @@ class Market:
 # ---------- האסטרטגיה ("הגנום") ----------
 
 # כל בוט מסתכל על כמה סימנים (שיטות מסחר מוכרות), ומחליט כמה משקל לתת לכל אחד (משקל שלילי = ההפך).
+NET_SIGNALS = tuple(internet.SOURCES)                        # חושים מהאינטרנט (גלאי סכנה)
 SIGNALS = ("trend", "dip", "momentum", "stretch",          # 4 השיטות הראשונות
            "macd", "bollinger", "channel", "breakout",     # שיטות מוכרות מהאינטרנט
-           "calm", "pattern")                              # מצב רוח השוק + זיכרון דפוסים
+           "calm", "pattern") + NET_SIGNALS                # מצב רוח השוק + זיכרון דפוסים + חושים מהאינטרנט
 SIGNAL_WORDS = {
     "trend": ("עוקב אחרי המגמה", "הולך נגד המגמה"),
     "dip": ("קונה אחרי ירידות", "קונה כשהשוק חם"),
@@ -288,6 +292,12 @@ SIGNAL_WORDS = {
     "breakout": ("קונה בפריצה של שיא 55 נרות", "קונה ליד השפל של 55 נרות"),
     "calm": ("קונה כשהשוק רגוע", "קונה כשהשוק סוער"),
     "pattern": ("סומך על דפוסים מהעבר", "הולך נגד הדפוסים מהעבר"),
+    "fear_greed": ("קונה כשיש חמדנות בקריפטו", "קונה כשיש פחד בקריפטו"),
+    "stock_fear": ("קונה כשהבורסה האמריקאית חמדנית", "בורח כשהבורסה האמריקאית מפחדת"),
+    "vix": ("קונה כשוול סטריט מפחדת", "בורח כשוול סטריט מפחדת"),
+    "attention": ("קונה כשיותר אנשים מתעניינים בביטקוין", "קונה כשפחות אנשים מתעניינים"),
+    "activity": ("קונה כשהרשת של המטבע גדלה", "קונה כשהרשת של המטבע מתכווצת"),
+    "valuation": ("קונה כשהמטבע יקר", "קונה כשהמטבע זול"),
 }
 
 
@@ -378,6 +388,9 @@ class Genome:
             "vol": m.vol14[i] / (m.vol100[i] or 1e-9),         # פי כמה השוק זז עכשיו לעומת הרגיל
             "pattern": code, "seen": seen, "ahead": ahead,     # הדפוס, כמה פעמים נראה, מה קרה אחריו
             "ahead_z": ahead / ((m.vol50[i] or 1e-9) * PATTERN_AHEAD ** 0.5),
+            # חושים מהאינטרנט: הסימן (בין -1 ל-1) והמספר עצמו. None = אין נתון עדכני
+            **{n: m.extras[n][1][i] if n in m.extras else None for n in NET_SIGNALS},
+            **{n + "_raw": m.extras[n][0][i] if n in m.extras else None for n in NET_SIGNALS},
         }
 
     @staticmethod
@@ -385,7 +398,8 @@ class Genome:
         """הופך כל מדידה לסימן בין -1 ל-1 (1 = "תקנה!", -1 = "תמכור!")."""
         return [clamp(r["trend"] * 20), (50 - r["rsi"]) / 50, clamp(r["mom"] * 10), clamp(r["stretch"] * 10),
                 clamp(r["macd"] * 200), clamp(r["z"] / 2), clamp(r["ch20"] * 2 - 1), clamp(r["ch55"] * 2 - 1),
-                clamp(1 - r["vol"]), clamp(r["ahead_z"] * 3) if r["seen"] >= PATTERN_MIN else 0.0]
+                clamp(1 - r["vol"]), clamp(r["ahead_z"] * 3) if r["seen"] >= PATTERN_MIN else 0.0] + \
+               [r.get(n) or 0.0 for n in NET_SIGNALS]   # אין נתון = אין דעה
 
     def parts(self, sig, allowed=SIGNALS):
         """כמה כל סימן תורם לציון: הסימן כפול המשקל שהבוט נותן לו. הציון הוא הסכום, בין -1 ל-1.
@@ -732,10 +746,11 @@ class World:
         return w
 
 
-def run_history(times, prices, world, start=0):
-    """מריץ את העולם על מחירי עבר. prices: {מטבע: [מחירים]}.
+def run_history(times, prices, world, start=0, extras=None):
+    """מריץ את העולם על מחירי עבר. prices: {מטבע: [מחירים]}, extras: חושים מהאינטרנט (internet.extras).
     נרות לפני start משמשים רק לחישוב אינדיקטורים."""
-    markets = {a: Market(p) for a, p in prices.items()}
+    extras = extras or {}
+    markets = {a: Market(p, extras.get(a)) for a, p in prices.items()}
     for i in range(start, len(times)):
         world.step(markets, i, times[i])
 

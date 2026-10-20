@@ -22,6 +22,7 @@ from datetime import datetime
 from core import Market, World, load_brains, load_settings, minutes
 from dashboard import write_dashboard
 from exchanges import latest
+import internet as net
 from phone import announce, serve
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -88,19 +89,31 @@ def tick(s, cfg):
         s["times"] = common
         s["prices"] = {a: [c[t] for t in common] for a, c in got.items()}
         print(f"קיבלתי {len(common)} נרות של היסטוריה ל-{len(got)} מטבעות. מתחילים לסחור.")
-        world.step({a: Market(col) for a, col in s["prices"].items()}, len(common) - 1, common[-1])
+        ex = net.extras(list(s["prices"]), common, mins < 1440)
+        world.step({a: Market(col, ex[a]) for a, col in s["prices"].items()}, len(common) - 1, common[-1])
         return
     s["prices"] = {a: col for a, col in s["prices"].items() if a in got}
     for a, c in got.items():           # מטבע חדש שנוסף להגדרות
         if a not in s["prices"]:
             s["prices"][a] = fill(c, s["times"])
     upto = min(max(c) for c in got.values())   # לא רצים לפני המטבע הכי איטי
-    for t in sorted({t for c in got.values() for t in c if s["times"][-1] < t <= upto}):
-        s["times"] = (s["times"] + [t])[-HISTORY:]
-        for a, col in s["prices"].items():
-            s["prices"][a] = (col + [got[a].get(t, col[-1])])[-HISTORY:]
-        markets = {a: Market(col) for a, col in s["prices"].items()}
-        world.step(markets, len(s["times"]) - 1, t)
+    new = sorted({t for c in got.values() for t in c if s["times"][-1] < t <= upto})
+    if not new:
+        return
+    times, cols = s["times"] + new, {}
+    for a, col in s["prices"].items():
+        last, cols[a] = col[-1], list(col)
+        for t in new:
+            last = got[a].get(t, last)
+            cols[a].append(last)
+    ex = net.extras(list(cols), times, mins < 1440)   # החושים מהאינטרנט, פעם אחת לכל הנרות החדשים
+    for k in range(len(s["times"]), len(times)):      # כל נר חדש בתורו, עם HISTORY הנרות שלפניו
+        lo = max(0, k + 1 - HISTORY)
+        markets = {a: Market(col[lo:k + 1], {n: (raw[lo:k + 1], sig[lo:k + 1]) for n, (raw, sig) in ex[a].items()})
+                   for a, col in cols.items()}
+        world.step(markets, k - lo, times[k])
+    s["times"] = times[-HISTORY:]
+    s["prices"] = {a: col[-HISTORY:] for a, col in cols.items()}
 
 
 def status(s, cfg, chart):
@@ -150,6 +163,11 @@ def main():
         world = s["world"]
         world.out, world.verbose = print, args.verbose
         try:
+            if time.time() - s.get("net_updated", 0) > 6 * 3600:   # החושים מהאינטרנט: פעם ב-6 שעות
+                failed = net.update_live(cfg.assets)
+                s["net_updated"] = time.time()
+                if failed:
+                    print("לא הצלחתי לעדכן עכשיו: " + ", ".join(failed) + ". ממשיך עם הנתונים שיש.")
             tick(s, cfg)
             save_state(args.state, s)
             write_dashboard(args.chart, TITLE, [("הבוטים", world)], world.cfg, live=True)
