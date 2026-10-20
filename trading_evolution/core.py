@@ -223,6 +223,7 @@ class World:
         self.invested = 0.0
         self.deaths = 0
         self.clones = 0
+        self.history = []             # תמונת מצב בסוף כל יום, בשביל הגרפים
 
     def populate(self, n):
         for k in range(n):
@@ -256,7 +257,7 @@ class World:
             return self.spawn(child, generation=max(mom.generation, dad.generation) + 1)
         return self.spawn(Genome.random(self.rng))
 
-    def end_of_day(self, price, log=None):
+    def end_of_day(self, price, log=None, date=None):
         log = log or (lambda *_: None)
         self.day += 1
         for bot in list(self.bots):
@@ -281,6 +282,11 @@ class World:
                     log(f"יום {self.day}: בוט #{bot.id} הצליח ({bot.week_start_value:.2f} -> {v:.2f}) "
                         f"ושוכפל לבוט #{child.id}")
                 bot.week_start_value = bot.day_start_value = bot.value(price)
+
+        if date is not None:
+            self.history.append({"date": date.isoformat(), "price": price, "alive": len(self.bots),
+                                 "inside": round(sum(b.value(price) for b in self.bots), 4),
+                                 "collected": round(self.owner_profit, 4), "invested": self.invested})
 
     def best(self, k):
         return sorted(self.bots, key=lambda b: b.fitness(self.day), reverse=True)[:k]
@@ -309,7 +315,7 @@ def run_history(times, prices, world, start=0, log=None):
         for bot in world.bots:
             bot.step(m, i)
         if i + 1 == len(prices) or times[i + 1].date() != times[i].date():
-            world.end_of_day(prices[i], log)
+            world.end_of_day(prices[i], log, times[i])
 
 
 def save_brains(path, genomes):

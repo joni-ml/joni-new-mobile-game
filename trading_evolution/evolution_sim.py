@@ -14,6 +14,7 @@ import argparse
 import os
 from datetime import datetime
 
+from chart import write_chart
 from core import (MAX_WINDOW, World, load_brains, load_prices, run_history,
                   save_brains, synthetic_prices)
 
@@ -53,6 +54,11 @@ def show_best(world, k=3):
         print(f"  בוט #{b.id} (דור {b.generation}): {b.genome.describe()}")
 
 
+def save_chart(path, title, runs):
+    write_chart(path, title, runs)
+    print(f"\nגרף: {os.path.abspath(path)} (לפתוח בדפדפן)")
+
+
 def main():
     p = argparse.ArgumentParser(description="אימון ובדיקה של בוטי מסחר על מחירי עבר")
     p.add_argument("--data", help="קובץ מחירים (time,close). בלי זה - מחירים מדומים")
@@ -67,6 +73,7 @@ def main():
     p.add_argument("--cut", type=float, default=0.01, help="כמה הבעלים לוקח כל יום (0.01 = 1%%)")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--verbose", action="store_true", help="להראות כל מוות ושכפול")
+    p.add_argument("--chart", default="chart.html", help="איפה לשמור את דף הגרפים")
     args = p.parse_args()
 
     times, prices = load_prices(args.data) if args.data else synthetic_prices(args.days, args.seed)
@@ -79,6 +86,7 @@ def main():
         world = simulate(t, pr, warm, args, seeds, log)
         summary("תוצאות", world, t, pr, warm)
         show_best(world)
+        save_chart(args.chart, "בוטי מסחר: תוצאות", [("הבוטים", world)])
         return
 
     # שלב 1: אימון. כל סבב מתחיל מהאסטרטגיות הכי טובות של הסבב הקודם.
@@ -94,10 +102,14 @@ def main():
 
     # שלב 2: מבחן על תקופה שהבוטים לא ראו. משווים לבוטים אקראיים שלא התאמנו.
     t, pr, warm = cut_range(times, prices, date(args.split), date(args.end))
-    trained = summary("מבחן: בוטים מאומנים", simulate(t, pr, warm, args, seeds, log), t, pr, warm)
-    fresh = summary("מבחן: בוטים אקראיים (בלי אימון)", simulate(t, pr, warm, args), t, pr, warm)
+    trained_world = simulate(t, pr, warm, args, seeds, log)
+    fresh_world = simulate(t, pr, warm, args)
+    trained = summary("מבחן: בוטים מאומנים", trained_world, t, pr, warm)
+    fresh = summary("מבחן: בוטים אקראיים (בלי אימון)", fresh_world, t, pr, warm)
     verdict = "האימון עזר" if trained > fresh else "האימון לא עזר"
     print(f"\n{verdict}: מאומנים {trained:+.2f} ש\"ח מול אקראיים {fresh:+.2f} ש\"ח")
+    save_chart(args.chart, "בוטי מסחר: מבחן על תקופה שהבוטים לא ראו",
+               [("בוטים מאומנים", trained_world), ("בוטים בלי אימון", fresh_world)])
 
 
 if __name__ == "__main__":

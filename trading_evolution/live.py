@@ -17,6 +17,7 @@ import os
 import time
 from datetime import datetime
 
+from chart import write_chart
 from core import MAX_WINDOW, Market, World, load_brains
 from exchanges import latest_hourly
 
@@ -59,8 +60,9 @@ def tick(s, log):
         if t <= hist[-1][0]:
             continue
         if t.date() != hist[-1][0].date():
-            world.end_of_day(hist[-1][1], log)
+            world.end_of_day(hist[-1][1], log, hist[-1][0])
             report(world, hist[-1][1])
+            write_chart(s["chart"], "בוטי מסחר: מסחר חי על נייר", [("הבוטים", world)])
         hist.append((t, price))
         del hist[:-HISTORY]
         m = Market([p for _, p in hist])
@@ -85,6 +87,9 @@ def status(s):
     print(f"השקעת {world.invested:.2f} ש\"ח | מתו {world.deaths} | שוכפלו {world.clones}")
     for b in world.best(3):
         print(f"  בוט #{b.id} (דור {b.generation}): {b.value(hist[-1][1]):.2f} ש\"ח - {b.genome.describe()}")
+    if world.history:
+        write_chart(s["chart"], "בוטי מסחר: מסחר חי על נייר", [("הבוטים", world)])
+        print(f"גרף: {os.path.abspath(s['chart'])}")
 
 
 def main():
@@ -98,11 +103,13 @@ def main():
     p.add_argument("--status", action="store_true")
     p.add_argument("--reset", action="store_true")
     p.add_argument("--verbose", action="store_true", help="להראות כל מוות ושכפול")
+    p.add_argument("--chart", default="live_chart.html", help="דף הגרפים, מתעדכן פעם ביום")
     args = p.parse_args()
 
     if args.reset and os.path.exists(args.state):
         os.remove(args.state)
     s = load_state(args.state) if os.path.exists(args.state) else new_state(args)
+    s["chart"] = args.chart
     if args.status:
         return status(s)
 
