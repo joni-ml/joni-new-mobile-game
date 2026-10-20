@@ -515,11 +515,9 @@ function scoreChart(svg, x, color) {
   const lo = Math.max(-1, Math.min(...seen) - 0.1), hi = Math.min(1, Math.max(...seen) + 0.1);
   const y = v => 10 + (1 - (v - lo) / (hi - lo)) * (H - 20);
   if (lo < 0 && hi > 0) el("line", { x1: 0, x2: W, y1: y(0), y2: y(0), stroke: css("--grid"), "stroke-width": 1 }, svg);
-  for (const [v, c, label, dy] of [[x.buy, "--up", x.buy_label, -3], [x.sell, "--down", x.sell_label, 10]]) {
+  const lines = [[x.buy, "--up", x.buy_label, -3], [x.sell, "--down", x.sell_label, 10]];
+  for (const [v, c] of lines)
     el("line", { x1: 0, x2: W, y1: y(v), y2: y(v), stroke: css(c), "stroke-width": 1 }, svg);
-    el("text", { x: W - 2, y: y(v) + dy, direction: "rtl", "text-anchor": "start", "font-size": 9,
-                 fill: css("--ink2") }, svg).textContent = bidi(label);
-  }
   let d = "", pen = false;
   vals.forEach((v, i) => {
     if (v === null) { pen = false; return; }
@@ -528,6 +526,11 @@ function scoreChart(svg, x, color) {
   });
   el("path", { d, fill: "none", stroke: css(color), "stroke-width": 1.5, "stroke-linejoin": "round" }, svg);
   el("circle", { cx: W, cy: y(x.score), r: 3, fill: css(color), stroke: css("--surface"), "stroke-width": 1.5 }, svg);
+  // התוויות אחרונות, עם רקע בהיר מסביב, כדי שהקו של הציון לא יסתיר אותן
+  for (const [v, , label, dy] of lines)
+    el("text", { x: 4, y: y(v) + dy, "font-size": 8, fill: css("--ink2"), stroke: css("--surface"),
+                 "stroke-width": 3, "paint-order": "stroke", direction: "rtl", "text-anchor": "end" }, svg)
+      .textContent = bidi(label);
 }
 
 function brainPanel(card, b, color) {
