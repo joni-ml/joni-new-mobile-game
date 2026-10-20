@@ -150,6 +150,7 @@ def write_dashboard(path, title, runs, cfg, live=False):
         ["בוטים עכשיו / מקסימום", f"{last['alive']} / {cfg.max_bots}"],
         ["מתו / שוכפלו", f"{world.deaths} / {world.clones}"],
         ["בחרו לא להשתכפל", f"{world.declined}"],
+        ["נולדו במקומות ריקים", f"{world.refilled}"],
     ]
     if live:
         tiles += [["התשלום הבא בעוד", human(world.next_in(cfg.pay_every))],

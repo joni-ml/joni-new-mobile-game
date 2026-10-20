@@ -72,7 +72,7 @@ def summary(title, world, times, prices, warmup):
     print(f"השקעת {last['invested']:.2f} ש\"ח | לקחת {last['collected']:.2f} | נשאר בבוטים {last['inside']:.2f}")
     print(f"רווח/הפסד נקי: {net:+.2f} ש\"ח ({net / last['invested'] * 100:+.0f}%) | "
           f"מבחנים {world.selections}, מתו {world.deaths}, שוכפלו {world.clones}, "
-          f"בחרו לא להשתכפל {world.declined}, חיים {len(world.bots)}")
+          f"בחרו לא להשתכפל {world.declined}, נולדו במקומות ריקים {world.refilled}, חיים {len(world.bots)}")
     picks = Counter(b.genome.asset for b in world.bots)
     print("במה הבוטים בחרו לסחור: " + ", ".join(f"{a} ({n})" for a, n in picks.most_common()))
     return net

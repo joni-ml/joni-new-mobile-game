@@ -43,6 +43,7 @@ class Settings:
     losers_money: str = "me"
     candle: str = "1h"
     signals: list = field(default_factory=lambda: list(SIGNALS))
+    refill: bool = True
 
 
 def load_settings(path):
@@ -74,6 +75,8 @@ def load_settings(path):
     if bad or not s.signals:
         raise SystemExit(f"שיטה לא מוכרת ב-signals: {', '.join(bad) or 'הרשימה ריקה'}. "
                          f"אפשר: {', '.join(SIGNALS)}")
+    if not isinstance(s.refill, bool):
+        raise SystemExit(f"refill יכול להיות רק true או false (כתוב {s.refill!r})")
     if s.losers_money not in ("me", "winners"):
         raise SystemExit(f"losers_money יכול להיות רק \"me\" או \"winners\" (כתוב {s.losers_money!r})")
     return s
@@ -499,6 +502,7 @@ class World:
         self.deaths = 0
         self.clones = 0
         self.declined = 0             # כמה פעמים בוטים בחרו לא להשתכפל
+        self.refilled = 0             # כמה בוטים חדשים נולדו כדי למלא מקומות ריקים
         self.selections = 0
         self.history = []             # תמונת מצב אחרי כל נר, בשביל הגרפים
         self.events = []              # מה קרה לאחרונה
@@ -620,11 +624,27 @@ class World:
             born += 1
             self.note(f"בוט #{parent.id} שוכפל לבוט #{child.id} ({child.genome.asset})")
         self.declined += declined
+        added = self.refill() if self.cfg.refill else 0
         for bot in self.bots:
             bot.period_start = bot.value(price(bot))
+        extra = f", {added} חדשים נולדו במקומות הריקים (שמת עוד {added * self.cfg.start_money:g} ש\"ח)" if added else ""
         self.note(f"מבחן {self.selections}: {len(ranked) - keep} בוטים מתו "
                   f"({loot:.2f} ש\"ח עברו {'אליך' if to_me else 'לטובים'}), "
-                  f"{born} שוכפלו, {declined} בחרו לא להשתכפל. עכשיו יש {len(self.bots)} בוטים", True)
+                  f"{born} שוכפלו, {declined} בחרו לא להשתכפל{extra}. עכשיו יש {len(self.bots)} בוטים", True)
+
+    def refill(self):
+        """ממלא מקומות ריקים עד start_bots: בוטים חדשים מהאסטרטגיות של הבוטים הכי טובים
+        (עם שינוי קטן), והבעלים משלם על כל אחד start_money כמו בהתחלה."""
+        target = min(self.cfg.start_bots, self.cfg.max_bots)
+        parents = self.best(len(self.bots))
+        added = 0
+        while parents and len(self.bots) < target:
+            parent = parents[added % len(parents)]
+            child = self.spawn(self.child_genome(parent), generation=parent.generation + 1)
+            added += 1
+            self.note(f"בוט #{child.id} ({child.genome.asset}) נולד במקום ריק, מהאסטרטגיה של בוט #{parent.id}")
+        self.refilled += added
+        return added
 
     def child_genome(self, parent):
         r, assets = self.rng.random(), self.cfg.assets
