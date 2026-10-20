@@ -22,6 +22,7 @@ from datetime import datetime
 from core import MAX_WINDOW, Market, World, load_brains, load_settings, minutes
 from dashboard import write_dashboard
 from exchanges import latest
+from phone import announce, serve
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HISTORY = MAX_WINDOW + 60   # כמה נרות אחרונים לזכור בשביל האינדיקטורים
@@ -127,6 +128,8 @@ def main():
     p.add_argument("--status", action="store_true")
     p.add_argument("--reset", action="store_true")
     p.add_argument("--verbose", action="store_true", help="להראות כל מוות ושכפול")
+    p.add_argument("--phone", action="store_true", help="לפתוח את הדף גם בטלפון (באותו Wi-Fi)")
+    p.add_argument("--port", type=int, default=8000, help="הפורט של הדף בשביל הטלפון")
     args = p.parse_args()
 
     cfg = load_settings(args.settings)
@@ -137,6 +140,8 @@ def main():
         return status(s, cfg, args.chart)
 
     print(f"הדף עם הבוטים: {os.path.abspath(args.chart)} (לפתוח בדפדפן, הוא מתרענן לבד)")
+    if args.phone:
+        announce(serve(args.chart, args.port))
     while True:
         try:                                     # קוראים מחדש כל פעם, כדי ששינויים ייכנסו לתוקף
             cfg = load_settings(args.settings)
