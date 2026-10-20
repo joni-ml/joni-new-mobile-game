@@ -111,7 +111,8 @@ def status(s, cfg, chart):
     net = last["collected"] + last["inside"] - last["invested"]
     print(f"עודכן לאחרונה: {last['time']} | {len(world.bots)} בוטים | נשאר בבוטים {last['inside']:.2f} ש\"ח")
     print(f"השקעת {last['invested']:.2f} | לקחת {last['collected']:.2f} | נקי {net:+.2f} ש\"ח | "
-          f"מבחנים {world.selections}, מתו {world.deaths}, שוכפלו {world.clones}")
+          f"מבחנים {world.selections}, מתו {world.deaths}, שוכפלו {world.clones}, "
+          f"בחרו לא להשתכפל {world.declined}")
     write_dashboard(chart, TITLE, [("הבוטים", world)], cfg, live=True)
     print(f"הדף עם הבוטים: {os.path.abspath(chart)}")
 

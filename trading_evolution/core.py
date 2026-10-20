@@ -201,6 +201,9 @@ class Genome:
     stop_loss: float     # מוכר אם ההפסד מהקנייה גדול מזה
     take_profit: float   # מוכר אם הרווח מהקנייה גדול מזה
     bet: float           # איזה חלק מהמזומן להשקיע בכל קנייה
+    # ההחלטה אם להשתכפל אחרי שעבר מבחן. גם היא עוברת בתורשה ומשתנה לאט לאט:
+    clone_min_return: float = 0.0   # משתכפל רק אם הרוויח לפחות כך מאז המבחן הקודם (0.05 = 5%)
+    clone_min_money: float = 0.2    # ורק אם לכל חצי יישאר לפחות כך (כחלק מכסף ההתחלה)
 
     @staticmethod
     def random(rng, assets):
@@ -208,13 +211,16 @@ class Genome:
         return Genome(rng.choice(assets), fast, fast + rng.randint(5, 120), rng.randint(2, 60),
                       [rng.uniform(-1, 1) for _ in SIGNALS],
                       rng.uniform(0.05, 0.6), rng.uniform(-0.6, 0.0),
-                      rng.uniform(0.02, 0.25), rng.uniform(0.03, 0.5), rng.uniform(0.2, 1.0)).fix()
+                      rng.uniform(0.02, 0.25), rng.uniform(0.03, 0.5), rng.uniform(0.2, 1.0),
+                      rng.uniform(-0.2, 0.2), rng.uniform(0.0, 0.6)).fix()
 
     def fix(self):
         self.fast = int(clamp(self.fast, 2, 50))
         self.slow = int(clamp(self.slow, self.fast + 3, MAX_WINDOW))
         self.mom = int(clamp(self.mom, 2, 100))
         self.sell_at = min(self.sell_at, self.buy_at - 0.05)
+        self.clone_min_return = clamp(self.clone_min_return, -0.5, 0.5)
+        self.clone_min_money = clamp(self.clone_min_money, 0.0, 2.0)
         return self
 
     def mutate(self, rng, assets, strength=1.0):
@@ -228,7 +234,8 @@ class Genome:
                       round(j(self.mom, 2, 100, 5)), [j(w, -1, 1, 0.2) for w in self.weights],
                       j(self.buy_at, -0.2, 0.9, 0.08), j(self.sell_at, -0.9, 0.2, 0.08),
                       j(self.stop_loss, 0.005, 0.4, 0.03), j(self.take_profit, 0.01, 1.0, 0.05),
-                      j(self.bet, 0.1, 1.0, 0.1)).fix()
+                      j(self.bet, 0.1, 1.0, 0.1),
+                      j(self.clone_min_return, -0.5, 0.5, 0.03), j(self.clone_min_money, 0.0, 2.0, 0.1)).fix()
 
     @staticmethod
     def crossover(a, b, rng):
@@ -254,6 +261,19 @@ class Genome:
         style = " + ".join(SIGNAL_WORDS[s][0 if w > 0 else 1] for s, w in top)
         return (f"{style}; משקיע {self.bet:.0%} מהמזומן, "
                 f"סטופ-לוס {self.stop_loss:.0%}, לוקח רווח ב-{self.take_profit:.0%}")
+
+    def wants_clone(self, change, value, start_money):
+        """האם הבוט בוחר להשתכפל. מחזיר (כן/לא, למה)."""
+        need = self.clone_min_money * start_money
+        if change < self.clone_min_return:
+            return False, f"הרוויח {change:+.0%} ורוצה לפחות {self.clone_min_return:+.0%}"
+        if value / 2 < max(need, DEATH_LINE):
+            return False, f"יש לו {value:.2f} ש\"ח ורוצה שלכל חצי יישאר לפחות {need:.2f}"
+        return True, ""
+
+    def clone_rule(self, start_money):
+        return (f"משתכפל רק אם הרוויח לפחות {self.clone_min_return:+.0%} מאז המבחן, "
+                f"ושלכל חצי יישארו לפחות {self.clone_min_money * start_money:.2f} ש\"ח")
 
 
 # ---------- הבוט ----------
@@ -334,6 +354,7 @@ class World:
         self.invested = 0.0
         self.deaths = 0
         self.clones = 0
+        self.declined = 0             # כמה פעמים בוטים בחרו לא להשתכפל
         self.selections = 0
         self.history = []             # תמונת מצב אחרי כל נר, בשביל הגרפים
         self.events = []              # מה קרה לאחרונה
@@ -415,20 +436,20 @@ class World:
 
     def select(self, prices):
         """המבחן: הפחות טובים מתים, והכסף שלהם הולך לבעלים (או לטובים, לפי ההגדרות).
-        כל אחד מהטובים משתכפל ומתחלק בכסף שלו עם השכפול."""
+        כל אחד מהטובים מחליט לפי הגנים שלו אם להשתכפל. מי שמשתכפל מתחלק בכסף שלו עם השכפול."""
         price = lambda b: prices[b.genome.asset]
-        ranked = sorted(self.bots, key=lambda b: b.period_return(price(b)), reverse=True)
+        change = {b.id: b.period_return(price(b)) for b in self.bots}
+        ranked = sorted(self.bots, key=lambda b: change[b.id], reverse=True)
         keep = len(ranked) - int(len(ranked) * self.cfg.kill_percent / 100)
         keep = max(1, min(keep, self.cfg.max_bots))
         self.selections += 1
         to_me = self.cfg.losers_money == "me"
         loot = 0.0
         for bot in ranked[keep:]:
-            change = bot.period_return(price(bot))
             got = bot.take(bot.value(price(bot)), price(bot))
             loot += got
             self.deaths += 1
-            self.note(f"בוט #{bot.id} ({bot.genome.asset}, {change:+.0%}) נכשל במבחן ומת. "
+            self.note(f"בוט #{bot.id} ({bot.genome.asset}, {change[bot.id]:+.0%}) נכשל במבחן ומת. "
                       f"{got:.2f} ש\"ח עברו {'אליך' if to_me else 'לטובים'}")
         self.bots = ranked[:keep]
         if to_me:
@@ -436,23 +457,27 @@ class World:
         else:
             for bot in self.bots:
                 bot.cash += loot / len(self.bots)
-        born = 0
+        born = declined = 0
         for parent in ranked[:keep]:
             if len(self.bots) >= self.cfg.max_bots:
                 break
             p = price(parent)
-            if parent.value(p) < 2 * DEATH_LINE:
+            yes, why = parent.genome.wants_clone(change[parent.id], parent.value(p), self.cfg.start_money)
+            if not yes:
+                declined += 1
+                self.note(f"בוט #{parent.id} בחר לא להשתכפל: {why}")
                 continue
             money = parent.take(parent.value(p) / 2, p)
             child = self.spawn(self.child_genome(parent), money, parent.generation + 1)
             self.clones += 1
             born += 1
             self.note(f"בוט #{parent.id} שוכפל לבוט #{child.id} ({child.genome.asset})")
+        self.declined += declined
         for bot in self.bots:
             bot.period_start = bot.value(price(bot))
         self.note(f"מבחן {self.selections}: {len(ranked) - keep} בוטים מתו "
                   f"({loot:.2f} ש\"ח עברו {'אליך' if to_me else 'לטובים'}), "
-                  f"{born} שוכפלו. עכשיו יש {len(self.bots)} בוטים", True)
+                  f"{born} שוכפלו, {declined} בחרו לא להשתכפל. עכשיו יש {len(self.bots)} בוטים", True)
 
     def child_genome(self, parent):
         r, assets = self.rng.random(), self.cfg.assets

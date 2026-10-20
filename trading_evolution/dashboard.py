@@ -56,6 +56,7 @@ def bot_cards(world):
             "value": round(b.value(p), 2), "change": round(b.period_return(p) * 100, 1),
             "paid": round(b.paid, 2), "holding": b.units > 0, "trades": b.trades,
             "age": human((world.tick - b.born) * world.candle), "desc": b.genome.describe(),
+            "clone": b.genome.clone_rule(world.cfg.start_money),
             "spark": b.values,
         })
     return cards
@@ -79,6 +80,7 @@ def write_dashboard(path, title, runs, cfg, live=False):
         ["נשאר בבוטים", f"{last['inside']:,.2f} ₪"],
         ["בוטים עכשיו / מקסימום", f"{last['alive']} / {cfg.max_bots}"],
         ["מתו / שוכפלו", f"{world.deaths} / {world.clones}"],
+        ["בחרו לא להשתכפל", f"{world.declined}"],
     ]
     if live:
         tiles += [["התשלום הבא בעוד", human(world.next_in(cfg.pay_every))],
@@ -88,7 +90,7 @@ def write_dashboard(path, title, runs, cfg, live=False):
         "updated": datetime.now().strftime("%H:%M:%S"),
         "rules": f"כל {human(pay)} כל בוט משלם לך {cfg.pay_percent:g}% מהכסף שלו · "
                  f"כל {human(select)} יש מבחן: {cfg.kill_percent:g}% הכי פחות טובים מתים, "
-                 f"והטובים משתכפלים · עד {cfg.max_bots} בוטים",
+                 f"והטובים בוחרים אם להשתכפל · עד {cfg.max_bots} בוטים",
         "times": [s["time"] for s in h],
         "money": money,
         "coins": coin_series(world),
@@ -400,6 +402,7 @@ function bots() {
     el("div", { class: "meta" }, card).textContent =
       `${b.holding ? "מחזיק " + b.asset : "במזומן"} · דור ${b.gen} · חי ${b.age} · שילם לך ${b.paid.toFixed(2)} ₪`;
     el("div", { class: "desc" }, card).textContent = b.desc;
+    el("div", { class: "desc" }, card).textContent = b.clone;
   }
 }
 
