@@ -81,7 +81,7 @@ def summary(title, world, times, prices, warmup):
 def show_best(world, k=3):
     print("האסטרטגיות הכי מצליחות:")
     for b in world.best(k):
-        print(f"  בוט #{b.id} ({b.genome.asset}, דור {b.generation}): {b.genome.describe(world.cfg.signals)}")
+        print(f"  בוט #{b.id} ({b.genome.asset}, דור {b.generation}): {b.genome.describe(world.cfg.signals, world.cfg.goal)}")
         print(f"      {b.genome.clone_rule(world.cfg.start_money)}")
 
 

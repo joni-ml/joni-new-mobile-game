@@ -9,7 +9,7 @@ import json
 import os
 from datetime import datetime
 
-from core import PATTERN_AHEAD, PATTERN_LEN, PATTERN_MIN, SIGNALS, Genome, fmt_price, human
+from core import CLEAR, PATTERN_AHEAD, PATTERN_LEN, PATTERN_MIN, SIGNALS, Genome, fmt_price, human
 
 MAX_COINS = 7   # כמה מטבעות אפשר להראות בגרף המטבעות (יש 7 צבעים שקל להבדיל ביניהם)
 
@@ -74,7 +74,30 @@ def pattern_text(r):
             f"בממוצע ב-{abs(r['ahead']):.1%} ב-{PATTERN_AHEAD} הנרות הבאים")
 
 
-def brain(b, allowed):
+def hold_rules(b, score):
+    """מצב "להחזיק": מחזיקים כמה שיותר, ובורחים רק כשיש סימני סכנה."""
+    g, clear = b.genome, b.genome.sell_at + CLEAR
+    if b.units > 0:
+        drop = b.price / b.peak - 1 if b.peak else 0.0
+        status = (f"מחזיק {g.asset} (קנה ב-{fmt_price(b.entry)}, עכשיו {fmt_price(b.price)}). "
+                  f"ממשיך להחזיק כל עוד אין סכנה")
+        rules = [[f"בורח אם הציון יורד מתחת לקו הסכנה {g.sell_at:+.2f}", f"עכשיו {score:+.2f}"],
+                 [f"בורח אם המחיר יורד {g.stop_loss:.0%} מהשיא מאז שקנה ({fmt_price(b.peak)})",
+                  f"עכשיו {drop:+.1%}"],
+                 ["לא מוכר בגלל רווח - המטרה היא להחזיק כמה שיותר זמן", ""]]
+    else:
+        status = (f"ברח מסכנה. מחכה עוד {b.wait} נרות לפני שיקנה שוב" if b.wait else
+                  f"במזומן. יקנה ברגע שאין סימני סכנה (ציון מעל {clear:+.2f})" if b.cash > 0.01 else
+                  "אין לו מספיק מזומן כדי לקנות")
+        rules = [[f"קונה {g.asset} כשאין סימני סכנה: הציון מעל {clear:+.2f}, ב-{g.bet:.0%} מהמזומן שלו",
+                  f"עכשיו {score:+.2f}"],
+                 [f"אחרי שבורח, מחכה {g.cooldown} נרות לפני שקונה שוב", ""],
+                 [f"אחרי שקנה: מחזיק, ובורח רק אם הציון יורד מתחת ל-{g.sell_at:+.2f} "
+                  f"או שהמחיר יורד {g.stop_loss:.0%} מהשיא", ""]]
+    return status, rules, [round(clear, 3), "חוזר לקנות מעל " + f"{clear:+.2f}", "סכנה: בורח מתחת " + f"{g.sell_at:+.2f}"]
+
+
+def brain(b, allowed, goal="trade"):
     """מה הבוט חישב בנר האחרון, כדי להבין למה הוא קונה, מוכר או מחכה."""
     g, r = b.genome, b.readings
     if not isinstance(r, dict) or not r:
@@ -98,6 +121,11 @@ def brain(b, allowed):
     rows = [{"name": NAMES[s], "sees": sees[s], "weight": round(w, 2), "part": round(p, 3)}
             for s, w, p in zip(SIGNALS, g.weights, parts) if s in allowed]
     score = b.score
+    if goal == "hold":
+        status, rules, (buy, buy_label, sell_label) = hold_rules(b, score)
+        return {"rows": rows, "score": round(score, 3), "buy": buy, "sell": round(g.sell_at, 3),
+                "buy_label": buy_label, "sell_label": sell_label,
+                "status": status, "rules": rules, "last": b.last, "scores": b.scores}
     if b.units > 0:
         change = b.price / b.entry - 1
         status = f"מחזיק {g.asset} שקנה ב-{fmt_price(b.entry)}. עכשיו {fmt_price(b.price)} ({change:+.1%})"
@@ -112,6 +140,7 @@ def brain(b, allowed):
                  [f"אחרי שקנה: מוכר אם הציון יורד מתחת לסף {g.sell_at:+.2f}, "
                   f"אם המחיר ירד {g.stop_loss:.0%} או אם עלה {g.take_profit:.0%}", ""]]
     return {"rows": rows, "score": round(score, 3), "buy": round(g.buy_at, 3), "sell": round(g.sell_at, 3),
+            "buy_label": f"קונה מעל {g.buy_at:+.2f}", "sell_label": f"מוכר מתחת {g.sell_at:+.2f}",
             "status": status, "rules": rules, "last": b.last, "scores": b.scores}
 
 
@@ -124,8 +153,10 @@ def bot_cards(world):
             "rank": rank, "id": b.id, "asset": b.genome.asset, "gen": b.generation,
             "value": round(b.value(p), 2), "change": round(b.period_return(p) * 100, 1),
             "paid": round(b.paid, 2), "holding": b.units > 0, "trades": b.trades,
-            "age": human((world.tick - b.born) * world.candle), "desc": b.genome.describe(world.cfg.signals),
-            "clone": b.genome.clone_rule(world.cfg.start_money), "brain": brain(b, world.cfg.signals),
+            "age": human((world.tick - b.born) * world.candle),
+            "desc": b.genome.describe(world.cfg.signals, world.cfg.goal),
+            "invested": round(100 * b.held / b.seen) if b.seen else 0,
+            "clone": b.genome.clone_rule(world.cfg.start_money), "brain": brain(b, world.cfg.signals, world.cfg.goal),
             "spark": b.values,
         })
     return cards
@@ -158,7 +189,8 @@ def write_dashboard(path, title, runs, cfg, live=False):
     data = {
         "refresh": 30 if live else 0,
         "updated": datetime.now().strftime("%H:%M:%S"),
-        "rules": f"כל {human(pay)} כל בוט משלם לך {cfg.pay_percent:g}% מהכסף שלו · "
+        "rules": ("המטרה: להחזיק כמה שיותר זמן, ולברוח רק כשרואים סכנה · " if cfg.goal == "hold" else "") +
+                 f"כל {human(pay)} כל בוט משלם לך {cfg.pay_percent:g}% מהכסף שלו · "
                  f"כל {human(select)} יש מבחן: {cfg.kill_percent:g}% הכי פחות טובים מתים, "
                  f"והטובים בוחרים אם להשתכפל · עד {cfg.max_bots} בוטים",
         "times": [s["time"] for s in h],
@@ -483,8 +515,7 @@ function scoreChart(svg, x, color) {
   const lo = Math.max(-1, Math.min(...seen) - 0.1), hi = Math.min(1, Math.max(...seen) + 0.1);
   const y = v => 10 + (1 - (v - lo) / (hi - lo)) * (H - 20);
   if (lo < 0 && hi > 0) el("line", { x1: 0, x2: W, y1: y(0), y2: y(0), stroke: css("--grid"), "stroke-width": 1 }, svg);
-  for (const [v, c, label, dy] of [[x.buy, "--up", "קונה מעל " + signed(x.buy), -3],
-                                   [x.sell, "--down", "מוכר מתחת " + signed(x.sell), 10]]) {
+  for (const [v, c, label, dy] of [[x.buy, "--up", x.buy_label, -3], [x.sell, "--down", x.sell_label, 10]]) {
     el("line", { x1: 0, x2: W, y1: y(v), y2: y(v), stroke: css(c), "stroke-width": 1 }, svg);
     el("text", { x: W - 2, y: y(v) + dy, direction: "rtl", "text-anchor": "start", "font-size": 9,
                  fill: css("--ink2") }, svg).textContent = bidi(label);
@@ -556,7 +587,8 @@ function bots() {
     ch.textContent = (b.change >= 0 ? "▲ " : "▼ ") + pct(b.change) + " מאז המבחן";
     sparkline(el("svg", { "aria-hidden": "true" }, card), b.spark, color);
     el("div", { class: "meta" }, card).textContent =
-      `${b.holding ? "מחזיק " + b.asset : "במזומן"} · דור ${b.gen} · חי ${b.age} · שילם לך ${b.paid.toFixed(2)} ₪`;
+      `${b.holding ? "מחזיק " + b.asset : "במזומן"} · מושקע ${b.invested}% מהזמן · דור ${b.gen} · חי ${b.age} · ` +
+      `שילם לך ${b.paid.toFixed(2)} ₪`;
     el("div", { class: "desc" }, card).textContent = b.desc;
     el("div", { class: "desc" }, card).textContent = bidi(b.clone);
     brainPanel(card, b, color);

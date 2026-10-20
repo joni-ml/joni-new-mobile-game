@@ -26,6 +26,7 @@ EVENTS = 30             # כמה אירועים אחרונים לזכור (מו�
 PATTERN_LEN = 5         # כמה נרות אחרונים יוצרים "דפוס"
 PATTERN_AHEAD = 5       # כמה נרות קדימה בודקים מה קרה אחרי כל דפוס
 PATTERN_MIN = 5         # כמה פעמים צריך לראות דפוס בעבר כדי לסמוך עליו
+CLEAR = 0.1             # במצב "להחזיק": כמה הציון צריך לעלות מעל קו הסכנה כדי לקנות שוב
 
 
 # ---------- הגדרות ----------
@@ -44,6 +45,7 @@ class Settings:
     candle: str = "1h"
     signals: list = field(default_factory=lambda: list(SIGNALS))
     refill: bool = True
+    goal: str = "hold"
 
 
 def load_settings(path):
@@ -75,6 +77,8 @@ def load_settings(path):
     if bad or not s.signals:
         raise SystemExit(f"שיטה לא מוכרת ב-signals: {', '.join(bad) or 'הרשימה ריקה'}. "
                          f"אפשר: {', '.join(SIGNALS)}")
+    if s.goal not in ("hold", "trade"):
+        raise SystemExit(f"goal יכול להיות רק \"hold\" או \"trade\" (כתוב {s.goal!r})")
     if not isinstance(s.refill, bool):
         raise SystemExit(f"refill יכול להיות רק true או false (כתוב {s.refill!r})")
     if s.losers_money not in ("me", "winners"):
@@ -306,19 +310,22 @@ class Genome:
     # ההחלטה אם להשתכפל אחרי שעבר מבחן. גם היא עוברת בתורשה ומשתנה לאט לאט:
     clone_min_return: float = 0.0   # משתכפל רק אם הרוויח לפחות כך מאז המבחן הקודם (0.05 = 5%)
     clone_min_money: float = 0.2    # ורק אם לכל חצי יישאר לפחות כך (כחלק מכסף ההתחלה)
+    cooldown: int = 5               # במצב "להחזיק": כמה נרות לחכות אחרי בריחה לפני שקונים שוב
 
     def __post_init__(self):
         # בוט מגרסה ישנה (עם פחות שיטות) מקבל משקל 0 לשיטות החדשות, אז הוא ממשיך להתנהג כמו קודם
         self.weights = list(self.weights) + [0.0] * (len(SIGNALS) - len(self.weights))
 
     @staticmethod
-    def random(rng, assets):
+    def random(rng, assets, goal="trade"):
         fast = rng.randint(2, 30)
+        hold = goal == "hold"   # מחזיקים לטווח ארוך: בורחים רק מסכנה אמיתית, לא מכל ירידה קטנה
         return Genome(rng.choice(assets), fast, fast + rng.randint(5, 120), rng.randint(2, 60),
                       [rng.uniform(-1, 1) for _ in SIGNALS],
-                      rng.uniform(0.05, 0.6), rng.uniform(-0.6, 0.0),
-                      rng.uniform(0.02, 0.25), rng.uniform(0.03, 0.5), rng.uniform(0.2, 1.0),
-                      rng.uniform(-0.2, 0.2), rng.uniform(0.0, 0.6)).fix()
+                      rng.uniform(0.05, 0.6), rng.uniform(-0.7, -0.2) if hold else rng.uniform(-0.6, 0.0),
+                      rng.uniform(0.1, 0.4) if hold else rng.uniform(0.02, 0.25),
+                      rng.uniform(0.03, 0.5), rng.uniform(0.5, 1.0) if hold else rng.uniform(0.2, 1.0),
+                      rng.uniform(-0.2, 0.2), rng.uniform(0.0, 0.6), rng.randint(1, 20)).fix()
 
     def fix(self):
         self.fast = int(clamp(self.fast, 2, 50))
@@ -327,6 +334,7 @@ class Genome:
         self.sell_at = min(self.sell_at, self.buy_at - 0.05)
         self.clone_min_return = clamp(self.clone_min_return, -0.5, 0.5)
         self.clone_min_money = clamp(self.clone_min_money, 0.0, 2.0)
+        self.cooldown = int(clamp(self.cooldown, 0, 60))
         return self
 
     def mutate(self, rng, assets, strength=1.0):
@@ -341,7 +349,8 @@ class Genome:
                       j(self.buy_at, -0.2, 0.9, 0.08), j(self.sell_at, -0.9, 0.2, 0.08),
                       j(self.stop_loss, 0.005, 0.4, 0.03), j(self.take_profit, 0.01, 1.0, 0.05),
                       j(self.bet, 0.1, 1.0, 0.1),
-                      j(self.clone_min_return, -0.5, 0.5, 0.03), j(self.clone_min_money, 0.0, 2.0, 0.1)).fix()
+                      j(self.clone_min_return, -0.5, 0.5, 0.03), j(self.clone_min_money, 0.0, 2.0, 0.1),
+                      round(j(self.cooldown, 0, 60, 2))).fix()
 
     @staticmethod
     def crossover(a, b, rng):
@@ -385,9 +394,12 @@ class Genome:
         total = sum(abs(x) for x in w) or 1.0
         return [x * y / total for x, y in zip(w, sig)]
 
-    def describe(self, allowed=SIGNALS):
+    def describe(self, allowed=SIGNALS, goal="trade"):
         top = sorted(((s, w) for s, w in zip(SIGNALS, self.weights) if s in allowed), key=lambda sw: -abs(sw[1]))[:2]
         style = " + ".join(SIGNAL_WORDS[s][0 if w > 0 else 1] for s, w in top)
+        if goal == "hold":
+            return (f"מחזיק לטווח ארוך; מקשיב בעיקר ל: {style}; משקיע {self.bet:.0%} מהמזומן, "
+                    f"בורח אם המחיר יורד {self.stop_loss:.0%} מהשיא")
         return (f"{style}; משקיע {self.bet:.0%} מהמזומן, "
                 f"סטופ-לוס {self.stop_loss:.0%}, לוקח רווח ב-{self.take_profit:.0%}")
 
@@ -427,6 +439,10 @@ class Bot:
     score: float = None         # הציון שיצא לו בנר האחרון
     scores: list = field(default_factory=list)     # הציונים לאורך הזמן, בשביל הגרף
     last: list = field(default_factory=list)       # [מתי, מה הוא עשה ולמה]
+    peak: float = 0.0           # המחיר הכי גבוה מאז שקנה (בשביל לזהות נפילה)
+    wait: int = 0               # כמה נרות עוד לחכות אחרי בריחה
+    held: int = 0               # בכמה נרות הוא החזיק מטבע
+    seen: int = 0               # כמה נרות הוא חי
 
     def value(self, price):
         return self.cash + self.units * price
@@ -438,7 +454,7 @@ class Bot:
         """צמיחה ממוצעת לנר. לבוט צעיר אין עדיין מספיק היסטוריה, אז הציון שלו קרוב ל-0."""
         return self.log_growth / max(tick - self.born, 30)
 
-    def step(self, m, i, allowed=SIGNALS):
+    def step(self, m, i, allowed=SIGNALS, goal="trade"):
         """מחשב ומחליט אם לקנות או למכור. מחזיר משפט שמסביר מה עשה ולמה (או None)."""
         g = self.genome
         if i < max(g.slow, g.mom):
@@ -446,24 +462,54 @@ class Bot:
         price = self.price = m.p[i]
         self.readings = g.readings(m, i)
         self.score = sum(g.parts(Genome.signals(self.readings), allowed))
+        self.seen += 1
+        self.held += self.units > 0
+        self.wait = max(0, self.wait - 1)
+        if goal == "hold":
+            return self.hold_step(price)
         if self.units > 0:
             change = price / self.entry - 1
             why = (f"הפסיד {-change:.0%} מהקנייה (הסטופ-לוס שלו {g.stop_loss:.0%})" if change < -g.stop_loss else
                    f"הרוויח {change:.0%} מהקנייה (לוקח רווח ב-{g.take_profit:.0%})" if change > g.take_profit else
                    f"הציון {self.score:+.2f} ירד מתחת לסף {g.sell_at:+.2f}" if self.score < g.sell_at else None)
             if why:
-                self.cash += self.units * price * (1 - FEE)
-                self.units = 0.0
-                self.trades += 1
+                self.sell(price)
                 return f"מכר {g.asset} ב-{fmt_price(price)} כי {why}"
         elif self.cash > 0.01 and self.score > g.buy_at:
-            spend = self.cash * g.bet
-            self.units = spend * (1 - FEE) / price
-            self.cash -= spend
-            self.entry = price
-            self.trades += 1
+            self.buy(price)
             return f"קנה {g.asset} ב-{fmt_price(price)} כי הציון {self.score:+.2f} עלה מעל הסף {g.buy_at:+.2f}"
         return None
+
+    def hold_step(self, price):
+        """המטרה: להחזיק כמה שיותר זמן, ולברוח רק כשרואים סכנה (ואז לחזור כשהיא עוברת)."""
+        g = self.genome
+        if self.units > 0:
+            self.peak = max(self.peak, price)
+            drop = price / self.peak - 1
+            why = (f"הציון {self.score:+.2f} ירד מתחת לקו הסכנה {g.sell_at:+.2f}" if self.score < g.sell_at else
+                   f"המחיר ירד {-drop:.0%} מהשיא מאז שקנה (בורח בירידה של {g.stop_loss:.0%})"
+                   if drop < -g.stop_loss else None)
+            if why:
+                self.sell(price)
+                self.wait = g.cooldown
+                return f"זיהה סכנה ומכר {g.asset} ב-{fmt_price(price)} כי {why}"
+        elif self.cash > 0.01 and not self.wait and self.score > g.sell_at + CLEAR:
+            self.buy(price)
+            return (f"קנה {g.asset} ב-{fmt_price(price)} כי אין סימני סכנה "
+                    f"(הציון {self.score:+.2f} מעל {g.sell_at + CLEAR:+.2f})")
+        return None
+
+    def buy(self, price):
+        spend = self.cash * self.genome.bet
+        self.units = spend * (1 - FEE) / price
+        self.cash -= spend
+        self.entry = self.peak = price
+        self.trades += 1
+
+    def sell(self, price):
+        self.cash += self.units * price * (1 - FEE)
+        self.units = 0.0
+        self.trades += 1
 
     def take(self, amount, price):
         """מוציא כסף מהבוט: קודם מהמזומן, ואם אין מספיק מוכר קצת מהמטבעות."""
@@ -520,7 +566,7 @@ class World:
                 if k >= len(self.seeds) or g.asset not in assets:
                     g = g.mutate(self.rng, assets, 0.5)
             else:
-                g = Genome.random(self.rng, assets)
+                g = Genome.random(self.rng, assets, self.cfg.goal)
             self.spawn(g)
 
     def spawn(self, genome, money=None, generation=0):
@@ -540,7 +586,7 @@ class World:
         self.now = when.isoformat(timespec="minutes")
         prices = {a: m.p[i] for a, m in markets.items()}
         for bot in self.bots:
-            did = bot.step(markets[bot.genome.asset], i, self.cfg.signals)
+            did = bot.step(markets[bot.genome.asset], i, self.cfg.signals, self.cfg.goal)
             if did:
                 bot.last = [self.now, did]
         self.tick += 1
@@ -649,7 +695,7 @@ class World:
     def child_genome(self, parent):
         r, assets = self.rng.random(), self.cfg.assets
         if r < IMMIGRANT_RATE:
-            return Genome.random(self.rng, assets)
+            return Genome.random(self.rng, assets, self.cfg.goal)
         g = parent.genome
         others = [b for b in self.bots if b is not parent]
         if r < IMMIGRANT_RATE + MIX_RATE and others:
