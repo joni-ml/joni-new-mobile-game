@@ -61,7 +61,8 @@ _extras = {}
 def simulate(times, prices, warmup, cfg, args, seeds=()):
     key = (times[0], times[-1], len(times), tuple(cfg.assets))
     if key not in _extras:     # החושים מהאינטרנט, מיושרים לנרות (מחשבים פעם אחת לכל תקופה)
-        _extras[key] = net.extras(cfg.assets, times, candle_minutes(times) < 1440)
+        fake = getattr(args, "data", "daily") == "fake"   # למחירים מדומים אין חושים אמיתיים שמתאימים להם
+        _extras[key] = {} if fake else net.extras(cfg.assets, times, candle_minutes(times) < 1440)
     world = World(cfg, candle_minutes(times), args.seed, seeds)
     world.out = print if args.verbose else None
     world.verbose = args.verbose
@@ -111,6 +112,7 @@ def main():
     cfg = load_settings(args.settings)
     times, prices = load_data(args.data, cfg.assets, args.seed)
     cfg.assets = list(prices)
+    warn_missing(cfg.assets)
     date = lambda s: datetime.fromisoformat(s) if s else None
 
     if not args.split:
@@ -143,6 +145,12 @@ def main():
     print(f"\n{verdict}: מאומנים {trained:+.2f} ש\"ח מול אקראיים {fresh:+.2f} ש\"ח")
     save(args.chart, "בוטי מסחר: מבחן על תקופה שהבוטים לא ראו",
          [("בוטים מאומנים", trained_world), ("בוטים בלי אימון", fresh_world)], cfg)
+
+
+def warn_missing(assets):
+    gone = net.missing(assets)
+    if gone:
+        print("אין נתונים של הגלאים מהאינטרנט: " + ", ".join(gone) + ". כדי להוריד: python fetch_data.py")
 
 
 def save(path, title, runs, cfg):

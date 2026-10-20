@@ -162,12 +162,14 @@ def main():
             print(f"{e} - ממשיך עם ההגדרות הקודמות")
         world = s["world"]
         world.out, world.verbose = print, args.verbose
+        if time.time() - s.get("net_updated", 0) > 6 * 3600:   # החושים מהאינטרנט: פעם ב-6 שעות
+            held = sorted({b.genome.asset for b in world.bots})  # גם מטבעות שבוטים עוד מחזיקים
+            failed = net.update_live(list(dict.fromkeys(cfg.assets + held)))
+            s["net_updated"] = time.time()
+            save_state(args.state, s)                        # כדי לא להוריד שוב אם הבורסה לא עונה
+            if failed:
+                print("לא הצלחתי לעדכן עכשיו: " + ", ".join(failed) + ". ממשיך עם הנתונים שיש.")
         try:
-            if time.time() - s.get("net_updated", 0) > 6 * 3600:   # החושים מהאינטרנט: פעם ב-6 שעות
-                failed = net.update_live(cfg.assets)
-                s["net_updated"] = time.time()
-                if failed:
-                    print("לא הצלחתי לעדכן עכשיו: " + ", ".join(failed) + ". ממשיך עם הנתונים שיש.")
             tick(s, cfg)
             save_state(args.state, s)
             write_dashboard(args.chart, TITLE, [("הבוטים", world)], world.cfg, live=True)

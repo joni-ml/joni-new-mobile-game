@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 import internet as net
 from core import Market, World, candle_minutes, load_settings
 from dashboard import build, write_replay
-from evolution_sim import cut_range, load_data
+from evolution_sim import cut_range, load_data, warn_missing
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SPARK = 120   # כמה נקודות אחרונות לשמור בגרפים הקטנים של כל בוט (כדי שהקובץ לא יהיה ענק)
@@ -43,6 +43,7 @@ def main():
     cfg = load_settings(args.settings)
     times, prices = load_data(args.data, cfg.assets, args.seed)
     cfg.assets = list(prices)
+    warn_missing(cfg.assets)
     start = datetime.fromisoformat(args.start) if args.start else times[-1] - timedelta(days=365)
     t, pr, warm = cut_range(times, prices, start, datetime.fromisoformat(args.end) if args.end else None)
     minutes = candle_minutes(t)

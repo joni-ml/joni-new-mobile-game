@@ -14,16 +14,18 @@
 
 import bisect
 import csv
+import time
 import io
 import json
 import math
 import os
 import urllib.request
+from collections import deque
 from datetime import date, datetime, timedelta, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FOLDER = os.path.join(HERE, "data", "internet")
-WINDOW = 365        # משווים כל מספר לשנה שלפניו
+WINDOW = 365        # משווים כל מספר לשנה שלפניו (בימים)
 MIN_HISTORY = 60    # כמה ימים של היסטוריה צריך לפני שסומכים על ההשוואה
 STALE_DAYS = 7      # מספר ישן יותר מזה לא משתמשים בו (בסופי שבוע הבורסה סגורה, אז קצת פער זה בסדר)
 GH = "https://raw.githubusercontent.com/"
@@ -52,28 +54,47 @@ def utc_day(seconds):
     return datetime.fromtimestamp(seconds, timezone.utc).date()
 
 
-_cm_cache = {}
+_cm_cache = {}   # מתרוקן בתחילת כל הורדה/עדכון, כדי לא להשתמש בקובץ ישן
 
 
 def coinmetrics_csv(coin):
-    """הקובץ היומי של Coin Metrics בגיטהאב (נשמר בזיכרון כדי לא להוריד פעמיים)."""
+    """הקובץ היומי של Coin Metrics בגיטהאב (נשמר בזיכרון כדי לא להוריד פעמיים באותה הורדה)."""
     if coin not in _cm_cache:
         _cm_cache[coin] = get(GH + f"coinmetrics/data/master/csv/{coin.lower()}.csv")
     return _cm_cache[coin]
 
 
 def coinmetrics_history(metric, assets):
-    return {a: csv_rows(coinmetrics_csv(a), "time", metric) for a in assets}
+    """כל מטבע בנפרד: מטבע אחד שחסר לא מפיל את כל השאר."""
+    out = {}
+    for a in assets:
+        try:
+            out[a] = csv_rows(coinmetrics_csv(a), "time", metric)
+        except Exception:
+            continue
+    return out
 
 
 def coinmetrics_live(metric, assets, days):
-    """ה-API החינמי של Coin Metrics (בלי מפתח), בשביל הימים האחרונים."""
-    start = (date.today() - timedelta(days=days)).isoformat()
+    """ה-API החינמי של Coin Metrics (בלי מפתח). בקשה אחת לכל המטבעות ולשני המדדים ביחד,
+    כי מותר רק 10 בקשות ב-6 שניות. מטבע שהאתר לא מכיר פשוט מדלגים עליו."""
+    key = ("live", tuple(assets), days)
+    if key not in _cm_cache:
+        start = (date.today() - timedelta(days=days)).isoformat()
+        url = (f"{CM_API}?assets={','.join(a.lower() for a in assets)}&metrics=AdrActCnt,CapMVRVCur"
+               f"&frequency=1d&start_time={start}&page_size=10000&ignore_unsupported_errors=true")
+        rows = []
+        while url:
+            page = json.loads(get(url))
+            rows += page.get("data", [])
+            url = page.get("next_page_url")
+            if url:
+                time.sleep(0.7)
+        _cm_cache[key] = rows
     out = {}
-    for a in assets:
-        data = json.loads(get(f"{CM_API}?assets={a.lower()}&metrics={metric}&frequency=1d"
-                              f"&start_time={start}&page_size=1000"))["data"]
-        out[a] = [(date.fromisoformat(x["time"][:10]), float(x[metric])) for x in data if x.get(metric)]
+    for x in _cm_cache[key]:
+        if x.get(metric):
+            out.setdefault(x["asset"].upper(), []).append((date.fromisoformat(x["time"][:10]), float(x[metric])))
     return out
 
 
@@ -102,39 +123,41 @@ def wiki_live(assets, days):
 
 
 # ---------- המקורות ----------
-# kind: איך הופכים את המספר לסימן (ראה normalize). lag: כמה ימים אחורה כדי שהמספר כבר היה ידוע.
+# kind: איך הופכים את המספר לסימן (ראה normalize).
+# lag: בנרות יומיים - כמה ימים אחורה, כדי שהמספר כבר היה ידוע בסוף היום.
+# ready: בנרות של פחות מיום - כמה שעות אחרי 00:00 UTC של התאריך שלו המספר כבר מפורסם.
 # "ALL" = מספר אחד לכל השוק. אחרת - מספר נפרד לכל מטבע.
 SOURCES = {
     "fear_greed": dict(
-        title="מדד הפחד והחמדנות של הקריפטו", kind="index", lag=1,
+        title="מדד הפחד והחמדנות של הקריפטו", kind="index", lag=1, ready=1,       # מתפרסם בתחילת היום
         history=lambda assets: {"ALL": csv_rows(get(GH + "j0shcd/risk-metric/main/data/fear_greed_index.csv"),
                                                 "Date", "fear_greed_index")},
         live=fear_greed_live),
     # הבורסה האמריקאית (S&P 500): מחירי סגירה אמיתיים, שלא משתנים אחר כך.
     # (מדד הפחד והחמדנות של CNN נפסל: ההיסטוריה שלו נכתבת מחדש בדיעבד, אז בוט היה לומד ממספרים שאף אחד לא ראה בזמן אמת.)
     "stocks": dict(
-        title="הבורסה האמריקאית (S&P 500)", kind="change", lag=1,
+        title="הבורסה האמריקאית (S&P 500)", kind="change", lag=1, ready=22,       # אחרי הסגירה בניו יורק
         history=lambda assets: fred("SP500"),
         mirror=lambda assets: {"ALL": csv_rows(get(GH + "LEEYOUNGJIN-GIT/fred-macro-review/main/data/macro/obs/SP500.csv"),
                                                "date", "value")},
         live=lambda assets, days: fred("SP500")),
     "vix": dict(
-        title="מדד הפחד של וול סטריט (VIX)", kind="level", lag=1,
+        title="מדד הפחד של וול סטריט (VIX)", kind="level", lag=1, ready=22,
         history=lambda assets: {"ALL": csv_rows(get(GH + "datasets/finance-vix/main/data/vix-daily.csv"),
                                                 "DATE", "CLOSE")},
         mirror=lambda assets: fred("VIXCLS"),
         live=vix_live),
     "attention": dict(
-        title="כמה אנשים קוראים על ביטקוין בוויקיפדיה", kind="change", lag=1,
+        title="כמה אנשים קוראים על ביטקוין בוויקיפדיה", kind="change", lag=1, ready=30,  # כמה שעות אחרי שהיום נגמר
         history=lambda assets: {"ALL": csv_rows(get(GH + "j0shcd/risk-metric/main/data/wikipedia_pageviews_btc.csv"),
                                                 "Date", "wikipedia_pageviews")},
         live=wiki_live),
     "activity": dict(
-        title="כתובות פעילות ברשת של המטבע", kind="change", lag=1,
+        title="כתובות פעילות ברשת של המטבע", kind="change", lag=1, ready=28,
         history=lambda assets: coinmetrics_history("AdrActCnt", assets),
         live=lambda assets, days: coinmetrics_live("AdrActCnt", assets, days)),
     "valuation": dict(
-        title="כמה המטבע יקר (MVRV)", kind="level", lag=1,
+        title="כמה המטבע יקר (MVRV)", kind="level", lag=1, ready=28,
         history=lambda assets: coinmetrics_history("CapMVRVCur", assets),
         live=lambda assets, days: coinmetrics_live("CapMVRVCur", assets, days)),
 }
@@ -181,6 +204,7 @@ def first_working(*fetchers):
 
 def download_history(assets):
     """מוריד את כל ההיסטוריה של כל החושים ושומר ב-data/internet (אם האתר הראשי לא עונה - מגיבוי בגיטהאב)."""
+    _cm_cache.clear()
     for name, src in SOURCES.items():
         try:
             data = first_working(lambda: src["history"](assets), lambda: src.get("mirror", src["history"])(assets))
@@ -192,20 +216,45 @@ def download_history(assets):
             print(f"  {src['title']}: לא הצלחתי להוריד ({e})")
 
 
-def update_live(assets, days=40):
+def files_for(name, assets):
+    """הקבצים ששייכים לחוש: אחד לכל השוק, או אחד לכל מטבע."""
+    return ["ALL"] if os.path.exists(path(name, "ALL")) else list(assets)
+
+
+def update_live(assets):
     """מעדכן את הימים האחרונים מהאתרים עצמם (ואם אתר לא עונה - מהגיבויים).
-    מחזיר רשימה של מקורות שלא הצליחו."""
-    failed = []
+    מביא מספיק ימים כדי לסגור חורים מאז העדכון האחרון, ואם אין עדיין היסטוריה - מוריד אותה קודם.
+    מחזיר רשימה של מקורות שלא הצליחו, או שיש להם רק נתונים ישנים."""
+    _cm_cache.clear()
+    failed, today = [], date.today()
     for name, src in SOURCES.items():
+        stored = {c: load(name, c) for c in files_for(name, assets)}
         try:
+            if any(len(rows) < 100 for rows in stored.values()):    # אין היסטוריה (למשל מטבע חדש): קודם הכול
+                for coin, rows in first_working(lambda: src["history"](assets),
+                                                lambda: src.get("mirror", src["history"])(assets)).items():
+                    if rows:
+                        save(name, coin, load(name, coin) + rows)
+                stored = {c: load(name, c) for c in files_for(name, assets)}
+            newest = min((rows[-1][0] for rows in stored.values() if rows), default=today - timedelta(days=400))
+            days = min(2000, max(40, (today - newest).days + 2))
             data = first_working(lambda: src["live"](assets, days), lambda: src["history"](assets),
                                  lambda: src.get("mirror", src["history"])(assets))
             for coin, rows in data.items():
                 if rows:
                     save(name, coin, load(name, coin) + rows)   # החדשים דורסים את הישנים באותו תאריך
+            latest = max((r[-1][0] for r in (load(name, c) for c in files_for(name, assets)) if r), default=None)
+            if latest is None or (today - latest).days > STALE_DAYS:
+                failed.append(f"{src['title']} (יש רק נתונים ישנים)")
         except Exception:
             failed.append(src["title"])
     return failed
+
+
+def missing(assets):
+    """אילו חושים בכלל לא הורדו עדיין (צריך להריץ fetch_data.py)."""
+    return [src["title"] for name, src in SOURCES.items()
+            if not any(os.path.exists(path(name, c)) for c in ["ALL", *assets])]
 
 
 # ---------- מספר -> סימן ----------
@@ -218,37 +267,43 @@ def normalize(rows, kind):
       "index"  - מספר שכבר בין 0 ל-100 (למשל מדד הפחד והחמדנות): 0 = -1, 50 = 0, 100 = 1"""
     if kind == "index":
         return [(d, max(-1.0, min(1.0, (v - 50) / 50))) for d, v in rows]
+    days = [d for d, _ in rows]
     xs = [v for _, v in rows]
-    if kind == "change":
-        xs = [math.log(v / xs[i - 30]) if i >= 30 and v > 0 and xs[i - 30] > 0 else None for i, v in enumerate(xs)]
-    out, s1, s2, window = [], 0.0, 0.0, []
-    for (d, _), x in zip(rows, xs):
+    if kind == "change":   # לעומת המספר של לפני 30 יום (לפי תאריך, לא לפי שורה - כי יש ימים חסרים)
+        ys = []
+        for d, v in rows:
+            back = d - timedelta(days=30)
+            k = bisect.bisect_right(days, back) - 1
+            ok = k >= 0 and (back - days[k]).days <= 3 and v > 0 and xs[k] > 0
+            ys.append(math.log(v / xs[k]) if ok else None)
+        xs = ys
+    out, s1, s2, window = [], 0.0, 0.0, deque()
+    for d, x in zip(days, xs):
+        while window and (d - window[0][0]).days > WINDOW:   # רק השנה האחרונה (בימים, לא בשורות)
+            old = window.popleft()[1]
+            s1, s2 = s1 - old, s2 - old * old
         if x is None:
             out.append((d, None))
             continue
         z = None
-        if len(window) >= MIN_HISTORY:
+        if len(window) >= 20 and (d - window[0][0]).days >= MIN_HISTORY:
             mean = s1 / len(window)
             std = math.sqrt(max(s2 / len(window) - mean * mean, 1e-18))
             z = max(-1.0, min(1.0, (x - mean) / std / 2))
         out.append((d, z))
-        window.append(x)
+        window.append((d, x))
         s1, s2 = s1 + x, s2 + x * x
-        if len(window) > WINDOW:
-            old = window.pop(0)
-            s1, s2 = s1 - old, s2 - old * old
     return out
 
 
-def align(rows, times, lag, intraday):
+def align(rows, times, lag, intraday, ready=24):
     """מתאים סדרה יומית לרשימת זמנים של נרות. לכל נר לוקחים את הערך האחרון שכבר היה ידוע:
-    של היום שלפני lag ימים. בנרות של פחות מיום תמיד מסתכלים לפחות יום אחורה,
-    כי ערך של יום שלם ידוע רק כשהיום נגמר."""
-    lag = max(lag, 1) if intraday else lag
+    בנרות יומיים - של היום שלפני lag ימים.
+    בנרות של פחות מיום - רק ערך שכבר פורסם כשהנר נפתח (ready שעות אחרי 00:00 UTC של התאריך שלו)."""
     days = [d for d, _ in rows]
     out = []
     for t in times:
-        target = t.date() - timedelta(days=lag)
+        target = (t - timedelta(hours=ready)).date() if intraday else t.date() - timedelta(days=lag)
         k = bisect.bisect_right(days, target) - 1
         ok = k >= 0 and (target - days[k]).days <= STALE_DAYS and rows[k][1] is not None
         out.append(rows[k][1] if ok else None)
@@ -265,8 +320,8 @@ def extras(assets, times, intraday):
             if (name, coin) not in done:      # מספר של כל השוק מחשבים פעם אחת לכל המטבעות
                 rows = load(name, coin)
                 sig = normalize(rows, src["kind"])
-                done[name, coin] = (align(rows, times, src["lag"], intraday),
-                                    align(sig, times, src["lag"], intraday)) if rows else None
+                done[name, coin] = (align(rows, times, src["lag"], intraday, src["ready"]),
+                                    align(sig, times, src["lag"], intraday, src["ready"])) if rows else None
             if done[name, coin]:
                 out[a][name] = done[name, coin]
     return out
