@@ -2,5 +2,6 @@ data/
 brains.json
 live_state.json*
 __pycache__/
-chart.html
-live_chart.html
+dashboard.html
+live_dashboard.html
+*.tmp
