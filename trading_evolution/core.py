@@ -246,15 +246,23 @@ class Genome:
         genes["weights"] = [pick(x, y) for x, y in zip(a.weights, b.weights)]
         return Genome(**genes).fix()
 
-    def score(self, m, i):
-        """ציון בין -1 ל-1: כמה הבוט "רוצה" להחזיק את המטבע עכשיו."""
+    def readings(self, m, i):
+        """מה הבוט מודד עכשיו, במספרים שאדם מבין."""
         p, slow = m.p[i], m.ma(i, self.slow)
-        signals = (clamp((m.ma(i, self.fast) / slow - 1) * 20),
-                   (50 - m.rsi[i]) / 50,
-                   clamp((p / m.p[i - self.mom] - 1) * 10),
-                   clamp((p / slow - 1) * 10))
+        return [m.ma(i, self.fast) / slow - 1,   # כמה הממוצע הקצר מעל הממוצע הארוך
+                m.rsi[i],                         # RSI: מתחת ל-30 = ירד הרבה, מעל 70 = עלה הרבה
+                p / m.p[i - self.mom] - 1,        # כמה המחיר השתנה ב-mom הנרות האחרונים
+                p / slow - 1]                     # כמה המחיר מעל הממוצע הארוך
+
+    @staticmethod
+    def signals(r):
+        """הופך כל מדידה לסימן בין -1 ל-1 (1 = "תקנה!", -1 = "תמכור!")."""
+        return [clamp(r[0] * 20), (50 - r[1]) / 50, clamp(r[2] * 10), clamp(r[3] * 10)]
+
+    def parts(self, sig):
+        """כמה כל סימן תורם לציון: הסימן כפול המשקל שהבוט נותן לו. הציון הוא הסכום, בין -1 ל-1."""
         total = sum(abs(w) for w in self.weights) or 1.0
-        return sum(w * s for w, s in zip(self.weights, signals)) / total
+        return [w * s / total for w, s in zip(self.weights, sig)]
 
     def describe(self):
         top = sorted(zip(SIGNALS, self.weights), key=lambda sw: -abs(sw[1]))[:2]
@@ -293,6 +301,11 @@ class Bot:
     paid: float = 0.0           # כמה הוא שילם לבעלים עד עכשיו
     trades: int = 0
     values: list = field(default_factory=list)
+    price: float = 0.0          # המחיר בנר האחרון
+    readings: list = field(default_factory=list)   # מה הוא מדד בנר האחרון
+    score: float = None         # הציון שיצא לו בנר האחרון
+    scores: list = field(default_factory=list)     # הציונים לאורך הזמן, בשביל הגרף
+    last: list = field(default_factory=list)       # [מתי, מה הוא עשה ולמה]
 
     def value(self, price):
         return self.cash + self.units * price
@@ -305,22 +318,31 @@ class Bot:
         return self.log_growth / max(tick - self.born, 30)
 
     def step(self, m, i):
+        """מחשב ומחליט אם לקנות או למכור. מחזיר משפט שמסביר מה עשה ולמה (או None)."""
         g = self.genome
         if i < max(g.slow, g.mom):
-            return
-        price = m.p[i]
+            return None
+        price = self.price = m.p[i]
+        self.readings = g.readings(m, i)
+        self.score = sum(g.parts(Genome.signals(self.readings)))
         if self.units > 0:
             change = price / self.entry - 1
-            if change < -g.stop_loss or change > g.take_profit or g.score(m, i) < g.sell_at:
+            why = (f"הפסיד {-change:.0%} מהקנייה (הסטופ-לוס שלו {g.stop_loss:.0%})" if change < -g.stop_loss else
+                   f"הרוויח {change:.0%} מהקנייה (לוקח רווח ב-{g.take_profit:.0%})" if change > g.take_profit else
+                   f"הציון {self.score:+.2f} ירד מתחת לסף {g.sell_at:+.2f}" if self.score < g.sell_at else None)
+            if why:
                 self.cash += self.units * price * (1 - FEE)
                 self.units = 0.0
                 self.trades += 1
-        elif self.cash > 0.01 and g.score(m, i) > g.buy_at:
+                return f"מכר {g.asset} ב-{fmt_price(price)} כי {why}"
+        elif self.cash > 0.01 and self.score > g.buy_at:
             spend = self.cash * g.bet
             self.units = spend * (1 - FEE) / price
             self.cash -= spend
             self.entry = price
             self.trades += 1
+            return f"קנה {g.asset} ב-{fmt_price(price)} כי הציון {self.score:+.2f} עלה מעל הסף {g.buy_at:+.2f}"
+        return None
 
     def take(self, amount, price):
         """מוציא כסף מהבוט: קודם מהמזומן, ואם אין מספיק מוכר קצת מהמטבעות."""
@@ -329,6 +351,10 @@ class Bot:
         units = min(self.units, (amount - from_cash) / (price * (1 - FEE)))
         self.units -= units
         return from_cash + units * price * (1 - FEE)
+
+
+def fmt_price(p):
+    return f"${p:,.0f}" if p >= 100 else f"${p:,.2f}" if p >= 1 else f"${p:.4f}"
 
 
 def thin(points, limit):
@@ -392,7 +418,9 @@ class World:
         self.now = when.isoformat(timespec="minutes")
         prices = {a: m.p[i] for a, m in markets.items()}
         for bot in self.bots:
-            bot.step(markets[bot.genome.asset], i)
+            did = bot.step(markets[bot.genome.asset], i)
+            if did:
+                bot.last = [self.now, did]
         self.tick += 1
         for bot in self.bots:
             v = bot.value(prices[bot.genome.asset])
@@ -413,6 +441,7 @@ class World:
             inside += v
             bot.prev_value = v
             bot.values = thin(bot.values + [round(v, 4)], BOT_POINTS)
+            bot.scores = thin(bot.scores + [None if bot.score is None else round(bot.score, 3)], BOT_POINTS)
         self.history = thin(self.history + [{
             "time": self.now, "prices": prices, "alive": len(self.bots), "inside": round(inside, 4),
             "collected": round(self.owner_profit, 4), "invested": round(self.invested, 4)}], CHART_POINTS)

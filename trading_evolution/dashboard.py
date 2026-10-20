@@ -9,7 +9,7 @@ import json
 import os
 from datetime import datetime
 
-from core import human
+from core import Genome, fmt_price, human
 
 MAX_COINS = 7   # כמה מטבעות אפשר להראות בגרף המטבעות (יש 7 צבעים שקל להבדיל ביניהם)
 
@@ -46,6 +46,40 @@ def coin_series(world):
     return out
 
 
+def brain(b):
+    """מה הבוט חישב בנר האחרון, כדי להבין למה הוא קונה, מוכר או מחכה."""
+    g, r = b.genome, b.readings
+    if not r:
+        return None
+    sees = [
+        f"הממוצע של {g.fast} הנרות האחרונים {'גבוה' if r[0] >= 0 else 'נמוך'} ב-{abs(r[0]):.1%} "
+        f"מהממוצע של {g.slow} נרות",
+        f"RSI = {r[1]:.0f} (מתחת ל-30: ירד הרבה לאחרונה, מעל 70: עלה הרבה)",
+        f"המחיר {'עלה' if r[2] >= 0 else 'ירד'} ב-{abs(r[2]):.1%} ב-{g.mom} הנרות האחרונים",
+        f"המחיר {'גבוה' if r[3] >= 0 else 'נמוך'} ב-{abs(r[3]):.1%} מהממוצע של {g.slow} נרות",
+    ]
+    names = ["מגמה", "ירידה חדה (RSI)", "תנופה", "מרחק מהממוצע"]
+    parts = g.parts(Genome.signals(r))
+    rows = [{"name": n, "sees": t, "weight": round(w, 2), "part": round(p, 3)}
+            for n, t, w, p in zip(names, sees, g.weights, parts)]
+    score = b.score
+    if b.units > 0:
+        change = b.price / b.entry - 1
+        status = f"מחזיק {g.asset} שקנה ב-{fmt_price(b.entry)}. עכשיו {fmt_price(b.price)} ({change:+.1%})"
+        rules = [[f"מוכר אם הציון יורד מתחת לסף {g.sell_at:+.2f}", f"עכשיו {score:+.2f}"],
+                 [f"מוכר אם המחיר ירד {g.stop_loss:.0%} מהקנייה (סטופ-לוס)", f"עכשיו {change:+.1%}"],
+                 [f"מוכר אם המחיר עלה {g.take_profit:.0%} מהקנייה (לוקח רווח)", f"עכשיו {change:+.1%}"]]
+    else:
+        status = (f"במזומן. מחכה שהציון יעלה מעל הסף {g.buy_at:+.2f}" if b.cash > 0.01
+                  else "אין לו מספיק מזומן כדי לקנות")
+        rules = [[f"קונה {g.asset} אם הציון עולה מעל הסף {g.buy_at:+.2f}, ב-{g.bet:.0%} מהמזומן שלו",
+                  f"עכשיו {score:+.2f}"],
+                 [f"אחרי שקנה: מוכר אם הציון יורד מתחת לסף {g.sell_at:+.2f}, "
+                  f"אם המחיר ירד {g.stop_loss:.0%} או אם עלה {g.take_profit:.0%}", ""]]
+    return {"rows": rows, "score": round(score, 3), "buy": round(g.buy_at, 3), "sell": round(g.sell_at, 3),
+            "status": status, "rules": rules, "last": b.last, "scores": b.scores}
+
+
 def bot_cards(world):
     prices = world.history[-1]["prices"]
     cards = []
@@ -56,7 +90,7 @@ def bot_cards(world):
             "value": round(b.value(p), 2), "change": round(b.period_return(p) * 100, 1),
             "paid": round(b.paid, 2), "holding": b.units > 0, "trades": b.trades,
             "age": human((world.tick - b.born) * world.candle), "desc": b.genome.describe(),
-            "clone": b.genome.clone_rule(world.cfg.start_money),
+            "clone": b.genome.clone_rule(world.cfg.start_money), "brain": brain(b),
             "spark": b.values,
         })
     return cards
@@ -179,6 +213,21 @@ h2 { font-size: 16px; margin: 0 0 2px; }
 .bot svg { width: 100%; height: 40px; display: block; direction: ltr; }
 .bot .meta { font-size: 12px; color: var(--ink2); }
 .bot .desc { font-size: 12px; color: var(--muted); }
+.brain { margin-top: 6px; border-top: 1px solid var(--grid); padding-top: 6px; font-size: 13px; }
+.brain summary { cursor: pointer; font-weight: 600; }
+.brain .status { margin: 8px 0 0; font-weight: 600; }
+.brain .lbl { color: var(--ink2); font-size: 12px; font-weight: 600; margin: 12px 0 2px; }
+.brain .desc { margin: 2px 0; }
+.bot svg.score { height: auto; aspect-ratio: 220 / 90; }
+.sig { margin: 8px 0; }
+.sigtop { display: flex; justify-content: space-between; gap: 8px; }
+.sigtop.total { border-top: 1px solid var(--grid); padding-top: 6px; margin-top: 6px; }
+.bar { position: relative; height: 6px; background: var(--grid); border-radius: 3px; direction: ltr; margin-top: 4px; }
+.bar::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--axis); }
+.bar i { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+.rules { margin: 0; padding: 0 16px 0 0; }
+.rules li { margin: 4px 0; }
+.rules .now { color: var(--ink2); margin-right: 6px; white-space: nowrap; }
 .events { list-style: none; margin: 0; padding: 0; font-size: 14px; }
 .events li { padding: 6px 0; border-bottom: 1px solid var(--grid); display: flex; gap: 12px; }
 .events li:last-child { border-bottom: 0; }
@@ -383,6 +432,77 @@ function sparkline(svg, values, color) {
                "stroke-linejoin": "round" }, svg);
 }
 
+let openBots = new Set();
+try { openBots = new Set(JSON.parse(sessionStorage.getItem("openBots") || "[]")); } catch (e) {}
+function saveOpen() { try { sessionStorage.setItem("openBots", JSON.stringify([...openBots])); } catch (e) {} }
+const signed = v => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2);
+// מספר עם סימן (+5%, -0.26) בתוך משפט בעברית: מבודדים אותו, אחרת הסימן קופץ לצד השני של המספר
+const bidi = t => t.replace(/(^|[\s(])([+\-−]\d+(?:[.,]\d+)*%?)/g, "$1\u2066$2\u2069");
+
+// גרף הציון של בוט: מעל הקו העליון הוא קונה, מתחת לקו התחתון הוא מוכר
+function scoreChart(svg, x, color) {
+  const W = 220, H = 90, vals = x.scores, n = vals.length;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const seen = vals.filter(v => v !== null).concat([x.buy, x.sell, x.score]);
+  const lo = Math.max(-1, Math.min(...seen) - 0.1), hi = Math.min(1, Math.max(...seen) + 0.1);
+  const y = v => 10 + (1 - (v - lo) / (hi - lo)) * (H - 20);
+  if (lo < 0 && hi > 0) el("line", { x1: 0, x2: W, y1: y(0), y2: y(0), stroke: css("--grid"), "stroke-width": 1 }, svg);
+  for (const [v, c, label, dy] of [[x.buy, "--up", "קונה מעל " + signed(x.buy), -3],
+                                   [x.sell, "--down", "מוכר מתחת " + signed(x.sell), 10]]) {
+    el("line", { x1: 0, x2: W, y1: y(v), y2: y(v), stroke: css(c), "stroke-width": 1 }, svg);
+    el("text", { x: W - 2, y: y(v) + dy, direction: "rtl", "text-anchor": "start", "font-size": 9,
+                 fill: css("--ink2") }, svg).textContent = bidi(label);
+  }
+  let d = "", pen = false;
+  vals.forEach((v, i) => {
+    if (v === null) { pen = false; return; }
+    d += (pen ? "L" : "M") + (n < 2 ? 0 : i / (n - 1) * W).toFixed(1) + "," + y(v).toFixed(1);
+    pen = true;
+  });
+  el("path", { d, fill: "none", stroke: css(color), "stroke-width": 1.5, "stroke-linejoin": "round" }, svg);
+  el("circle", { cx: W, cy: y(x.score), r: 3, fill: css(color), stroke: css("--surface"), "stroke-width": 1.5 }, svg);
+}
+
+function brainPanel(card, b, color) {
+  const d = el("details", { class: "brain" }, card);
+  d.open = openBots.has(b.id);
+  d.addEventListener("toggle", () => { d.open ? openBots.add(b.id) : openBots.delete(b.id); saveOpen(); });
+  el("summary", {}, d).textContent = "איך הוא מחליט אם לקנות או למכור";
+  const x = b.brain;
+  if (!x) { el("p", { class: "desc" }, d).textContent = "עוד לא חישב כלום. מחכה לנר הבא."; return; }
+  el("p", { class: "status" }, d).textContent = bidi(x.status);
+  el("div", { class: "lbl" }, d).textContent = "הציון שלו לאורך הזמן";
+  scoreChart(el("svg", { class: "score", role: "img", "aria-label": "הציון לאורך הזמן" }, d), x, color);
+  el("div", { class: "lbl" }, d).textContent = "איך יצא הציון עכשיו";
+  el("p", { class: "desc" }, d).textContent =
+    "הבוט בודק 4 סימנים. כל סימן נותן מספר בין 1- ל-1, כפול המשקל שהבוט נותן לו (משקל שלילי = הוא עושה ההפך). " +
+    "הסכום הוא הציון. כחול = דוחף לקנות, אדום = דוחף למכור.";
+  for (const r of x.rows) {
+    const row = el("div", { class: "sig" }, d);
+    const top = el("div", { class: "sigtop" }, row);
+    el("b", {}, top).textContent = r.name;
+    el("span", { class: "ltr" }, top).textContent = signed(r.part);
+    el("div", { class: "desc" }, row).textContent = bidi(`${r.sees} · משקל ${signed(r.weight)}`);
+    const fill = el("i", {}, el("div", { class: "bar" }, row));
+    fill.style.left = (r.part >= 0 ? 50 : 50 + r.part * 50) + "%";
+    fill.style.width = Math.abs(r.part) * 50 + "%";
+    fill.style.background = `var(${r.part >= 0 ? "--s1" : "--s8"})`;
+  }
+  const tot = el("div", { class: "sigtop total" }, d);
+  el("b", {}, tot).textContent = "ציון כולל";
+  el("b", { class: "ltr" }, tot).textContent = signed(x.score);
+  el("div", { class: "lbl" }, d).textContent = "הכללים שלו";
+  const ul = el("ul", { class: "rules" }, d);
+  for (const [rule, now] of x.rules) {
+    const li = el("li", {}, ul);
+    el("span", {}, li).textContent = bidi(rule);
+    if (now) el("span", { class: "now" }, li).textContent = bidi(`(${now})`);
+  }
+  el("div", { class: "lbl" }, d).textContent = "מה הוא עשה לאחרונה";
+  el("p", { class: "desc" }, d).textContent = x.last.length
+    ? bidi(`${x.last[1]} (${fmtTime(new Date(x.last[0] + "Z"), true)})`) : "עוד לא קנה ולא מכר";
+}
+
 function bots() {
   const box = document.getElementById("bots");
   box.textContent = "";
@@ -402,7 +522,8 @@ function bots() {
     el("div", { class: "meta" }, card).textContent =
       `${b.holding ? "מחזיק " + b.asset : "במזומן"} · דור ${b.gen} · חי ${b.age} · שילם לך ${b.paid.toFixed(2)} ₪`;
     el("div", { class: "desc" }, card).textContent = b.desc;
-    el("div", { class: "desc" }, card).textContent = b.clone;
+    el("div", { class: "desc" }, card).textContent = bidi(b.clone);
+    brainPanel(card, b, color);
   }
 }
 
@@ -432,7 +553,7 @@ if (!DATA.events.length) el("li", {}, events).textContent = "עוד לא קרה 
 for (const [when, text] of DATA.events) {
   const li = el("li", {}, events);
   el("time", {}, li).textContent = when ? fmtTime(new Date(when + "Z"), true) : "";
-  el("span", {}, li).textContent = text;
+  el("span", {}, li).textContent = bidi(text);
 }
 document.getElementById("updated").textContent =
   `עודכן ב-${DATA.updated}` + (DATA.refresh ? " · הדף מתרענן לבד" : "") + " · הכסף מזויף, והעבר לא מבטיח כלום לגבי העתיד.";
