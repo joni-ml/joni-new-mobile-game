@@ -82,10 +82,11 @@ def fear_greed_live(assets, days):
     return {"ALL": [(utc_day(int(x["timestamp"])), float(x["value"])) for x in data]}
 
 
-def stock_fear_live(assets, days):
-    start = (date.today() - timedelta(days=days)).isoformat()
-    data = json.loads(get(f"https://production.dataviz.cnn.io/index/fearandgreed/graphdata/{start}"))
-    return {"ALL": [(utc_day(p["x"] / 1000), float(p["y"])) for p in data["fear_and_greed_historical"]["data"]]}
+def fred(series):
+    """סדרה יומית מ-FRED (אתר הנתונים של הבנק המרכזי האמריקאי), בלי מפתח. ימים בלי מסחר מגיעים ריקים."""
+    text = get(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}")
+    date_col = "observation_date" if text.startswith("observation_date") else "DATE"
+    return {"ALL": csv_rows(text, date_col, series)}
 
 
 def vix_live(assets, days):
@@ -109,15 +110,19 @@ SOURCES = {
         history=lambda assets: {"ALL": csv_rows(get(GH + "j0shcd/risk-metric/main/data/fear_greed_index.csv"),
                                                 "Date", "fear_greed_index")},
         live=fear_greed_live),
-    "stock_fear": dict(
-        title="מדד הפחד והחמדנות של הבורסה האמריקאית (CNN)", kind="index", lag=1,
-        history=lambda assets: {"ALL": csv_rows(get(GH + "whit3rabbit/fear-greed-data/main/fear-greed.csv"),
-                                                "Date", "Fear Greed")},
-        live=stock_fear_live),
+    # הבורסה האמריקאית (S&P 500): מחירי סגירה אמיתיים, שלא משתנים אחר כך.
+    # (מדד הפחד והחמדנות של CNN נפסל: ההיסטוריה שלו נכתבת מחדש בדיעבד, אז בוט היה לומד ממספרים שאף אחד לא ראה בזמן אמת.)
+    "stocks": dict(
+        title="הבורסה האמריקאית (S&P 500)", kind="change", lag=1,
+        history=lambda assets: fred("SP500"),
+        mirror=lambda assets: {"ALL": csv_rows(get(GH + "LEEYOUNGJIN-GIT/fred-macro-review/main/data/macro/obs/SP500.csv"),
+                                               "date", "value")},
+        live=lambda assets, days: fred("SP500")),
     "vix": dict(
         title="מדד הפחד של וול סטריט (VIX)", kind="level", lag=1,
         history=lambda assets: {"ALL": csv_rows(get(GH + "datasets/finance-vix/main/data/vix-daily.csv"),
                                                 "DATE", "CLOSE")},
+        mirror=lambda assets: fred("VIXCLS"),
         live=vix_live),
     "attention": dict(
         title="כמה אנשים קוראים על ביטקוין בוויקיפדיה", kind="change", lag=1,
@@ -160,11 +165,26 @@ def load(signal, coin):
         return [(date.fromisoformat(r["date"]), float(r["value"])) for r in csv.DictReader(f) if r["value"]]
 
 
+def first_working(*fetchers):
+    """מנסה כמה מקורות לפי הסדר, ומחזיר את הראשון שעובד ומחזיר נתונים."""
+    errors = []
+    for fetch in fetchers:
+        try:
+            data = fetch()
+            if any(data.values()):
+                return data
+            errors.append("אין נתונים")
+        except Exception as e:
+            errors.append(str(e))
+    raise RuntimeError(" | ".join(errors))
+
+
 def download_history(assets):
-    """מוריד את כל ההיסטוריה של כל החושים (מגיטהאב) ושומר ב-data/internet."""
+    """מוריד את כל ההיסטוריה של כל החושים ושומר ב-data/internet (אם האתר הראשי לא עונה - מגיבוי בגיטהאב)."""
     for name, src in SOURCES.items():
         try:
-            for coin, rows in src["history"](assets).items():
+            data = first_working(lambda: src["history"](assets), lambda: src.get("mirror", src["history"])(assets))
+            for coin, rows in data.items():
                 if rows:
                     save(name, coin, rows)
                     print(f"  {src['title']} ({coin}): {len(rows)} ימים, {rows[0][0]} עד {rows[-1][0]}")
@@ -173,19 +193,17 @@ def download_history(assets):
 
 
 def update_live(assets, days=40):
-    """מעדכן את הימים האחרונים מהאתרים עצמם (ואם אתר לא עונה - מהעותק בגיטהאב).
+    """מעדכן את הימים האחרונים מהאתרים עצמם (ואם אתר לא עונה - מהגיבויים).
     מחזיר רשימה של מקורות שלא הצליחו."""
     failed = []
     for name, src in SOURCES.items():
-        for fetch in (lambda: src["live"](assets, days), lambda: src["history"](assets)):
-            try:
-                for coin, rows in fetch().items():
-                    if rows:
-                        save(name, coin, load(name, coin) + rows)   # החדשים דורסים את הישנים באותו תאריך
-                break
-            except Exception:
-                continue
-        else:
+        try:
+            data = first_working(lambda: src["live"](assets, days), lambda: src["history"](assets),
+                                 lambda: src.get("mirror", src["history"])(assets))
+            for coin, rows in data.items():
+                if rows:
+                    save(name, coin, load(name, coin) + rows)   # החדשים דורסים את הישנים באותו תאריך
+        except Exception:
             failed.append(src["title"])
     return failed
 

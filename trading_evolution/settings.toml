@@ -56,13 +56,13 @@ losers_money = "me"
 #   pattern   - זיכרון דפוסים: מה קרה בעבר אחרי ש-5 הנרות האחרונים נראו ככה
 # חושים מהאינטרנט (גלאי סכנה). מתעדכנים לבד פעם ב-6 שעות במסחר החי:
 #   fear_greed - מדד הפחד והחמדנות של הקריפטו (alternative.me)
-#   stock_fear - מדד הפחד והחמדנות של הבורסה האמריקאית (CNN)
+#   stocks     - האם הבורסה האמריקאית (S&P 500) עלתה או נפלה בחודש האחרון יותר מהרגיל
 #   vix        - מדד הפחד של וול סטריט (VIX): קופץ כשיש בעיות בכלכלה
 #   attention  - כמה אנשים קוראים על ביטקוין בוויקיפדיה
 #   activity   - כמה כתובות פעילות יש ברשת של המטבע (Coin Metrics)
 #   valuation  - כמה המטבע יקר לעומת מה שאנשים שילמו עליו (MVRV, Coin Metrics)
 signals = ["trend", "dip", "momentum", "stretch", "macd", "bollinger", "channel", "breakout", "calm", "pattern",
-           "fear_greed", "stock_fear", "vix", "attention", "activity", "valuation"]
+           "fear_greed", "stocks", "vix", "attention", "activity", "valuation"]
 
 # כל כמה זמן הבוטים מקבלים מחיר חדש במסחר החי: 1m / 5m / 15m / 1h
 # נר קצר = הרבה יותר אקשן (טוב כדי לראות מה קורה), נר ארוך = פחות רעש.
