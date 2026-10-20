@@ -33,7 +33,7 @@ class Settings:
     max_bots: int = 20
     start_money: float = 5.0
     pay_every: str = "1d"
-    pay_percent: float = 1.0
+    pay_percent: float = 0.1
     select_every: str = "7d"
     kill_percent: float = 50.0
     losers_money: str = "me"
