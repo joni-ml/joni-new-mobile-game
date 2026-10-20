@@ -1,0 +1,4 @@
+data/
+brains.json
+live_state.json*
+__pycache__/
