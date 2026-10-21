@@ -83,8 +83,12 @@ def summary(title, world, times, prices, warmup):
           f"בחרו לא להשתכפל {world.declined}, נולדו במקומות ריקים {world.refilled}, חיים {len(world.bots)}")
     checked, right, ups = world.brain_record()   # כל הבוטים אי פעם, גם אלה שמתו
     if checked >= 100:
-        print(f"המוחות ניחשו {checked:,} פעמים לאן המחיר ילך וצדקו בכיוון ב-{100 * right / checked:.1f}% "
-              f"(מי שהיה מנחש תמיד \"יעלה\" היה צודק ב-{100 * ups / checked:.1f}%)")
+        if world.cfg.goal == "hold":
+            print(f"המוחות ניחשו {checked:,} פעמים אם תהיה נפילה גדולה, וצדקו ב-{100 * right / checked:.1f}% "
+                  f"(מי שהיה אומר תמיד \"אין סכנה\" היה צודק ב-{100 * ups / checked:.1f}%)")
+        else:
+            print(f"המוחות ניחשו {checked:,} פעמים לאן המחיר ילך וצדקו בכיוון ב-{100 * right / checked:.1f}% "
+                  f"(מי שהיה מנחש תמיד \"יעלה\" היה צודק ב-{100 * ups / checked:.1f}%)")
         ears = [b.genome.listen for b in world.bots]
         print(f"כמה הבוטים מקשיבים למוח (בממוצע): {sum(ears) / len(ears):.0%} - השאר לנוסחה הקבועה")
     picks = Counter(b.genome.asset for b in world.bots)

@@ -19,7 +19,7 @@ import time
 from dataclasses import replace
 from datetime import datetime, timedelta
 
-from core import Market, World, load_brains, load_settings, minutes
+from core import Market, World, load_brains, load_settings, members, minutes
 from dashboard import write_dashboard
 from exchanges import latest
 import internet as net
@@ -82,7 +82,7 @@ def tick(s, cfg):
         for b in world.bots:           # ניחושים על נרות באורך הישן כבר לא יתבררו
             b.forget()
     world.candle = mins
-    held = {b.genome.asset for b in world.bots}
+    held = {a for b in world.bots for a in members(b.genome.asset)}
     got = fetch(list(dict.fromkeys(cfg.assets + sorted(held))), mins, held)
     world.cfg = replace(cfg, assets=[a for a in cfg.assets if a in got] or sorted(held))
 
@@ -168,7 +168,7 @@ def main():
         world = s["world"]
         world.out, world.verbose = print, args.verbose
         if time.time() - s.get("net_updated", 0) > 6 * 3600:   # החושים מהאינטרנט: פעם ב-6 שעות
-            held = sorted({b.genome.asset for b in world.bots})  # גם מטבעות שבוטים עוד מחזיקים
+            held = sorted({a for b in world.bots for a in members(b.genome.asset)})  # גם מטבעות שבוטים מחזיקים
             failed = net.update_live(list(dict.fromkeys(cfg.assets + held)))
             s["net_updated"] = time.time()
             save_state(args.state, s)                        # כדי לא להוריד שוב אם הבורסה לא עונה

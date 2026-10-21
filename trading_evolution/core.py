@@ -23,6 +23,7 @@ MAX_WINDOW = 200        # הממוצע הנע הכי ארוך שבוט יכול 
 IMMIGRANT_RATE = 0.1    # חלק מהשכפולים מקבלים אסטרטגיה חדשה לגמרי, כדי להמשיך לחפש רעיונות
 MIX_RATE = 0.25         # חלק מהשכפולים לוקחים גם תכונות מבוט טוב אחר
 SWITCH_RATE = 0.1       # הסיכוי ששכפול יעבור לסחור במטבע אחר
+BASKET_RATE = 0.3       # הסיכוי שבוט חדש (או שכפול שעובר מטבע) יסחור בסל של 2-3 מטבעות במקום במטבע אחד
 CHART_POINTS = 2000     # כמה נקודות לשמור לגרף של הבעלים
 BOT_POINTS = 300        # כמה נקודות לשמור לגרף של כל בוט
 EVENTS = 30             # כמה אירועים אחרונים לזכור (מוות, שכפול, מבחן)
@@ -52,6 +53,7 @@ class Settings:
     signals: list = field(default_factory=lambda: list(SIGNALS))
     refill: bool = True
     goal: str = "hold"
+    judge: str = "beat_hold"
     patience: str = "3d"
     brain: str = "learning"
 
@@ -87,6 +89,8 @@ def load_settings(path):
                          f"אפשר: {', '.join(SIGNALS)}")
     if s.brain not in ("learning", "simple"):
         raise SystemExit(f"brain יכול להיות רק \"learning\" או \"simple\" (כתוב {s.brain!r})")
+    if s.judge not in ("beat_hold", "money"):
+        raise SystemExit(f"judge יכול להיות רק \"beat_hold\" או \"money\" (כתוב {s.judge!r})")
     if s.goal not in ("hold", "trade"):
         raise SystemExit(f"goal יכול להיות רק \"hold\" או \"trade\" (כתוב {s.goal!r})")
     if not isinstance(s.refill, bool):
@@ -343,7 +347,7 @@ class Genome:
     def random(rng, assets, goal="trade"):
         fast = rng.randint(2, 30)
         hold = goal == "hold"   # מחזיקים לטווח ארוך: בורחים רק מסכנה אמיתית, לא מכל ירידה קטנה
-        return Genome(rng.choice(assets), fast, fast + rng.randint(5, 120), rng.randint(2, 60),
+        return Genome(pick_asset(rng, assets), fast, fast + rng.randint(5, 120), rng.randint(2, 60),
                       [rng.uniform(-1, 1) for _ in SIGNALS],
                       rng.uniform(0.05, 0.6), rng.uniform(-0.7, -0.2) if hold else rng.uniform(-0.6, 0.0),
                       rng.uniform(0.1, 0.4) if hold else rng.uniform(0.02, 0.25),
@@ -369,8 +373,8 @@ class Genome:
         def j(v, lo, hi, s):
             return clamp(v + rng.gauss(0, s * strength), lo, hi)
         asset = self.asset
-        if asset not in assets or rng.random() < SWITCH_RATE:
-            asset = rng.choice(assets)
+        if not tradable(asset, assets) or rng.random() < SWITCH_RATE:
+            asset = pick_asset(rng, assets)
         return Genome(asset, round(j(self.fast, 2, 50, 3)), round(j(self.slow, 5, MAX_WINDOW, 10)),
                       round(j(self.mom, 2, 100, 5)), [j(w, -1, 1, 0.2) for w in self.weights],
                       j(self.buy_at, -0.2, 0.9, 0.08), j(self.sell_at, -0.9, 0.2, 0.08),
@@ -520,6 +524,7 @@ class Bot:
     units: float = 0.0          # כמה מטבעות הוא מחזיק
     entry: float = 0.0
     period_start: float = 0.0   # כמה כסף היה לו בתחילת תקופת המבחן הנוכחית
+    period_price: float = 0.0   # מחיר המטבע (או הסל) בתחילת תקופת המבחן
     prev_value: float = 0.0
     log_growth: float = 0.0     # כמה הבוט גדל מהמסחר שלו (בלי תשלומים ושכפולים)
     paid: float = 0.0           # כמה הוא שילם לבעלים עד עכשיו
@@ -552,6 +557,12 @@ class Bot:
     def period_return(self, price):
         return self.value(price) / self.period_start - 1 if self.period_start > 0 else -1.0
 
+    def edge(self, price):
+        """כמה הבוט הרוויח מאז המבחן, פחות כמה היה מרוויח אם פשוט היה מחזיק את המטבע שלו כל הזמן.
+        חיובי = הוא היה חכם יותר מ"לקנות ולחכות"."""
+        hold = price / self.period_price - 1 if self.period_price > 0 else 0.0
+        return self.period_return(price) - hold
+
     def fitness(self, tick):
         """צמיחה ממוצעת לנר. לבוט צעיר אין עדיין מספיק היסטוריה, אז הציון שלו קרוב ל-0."""
         return self.log_growth / max(tick - self.born, 30)
@@ -562,12 +573,14 @@ class Bot:
         if i < max(g.slow, g.mom):
             return None
         price = self.price = m.p[i]
+        self.period_price = self.period_price or price   # בוט חדש: המחיר שממנו משווים ל"לקנות ולחכות"
         self.readings = g.readings(m, i)
         formula = sum(g.parts(Genome.signals(self.readings), allowed))
         if learning:
+            danger = goal == "hold"   # במצב "להחזיק" המוח מחפש סכנה, לא מנחש כיוון
             if self.mind is None:
-                self.go_to_school(m, i, allowed, rng or random.Random(self.id))
-            feel = self.observe(self.inputs(self.readings, allowed), price, m.vol50[i])
+                self.go_to_school(m, i, allowed, rng or random.Random(self.id), danger)
+            feel = self.observe(self.inputs(self.readings, allowed), price, m.vol50[i], danger)
             self.score = (1 - g.listen) * formula + g.listen * feel
         else:
             self.forget()       # בלי מוח אין ניחושים שמחכים לתוצאה
@@ -595,14 +608,19 @@ class Bot:
         """מה נכנס למוח: כל הסימנים (שיטה שאסורה בהגדרות = 0)."""
         return [s if n in allowed else 0.0 for n, s in zip(SIGNALS, Genome.signals(readings))]
 
-    def observe(self, x, price, vol):
+    def observe(self, x, price, vol, danger=False):
         """נר אחד מבחינת המוח: קודם לומד מהדוגמה שהתוצאה שלה התבררה עכשיו (לפני horizon נרות),
-        ואז מנחש מה יקרה מעכשיו. הניחוש נשמר, כדי לבדוק אותו ביושר כשהתוצאה תגיע."""
+        ואז מנחש מה יקרה מעכשיו. הניחוש נשמר, כדי לבדוק אותו ביושר כשהתוצאה תגיע.
+        danger: המוח מנחש אם תהיה נפילה גדולה בקרוב (במקום לאן המחיר ילך)."""
         brain_fit(self.mind, len(x))
+        for e in self.memory:                  # המחיר הכי נמוך מאז כל ניחוש (בשביל "האם הייתה נפילה")
+            if len(e) > 4:
+                e[4] = min(e[4], price)
         while len(self.memory) >= self.genome.horizon:
-            self.lesson(*self.memory.pop(0), price)
+            e = self.memory.pop(0)
+            self.lesson(*e[:4], price, danger, e[4] if len(e) > 4 else None)
         self.guess = brain_think(self.mind, x)[0]
-        self.memory.append([x, price, vol, self.guess])
+        self.memory.append([x, price, vol, self.guess, price])
         a = 2 / (self.genome.horizon + 1)
         self.feel = self.guess if self.feel is None else self.feel + a * (self.guess - self.feel)
         return self.feel
@@ -613,11 +631,19 @@ class Bot:
         self.memory.clear()
         self.feel = None
 
-    def lesson(self, x, p0, vol, guess, p_now):
-        """לומד מדוגמה אחת שהתוצאה שלה כבר ידועה: מה היו הסימנים, ולאן המחיר הלך אחרי horizon נרות.
-        "צדק" נמדד לפי הניחוש שנעשה אז, לפני שידע את התוצאה."""
-        move = math.log(p_now / p0) / (max(vol, 1e-6) * math.sqrt(self.genome.horizon))
-        brain_learn(self.mind, x, clamp(move / 2), self.genome.lr)
+    def lesson(self, x, p0, vol, guess, p_now, danger=False, low=None):
+        """לומד מדוגמה אחת שהתוצאה שלה כבר ידועה: מה היו הסימנים, ומה קרה ב-horizon הנרות שאחריהם.
+        "צדק" נמדד לפי הניחוש שנעשה אז, לפני שידע את התוצאה.
+        רגיל: לאן המחיר הלך (1 = עלה הרבה יותר מהרגיל, -1 = ירד הרבה).
+        סכנה: כמה עמוק המחיר נפל בדרך (1 = לא נפל בכלל, 0 = נפל כמו ירידה רגילה, -1 = נפל פי 2 מזה)."""
+        scale = max(vol, 1e-6) * math.sqrt(self.genome.horizon)
+        if danger:
+            move = math.log(min(low or p_now, p_now) / p0) / scale + 1
+            target = clamp(move)
+        else:
+            move = math.log(p_now / p0) / scale
+            target = clamp(move / 2)
+        brain_learn(self.mind, x, target, self.genome.lr)
         hit = int((guess > 0) == (move > 0))
         self.lessons += 1
         self.checked, self.right, self.ups = self.checked + 1, self.right + hit, self.ups + (move > 0)
@@ -625,13 +651,13 @@ class Bot:
         if self.lessons % 10 == 0 and len(self.hits) >= 30:
             self.accuracy = thin(self.accuracy + [round(sum(self.hits) / len(self.hits), 3)], ACC_POINTS)
 
-    def go_to_school(self, m, i, allowed, rng):
+    def go_to_school(self, m, i, allowed, rng, danger=False):
         """בוט חדש בלי מוח: נולד עם מוח אקראי ועובר על SCHOOL הנרות האחרונים בדיוק כמו בזמן אמת -
         נר אחרי נר, מנחש ולומד רק ממה שכבר קרה באותו רגע."""
         g = self.genome
         self.mind = brain_new(rng, len(SIGNALS))
         for t in range(max(g.slow, g.mom, i - SCHOOL), i):
-            self.observe(self.inputs(g.readings(m, t), allowed), m.p[t], m.vol50[t])
+            self.observe(self.inputs(g.readings(m, t), allowed), m.p[t], m.vol50[t], danger)
 
     def hold_step(self, price, patience=1):
         """המטרה: להחזיק כמה שיותר זמן, ולברוח רק כשרואים סכנה (ואז לחזור כשהיא עוברת).
@@ -676,6 +702,30 @@ class Bot:
         return from_cash + units * price * (1 - FEE)
 
 
+def members(asset):
+    """המטבעות שבוט סוחר בהם: "BTC" -> ["BTC"], סל "BTC+ETH" -> ["BTC", "ETH"]."""
+    return asset.split("+")
+
+
+def tradable(asset, assets):
+    return all(a in assets for a in members(asset))
+
+
+def pick_asset(rng, assets):
+    """מטבע אחד, או (לפעמים) סל של 2-3 מטבעות - ככה נפילה של מטבע אחד לא הורגת את כל הכסף."""
+    if len(assets) > 1 and rng.random() < BASKET_RATE:
+        return "+".join(sorted(rng.sample(list(assets), rng.randint(2, min(3, len(assets))))))
+    return rng.choice(assets)
+
+
+def price_of(prices, asset):
+    """המחיר של מטבע, או של סל: הממוצע הגאומטרי של המטבעות בסל (כל מטבע משפיע באותה מידה על השינוי)."""
+    if asset in prices:
+        return prices[asset]
+    ps = [prices[a] for a in members(asset)]
+    return math.exp(sum(math.log(p) for p in ps) / len(ps))
+
+
 def fmt_price(p):
     return f"${p:,.0f}" if p >= 100 else f"${p:,.2f}" if p >= 1 else f"${p:.4f}"
 
@@ -692,6 +742,7 @@ class World:
         self.cfg = cfg
         self.candle = minutes_per_candle
         self.rng = random.Random(seed)
+        self._baskets = {}            # שווקים של סלי מטבעות (לא נשמר, נבנה מחדש)
         self.seeds = list(seeds)      # אסטרטגיות מאומנות שאפשר להתחיל מהן
         self.out = None               # לאן להדפיס אירועים חשובים (למשל print)
         self.verbose = False          # להדפיס גם כל מוות ושכפול
@@ -722,7 +773,7 @@ class World:
             if self.seeds:
                 teacher = self.seeds[k % len(self.seeds)]
                 g = teacher.genome
-                if k >= len(self.seeds) or g.asset not in assets:
+                if k >= len(self.seeds) or not tradable(g.asset, assets):
                     g = g.mutate(self.rng, assets, 0.5)
             else:
                 g = Genome.random(self.rng, assets, self.cfg.goal)
@@ -745,18 +796,31 @@ class World:
     def every(self, text):
         return every(text, self.candle)
 
+    def market(self, markets, asset):
+        """השוק של מטבע, או של סל מטבעות (נבנה פעם אחת מהמטבעות שבו ונשמר)."""
+        if asset in markets:
+            return markets[asset]
+        parts = [markets[a] for a in members(asset)]
+        key = (asset, tuple(id(m) for m in parts))
+        if key not in self._baskets:
+            if len(self._baskets) > 50:
+                self._baskets.clear()
+            index = [price_of(dict(zip(members(asset), ps)), asset) for ps in zip(*(m.p for m in parts))]
+            self._baskets[key] = Market(index, parts[0].extras)   # החושים לפי המטבע הראשון בסל
+        return self._baskets[key]
+
     def step(self, markets, i, when):
         """נר אחד: הבוטים סוחרים, ואם הגיע הזמן - משלמים לבעלים ועוברים מבחן."""
         self.now = when.isoformat(timespec="minutes")
         prices = {a: m.p[i] for a, m in markets.items()}
         for bot in self.bots:
-            did = bot.step(markets[bot.genome.asset], i, self.cfg.signals, self.cfg.goal,
+            did = bot.step(self.market(markets, bot.genome.asset), i, self.cfg.signals, self.cfg.goal,
                            self.cfg.brain == "learning", self.rng, self.every(self.cfg.patience))
             if did:
                 bot.last = [self.now, did]
         self.tick += 1
         for bot in self.bots:
-            v = bot.value(prices[bot.genome.asset])
+            v = bot.value(price_of(prices, bot.genome.asset))
             bot.log_growth += math.log(max(v, 1e-9) / max(bot.prev_value, 1e-9))
 
         if self.tick % self.every(self.cfg.pay_every) == 0:
@@ -770,7 +834,7 @@ class World:
 
         inside = 0.0
         for bot in self.bots:
-            v = bot.value(prices[bot.genome.asset])
+            v = bot.value(price_of(prices, bot.genome.asset))
             inside += v
             bot.prev_value = v
             bot.values = thin(bot.values + [round(v, 4)], BOT_POINTS)
@@ -782,14 +846,14 @@ class World:
     def pay(self, prices):
         share = self.cfg.pay_percent / 100
         for bot in self.bots:
-            p = prices[bot.genome.asset]
+            p = price_of(prices, bot.genome.asset)
             got = bot.take(bot.value(p) * share, p)
             bot.paid += got
             self.owner_profit += got
 
     def bury_broke(self, prices):
         for bot in list(self.bots):
-            p = prices[bot.genome.asset]
+            p = price_of(prices, bot.genome.asset)
             if bot.value(p) < DEATH_LINE:
                 self.bots.remove(bot)
                 self.retire(bot)
@@ -800,9 +864,9 @@ class World:
     def select(self, prices):
         """המבחן: הפחות טובים מתים, והכסף שלהם הולך לבעלים (או לטובים, לפי ההגדרות).
         כל אחד מהטובים מחליט לפי הגנים שלו אם להשתכפל. מי שמשתכפל מתחלק בכסף שלו עם השכפול."""
-        price = lambda b: prices[b.genome.asset]
+        price = lambda b: price_of(prices, b.genome.asset)
         change = {b.id: b.period_return(price(b)) for b in self.bots}
-        ranked = sorted(self.bots, key=lambda b: change[b.id], reverse=True)
+        ranked = self.ranked(prices)
         keep = len(ranked) - int(len(ranked) * self.cfg.kill_percent / 100)
         keep = max(1, min(keep, self.cfg.max_bots))
         self.selections += 1
@@ -813,7 +877,8 @@ class World:
             got = bot.take(bot.value(price(bot)), price(bot))
             loot += got
             self.deaths += 1
-            self.note(f"בוט #{bot.id} ({bot.genome.asset}, {change[bot.id]:+.0%}) נכשל במבחן ומת. "
+            self.note(f"בוט #{bot.id} ({bot.genome.asset}, {change[bot.id]:+.0%}, "
+                      f"מול לקנות ולחכות {bot.edge(price(bot)):+.0%}) נכשל במבחן ומת. "
                       f"{got:.2f} ש\"ח עברו {'אליך' if to_me else 'לטובים'}")
         self.bots = ranked[:keep]
         if to_me:
@@ -840,7 +905,7 @@ class World:
         self.declined += declined
         added = self.refill() if self.cfg.refill else 0
         for bot in self.bots:
-            bot.period_start = bot.value(price(bot))
+            bot.period_start, bot.period_price = bot.value(price(bot)), price(bot)
         extra = f", {added} חדשים נולדו במקומות הריקים (שמת עוד {added * self.cfg.start_money:g} ש\"ח)" if added else ""
         self.note(f"מבחן {self.selections}: {len(ranked) - keep} בוטים מתו "
                   f"({loot:.2f} ש\"ח עברו {'אליך' if to_me else 'לטובים'}), "
@@ -883,8 +948,12 @@ class World:
         return g.mutate(self.rng, assets, 0.5), True
 
     def ranked(self, prices):
-        """הבוטים לפי מי שהכי מצליח מאז המבחן האחרון."""
-        return sorted(self.bots, key=lambda b: b.period_return(prices[b.genome.asset]), reverse=True)
+        """הבוטים לפי מי שהכי מצליח מאז המבחן האחרון: כמה הם ניצחו את "לקנות ולחכות" במטבע שלהם
+        (judge = "beat_hold"), או כמה כסף הרוויחו (judge = "money")."""
+        def score(b):
+            p = price_of(prices, b.genome.asset)
+            return b.edge(p) if self.cfg.judge == "beat_hold" else b.period_return(p)
+        return sorted(self.bots, key=score, reverse=True)
 
     def best(self, k):
         return sorted(self.bots, key=lambda b: b.fitness(self.tick), reverse=True)[:k]
@@ -897,7 +966,7 @@ class World:
     # --- שמירה וטעינה (בשביל המסחר החי, שרץ לאורך ימים) ---
 
     def to_dict(self):
-        skip = ("rng", "seeds", "cfg", "out", "verbose", "bots")
+        skip = ("rng", "seeds", "cfg", "out", "verbose", "bots", "_baskets")
         d = {k: v for k, v in vars(self).items() if k not in skip}
         d["bots"] = [asdict(b) for b in self.bots]
         return d

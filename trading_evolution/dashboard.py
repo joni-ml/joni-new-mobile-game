@@ -10,7 +10,7 @@ import os
 from datetime import datetime
 
 from core import (CLEAR, NET_SIGNALS, PATTERN_AHEAD, PATTERN_LEN, PATTERN_MIN, SCHOOL, SIGNALS, Bot, Genome,
-                  brain_fit, brain_importance, brain_think, clamp, fmt_price, human)
+                  brain_fit, brain_importance, brain_think, clamp, fmt_price, human, members, price_of)
 
 MAX_COINS = 7   # כמה מטבעות אפשר להראות בגרף המטבעות (יש 7 צבעים שקל להבדיל ביניהם)
 
@@ -173,7 +173,7 @@ def brain(b, allowed, goal="trade", learning=False, candle=1440, patience=1):
         "breakout": channel_text(r["ch55"], 55),
         "calm": f"השוק זז עכשיו פי {r['vol']:.1f} ממה שהוא זז בדרך כלל",
         "pattern": pattern_text(r),
-        **{n: net_text(n, r, g.asset) for n in NET_SIGNALS},
+        **{n: net_text(n, r, members(g.asset)[0]) for n in NET_SIGNALS},
     }
     learning = learning and b.mind is not None and b.feel is not None
     parts = g.parts(Genome.signals(r), allowed)
@@ -189,7 +189,7 @@ def brain(b, allowed, goal="trade", learning=False, candle=1440, patience=1):
     mind = {"learning": True, "lessons": b.lessons, "acc": accuracy(b), "acc_n": len(b.hits),
             "accuracy": b.accuracy, "horizon": g.horizon, "listen": round(g.listen, 2),
             "formula": round(sum(parts), 3), "guess": round(b.guess, 3), "feel": round(b.feel, 3),
-            "school": human(SCHOOL * candle)} if learning else {"learning": False}
+            "school": human(SCHOOL * candle), "danger": goal == "hold"} if learning else {"learning": False}
     if goal == "hold":
         status, rules, (buy, buy_label, sell_label) = hold_rules(b, score, patience)
         return {"rows": rows, "score": round(score, 3), "buy": buy, "sell": round(g.sell_at, 3),
@@ -216,11 +216,14 @@ def brain(b, allowed, goal="trade", learning=False, candle=1440, patience=1):
 def bot_cards(world):
     prices = world.history[-1]["prices"]
     cards = []
+    checked, _, ups = world.brain_record()
+    base = round(100 * ups / checked) if checked >= 100 else 50   # כמה פעמים "תמיד אותה תשובה" היה צודק
     for rank, b in enumerate(world.ranked(prices), 1):
-        p = prices[b.genome.asset]
+        p = price_of(prices, b.genome.asset)
         cards.append({
             "rank": rank, "id": b.id, "asset": b.genome.asset, "gen": b.generation,
             "value": round(b.value(p), 2), "change": round(b.period_return(p) * 100, 1),
+            "edge": round(b.edge(p) * 100, 1),
             "paid": round(b.paid, 2), "holding": b.units > 0, "trades": b.trades,
             "age": human((world.tick - b.born) * world.candle),
             "desc": b.genome.describe(world.cfg.signals, world.cfg.goal, world.cfg.brain == "learning"),
@@ -229,6 +232,7 @@ def bot_cards(world):
             "clone": b.genome.clone_rule(world.cfg.start_money),
             "brain": brain(b, world.cfg.signals, world.cfg.goal, world.cfg.brain == "learning", world.candle,
                            world.every(world.cfg.patience)),
+            "base": base,
             "spark": b.values,
         })
     return cards
@@ -430,7 +434,7 @@ h2 { font-size: 16px; margin: 0 0 2px; }
   </div>
 
   <h2>הבוטים</h2>
-  <p class="sub">חלון לכל בוט, לפי הסדר: מי שהכי מצליח מאז המבחן האחרון נמצא ראשון</p>
+  <p class="sub">חלון לכל בוט, לפי הסדר במבחן הבא: הראשון הכי קרוב לשרוד ולהשתכפל</p>
   <div class="bots" id="bots"></div>
 
   <section class="card">
@@ -643,16 +647,16 @@ function scoreChart(svg, x, color) {
 }
 
 // גרף "כמה המוח צודק לאורך הזמן", עם קו של 50% (כמו להטיל מטבע)
-function accChart(svg, values, color) {
+function accChart(svg, values, color, base = 0.5, label = "50% = כמו להטיל מטבע") {
   const W = 220, H = 64, n = values.length;
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  const lo = Math.min(0.4, ...values) - 0.02, hi = Math.max(0.6, ...values) + 0.02;
+  const lo = Math.min(base - 0.1, ...values) - 0.02, hi = Math.max(base + 0.1, ...values) + 0.02;
   const y = v => 6 + (1 - (v - lo) / (hi - lo)) * (H - 12);
-  el("line", { x1: 0, x2: W, y1: y(0.5), y2: y(0.5), stroke: css("--axis"), "stroke-width": 1 }, svg);
+  el("line", { x1: 0, x2: W, y1: y(base), y2: y(base), stroke: css("--axis"), "stroke-width": 1 }, svg);
   if (n > 1) el("path", { d: values.map((v, i) => (i ? "L" : "M") + (i / (n - 1) * W).toFixed(1) + "," + y(v).toFixed(1)).join(""),
                           fill: "none", stroke: css(color), "stroke-width": 1.5, "stroke-linejoin": "round" }, svg);
-  el("text", { x: 4, y: y(0.5) - 3, "font-size": 8, fill: css("--ink2"), stroke: css("--surface"), "stroke-width": 3,
-               "paint-order": "stroke", direction: "rtl", "text-anchor": "end" }, svg).textContent = "50% = כמו להטיל מטבע";
+  el("text", { x: 4, y: y(base) - 3, "font-size": 8, fill: css("--ink2"), stroke: css("--surface"), "stroke-width": 3,
+               "paint-order": "stroke", direction: "rtl", "text-anchor": "end" }, svg).textContent = label;
 }
 
 function brainPanel(card, b, color) {
@@ -669,11 +673,14 @@ function brainPanel(card, b, color) {
     el("p", { class: "desc" }, d).textContent = "המוח עובר בירושה מהורה לילד (עם שינוי קטן), וכל דור ממשיך ללמוד ממה שקורה. " +
       `עד עכשיו המוח הזה למד מ-${x.lessons.toLocaleString("en-US")} דוגמאות. ` +
       `(מוח חדש לגמרי מתחיל ב"בית ספר" על ${x.school} שלפני שהבוט נולד.) ` +
-      (x.acc === null ? "עוד אין מספיק ניחושים כדי לדעת כמה הוא צודק." :
-       `ב-${x.acc_n} הניחושים האחרונים הוא צדק בכיוון ב-${x.acc}% מהפעמים (50% = כמו להטיל מטבע).`);
+      (x.acc === null ? "עוד אין מספיק ניחושים כדי לדעת כמה הוא צודק." : x.danger
+       ? `ב-${x.acc_n} הניחושים האחרונים הוא צדק ב-${x.acc}% מהפעמים אם תהיה נפילה או לא ` +
+         `(מי שהיה אומר תמיד "אין סכנה" היה צודק ב-${b.base}%).`
+       : `ב-${x.acc_n} הניחושים האחרונים הוא צדק בכיוון ב-${x.acc}% מהפעמים (50% = כמו להטיל מטבע).`);
     if (x.accuracy.length > 1) {
       el("div", { class: "lbl" }, d).textContent = "כמה הוא צודק לאורך הזמן";
-      accChart(el("svg", { class: "score", role: "img", "aria-label": "כמה המוח צודק לאורך הזמן" }, d), x.accuracy, color);
+      accChart(el("svg", { class: "score", role: "img", "aria-label": "כמה המוח צודק לאורך הזמן" }, d), x.accuracy, color,
+               x.danger ? b.base / 100 : 0.5, x.danger ? `${b.base}% = לומר תמיד "אין סכנה"` : "50% = כמו להטיל מטבע");
     }
     el("div", { class: "lbl" }, d).textContent = "כמה הוא מקשיב למוח";
     el("p", { class: "desc" }, d).textContent = `מקשיב ${ear}% למוח ו-${100 - ear}% לנוסחה הקבועה שירש. ` +
@@ -684,7 +691,9 @@ function brainPanel(card, b, color) {
   el("div", { class: "lbl" }, d).textContent = "איך יצא הציון עכשיו";
   el("p", { class: "desc" }, d).textContent = x.learning
     ? "הציון מחבר שני קולות: הנוסחה הקבועה (כל סימן כפול המשקל שהבוט ירש), והמוח - רשת עצבית קטנה שמקבלת את כל " +
-      `${x.rows.length} הסימנים, מנחשת לאן המחיר ילך ב-${x.horizon} הנרות הבאים, ולומדת מכל טעות. ` +
+      `${x.rows.length} הסימנים, ` + (x.danger
+        ? `מנחשת אם תהיה נפילה גדולה ב-${x.horizon} הנרות הבאים (חיובי = אין סכנה, שלילי = סכנה), `
+        : `מנחשת לאן המחיר ילך ב-${x.horizon} הנרות הבאים, `) + "ולומדת מכל טעות. " +
       "ליד כל סימן: כמה הוא דוחף את הציון עכשיו (כחול = לקנות, אדום = למכור), המשקל שלו בנוסחה, וכמה הוא חשוב למוח."
     : `הבוט בודק ${x.rows.length} סימנים. כל סימן נותן מספר בין 1- ל-1, כפול המשקל שהבוט נותן לו (משקל שלילי = הוא עושה ההפך). ` +
       "הסכום הוא הציון. כחול = דוחף לקנות, אדום = דוחף למכור.";
@@ -745,6 +754,7 @@ function bots() {
     sparkline(el("svg", { "aria-hidden": "true" }, card), b.spark, color);
     el("div", { class: "meta" }, card).textContent =
       `${b.holding ? "מחזיק " + b.asset : "במזומן"} · מושקע ${b.invested}% מהזמן · ` +
+      `מול לקנות ולחכות ${pct(b.edge)} · ` +
       (b.acc === null || b.acc === undefined ? "" : `המוח צודק ${b.acc}% · `) + `דור ${b.gen} · חי ${b.age} · ` +
       `שילם לך ${b.paid.toFixed(2)} ₪`;
     el("div", { class: "desc" }, card).textContent = b.desc;
