@@ -113,7 +113,7 @@ def hold_rules(b, score, patience=1):
     """מצב "להחזיק": מחזיקים כמה שיותר, ובורחים רק כשיש סימני סכנה."""
     g, clear = b.genome, b.genome.sell_at + CLEAR
     wait = f" {patience} נרות ברצף" if patience > 1 else ""
-    if b.units > 0:
+    if b.units > 0 and not b.out:
         drop = b.price / b.peak - 1 if b.peak else 0.0
         status = (f"מחזיק {g.asset} (קנה ב-{fmt_price(b.entry)}, עכשיו {fmt_price(b.price)}). "
                   f"ממשיך להחזיק כל עוד אין סכנה")
@@ -123,7 +123,9 @@ def hold_rules(b, score, patience=1):
                   f"עכשיו {drop:+.1%}"],
                  ["לא מוכר בגלל רווח - המטרה היא להחזיק כמה שיותר זמן", ""]]
     else:
-        status = (f"ברח מסכנה. מחכה עוד {b.wait} נרות לפני שיקנה שוב" if b.wait else
+        kept = f" (השאיר {g.keep:.0%} מושקע - ביטוח)" if b.out else ""
+        status = (f"ברח מסכנה{kept}. מחכה עוד {b.wait} נרות לפני שיקנה שוב" if b.wait else
+                  f"ברח מסכנה{kept}. יחזור לקנות כשאין סימני סכנה (ציון מעל {clear:+.2f})" if b.out else
                   f"במזומן. יקנה ברגע שאין סימני סכנה (ציון מעל {clear:+.2f})" if b.cash > 0.01 else
                   "אין לו מספיק מזומן כדי לקנות")
         rules = [[f"קונה {g.asset} כשאין סימני סכנה: הציון מעל {clear:+.2f}, ב-{g.bet:.0%} מהמזומן שלו",
