@@ -22,7 +22,6 @@ DEATH_LINE = 0.05       # מתחת לזה הבוט "מת"
 MAX_WINDOW = 200        # הממוצע הנע הכי ארוך שבוט יכול להשתמש בו
 IMMIGRANT_RATE = 0.1    # חלק מהשכפולים מקבלים אסטרטגיה חדשה לגמרי, כדי להמשיך לחפש רעיונות
 MIX_RATE = 0.25         # חלק מהשכפולים לוקחים גם תכונות מבוט טוב אחר
-GUARD_RATE = 0.5        # הסיכוי שלבוט חדש יהיה "שומר מגמה" (האבולוציה מחליטה אם הוא עוזר)
 SWITCH_RATE = 0.1       # הסיכוי ששכפול יעבור לסחור במטבע אחר
 BASKET_RATE = 0.3       # הסיכוי שבוט חדש (או שכפול שעובר מטבע) יסחור בסל של 2-3 מטבעות במקום במטבע אחד
 CHART_POINTS = 2000     # כמה נקודות לשמור לגרף של הבעלים
@@ -343,7 +342,6 @@ class Genome:
     lr: float = 0.03                # קצב למידה: כמה המוח משנה את עצמו אחרי כל טעות
     horizon: int = 7                # כמה נרות קדימה המוח מנסה לנחש
     listen: float = 0.5             # כמה הבוט מקשיב למוח: 0 = רק לנוסחה שירש, 1 = רק למוח
-    guard: int = 0                  # שומר מגמה: לא מחזיק כשהמחיר מתחת לממוצע של guard נרות (0 = כבוי)
 
     def __post_init__(self):
         # בוט מגרסה ישנה (עם פחות שיטות) מקבל משקל 0 לשיטות החדשות, אז הוא ממשיך להתנהג כמו קודם
@@ -359,8 +357,7 @@ class Genome:
                       rng.uniform(0.1, 0.4) if hold else rng.uniform(0.02, 0.25),
                       rng.uniform(0.03, 0.5), rng.uniform(0.5, 1.0) if hold else rng.uniform(0.2, 1.0),
                       rng.uniform(-0.2, 0.2), rng.uniform(0.0, 0.6), rng.randint(1, 20),
-                      math.exp(rng.uniform(math.log(0.005), math.log(0.1))), rng.randint(3, 20), rng.uniform(0, 1),
-                      rng.randint(50, MAX_WINDOW) if rng.random() < GUARD_RATE else 0).fix()
+                      math.exp(rng.uniform(math.log(0.005), math.log(0.1))), rng.randint(3, 20), rng.uniform(0, 1)).fix()
 
     def fix(self):
         self.fast = int(clamp(self.fast, 2, 50))
@@ -373,7 +370,6 @@ class Genome:
         self.lr = clamp(self.lr, 0.001, 0.3)
         self.horizon = int(clamp(self.horizon, 2, 30))
         self.listen = clamp(self.listen, 0.0, 1.0)
-        self.guard = int(clamp(self.guard, 20, MAX_WINDOW)) if self.guard else 0
         return self
 
     def mutate(self, rng, assets, strength=1.0, baskets=False):
@@ -390,14 +386,7 @@ class Genome:
                       j(self.bet, 0.1, 1.0, 0.1),
                       j(self.clone_min_return, -0.5, 0.5, 0.03), j(self.clone_min_money, 0.0, 2.0, 0.1),
                       round(j(self.cooldown, 0, 60, 2)),
-                      self.lr * math.exp(rng.gauss(0, 0.3 * strength)), round(j(self.horizon, 2, 30, 2)), j(self.listen, 0, 1, 0.1),
-                      self.mutate_guard(rng, strength)).fix()
-
-    def mutate_guard(self, rng, strength):
-        """שומר המגמה: לפעמים נדלק או נכבה, ואם הוא דלוק - האורך שלו משתנה קצת."""
-        if rng.random() < 0.1:
-            return 0 if self.guard else rng.randint(50, MAX_WINDOW)
-        return round(self.guard + rng.gauss(0, 15 * strength)) if self.guard else 0
+                      self.lr * math.exp(rng.gauss(0, 0.3 * strength)), round(j(self.horizon, 2, 30, 2)), j(self.listen, 0, 1, 0.1)).fix()
 
     @staticmethod
     def crossover(a, b, rng):
@@ -453,8 +442,7 @@ class Genome:
                      f"ו-{1 - self.listen:.0%} לנוסחה ({style})")
         if goal == "hold":
             return (f"מחזיק לטווח ארוך; {'' if learning else 'מקשיב בעיקר ל: '}{style}; משקיע {self.bet:.0%} מהמזומן, "
-                    f"בורח אם המחיר יורד {self.stop_loss:.0%} מהשיא" +
-                    (f"; לא מחזיק כשהמחיר מתחת לממוצע של {self.guard} נרות" if self.guard else ""))
+                    f"בורח אם המחיר יורד {self.stop_loss:.0%} מהשיא")
         return (f"{style}; משקיע {self.bet:.0%} מהמזומן, "
                 f"סטופ-לוס {self.stop_loss:.0%}, לוקח רווח ב-{self.take_profit:.0%}")
 
@@ -556,7 +544,6 @@ class Bot:
     held: int = 0               # בכמה נרות הוא החזיק מטבע
     seen: int = 0               # כמה נרות הוא חי
     danger: int = 0             # כמה נרות ברצף הציון מתחת לקו הסכנה
-    below: bool = False         # האם המחיר מתחת לממוצע של שומר המגמה
     mind: dict = None           # המוח הלומד (None = עוד לא למד כלום)
     memory: list = field(default_factory=list)     # [סימנים, מחיר, תנודתיות, ניחוש] של הנרות האחרונים, ללמוד מהם כשיתברר מה קרה
     lessons: int = 0            # מכמה דוגמאות המוח למד
@@ -587,10 +574,9 @@ class Bot:
     def step(self, m, i, allowed=SIGNALS, goal="trade", learning=False, rng=None, patience=1):
         """מחשב ומחליט אם לקנות או למכור. מחזיר משפט שמסביר מה עשה ולמה (או None)."""
         g = self.genome
-        if i < max(g.slow, g.mom, g.guard):
+        if i < max(g.slow, g.mom):
             return None
         price = self.price = m.p[i]
-        self.below = bool(g.guard) and price < m.ma(i, g.guard)   # מגמת ירידה ארוכה
         self.period_price = self.period_price or price   # בוט חדש: המחיר שממנו משווים ל"לקנות ולחכות"
         self.readings = g.readings(m, i)
         formula = sum(g.parts(Genome.signals(self.readings), allowed))
@@ -681,13 +667,11 @@ class Bot:
         """המטרה: להחזיק כמה שיותר זמן, ולברוח רק כשרואים סכנה (ואז לחזור כשהיא עוברת).
         patience: כמה נרות ברצף הציון צריך להישאר מתחת לקו הסכנה לפני שבורחים (כדי לא לברוח מכל רעש)."""
         g = self.genome
-        self.danger = self.danger + 1 if self.score < g.sell_at or self.below else 0
+        self.danger = self.danger + 1 if self.score < g.sell_at else 0
         if self.units > 0:
             self.peak = max(self.peak, price)
             drop = price / self.peak - 1
-            why = (f"המחיר מתחת לממוצע של {g.guard} נרות כבר {self.danger} נרות ברצף (מגמת ירידה)"
-                   if self.danger >= patience and self.below else
-                   f"הציון {self.score:+.2f} נשאר מתחת לקו הסכנה {g.sell_at:+.2f} "
+            why = (f"הציון {self.score:+.2f} נשאר מתחת לקו הסכנה {g.sell_at:+.2f} "
                    f"{self.danger} נרות ברצף" if self.danger >= patience else
                    f"המחיר ירד {-drop:.0%} מהשיא מאז שקנה (בורח בירידה של {g.stop_loss:.0%})"
                    if drop < -g.stop_loss else None)
@@ -695,7 +679,7 @@ class Bot:
                 self.sell(price)
                 self.wait = g.cooldown
                 return f"זיהה סכנה ומכר {g.asset} ב-{fmt_price(price)} כי {why}"
-        if self.cash > 0.01 and not self.wait and self.score > g.sell_at + CLEAR and not self.below:
+        if self.cash > 0.01 and not self.wait and self.score > g.sell_at + CLEAR:
             if self.units > 0:   # כבר מחזיק: משקיע גם כסף שנשאר בצד (מהשכפול או מהבוטים שמתו), אם הוא לא זניח
                 if TOP_UP and self.cash > 0.05 * self.value(price):
                     self.buy(price)
