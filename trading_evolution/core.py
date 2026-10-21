@@ -739,9 +739,10 @@ def tradable(asset, assets):
 
 
 def pick_asset(rng, assets, baskets=False):
-    """מטבע אחד, או (לפעמים) סל של 2-3 מטבעות - ככה נפילה של מטבע אחד לא הורגת את כל הכסף."""
+    """מטבע אחד, או (לפעמים) סל של כמה מטבעות - עד כל המטבעות ביחד.
+    ככה נפילה של מטבע אחד לא הורגת את כל הכסף, ובשנות שיא הבוט לא מפספס את המטבע שהתפוצץ."""
     if baskets and len(assets) > 1 and rng.random() < BASKET_RATE:
-        return "+".join(sorted(rng.sample(list(assets), rng.randint(2, min(3, len(assets))))))
+        return "+".join(sorted(rng.sample(list(assets), rng.randint(2, len(assets)))))
     return rng.choice(assets)
 
 
