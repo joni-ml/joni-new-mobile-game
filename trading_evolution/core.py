@@ -33,6 +33,8 @@ PATTERN_AHEAD = 5       # כמה נרות קדימה בודקים מה קרה א
 PATTERN_MIN = 5         # כמה פעמים צריך לראות דפוס בעבר כדי לסמוך עליו
 TOP_UP = True           # במצב "להחזיק": להשקיע גם כסף שנשאר בצד בזמן שמחזיקים
 CLEAR = 0.1             # במצב "להחזיק": כמה הציון צריך לעלות מעל קו הסכנה כדי לקנות שוב
+TEACH = 0.0             # הכי טוב מלמד את השאר: כמה מהמוח והנוסחה שלהם זז לכיוון שלו בכל מבחן
+STUDY = False           # החכמים (הרבע העליון) לומדים שוב על העבר הקרוב אחרי כל מבחן
 HIDDEN = 8              # כמה "תאי עצב" יש במוח של כל בוט
 SCHOOL = 365            # כמה נרות מהעבר בוט חדש לומד ("בית ספר") לפני שהוא מתחיל לסחור
 ACC_POINTS = 60         # כמה נקודות לשמור לגרף "כמה המוח צודק לאורך הזמן"
@@ -552,6 +554,7 @@ class Bot:
     held: int = 0               # בכמה נרות הוא החזיק מטבע
     seen: int = 0               # כמה נרות הוא חי
     danger: int = 0             # כמה נרות ברצף הציון מתחת לקו הסכנה
+    study: bool = False         # הוא מהחכמים: בנר הבא הוא לומד שוב על העבר הקרוב
     out: bool = False           # ברח מסכנה (אולי עם חלק קטן שנשאר מושקע - הביטוח), ומחכה לחזור
     mind: dict = None           # המוח הלומד (None = עוד לא למד כלום)
     memory: list = field(default_factory=list)     # [סימנים, מחיר, תנודתיות, ניחוש] של הנרות האחרונים, ללמוד מהם כשיתברר מה קרה
@@ -595,6 +598,8 @@ class Bot:
             danger = goal == "hold"   # במצב "להחזיק" המוח מחפש סכנה, לא מנחש כיוון
             if self.mind is None:
                 self.go_to_school(m, i, allowed, rng or random.Random(self.id), danger)
+            if self.study:
+                self.restudy(m, i, allowed, danger)
             feel = self.observe(self.inputs(self.readings, allowed), price, m.vol50[i], danger)
             self.score = (1 - g.listen) * formula + g.listen * feel
         else:
@@ -665,6 +670,19 @@ class Bot:
         self.hits = (self.hits + [hit])[-100:]
         if self.lessons % 10 == 0 and len(self.hits) >= 30:
             self.accuracy = thin(self.accuracy + [round(sum(self.hits) / len(self.hits), 3)], ACC_POINTS)
+
+    def restudy(self, m, i, allowed, danger):
+        """שיעור נוסף לחכמים: עובר שוב על SCHOOL הנרות האחרונים שהתוצאה שלהם כבר ידועה, ולומד מהם עוד פעם."""
+        self.study = False
+        g, h = self.genome, self.genome.horizon
+        for t in range(max(g.slow, g.mom, i - SCHOOL), i - h):
+            x = self.inputs(g.readings(m, t), allowed)
+            scale = max(m.vol50[t], 1e-6) * math.sqrt(h)
+            if danger:
+                target = clamp(math.log(min(m.p[t:t + h + 1]) / m.p[t]) / scale + 1)
+            else:
+                target = clamp(math.log(m.p[t + h] / m.p[t]) / scale / 2)
+            brain_learn(self.mind, x, target, g.lr)
 
     def go_to_school(self, m, i, allowed, rng, danger=False):
         """בוט חדש בלי מוח: נולד עם מוח אקראי ועובר על SCHOOL הנרות האחרונים בדיוק כמו בזמן אמת -
@@ -913,6 +931,7 @@ class World:
                       f"מול לקנות ולחכות {bot.edge(price(bot), self.market_return(prices)):+.0%}) נכשל במבחן ומת. "
                       f"{got:.2f} ש\"ח עברו {'אליך' if to_me else 'לטובים'}")
         self.bots = ranked[:keep]
+        self.teach(ranked[:keep])
         if to_me:
             self.owner_profit += loot
         else:
@@ -959,6 +978,22 @@ class World:
             self.note(f"בוט #{child.id} ({child.genome.asset}) נולד במקום ריק, מהאסטרטגיה של בוט #{parent.id}")
         self.refilled += added
         return added
+
+    def teach(self, survivors):
+        """הכי חכמים מלמדים: הבוט הכי טוב מעביר חלק מהידע שלו (המוח והנוסחה) לשאר השורדים,
+        והחכמים (הרבע העליון) לומדים שוב על העבר הקרוב כדי להשתפר עוד."""
+        if not TEACH or len(survivors) < 2:
+            return
+        best = survivors[0]
+        for b in survivors[1:]:
+            b.genome.weights = [(1 - TEACH) * w + TEACH * t for w, t in zip(b.genome.weights, best.genome.weights)]
+            if b.mind and best.mind and len(b.mind["w2"]) == len(best.mind["w2"]):
+                for key in ("w1",):
+                    b.mind[key] = [[(1 - TEACH) * w + TEACH * t for w, t in zip(r, tr)]
+                                   for r, tr in zip(b.mind[key], best.mind[key])]
+                b.mind["w2"] = [(1 - TEACH) * w + TEACH * t for w, t in zip(b.mind["w2"], best.mind["w2"])]
+        for b in survivors[:max(1, len(survivors) // 4)]:
+            b.study = STUDY
 
     def retire(self, bot):
         """בוט שמת: שומרים כמה ניחושים המוח שלו עשה, כדי שהדיוק של המוחות ייספר ביושר (לא רק אצל מי ששרד)."""
