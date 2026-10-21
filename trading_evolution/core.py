@@ -30,6 +30,7 @@ EVENTS = 30             # כמה אירועים אחרונים לזכור (מו�
 PATTERN_LEN = 5         # כמה נרות אחרונים יוצרים "דפוס"
 PATTERN_AHEAD = 5       # כמה נרות קדימה בודקים מה קרה אחרי כל דפוס
 PATTERN_MIN = 5         # כמה פעמים צריך לראות דפוס בעבר כדי לסמוך עליו
+TOP_UP = False          # במצב "להחזיק": להשקיע גם כסף שנשאר בצד בזמן שמחזיקים
 CLEAR = 0.1             # במצב "להחזיק": כמה הציון צריך לעלות מעל קו הסכנה כדי לקנות שוב
 HIDDEN = 8              # כמה "תאי עצב" יש במוח של כל בוט
 SCHOOL = 365            # כמה נרות מהעבר בוט חדש לומד ("בית ספר") לפני שהוא מתחיל לסחור
@@ -675,7 +676,11 @@ class Bot:
                 self.sell(price)
                 self.wait = g.cooldown
                 return f"זיהה סכנה ומכר {g.asset} ב-{fmt_price(price)} כי {why}"
-        elif self.cash > 0.01 and not self.wait and self.score > g.sell_at + CLEAR:
+        if self.cash > 0.01 and not self.wait and self.score > g.sell_at + CLEAR:
+            if self.units > 0:   # כבר מחזיק: משקיע גם כסף שנשאר בצד (מהשכפול או מהבוטים שמתו), אם הוא לא זניח
+                if TOP_UP and self.cash > 0.05 * self.value(price):
+                    self.buy(price)
+                return None
             self.buy(price)
             return (f"קנה {g.asset} ב-{fmt_price(price)} כי אין סימני סכנה "
                     f"(הציון {self.score:+.2f} מעל {g.sell_at + CLEAR:+.2f})")
@@ -683,9 +688,10 @@ class Bot:
 
     def buy(self, price):
         spend = self.cash * self.genome.bet
-        self.units = spend * (1 - FEE) / price
+        if self.units == 0:
+            self.entry = self.peak = price
+        self.units += spend * (1 - FEE) / price
         self.cash -= spend
-        self.entry = self.peak = price
         self.trades += 1
 
     def sell(self, price):
