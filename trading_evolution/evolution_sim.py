@@ -81,6 +81,9 @@ def summary(title, world, times, prices, warmup):
     print(f"רווח/הפסד נקי: {net:+.2f} ש\"ח ({net / last['invested'] * 100:+.0f}%) | "
           f"מבחנים {world.selections}, מתו {world.deaths}, שוכפלו {world.clones}, "
           f"בחרו לא להשתכפל {world.declined}, נולדו במקומות ריקים {world.refilled}, חיים {len(world.bots)}")
+    hits = [h for b in world.bots for h in b.hits]
+    if hits:
+        print(f"המוחות של הבוטים צדקו בכיוון ב-{100 * sum(hits) / len(hits):.1f}% מהניחושים האחרונים (50% = הטלת מטבע)")
     picks = Counter(b.genome.asset for b in world.bots)
     print("במה הבוטים בחרו לסחור: " + ", ".join(f"{a} ({n})" for a, n in picks.most_common()))
     return net
@@ -89,7 +92,7 @@ def summary(title, world, times, prices, warmup):
 def show_best(world, k=3):
     print("האסטרטגיות הכי מצליחות:")
     for b in world.best(k):
-        print(f"  בוט #{b.id} ({b.genome.asset}, דור {b.generation}): {b.genome.describe(world.cfg.signals, world.cfg.goal)}")
+        print(f"  בוט #{b.id} ({b.genome.asset}, דור {b.generation}): {b.genome.describe(world.cfg.signals, world.cfg.goal, world.cfg.brain == "learning")}")
         print(f"      {b.genome.clone_rule(world.cfg.start_money)}")
 
 

@@ -6,6 +6,7 @@
   live.py          - מסחר חי על נייר עם מחירים אמיתיים מהבורסה
 """
 
+import copy
 import csv
 import json
 import math
@@ -29,6 +30,9 @@ PATTERN_LEN = 5         # כמה נרות אחרונים יוצרים "דפוס"
 PATTERN_AHEAD = 5       # כמה נרות קדימה בודקים מה קרה אחרי כל דפוס
 PATTERN_MIN = 5         # כמה פעמים צריך לראות דפוס בעבר כדי לסמוך עליו
 CLEAR = 0.1             # במצב "להחזיק": כמה הציון צריך לעלות מעל קו הסכנה כדי לקנות שוב
+HIDDEN = 8              # כמה "תאי עצב" יש במוח של כל בוט
+SCHOOL = 365            # כמה נרות מהעבר בוט חדש לומד ("בית ספר") לפני שהוא מתחיל לסחור
+ACC_POINTS = 60         # כמה נקודות לשמור לגרף "כמה המוח צודק לאורך הזמן"
 
 
 # ---------- הגדרות ----------
@@ -48,6 +52,7 @@ class Settings:
     signals: list = field(default_factory=lambda: list(SIGNALS))
     refill: bool = True
     goal: str = "hold"
+    brain: str = "learning"
 
 
 def load_settings(path):
@@ -79,6 +84,8 @@ def load_settings(path):
     if bad or not s.signals:
         raise SystemExit(f"שיטה לא מוכרת ב-signals: {', '.join(bad) or 'הרשימה ריקה'}. "
                          f"אפשר: {', '.join(SIGNALS)}")
+    if s.brain not in ("learning", "simple"):
+        raise SystemExit(f"brain יכול להיות רק \"learning\" או \"simple\" (כתוב {s.brain!r})")
     if s.goal not in ("hold", "trade"):
         raise SystemExit(f"goal יכול להיות רק \"hold\" או \"trade\" (כתוב {s.goal!r})")
     if not isinstance(s.refill, bool):
@@ -322,6 +329,9 @@ class Genome:
     clone_min_return: float = 0.0   # משתכפל רק אם הרוויח לפחות כך מאז המבחן הקודם (0.05 = 5%)
     clone_min_money: float = 0.2    # ורק אם לכל חצי יישאר לפחות כך (כחלק מכסף ההתחלה)
     cooldown: int = 5               # במצב "להחזיק": כמה נרות לחכות אחרי בריחה לפני שקונים שוב
+    # המוח הלומד (גם אלה עוברים בתורשה ומשתנים):
+    lr: float = 0.03                # קצב למידה: כמה המוח משנה את עצמו אחרי כל טעות
+    horizon: int = 7                # כמה נרות קדימה המוח מנסה לנחש
 
     def __post_init__(self):
         # בוט מגרסה ישנה (עם פחות שיטות) מקבל משקל 0 לשיטות החדשות, אז הוא ממשיך להתנהג כמו קודם
@@ -336,7 +346,8 @@ class Genome:
                       rng.uniform(0.05, 0.6), rng.uniform(-0.7, -0.2) if hold else rng.uniform(-0.6, 0.0),
                       rng.uniform(0.1, 0.4) if hold else rng.uniform(0.02, 0.25),
                       rng.uniform(0.03, 0.5), rng.uniform(0.5, 1.0) if hold else rng.uniform(0.2, 1.0),
-                      rng.uniform(-0.2, 0.2), rng.uniform(0.0, 0.6), rng.randint(1, 20)).fix()
+                      rng.uniform(-0.2, 0.2), rng.uniform(0.0, 0.6), rng.randint(1, 20),
+                      math.exp(rng.uniform(math.log(0.005), math.log(0.1))), rng.randint(3, 20)).fix()
 
     def fix(self):
         self.fast = int(clamp(self.fast, 2, 50))
@@ -346,6 +357,8 @@ class Genome:
         self.clone_min_return = clamp(self.clone_min_return, -0.5, 0.5)
         self.clone_min_money = clamp(self.clone_min_money, 0.0, 2.0)
         self.cooldown = int(clamp(self.cooldown, 0, 60))
+        self.lr = clamp(self.lr, 0.001, 0.3)
+        self.horizon = int(clamp(self.horizon, 2, 30))
         return self
 
     def mutate(self, rng, assets, strength=1.0):
@@ -361,7 +374,8 @@ class Genome:
                       j(self.stop_loss, 0.005, 0.4, 0.03), j(self.take_profit, 0.01, 1.0, 0.05),
                       j(self.bet, 0.1, 1.0, 0.1),
                       j(self.clone_min_return, -0.5, 0.5, 0.03), j(self.clone_min_money, 0.0, 2.0, 0.1),
-                      round(j(self.cooldown, 0, 60, 2))).fix()
+                      round(j(self.cooldown, 0, 60, 2)),
+                      self.lr * math.exp(rng.gauss(0, 0.3 * strength)), round(j(self.horizon, 2, 30, 2))).fix()
 
     @staticmethod
     def crossover(a, b, rng):
@@ -409,11 +423,14 @@ class Genome:
         total = sum(abs(x) for x in w) or 1.0
         return [x * y / total for x, y in zip(w, sig)]
 
-    def describe(self, allowed=SIGNALS, goal="trade"):
-        top = sorted(((s, w) for s, w in zip(SIGNALS, self.weights) if s in allowed), key=lambda sw: -abs(sw[1]))[:2]
-        style = " + ".join(SIGNAL_WORDS[s][0 if w > 0 else 1] for s, w in top)
+    def describe(self, allowed=SIGNALS, goal="trade", learning=False):
+        if learning:
+            style = f"מוח לומד: מנחש {self.horizon} נרות קדימה, קצב למידה {self.lr:.3f}"
+        else:
+            top = sorted(((s, w) for s, w in zip(SIGNALS, self.weights) if s in allowed), key=lambda sw: -abs(sw[1]))[:2]
+            style = " + ".join(SIGNAL_WORDS[s][0 if w > 0 else 1] for s, w in top)
         if goal == "hold":
-            return (f"מחזיק לטווח ארוך; מקשיב בעיקר ל: {style}; משקיע {self.bet:.0%} מהמזומן, "
+            return (f"מחזיק לטווח ארוך; {'' if learning else 'מקשיב בעיקר ל: '}{style}; משקיע {self.bet:.0%} מהמזומן, "
                     f"בורח אם המחיר יורד {self.stop_loss:.0%} מהשיא")
         return (f"{style}; משקיע {self.bet:.0%} מהמזומן, "
                 f"סטופ-לוס {self.stop_loss:.0%}, לוקח רווח ב-{self.take_profit:.0%}")
@@ -430,6 +447,61 @@ class Genome:
     def clone_rule(self, start_money):
         return (f"משתכפל רק אם הרוויח לפחות {self.clone_min_return:+.0%} מאז המבחן, "
                 f"ושלכל חצי יישארו לפחות {self.clone_min_money * start_money:.2f} ש\"ח")
+
+
+# ---------- המוח הלומד ----------
+# רשת עצבית קטנה: הסימנים נכנסים, עוברים דרך HIDDEN "תאי עצב", ויוצא ניחוש אחד בין -1 ל-1:
+# לאן המחיר ילך ב-horizon הנרות הבאים (1 = יעלה הרבה יותר מהרגיל, -1 = ירד הרבה).
+# אחרי שעוברים horizon נרות, הבוט רואה מה באמת קרה ומתקן את המשקלים קצת - ככה הוא לומד מטעויות.
+
+def brain_new(rng, n_in):
+    s = 1 / math.sqrt(n_in)
+    return {"w1": [[rng.gauss(0, s) for _ in range(n_in)] for _ in range(HIDDEN)], "b1": [0.0] * HIDDEN,
+            "w2": [rng.gauss(0, 1 / math.sqrt(HIDDEN)) for _ in range(HIDDEN)], "b2": 0.0}
+
+
+def brain_fit(b, n_in):
+    """מוח שנולד כשהיו פחות סימנים מקבל חיבורים חדשים (באפס) לסימנים שנוספו."""
+    for row in b["w1"]:
+        row.extend([0.0] * (n_in - len(row)))
+
+
+def brain_think(b, x):
+    """הניחוש של המוח (בין -1 ל-1), ומה כל תא עצב הרגיש."""
+    h = [math.tanh(sum(w * xi for w, xi in zip(row, x)) + bias) for row, bias in zip(b["w1"], b["b1"])]
+    return math.tanh(sum(w * hk for w, hk in zip(b["w2"], h)) + b["b2"]), h
+
+
+def brain_learn(b, x, target, lr):
+    """צעד למידה אחד: משווים את הניחוש למה שקרה באמת, ומזיזים כל משקל קצת לכיוון שהיה מקטין את הטעות."""
+    y, h = brain_think(b, x)
+    dy = (y - target) * (1 - y * y)
+    for k, hk in enumerate(h):
+        dh = dy * b["w2"][k] * (1 - hk * hk)
+        b["w2"][k] -= lr * dy * hk
+        row = b["w1"][k]
+        for j, xj in enumerate(x):
+            row[j] -= lr * dh * xj
+        b["b1"][k] -= lr * dh
+    b["b2"] -= lr * dy
+    return y
+
+
+def brain_copy(b, rng, noise=0.02):
+    """המוח של ההורה עובר לילד, עם שינוי קטן."""
+    c = copy.deepcopy(b)
+    for row in c["w1"]:
+        for j in range(len(row)):
+            row[j] += rng.gauss(0, noise)
+    c["w2"] = [w + rng.gauss(0, noise) for w in c["w2"]]
+    return c
+
+
+def brain_importance(b):
+    """כמה כל סימן משפיע על המוח באופן כללי (בין 0 ל-1, 1 = הכי חשוב)."""
+    imp = [sum(abs(b["w2"][k] * b["w1"][k][j]) for k in range(len(b["w2"]))) for j in range(len(b["w1"][0]))]
+    top = max(imp) or 1.0
+    return [v / top for v in imp]
 
 
 # ---------- הבוט ----------
@@ -458,6 +530,12 @@ class Bot:
     wait: int = 0               # כמה נרות עוד לחכות אחרי בריחה
     held: int = 0               # בכמה נרות הוא החזיק מטבע
     seen: int = 0               # כמה נרות הוא חי
+    mind: dict = None           # המוח הלומד (None = עוד לא למד כלום)
+    memory: list = field(default_factory=list)     # [סימנים, מחיר, תנודתיות, ניחוש] של הנרות האחרונים, ללמוד מהם כשיתברר מה קרה
+    lessons: int = 0            # מכמה דוגמאות המוח למד
+    hits: list = field(default_factory=list)       # האם צדק בכל אחד מ-100 הניחושים האחרונים (1/0)
+    accuracy: list = field(default_factory=list)   # כמה הוא צדק לאורך הזמן (בשביל הגרף)
+    guess: float = None         # הניחוש האחרון של המוח
 
     def value(self, price):
         return self.cash + self.units * price
@@ -469,14 +547,19 @@ class Bot:
         """צמיחה ממוצעת לנר. לבוט צעיר אין עדיין מספיק היסטוריה, אז הציון שלו קרוב ל-0."""
         return self.log_growth / max(tick - self.born, 30)
 
-    def step(self, m, i, allowed=SIGNALS, goal="trade"):
+    def step(self, m, i, allowed=SIGNALS, goal="trade", learning=False, rng=None):
         """מחשב ומחליט אם לקנות או למכור. מחזיר משפט שמסביר מה עשה ולמה (או None)."""
         g = self.genome
         if i < max(g.slow, g.mom):
             return None
         price = self.price = m.p[i]
         self.readings = g.readings(m, i)
-        self.score = sum(g.parts(Genome.signals(self.readings), allowed))
+        if learning:
+            if self.mind is None:
+                self.go_to_school(m, i, allowed, rng or random.Random(self.id))
+            self.score = self.observe(self.inputs(self.readings, allowed), price, m.vol50[i])
+        else:
+            self.score = sum(g.parts(Genome.signals(self.readings), allowed))
         self.seen += 1
         self.held += self.units > 0
         self.wait = max(0, self.wait - 1)
@@ -494,6 +577,39 @@ class Bot:
             self.buy(price)
             return f"קנה {g.asset} ב-{fmt_price(price)} כי הציון {self.score:+.2f} עלה מעל הסף {g.buy_at:+.2f}"
         return None
+
+    @staticmethod
+    def inputs(readings, allowed):
+        """מה נכנס למוח: כל הסימנים (שיטה שאסורה בהגדרות = 0)."""
+        return [s if n in allowed else 0.0 for n, s in zip(SIGNALS, Genome.signals(readings))]
+
+    def observe(self, x, price, vol):
+        """נר אחד מבחינת המוח: קודם לומד מהדוגמה שהתוצאה שלה התבררה עכשיו (לפני horizon נרות),
+        ואז מנחש מה יקרה מעכשיו. הניחוש נשמר, כדי לבדוק אותו ביושר כשהתוצאה תגיע."""
+        brain_fit(self.mind, len(x))
+        while len(self.memory) >= self.genome.horizon:
+            self.lesson(*self.memory.pop(0), price)
+        self.guess = brain_think(self.mind, x)[0]
+        self.memory.append([x, price, vol, self.guess])
+        return self.guess
+
+    def lesson(self, x, p0, vol, guess, p_now):
+        """לומד מדוגמה אחת שהתוצאה שלה כבר ידועה: מה היו הסימנים, ולאן המחיר הלך אחרי horizon נרות.
+        "צדק" נמדד לפי הניחוש שנעשה אז, לפני שידע את התוצאה."""
+        move = math.log(p_now / p0) / (max(vol, 1e-6) * math.sqrt(self.genome.horizon))
+        brain_learn(self.mind, x, clamp(move / 2), self.genome.lr)
+        self.lessons += 1
+        self.hits = (self.hits + [int((guess > 0) == (move > 0))])[-100:]
+        if self.lessons % 10 == 0 and len(self.hits) >= 30:
+            self.accuracy = thin(self.accuracy + [round(sum(self.hits) / len(self.hits), 3)], ACC_POINTS)
+
+    def go_to_school(self, m, i, allowed, rng):
+        """בוט חדש בלי מוח: נולד עם מוח אקראי ועובר על SCHOOL הנרות האחרונים בדיוק כמו בזמן אמת -
+        נר אחרי נר, מנחש ולומד רק ממה שכבר קרה באותו רגע."""
+        g = self.genome
+        self.mind = brain_new(rng, len(SIGNALS))
+        for t in range(max(g.slow, g.mom, i - SCHOOL), i):
+            self.observe(self.inputs(g.readings(m, t), allowed), m.p[t], m.vol50[t])
 
     def hold_step(self, price):
         """המטרה: להחזיק כמה שיותר זמן, ולברוח רק כשרואים סכנה (ואז לחזור כשהיא עוברת)."""
@@ -584,11 +700,13 @@ class World:
                 g = Genome.random(self.rng, assets, self.cfg.goal)
             self.spawn(g)
 
-    def spawn(self, genome, money=None, generation=0):
+    def spawn(self, genome, money=None, generation=0, mind=None):
+        """בוט חדש. mind = מוח של הורה שעובר אליו (עם שינוי קטן); בלי זה הוא ילך ל"בית ספר"."""
         if money is None:
             money = self.cfg.start_money
             self.invested += money      # בוט חדש מאפס = הבעלים משקיע עוד כסף
-        bot = Bot(self.next_id, genome, self.tick, generation, cash=money, period_start=money, prev_value=money)
+        bot = Bot(self.next_id, genome, self.tick, generation, cash=money, period_start=money, prev_value=money,
+                  mind=brain_copy(mind, self.rng) if mind else None)
         self.next_id += 1
         self.bots.append(bot)
         return bot
@@ -601,7 +719,8 @@ class World:
         self.now = when.isoformat(timespec="minutes")
         prices = {a: m.p[i] for a, m in markets.items()}
         for bot in self.bots:
-            did = bot.step(markets[bot.genome.asset], i, self.cfg.signals, self.cfg.goal)
+            did = bot.step(markets[bot.genome.asset], i, self.cfg.signals, self.cfg.goal,
+                           self.cfg.brain == "learning", self.rng)
             if did:
                 bot.last = [self.now, did]
         self.tick += 1
@@ -680,7 +799,8 @@ class World:
                 self.note(f"בוט #{parent.id} בחר לא להשתכפל: {why}")
                 continue
             money = parent.take(parent.value(p) / 2, p)
-            child = self.spawn(self.child_genome(parent), money, parent.generation + 1)
+            genome, inherit = self.child_genome(parent)
+            child = self.spawn(genome, money, parent.generation + 1, parent.mind if inherit else None)
             self.clones += 1
             born += 1
             self.note(f"בוט #{parent.id} שוכפל לבוט #{child.id} ({child.genome.asset})")
@@ -701,21 +821,23 @@ class World:
         added = 0
         while parents and len(self.bots) < target:
             parent = parents[added % len(parents)]
-            child = self.spawn(self.child_genome(parent), generation=parent.generation + 1)
+            genome, inherit = self.child_genome(parent)
+            child = self.spawn(genome, generation=parent.generation + 1, mind=parent.mind if inherit else None)
             added += 1
             self.note(f"בוט #{child.id} ({child.genome.asset}) נולד במקום ריק, מהאסטרטגיה של בוט #{parent.id}")
         self.refilled += added
         return added
 
     def child_genome(self, parent):
+        """הגנום של ילד, והאם הוא מקבל גם את המוח של ההורה (רעיון חדש לגמרי מתחיל עם מוח חדש)."""
         r, assets = self.rng.random(), self.cfg.assets
         if r < IMMIGRANT_RATE:
-            return Genome.random(self.rng, assets, self.cfg.goal)
+            return Genome.random(self.rng, assets, self.cfg.goal), False
         g = parent.genome
         others = [b for b in self.bots if b is not parent]
         if r < IMMIGRANT_RATE + MIX_RATE and others:
             g = Genome.crossover(g, self.rng.choice(others).genome, self.rng)
-        return g.mutate(self.rng, assets, 0.5)
+        return g.mutate(self.rng, assets, 0.5), True
 
     def ranked(self, prices):
         """הבוטים לפי מי שהכי מצליח מאז המבחן האחרון."""
