@@ -31,9 +31,6 @@ EVENTS = 30             # כמה אירועים אחרונים לזכור (מו�
 PATTERN_LEN = 5         # כמה נרות אחרונים יוצרים "דפוס"
 PATTERN_AHEAD = 5       # כמה נרות קדימה בודקים מה קרה אחרי כל דפוס
 PATTERN_MIN = 5         # כמה פעמים צריך לראות דפוס בעבר כדי לסמוך עליו
-# מעקות בטיחות למטרה "להחזיק": בלי זה, אימון ארוך מוצא "פרצה" - כמעט לא להשקיע בכלל, ואז אף פעם לא ליפול.
-HOLD_MIN_BET = 0.5      # כל קנייה היא לפחות חצי מהמזומן
-HOLD_MIN_STOP = 0.05    # לא בורחים מירידה של פחות מ-5% מהשיא (זה רעש, לא סכנה)
 SHORTS = False          # האם מותר לבוטים להמר נגד (מכירה בחסר) כשהם בורחים מסכנה
 TOP_UP = True           # במצב "להחזיק": להשקיע גם כסף שנשאר בצד בזמן שמחזיקים
 CLEAR = 0.1             # במצב "להחזיק": כמה הציון צריך לעלות מעל קו הסכנה כדי לקנות שוב
@@ -456,8 +453,8 @@ class Genome:
                      f"ו-{1 - self.listen:.0%} לנוסחה ({style})")
         if goal == "hold":
             return (f"מחזיק לטווח ארוך; {'' if learning else 'מקשיב בעיקר ל: '}{style}; "
-                    f"משקיע {max(self.bet, HOLD_MIN_BET):.0%} מהמזומן, "
-                    f"בורח אם המחיר יורד {max(self.stop_loss, HOLD_MIN_STOP):.0%} מהשיא" +
+                    f"משקיע {self.bet:.0%} מהמזומן, "
+                    f"בורח אם המחיר יורד {self.stop_loss:.0%} מהשיא" +
                     (f", ומשאיר {self.keep:.0%} מושקע גם כשבורח (ביטוח)" if self.keep >= 0.01 else ""))
         return (f"{style}; משקיע {self.bet:.0%} מהמזומן, "
                 f"סטופ-לוס {self.stop_loss:.0%}, לוקח רווח ב-{self.take_profit:.0%}")
@@ -709,11 +706,10 @@ class Bot:
         if self.units > 0 and not self.out:
             self.peak = max(self.peak, price)
             drop = price / self.peak - 1
-            stop = max(g.stop_loss, HOLD_MIN_STOP)
             why = (f"הציון {self.score:+.2f} נשאר מתחת לקו הסכנה {g.sell_at:+.2f} "
                    f"{self.danger} נרות ברצף" if self.danger >= patience else
-                   f"המחיר ירד {-drop:.0%} מהשיא מאז שקנה (בורח בירידה של {stop:.0%})"
-                   if drop < -stop else None)
+                   f"המחיר ירד {-drop:.0%} מהשיא מאז שקנה (בורח בירידה של {g.stop_loss:.0%})"
+                   if drop < -g.stop_loss else None)
             if why:
                 self.sell(price, 1 - g.keep)
                 if g.short:   # הימור נגד: מרוויח אם המחיר ימשיך לרדת, מפסיד אם יעלה (עד שיחזור לקנות)
@@ -724,16 +720,16 @@ class Bot:
         if self.cash > 0.01 and not self.wait and self.score > g.sell_at + CLEAR:
             if self.units > 0 and not self.out:   # כבר מחזיק: משקיע גם כסף שנשאר בצד, אם הוא לא זניח
                 if TOP_UP and self.cash > 0.05 * self.value(price):
-                    self.buy(price, HOLD_MIN_BET)
+                    self.buy(price)
                 return None
-            self.buy(price, HOLD_MIN_BET)
+            self.buy(price)
             self.out, self.peak = False, price
             return (f"קנה {g.asset} ב-{fmt_price(price)} כי אין סימני סכנה "
                     f"(הציון {self.score:+.2f} מעל {g.sell_at + CLEAR:+.2f})")
         return None
 
-    def buy(self, price, min_bet=0.0):
-        spend = self.cash * max(self.genome.bet, min_bet)
+    def buy(self, price):
+        spend = self.cash * self.genome.bet
         if self.units == 0:
             self.entry = self.peak = price
         self.units += spend * (1 - FEE) / price

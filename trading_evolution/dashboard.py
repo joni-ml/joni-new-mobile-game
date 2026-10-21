@@ -9,7 +9,7 @@ import json
 import os
 from datetime import datetime
 
-from core import (CLEAR, HOLD_MIN_BET, HOLD_MIN_STOP, NET_SIGNALS, PATTERN_AHEAD, PATTERN_LEN, PATTERN_MIN, SCHOOL, SIGNALS, Bot, Genome,
+from core import (CLEAR, NET_SIGNALS, PATTERN_AHEAD, PATTERN_LEN, PATTERN_MIN, SCHOOL, SIGNALS, Bot, Genome,
                   brain_fit, brain_importance, brain_think, clamp, fmt_price, human, members, price_of)
 
 MAX_COINS = 7   # כמה מטבעות אפשר להראות בגרף המטבעות (יש 7 צבעים שקל להבדיל ביניהם)
@@ -119,7 +119,7 @@ def hold_rules(b, score, patience=1):
                   f"ממשיך להחזיק כל עוד אין סכנה")
         rules = [[f"בורח אם הציון נשאר מתחת לקו הסכנה {g.sell_at:+.2f}{wait}",
                   f"עכשיו {score:+.2f}" + (f", {b.danger} מתוך {patience}" if patience > 1 and b.danger else "")],
-                 [f"בורח אם המחיר יורד {max(g.stop_loss, HOLD_MIN_STOP):.0%} מהשיא מאז שקנה ({fmt_price(b.peak)})",
+                 [f"בורח אם המחיר יורד {g.stop_loss:.0%} מהשיא מאז שקנה ({fmt_price(b.peak)})",
                   f"עכשיו {drop:+.1%}"],
                  ["לא מוכר בגלל רווח - המטרה היא להחזיק כמה שיותר זמן", ""]]
     else:
@@ -128,11 +128,11 @@ def hold_rules(b, score, patience=1):
                   f"ברח מסכנה{kept}. יחזור לקנות כשאין סימני סכנה (ציון מעל {clear:+.2f})" if b.out else
                   f"במזומן. יקנה ברגע שאין סימני סכנה (ציון מעל {clear:+.2f})" if b.cash > 0.01 else
                   "אין לו מספיק מזומן כדי לקנות")
-        rules = [[f"קונה {g.asset} כשאין סימני סכנה: הציון מעל {clear:+.2f}, ב-{max(g.bet, HOLD_MIN_BET):.0%} מהמזומן שלו",
+        rules = [[f"קונה {g.asset} כשאין סימני סכנה: הציון מעל {clear:+.2f}, ב-{g.bet:.0%} מהמזומן שלו",
                   f"עכשיו {score:+.2f}"],
                  [f"אחרי שבורח, מחכה {g.cooldown} נרות לפני שקונה שוב", ""],
                  [f"אחרי שקנה: מחזיק, ובורח רק אם הציון נשאר מתחת ל-{g.sell_at:+.2f}{wait} "
-                  f"או שהמחיר יורד {max(g.stop_loss, HOLD_MIN_STOP):.0%} מהשיא", ""]]
+                  f"או שהמחיר יורד {g.stop_loss:.0%} מהשיא", ""]]
     return status, rules, [round(clear, 3), "חוזר לקנות מעל " + f"{clear:+.2f}", "סכנה: בורח מתחת " + f"{g.sell_at:+.2f}"]
 
 
