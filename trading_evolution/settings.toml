@@ -61,7 +61,7 @@ losers_money = "me"
 #   attention  - כמה אנשים קוראים על ביטקוין בוויקיפדיה
 #   activity   - כמה כתובות פעילות יש ברשת של המטבע (Coin Metrics)
 #   valuation  - כמה המטבע יקר לעומת מה שאנשים שילמו עליו (MVRV, Coin Metrics)
-#   stablecoins - כמה דולרים דיגיטליים (USDT, USDC ועוד) יש בקריפטו: האם נכנס כסף חדש או יוצא
+#   stablecoins - כמה דולרים דיגיטליים (USDT, USDC ועוד) יש בקריפטו: האם נכנס כסף חדש יותר או פחות מהרגיל
 signals = ["trend", "dip", "momentum", "stretch", "macd", "bollinger", "channel", "breakout", "calm", "pattern",
            "fear_greed", "stocks", "vix", "attention", "activity", "valuation", "stablecoins"]
 

@@ -111,35 +111,50 @@ def coinmetrics_live(metric, assets, days):
 STABLES = ["USDT", "USDC", "DAI", "BUSD", "TUSD", "PAX", "GUSD"]
 
 
+MAIN_STABLES = ["USDT", "USDC"]   # הגדולים: בלעדיהם הסכום לא אמין
+
+
 def stables_total():
-    """הסכום של כל הסטייבלקוינים לכל יום. מטבע שעוד לא היה קיים = 0; יום שחסר למטבע = הערך הקודם שלו."""
+    """הסכום של כל הסטייבלקוינים לכל יום. מטבע שעוד לא היה קיים = 0; יום שחסר למטבע = הערך הקודם שלו.
+    0 אחרי שמטבע כבר התחיל זו טעות במקור (למשל TUSD ב-3/1/2019), אז גם אז לוקחים את הערך הקודם.
+    הסכום נעצר ביום האחרון שיש בו נתונים של USDT ושל USDC, כדי שמטבע גדול שהפסיק להתעדכן לא ייתקע בסכום."""
     per = {c: dict(load("_stables", c)) for c in STABLES}
+    if not all(per[c] for c in MAIN_STABLES):
+        return []
+    end = min(max(per[c]) for c in MAIN_STABLES)
     last = {c: 0.0 for c in STABLES}
     out = []
-    for d in sorted({d for rows in per.values() for d in rows}):
+    for d in sorted({d for rows in per.values() for d in rows if d <= end}):
         for c in STABLES:
-            last[c] = per[c].get(d, last[c])
+            v = per[c].get(d)
+            if v is not None and (v > 0 or last[c] == 0):
+                last[c] = v
         out.append((d, sum(last.values())))
     return out
 
 
 def stables_history(assets):
+    """כל הסטייבלקוינים מגיטהאב. אם אחד מהם לא ירד - נכשלים (ולא שומרים סכום חלקי), כדי שינסו שוב.
+    שורות חדשות יותר שכבר הורדו מהאתר נשארות."""
+    rows = {}
     for c in STABLES:
-        try:
-            rows = csv_rows(coinmetrics_csv(c), "time", "SplyCur")
-        except Exception:
-            continue
-        if rows:
-            save("_stables", c, rows)
+        rows[c] = csv_rows(coinmetrics_csv(c), "time", "SplyCur")
+        if not rows[c]:
+            raise ValueError(f"אין נתונים של {c}")
+    for c in STABLES:
+        save("_stables", c, rows[c] + [r for r in load("_stables", c) if r[0] > rows[c][-1][0]])
     return {"ALL": stables_total()}
 
 
 def stables_live(assets, days):
+    if not all(os.path.exists(path("_stables", c)) for c in STABLES):   # חסרה היסטוריה של מטבע: קודם כול להוריד
+        stables_history(assets)
     new = by_asset(coinmetrics_api(STABLES, "SplyCur", days), "SplyCur")
     if not new:
         return {}
     for c, rows in new.items():
-        save("_stables", c, load("_stables", c) + rows)
+        if c in STABLES:
+            save("_stables", c, load("_stables", c) + rows)
     return {"ALL": stables_total()}
 
 
