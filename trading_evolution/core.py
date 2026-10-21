@@ -60,7 +60,7 @@ class Settings:
     signals: list = field(default_factory=lambda: list(SIGNALS))
     refill: bool = True
     goal: str = "hold"
-    judge: str = "steady"
+    judge: str = "beat_hold"
     baskets: bool = False
     patience: str = "3d"
     brain: str = "learning"
