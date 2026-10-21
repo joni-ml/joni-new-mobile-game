@@ -109,14 +109,16 @@ def pattern_text(r):
             f"בממוצע ב-{abs(r['ahead']):.1%} ב-{PATTERN_AHEAD} הנרות הבאים")
 
 
-def hold_rules(b, score):
+def hold_rules(b, score, patience=1):
     """מצב "להחזיק": מחזיקים כמה שיותר, ובורחים רק כשיש סימני סכנה."""
     g, clear = b.genome, b.genome.sell_at + CLEAR
+    wait = f" {patience} נרות ברצף" if patience > 1 else ""
     if b.units > 0:
         drop = b.price / b.peak - 1 if b.peak else 0.0
         status = (f"מחזיק {g.asset} (קנה ב-{fmt_price(b.entry)}, עכשיו {fmt_price(b.price)}). "
                   f"ממשיך להחזיק כל עוד אין סכנה")
-        rules = [[f"בורח אם הציון יורד מתחת לקו הסכנה {g.sell_at:+.2f}", f"עכשיו {score:+.2f}"],
+        rules = [[f"בורח אם הציון נשאר מתחת לקו הסכנה {g.sell_at:+.2f}{wait}",
+                  f"עכשיו {score:+.2f}" + (f", {b.danger} מתוך {patience}" if patience > 1 and b.danger else "")],
                  [f"בורח אם המחיר יורד {g.stop_loss:.0%} מהשיא מאז שקנה ({fmt_price(b.peak)})",
                   f"עכשיו {drop:+.1%}"],
                  ["לא מוכר בגלל רווח - המטרה היא להחזיק כמה שיותר זמן", ""]]
@@ -127,7 +129,7 @@ def hold_rules(b, score):
         rules = [[f"קונה {g.asset} כשאין סימני סכנה: הציון מעל {clear:+.2f}, ב-{g.bet:.0%} מהמזומן שלו",
                   f"עכשיו {score:+.2f}"],
                  [f"אחרי שבורח, מחכה {g.cooldown} נרות לפני שקונה שוב", ""],
-                 [f"אחרי שקנה: מחזיק, ובורח רק אם הציון יורד מתחת ל-{g.sell_at:+.2f} "
+                 [f"אחרי שקנה: מחזיק, ובורח רק אם הציון נשאר מתחת ל-{g.sell_at:+.2f}{wait} "
                   f"או שהמחיר יורד {g.stop_loss:.0%} מהשיא", ""]]
     return status, rules, [round(clear, 3), "חוזר לקנות מעל " + f"{clear:+.2f}", "סכנה: בורח מתחת " + f"{g.sell_at:+.2f}"]
 
@@ -152,7 +154,7 @@ def accuracy(b):
     return round(100 * sum(b.hits) / len(b.hits)) if len(b.hits) >= 30 else None
 
 
-def brain(b, allowed, goal="trade", learning=False, candle=1440):
+def brain(b, allowed, goal="trade", learning=False, candle=1440, patience=1):
     """מה הבוט חישב בנר האחרון, כדי להבין למה הוא קונה, מוכר או מחכה."""
     g, r = b.genome, b.readings
     if not isinstance(r, dict) or not r:
@@ -189,7 +191,7 @@ def brain(b, allowed, goal="trade", learning=False, candle=1440):
             "formula": round(sum(parts), 3), "guess": round(b.guess, 3), "feel": round(b.feel, 3),
             "school": human(SCHOOL * candle)} if learning else {"learning": False}
     if goal == "hold":
-        status, rules, (buy, buy_label, sell_label) = hold_rules(b, score)
+        status, rules, (buy, buy_label, sell_label) = hold_rules(b, score, patience)
         return {"rows": rows, "score": round(score, 3), "buy": buy, "sell": round(g.sell_at, 3),
                 "buy_label": buy_label, "sell_label": sell_label, **mind,
                 "status": status, "rules": rules, "last": b.last, "scores": b.scores}
@@ -225,7 +227,8 @@ def bot_cards(world):
             "acc": accuracy(b) if world.cfg.brain == "learning" else None,
             "invested": round(100 * b.held / b.seen) if b.seen else 0,
             "clone": b.genome.clone_rule(world.cfg.start_money),
-            "brain": brain(b, world.cfg.signals, world.cfg.goal, world.cfg.brain == "learning", world.candle),
+            "brain": brain(b, world.cfg.signals, world.cfg.goal, world.cfg.brain == "learning", world.candle,
+                           world.every(world.cfg.patience)),
             "spark": b.values,
         })
     return cards

@@ -52,6 +52,7 @@ class Settings:
     signals: list = field(default_factory=lambda: list(SIGNALS))
     refill: bool = True
     goal: str = "hold"
+    patience: str = "3d"
     brain: str = "learning"
 
 
@@ -74,7 +75,7 @@ def load_settings(path):
     s.start_bots = max(1, min(s.start_bots, s.max_bots))
     s.pay_percent = min(max(s.pay_percent, 0.0), 100.0)
     s.kill_percent = min(max(s.kill_percent, 0.0), 95.0)
-    for t in (s.pay_every, s.select_every):
+    for t in (s.pay_every, s.select_every, s.patience):
         minutes(t)                      # בודק שהזמנים כתובים נכון
     if minutes(s.candle) not in (1, 5, 15, 60):
         raise SystemExit(f"candle יכול להיות רק 1m, 5m, 15m או 1h (כתוב {s.candle!r})")
@@ -533,6 +534,7 @@ class Bot:
     wait: int = 0               # כמה נרות עוד לחכות אחרי בריחה
     held: int = 0               # בכמה נרות הוא החזיק מטבע
     seen: int = 0               # כמה נרות הוא חי
+    danger: int = 0             # כמה נרות ברצף הציון מתחת לקו הסכנה
     mind: dict = None           # המוח הלומד (None = עוד לא למד כלום)
     memory: list = field(default_factory=list)     # [סימנים, מחיר, תנודתיות, ניחוש] של הנרות האחרונים, ללמוד מהם כשיתברר מה קרה
     lessons: int = 0            # מכמה דוגמאות המוח למד
@@ -554,7 +556,7 @@ class Bot:
         """צמיחה ממוצעת לנר. לבוט צעיר אין עדיין מספיק היסטוריה, אז הציון שלו קרוב ל-0."""
         return self.log_growth / max(tick - self.born, 30)
 
-    def step(self, m, i, allowed=SIGNALS, goal="trade", learning=False, rng=None):
+    def step(self, m, i, allowed=SIGNALS, goal="trade", learning=False, rng=None, patience=1):
         """מחשב ומחליט אם לקנות או למכור. מחזיר משפט שמסביר מה עשה ולמה (או None)."""
         g = self.genome
         if i < max(g.slow, g.mom):
@@ -574,7 +576,7 @@ class Bot:
         self.held += self.units > 0
         self.wait = max(0, self.wait - 1)
         if goal == "hold":
-            return self.hold_step(price)
+            return self.hold_step(price, patience)
         if self.units > 0:
             change = price / self.entry - 1
             why = (f"הפסיד {-change:.0%} מהקנייה (הסטופ-לוס שלו {g.stop_loss:.0%})" if change < -g.stop_loss else
@@ -631,13 +633,16 @@ class Bot:
         for t in range(max(g.slow, g.mom, i - SCHOOL), i):
             self.observe(self.inputs(g.readings(m, t), allowed), m.p[t], m.vol50[t])
 
-    def hold_step(self, price):
-        """המטרה: להחזיק כמה שיותר זמן, ולברוח רק כשרואים סכנה (ואז לחזור כשהיא עוברת)."""
+    def hold_step(self, price, patience=1):
+        """המטרה: להחזיק כמה שיותר זמן, ולברוח רק כשרואים סכנה (ואז לחזור כשהיא עוברת).
+        patience: כמה נרות ברצף הציון צריך להישאר מתחת לקו הסכנה לפני שבורחים (כדי לא לברוח מכל רעש)."""
         g = self.genome
+        self.danger = self.danger + 1 if self.score < g.sell_at else 0
         if self.units > 0:
             self.peak = max(self.peak, price)
             drop = price / self.peak - 1
-            why = (f"הציון {self.score:+.2f} ירד מתחת לקו הסכנה {g.sell_at:+.2f}" if self.score < g.sell_at else
+            why = (f"הציון {self.score:+.2f} נשאר מתחת לקו הסכנה {g.sell_at:+.2f} "
+                   f"{self.danger} נרות ברצף" if self.danger >= patience else
                    f"המחיר ירד {-drop:.0%} מהשיא מאז שקנה (בורח בירידה של {g.stop_loss:.0%})"
                    if drop < -g.stop_loss else None)
             if why:
@@ -746,7 +751,7 @@ class World:
         prices = {a: m.p[i] for a, m in markets.items()}
         for bot in self.bots:
             did = bot.step(markets[bot.genome.asset], i, self.cfg.signals, self.cfg.goal,
-                           self.cfg.brain == "learning", self.rng)
+                           self.cfg.brain == "learning", self.rng, self.every(self.cfg.patience))
             if did:
                 bot.last = [self.now, did]
         self.tick += 1
