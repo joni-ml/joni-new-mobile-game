@@ -218,6 +218,7 @@ def brain(b, allowed, goal="trade", learning=False, candle=1440, patience=1):
 def bot_cards(world):
     prices = world.history[-1]["prices"]
     cards = []
+    market = world.market_return(prices)
     checked, _, ups = world.brain_record()
     base = round(100 * ups / checked) if checked >= 100 else 50   # כמה פעמים "תמיד אותה תשובה" היה צודק
     for rank, b in enumerate(world.ranked(prices), 1):
@@ -225,7 +226,7 @@ def bot_cards(world):
         cards.append({
             "rank": rank, "id": b.id, "asset": b.genome.asset, "gen": b.generation,
             "value": round(b.value(p), 2), "change": round(b.period_return(p) * 100, 1),
-            "edge": round(b.edge(p) * 100, 1),
+            "edge": round(b.edge(p, market) * 100, 1),
             "paid": round(b.paid, 2), "holding": b.units > 0, "trades": b.trades,
             "age": human((world.tick - b.born) * world.candle),
             "desc": b.genome.describe(world.cfg.signals, world.cfg.goal, world.cfg.brain == "learning"),

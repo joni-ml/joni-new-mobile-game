@@ -570,11 +570,13 @@ class Bot:
     def period_return(self, price):
         return self.value(price) / self.period_start - 1 if self.period_start > 0 else -1.0
 
-    def edge(self, price):
-        """כמה הבוט הרוויח מאז המבחן, פחות כמה היה מרוויח אם פשוט היה מחזיק את המטבע שלו כל הזמן.
-        חיובי = הוא היה חכם יותר מ"לקנות ולחכות"."""
-        hold = price / self.period_price - 1 if self.period_price > 0 else 0.0
-        return self.period_return(price) - hold
+    def edge(self, price, market=None):
+        """כמה הבוט הרוויח מאז המבחן, פחות כמה היה מרוויח מ"לקנות ולחכות": בכל המטבעות שווה בשווה
+        (market = כמה הם עלו או ירדו מאז המבחן), או במטבע שלו אם market לא ידוע.
+        חיובי = הוא היה חכם יותר. (מול כל המטבעות, אי אפשר "לרמות" ע"י בחירת מטבע שלא זז ולשבת במזומן.)"""
+        if market is None:
+            market = price / self.period_price - 1 if self.period_price > 0 else 0.0
+        return self.period_return(price) - market
 
     def fitness(self, tick):
         """צמיחה ממוצעת לנר. לבוט צעיר אין עדיין מספיק היסטוריה, אז הציון שלו קרוב ל-0."""
@@ -782,6 +784,7 @@ class World:
         self.declined = 0             # כמה פעמים בוטים בחרו לא להשתכפל
         self.refilled = 0             # כמה בוטים חדשים נולדו כדי למלא מקומות ריקים
         self.selections = 0
+        self.market_start = None      # מחיר "כל המטבעות שווה בשווה" בתחילת תקופת המבחן
         self.past_brains = [0, 0, 0]  # ניחושים שנבדקו / צדקו / המחיר עלה - של בוטים שכבר מתו
         self.history = []             # תמונת מצב אחרי כל נר, בשביל הגרפים
         self.events = []              # מה קרה לאחרונה
@@ -838,6 +841,7 @@ class World:
         """נר אחד: הבוטים סוחרים, ואם הגיע הזמן - משלמים לבעלים ועוברים מבחן."""
         self.now = when.isoformat(timespec="minutes")
         prices = {a: m.p[i] for a, m in markets.items()}
+        self.market_start = self.market_start or self.market_price(prices)
         for bot in self.bots:
             did = bot.step(self.market(markets, bot.genome.asset), i, self.cfg.signals, self.cfg.goal,
                            self.cfg.brain == "learning", self.rng, self.every(self.cfg.patience))
@@ -905,7 +909,7 @@ class World:
             loot += got
             self.deaths += 1
             self.note(f"בוט #{bot.id} ({bot.genome.asset}, {change[bot.id]:+.0%}, "
-                      f"מול לקנות ולחכות {bot.edge(price(bot)):+.0%}) נכשל במבחן ומת. "
+                      f"מול לקנות ולחכות {bot.edge(price(bot), self.market_return(prices)):+.0%}) נכשל במבחן ומת. "
                       f"{got:.2f} ש\"ח עברו {'אליך' if to_me else 'לטובים'}")
         self.bots = ranked[:keep]
         if to_me:
@@ -934,6 +938,7 @@ class World:
         for bot in self.bots:
             bot.period_start, bot.period_price = bot.value(price(bot)), price(bot)
             bot.period_top, bot.period_drop = bot.log_growth, 0.0
+        self.market_start = self.market_price(prices)    # תקופה חדשה: משווים מעכשיו
         extra = f", {added} חדשים נולדו במקומות הריקים (שמת עוד {added * self.cfg.start_money:g} ש\"ח)" if added else ""
         self.note(f"מבחן {self.selections}: {len(ranked) - keep} בוטים מתו "
                   f"({loot:.2f} ש\"ח עברו {'אליך' if to_me else 'לטובים'}), "
@@ -975,14 +980,24 @@ class World:
             g = Genome.crossover(g, self.rng.choice(others).genome, self.rng)
         return g.mutate(self.rng, assets, 0.5, self.cfg.baskets), True
 
+    def market_price(self, prices):
+        """המחיר של "כל המטבעות שווה בשווה" (ממוצע גאומטרי)."""
+        return price_of(prices, "+".join(a for a in self.cfg.assets if a in prices) or "+".join(prices))
+
+    def market_return(self, prices):
+        """כמה "לקנות ולחכות" בכל המטבעות (שווה בשווה) עלה או ירד מאז המבחן האחרון."""
+        now = self.market_price(prices)
+        return now / (self.market_start or now) - 1
+
     def ranked(self, prices):
         """הבוטים לפי מי שהכי מצליח מאז המבחן האחרון: כמה הם ניצחו את "לקנות ולחכות" במטבע שלהם
         (judge = "beat_hold"), או כמה כסף הרוויחו (judge = "money")."""
+        market = self.market_return(prices)
         def score(b):
             p = price_of(prices, b.genome.asset)
             if self.cfg.judge == "steady":   # ניצח את "לקנות ולחכות", ובלי ליפול הרבה בדרך
-                return b.edge(p) - DROP_PENALTY * b.period_drop
-            return b.edge(p) if self.cfg.judge == "beat_hold" else b.period_return(p)
+                return b.edge(p, market) - DROP_PENALTY * b.period_drop
+            return b.edge(p, market) if self.cfg.judge == "beat_hold" else b.period_return(p)
         return sorted(self.bots, key=score, reverse=True)
 
     def best(self, k):
