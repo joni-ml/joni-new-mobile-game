@@ -34,6 +34,7 @@ PATTERN_MIN = 5         # כמה פעמים צריך לראות דפוס בעב�
 # מעקות בטיחות למטרה "להחזיק": בלי זה, אימון ארוך מוצא "פרצה" - כמעט לא להשקיע בכלל, ואז אף פעם לא ליפול.
 HOLD_MIN_BET = 0.5      # כל קנייה היא לפחות חצי מהמזומן
 HOLD_MIN_STOP = 0.05    # לא בורחים מירידה של פחות מ-5% מהשיא (זה רעש, לא סכנה)
+SHORTS = False          # האם מותר לבוטים להמר נגד (מכירה בחסר) כשהם בורחים מסכנה
 TOP_UP = True           # במצב "להחזיק": להשקיע גם כסף שנשאר בצד בזמן שמחזיקים
 CLEAR = 0.1             # במצב "להחזיק": כמה הציון צריך לעלות מעל קו הסכנה כדי לקנות שוב
 TEACH = 0.0             # הכי טוב מלמד את השאר: כמה מהמוח והנוסחה שלהם זז לכיוון שלו בכל מבחן
@@ -349,6 +350,7 @@ class Genome:
     horizon: int = 7                # כמה נרות קדימה המוח מנסה לנחש
     listen: float = 0.5             # כמה הבוט מקשיב למוח: 0 = רק לנוסחה שירש, 1 = רק למוח
     keep: float = 0.0               # ביטוח (במצב "להחזיק"): איזה חלק מהמטבעות נשאר גם כשבורחים מסכנה
+    short: float = 0.0              # הימור נגד (במצב "להחזיק"): כשבורח מסכנה, מוכר בחסר חלק כזה מהכסף (0 = לא)
 
     def __post_init__(self):
         # בוט מגרסה ישנה (עם פחות שיטות) מקבל משקל 0 לשיטות החדשות, אז הוא ממשיך להתנהג כמו קודם
@@ -365,7 +367,8 @@ class Genome:
                       rng.uniform(0.03, 0.5), rng.uniform(0.5, 1.0) if hold else rng.uniform(0.2, 1.0),
                       rng.uniform(-0.2, 0.2), rng.uniform(0.0, 0.6), rng.randint(1, 20),
                       math.exp(rng.uniform(math.log(0.005), math.log(0.1))), rng.randint(3, 20), rng.uniform(0, 1),
-                      rng.uniform(0, 0.5) if hold else 0.0).fix()
+                      rng.uniform(0, 0.5) if hold else 0.0,
+                      rng.uniform(0, 0.5) if hold and SHORTS and rng.random() < 0.5 else 0.0).fix()
 
     def fix(self):
         self.fast = int(clamp(self.fast, 2, 50))
@@ -379,6 +382,7 @@ class Genome:
         self.horizon = int(clamp(self.horizon, 2, 30))
         self.listen = clamp(self.listen, 0.0, 1.0)
         self.keep = clamp(self.keep, 0.0, 0.6)
+        self.short = clamp(self.short, 0.0, 0.6) if SHORTS else 0.0
         return self
 
     def mutate(self, rng, assets, strength=1.0, baskets=False):
@@ -396,7 +400,7 @@ class Genome:
                       j(self.clone_min_return, -0.5, 0.5, 0.03), j(self.clone_min_money, 0.0, 2.0, 0.1),
                       round(j(self.cooldown, 0, 60, 2)),
                       self.lr * math.exp(rng.gauss(0, 0.3 * strength)), round(j(self.horizon, 2, 30, 2)), j(self.listen, 0, 1, 0.1),
-                      j(self.keep, 0, 0.6, 0.05)).fix()
+                      j(self.keep, 0, 0.6, 0.05), j(self.short, 0, 0.6, 0.05) if self.short else 0.0).fix()
 
     @staticmethod
     def crossover(a, b, rng):
@@ -701,7 +705,7 @@ class Bot:
         patience: כמה נרות ברצף הציון צריך להישאר מתחת לקו הסכנה לפני שבורחים (כדי לא לברוח מכל רעש)."""
         g = self.genome
         self.danger = self.danger + 1 if self.score < g.sell_at else 0
-        self.out = self.out and self.units > 0      # מי שמכר הכול כבר לא "בחוץ עם ביטוח", פשוט במזומן
+        self.out = self.out and self.units != 0     # מי שמכר הכול כבר לא "בחוץ עם ביטוח", פשוט במזומן
         if self.units > 0 and not self.out:
             self.peak = max(self.peak, price)
             drop = price / self.peak - 1
@@ -712,7 +716,9 @@ class Bot:
                    if drop < -stop else None)
             if why:
                 self.sell(price, 1 - g.keep)
-                self.out, self.wait = self.units > 0, g.cooldown
+                if g.short:   # הימור נגד: מרוויח אם המחיר ימשיך לרדת, מפסיד אם יעלה (עד שיחזור לקנות)
+                    self.short_sell(price, g.short * self.value(price))
+                self.out, self.wait = self.units != 0, g.cooldown
                 kept = f" (השאיר {g.keep:.0%} מושקע - ביטוח למקרה שהמחיר יחזור לעלות מהר)" if self.out else ""
                 return f"זיהה סכנה ומכר {g.asset} ב-{fmt_price(price)} כי {why}{kept}"
         if self.cash > 0.01 and not self.wait and self.score > g.sell_at + CLEAR:
@@ -743,11 +749,18 @@ class Bot:
             self.units = 0.0
         self.trades += 1
 
+    def short_sell(self, price, amount):
+        """מכירה בחסר: "שואל" מטבעות ומוכר אותם עכשיו. כשיקנה בחזרה בזול יותר - הרווח שלו."""
+        q = amount / price
+        self.cash += q * price * (1 - FEE)
+        self.units -= q
+        self.trades += 1
+
     def take(self, amount, price):
         """מוציא כסף מהבוט: קודם מהמזומן, ואם אין מספיק מוכר קצת מהמטבעות."""
         from_cash = min(self.cash, amount)
         self.cash -= from_cash
-        units = min(self.units, (amount - from_cash) / (price * (1 - FEE)))
+        units = min(max(self.units, 0.0), (amount - from_cash) / (price * (1 - FEE)))
         self.units -= units
         return from_cash + units * price * (1 - FEE)
 
