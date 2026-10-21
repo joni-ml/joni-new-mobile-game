@@ -982,18 +982,18 @@ class World:
     def teach(self, survivors):
         """הכי חכמים מלמדים: הבוט הכי טוב מעביר חלק מהידע שלו (המוח והנוסחה) לשאר השורדים,
         והחכמים (הרבע העליון) לומדים שוב על העבר הקרוב כדי להשתפר עוד."""
-        if not TEACH or len(survivors) < 2:
+        if len(survivors) < 2:
             return
         best = survivors[0]
-        for b in survivors[1:]:
+        for b in survivors[1:] if TEACH else ():
             b.genome.weights = [(1 - TEACH) * w + TEACH * t for w, t in zip(b.genome.weights, best.genome.weights)]
             if b.mind and best.mind and len(b.mind["w2"]) == len(best.mind["w2"]):
                 for key in ("w1",):
                     b.mind[key] = [[(1 - TEACH) * w + TEACH * t for w, t in zip(r, tr)]
                                    for r, tr in zip(b.mind[key], best.mind[key])]
                 b.mind["w2"] = [(1 - TEACH) * w + TEACH * t for w, t in zip(b.mind["w2"], best.mind["w2"])]
-        for b in survivors[:max(1, len(survivors) // 4)]:
-            b.study = STUDY
+        for b in survivors[:max(1, len(survivors) // 4)] if STUDY else ():
+            b.study = True
 
     def retire(self, bot):
         """בוט שמת: שומרים כמה ניחושים המוח שלו עשה, כדי שהדיוק של המוחות ייספר ביושר (לא רק אצל מי ששרד)."""
