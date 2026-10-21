@@ -332,6 +332,7 @@ class Genome:
     # המוח הלומד (גם אלה עוברים בתורשה ומשתנים):
     lr: float = 0.03                # קצב למידה: כמה המוח משנה את עצמו אחרי כל טעות
     horizon: int = 7                # כמה נרות קדימה המוח מנסה לנחש
+    listen: float = 0.5             # כמה הבוט מקשיב למוח: 0 = רק לנוסחה שירש, 1 = רק למוח
 
     def __post_init__(self):
         # בוט מגרסה ישנה (עם פחות שיטות) מקבל משקל 0 לשיטות החדשות, אז הוא ממשיך להתנהג כמו קודם
@@ -347,7 +348,7 @@ class Genome:
                       rng.uniform(0.1, 0.4) if hold else rng.uniform(0.02, 0.25),
                       rng.uniform(0.03, 0.5), rng.uniform(0.5, 1.0) if hold else rng.uniform(0.2, 1.0),
                       rng.uniform(-0.2, 0.2), rng.uniform(0.0, 0.6), rng.randint(1, 20),
-                      math.exp(rng.uniform(math.log(0.005), math.log(0.1))), rng.randint(3, 20)).fix()
+                      math.exp(rng.uniform(math.log(0.005), math.log(0.1))), rng.randint(3, 20), rng.uniform(0, 1)).fix()
 
     def fix(self):
         self.fast = int(clamp(self.fast, 2, 50))
@@ -359,6 +360,7 @@ class Genome:
         self.cooldown = int(clamp(self.cooldown, 0, 60))
         self.lr = clamp(self.lr, 0.001, 0.3)
         self.horizon = int(clamp(self.horizon, 2, 30))
+        self.listen = clamp(self.listen, 0.0, 1.0)
         return self
 
     def mutate(self, rng, assets, strength=1.0):
@@ -375,7 +377,7 @@ class Genome:
                       j(self.bet, 0.1, 1.0, 0.1),
                       j(self.clone_min_return, -0.5, 0.5, 0.03), j(self.clone_min_money, 0.0, 2.0, 0.1),
                       round(j(self.cooldown, 0, 60, 2)),
-                      self.lr * math.exp(rng.gauss(0, 0.3 * strength)), round(j(self.horizon, 2, 30, 2))).fix()
+                      self.lr * math.exp(rng.gauss(0, 0.3 * strength)), round(j(self.horizon, 2, 30, 2)), j(self.listen, 0, 1, 0.1)).fix()
 
     @staticmethod
     def crossover(a, b, rng):
@@ -424,11 +426,11 @@ class Genome:
         return [x * y / total for x, y in zip(w, sig)]
 
     def describe(self, allowed=SIGNALS, goal="trade", learning=False):
+        top = sorted(((s, w) for s, w in zip(SIGNALS, self.weights) if s in allowed), key=lambda sw: -abs(sw[1]))[:2]
+        style = " + ".join(SIGNAL_WORDS[s][0 if w > 0 else 1] for s, w in top)
         if learning:
-            style = f"מוח לומד: מנחש {self.horizon} נרות קדימה, קצב למידה {self.lr:.3f}"
-        else:
-            top = sorted(((s, w) for s, w in zip(SIGNALS, self.weights) if s in allowed), key=lambda sw: -abs(sw[1]))[:2]
-            style = " + ".join(SIGNAL_WORDS[s][0 if w > 0 else 1] for s, w in top)
+            style = (f"מקשיב {self.listen:.0%} למוח הלומד (מנחש {self.horizon} נרות קדימה) "
+                     f"ו-{1 - self.listen:.0%} לנוסחה ({style})")
         if goal == "hold":
             return (f"מחזיק לטווח ארוך; {'' if learning else 'מקשיב בעיקר ל: '}{style}; משקיע {self.bet:.0%} מהמזומן, "
                     f"בורח אם המחיר יורד {self.stop_loss:.0%} מהשיא")
@@ -497,11 +499,12 @@ def brain_copy(b, rng, noise=0.02):
     return c
 
 
-def brain_importance(b):
-    """כמה כל סימן משפיע על המוח באופן כללי (בין 0 ל-1, 1 = הכי חשוב)."""
-    imp = [sum(abs(b["w2"][k] * b["w1"][k][j]) for k in range(len(b["w2"]))) for j in range(len(b["w1"][0]))]
-    top = max(imp) or 1.0
-    return [v / top for v in imp]
+def brain_importance(b, xs):
+    """כמה כל סימן משפיע על המוח באופן כללי: עוצמת החיבורים שלו כפול כמה הסימן באמת זז (xs = קלטים אחרונים).
+    סימן שתמיד 0 (אסור בהגדרות או שאין לו נתונים) לא משפיע בכלל, גם אם נשארו לו משקלים אקראיים מהלידה."""
+    n = len(b["w1"][0])
+    act = [sum(abs(x[j]) for x in xs) / len(xs) if xs else 0.0 for j in range(n)]
+    return [act[j] * sum(abs(b["w2"][k] * b["w1"][k][j]) for k in range(len(b["w2"]))) for j in range(n)]
 
 
 # ---------- הבוט ----------
@@ -536,6 +539,10 @@ class Bot:
     hits: list = field(default_factory=list)       # האם צדק בכל אחד מ-100 הניחושים האחרונים (1/0)
     accuracy: list = field(default_factory=list)   # כמה הוא צדק לאורך הזמן (בשביל הגרף)
     guess: float = None         # הניחוש האחרון של המוח
+    feel: float = None          # ממוצע הניחושים האחרונים (כדי לא לקפוץ מכל רעש) - זה מה שהבוט משתמש בו
+    checked: int = 0            # כמה ניחושים של המוח נבדקו בחיים של הבוט הזה (בלי מה שעבר בירושה)
+    right: int = 0              # בכמה מהם המוח צדק
+    ups: int = 0                # בכמה מהם המחיר באמת עלה (כדי להשוות ל"תמיד לנחש שיעלה")
 
     def value(self, price):
         return self.cash + self.units * price
@@ -554,12 +561,15 @@ class Bot:
             return None
         price = self.price = m.p[i]
         self.readings = g.readings(m, i)
+        formula = sum(g.parts(Genome.signals(self.readings), allowed))
         if learning:
             if self.mind is None:
                 self.go_to_school(m, i, allowed, rng or random.Random(self.id))
-            self.score = self.observe(self.inputs(self.readings, allowed), price, m.vol50[i])
+            feel = self.observe(self.inputs(self.readings, allowed), price, m.vol50[i])
+            self.score = (1 - g.listen) * formula + g.listen * feel
         else:
-            self.score = sum(g.parts(Genome.signals(self.readings), allowed))
+            self.forget()       # בלי מוח אין ניחושים שמחכים לתוצאה
+            self.score = formula
         self.seen += 1
         self.held += self.units > 0
         self.wait = max(0, self.wait - 1)
@@ -591,15 +601,25 @@ class Bot:
             self.lesson(*self.memory.pop(0), price)
         self.guess = brain_think(self.mind, x)[0]
         self.memory.append([x, price, vol, self.guess])
-        return self.guess
+        a = 2 / (self.genome.horizon + 1)
+        self.feel = self.guess if self.feel is None else self.feel + a * (self.guess - self.feel)
+        return self.feel
+
+    def forget(self):
+        """שוכח ניחושים שעוד מחכים לתוצאה (למשל כשאורך הנר השתנה, או אחרי הפסקה ארוכה),
+        כדי לא ללמוד מהם תוצאה של זמן אחר מזה שהם ניחשו."""
+        self.memory.clear()
+        self.feel = None
 
     def lesson(self, x, p0, vol, guess, p_now):
         """לומד מדוגמה אחת שהתוצאה שלה כבר ידועה: מה היו הסימנים, ולאן המחיר הלך אחרי horizon נרות.
         "צדק" נמדד לפי הניחוש שנעשה אז, לפני שידע את התוצאה."""
         move = math.log(p_now / p0) / (max(vol, 1e-6) * math.sqrt(self.genome.horizon))
         brain_learn(self.mind, x, clamp(move / 2), self.genome.lr)
+        hit = int((guess > 0) == (move > 0))
         self.lessons += 1
-        self.hits = (self.hits + [int((guess > 0) == (move > 0))])[-100:]
+        self.checked, self.right, self.ups = self.checked + 1, self.right + hit, self.ups + (move > 0)
+        self.hits = (self.hits + [hit])[-100:]
         if self.lessons % 10 == 0 and len(self.hits) >= 30:
             self.accuracy = thin(self.accuracy + [round(sum(self.hits) / len(self.hits), 3)], ACC_POINTS)
 
@@ -681,6 +701,7 @@ class World:
         self.declined = 0             # כמה פעמים בוטים בחרו לא להשתכפל
         self.refilled = 0             # כמה בוטים חדשים נולדו כדי למלא מקומות ריקים
         self.selections = 0
+        self.past_brains = [0, 0, 0]  # ניחושים שנבדקו / צדקו / המחיר עלה - של בוטים שכבר מתו
         self.history = []             # תמונת מצב אחרי כל נר, בשביל הגרפים
         self.events = []              # מה קרה לאחרונה
 
@@ -692,21 +713,26 @@ class World:
     def populate(self):
         assets = self.cfg.assets
         for k in range(self.cfg.start_bots):
+            teacher = None
             if self.seeds:
-                g = self.seeds[k % len(self.seeds)]
+                teacher = self.seeds[k % len(self.seeds)]
+                g = teacher.genome
                 if k >= len(self.seeds) or g.asset not in assets:
                     g = g.mutate(self.rng, assets, 0.5)
             else:
                 g = Genome.random(self.rng, assets, self.cfg.goal)
-            self.spawn(g)
+            self.spawn(g, parent=teacher)
 
-    def spawn(self, genome, money=None, generation=0, mind=None):
-        """בוט חדש. mind = מוח של הורה שעובר אליו (עם שינוי קטן); בלי זה הוא ילך ל"בית ספר"."""
+    def spawn(self, genome, money=None, generation=0, parent=None):
+        """בוט חדש. אם יש parent עם מוח, המוח עובר לילד (עם שינוי קטן) יחד עם כל מה שלמד עד עכשיו;
+        בלי זה הבוט ילך ל"בית ספר"."""
         if money is None:
             money = self.cfg.start_money
             self.invested += money      # בוט חדש מאפס = הבעלים משקיע עוד כסף
-        bot = Bot(self.next_id, genome, self.tick, generation, cash=money, period_start=money, prev_value=money,
-                  mind=brain_copy(mind, self.rng) if mind else None)
+        bot = Bot(self.next_id, genome, self.tick, generation, cash=money, period_start=money, prev_value=money)
+        if parent is not None and parent.mind:
+            bot.mind = brain_copy(parent.mind, self.rng)
+            bot.lessons, bot.hits, bot.accuracy = parent.lessons, list(parent.hits), list(parent.accuracy)
         self.next_id += 1
         self.bots.append(bot)
         return bot
@@ -761,6 +787,7 @@ class World:
             p = prices[bot.genome.asset]
             if bot.value(p) < DEATH_LINE:
                 self.bots.remove(bot)
+                self.retire(bot)
                 self.deaths += 1
                 self.owner_profit += bot.take(bot.value(p), p)
                 self.note(f"בוט #{bot.id} ({bot.genome.asset}) נשאר בלי כסף ומת")
@@ -777,6 +804,7 @@ class World:
         to_me = self.cfg.losers_money == "me"
         loot = 0.0
         for bot in ranked[keep:]:
+            self.retire(bot)
             got = bot.take(bot.value(price(bot)), price(bot))
             loot += got
             self.deaths += 1
@@ -800,7 +828,7 @@ class World:
                 continue
             money = parent.take(parent.value(p) / 2, p)
             genome, inherit = self.child_genome(parent)
-            child = self.spawn(genome, money, parent.generation + 1, parent.mind if inherit else None)
+            child = self.spawn(genome, money, parent.generation + 1, parent if inherit else None)
             self.clones += 1
             born += 1
             self.note(f"בוט #{parent.id} שוכפל לבוט #{child.id} ({child.genome.asset})")
@@ -822,11 +850,21 @@ class World:
         while parents and len(self.bots) < target:
             parent = parents[added % len(parents)]
             genome, inherit = self.child_genome(parent)
-            child = self.spawn(genome, generation=parent.generation + 1, mind=parent.mind if inherit else None)
+            child = self.spawn(genome, generation=parent.generation + 1, parent=parent if inherit else None)
             added += 1
             self.note(f"בוט #{child.id} ({child.genome.asset}) נולד במקום ריק, מהאסטרטגיה של בוט #{parent.id}")
         self.refilled += added
         return added
+
+    def retire(self, bot):
+        """בוט שמת: שומרים כמה ניחושים המוח שלו עשה, כדי שהדיוק של המוחות ייספר ביושר (לא רק אצל מי ששרד)."""
+        for k, v in enumerate((bot.checked, bot.right, bot.ups)):
+            self.past_brains[k] += v
+
+    def brain_record(self):
+        """(כמה ניחושים נבדקו, בכמה המוח צדק, בכמה המחיר עלה) - של כל הבוטים אי פעם."""
+        return tuple(p + sum(getattr(b, f) for b in self.bots)
+                     for p, f in zip(self.past_brains, ("checked", "right", "ups")))
 
     def child_genome(self, parent):
         """הגנום של ילד, והאם הוא מקבל גם את המוח של ההורה (רעיון חדש לגמרי מתחיל עם מוח חדש)."""
@@ -866,6 +904,9 @@ class World:
             if k != "bots":
                 setattr(w, k, v)
         w.bots = [Bot(**{**b, "genome": Genome(**b["genome"])}) for b in d["bots"]]
+        for b in w.bots:
+            if b.mind:
+                brain_fit(b.mind, len(SIGNALS))   # נוספו סימנים מאז שנשמר
         return w
 
 
@@ -878,11 +919,23 @@ def run_history(times, prices, world, start=0, extras=None):
         world.step(markets, i, times[i])
 
 
-def save_brains(path, genomes):
+def save_brains(path, bots, candle):
+    """שומר את הבוטים הכי טובים: האסטרטגיה (גנום), וגם המוח עם כל מה שלמד ואורך הנר שעליו למד."""
     with open(path, "w") as f:
-        json.dump([asdict(g) for g in genomes], f, indent=1)
+        json.dump([{**asdict(b.genome), "mind": b.mind, "lessons": b.lessons, "candle": candle} for b in bots], f)
 
 
-def load_brains(path):
+def load_brains(path, candle=None):
+    """הבוטים השמורים, בתור "מורים" לבוטים החדשים. מוח שלמד על נרות באורך אחר לא עובר
+    (מה שקורה ב-7 ימים לא דומה למה שקורה ב-7 שעות) - הבוט החדש ילך ל"בית ספר" במקום."""
     with open(path) as f:
-        return [Genome(**{"asset": "BTC", **g}) for g in json.load(f)]
+        rows = json.load(f)
+    out = []
+    for g in rows:
+        mind, lessons, made = g.pop("mind", None), g.pop("lessons", 0), g.pop("candle", None)
+        if mind and candle is not None and made != candle:
+            mind, lessons = None, 0
+        if mind:
+            brain_fit(mind, len(SIGNALS))
+        out.append(Bot(0, Genome(**{"asset": "BTC", **g}), 0, mind=mind, lessons=lessons))
+    return out

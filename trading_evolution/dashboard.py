@@ -9,8 +9,8 @@ import json
 import os
 from datetime import datetime
 
-from core import (CLEAR, NET_SIGNALS, PATTERN_AHEAD, PATTERN_LEN, PATTERN_MIN, SIGNALS, Bot, Genome,
-                  brain_importance, brain_think, fmt_price, human)
+from core import (CLEAR, NET_SIGNALS, PATTERN_AHEAD, PATTERN_LEN, PATTERN_MIN, SCHOOL, SIGNALS, Bot, Genome,
+                  brain_fit, brain_importance, brain_think, clamp, fmt_price, human)
 
 MAX_COINS = 7   # כמה מטבעות אפשר להראות בגרף המטבעות (יש 7 צבעים שקל להבדיל ביניהם)
 
@@ -134,15 +134,17 @@ def hold_rules(b, score):
 
 def mind_rows(b, allowed):
     """במוח הלומד: כמה כל סימן משנה את הניחוש עכשיו (בודקים מה המוח היה מנחש בלי הסימן הזה),
-    וכמה הסימן חשוב למוח באופן כללי."""
+    וכמה הסימן חשוב למוח באופן כללי (1 = הכי חשוב מבין הסימנים המותרים)."""
+    brain_fit(b.mind, len(SIGNALS))
     x = Bot.inputs(b.readings, allowed)
     full = brain_think(b.mind, x)[0]
-    imp = brain_importance(b.mind)
+    imp = brain_importance(b.mind, [e[0] for e in b.memory] or [x])
+    top = max((imp[j] for j, n in enumerate(SIGNALS) if n in allowed), default=0.0) or 1.0
     out = {}
     for j, name in enumerate(SIGNALS):
         if name in allowed:
             without = brain_think(b.mind, x[:j] + [0.0] + x[j + 1:])[0]
-            out[name] = (round(imp[j], 2), round(max(-1.0, min(1.0, full - without)), 3))
+            out[name] = (round(imp[j] / top, 2), full - without)
     return out
 
 
@@ -150,7 +152,7 @@ def accuracy(b):
     return round(100 * sum(b.hits) / len(b.hits)) if len(b.hits) >= 30 else None
 
 
-def brain(b, allowed, goal="trade", learning=False):
+def brain(b, allowed, goal="trade", learning=False, candle=1440):
     """מה הבוט חישב בנר האחרון, כדי להבין למה הוא קונה, מוכר או מחכה."""
     g, r = b.genome, b.readings
     if not isinstance(r, dict) or not r:
@@ -171,17 +173,21 @@ def brain(b, allowed, goal="trade", learning=False):
         "pattern": pattern_text(r),
         **{n: net_text(n, r, g.asset) for n in NET_SIGNALS},
     }
-    learning = learning and b.mind is not None
-    if learning:
-        mr = mind_rows(b, allowed)
-        rows = [{"name": NAMES[s], "sees": sees[s], "weight": mr[s][0], "part": mr[s][1]} for s in SIGNALS if s in mr]
+    learning = learning and b.mind is not None and b.feel is not None
+    parts = g.parts(Genome.signals(r), allowed)
+    if learning:   # כל סימן דוחף את הציון דרך הנוסחה ודרך המוח, לפי כמה שהבוט מקשיב לכל אחד
+        mr, ear = mind_rows(b, allowed), g.listen
+        rows = [{"name": NAMES[s], "sees": sees[s], "weight": round(w, 2), "imp": mr[s][0],
+                 "part": round(clamp((1 - ear) * p + ear * mr[s][1]), 3)}
+                for s, w, p in zip(SIGNALS, g.weights, parts) if s in allowed]
     else:
-        parts = g.parts(Genome.signals(r), allowed)
         rows = [{"name": NAMES[s], "sees": sees[s], "weight": round(w, 2), "part": round(p, 3)}
                 for s, w, p in zip(SIGNALS, g.weights, parts) if s in allowed]
     score = b.score
-    mind = {"learning": learning, "lessons": b.lessons, "acc": accuracy(b), "accuracy": b.accuracy,
-            "horizon": g.horizon} if learning else {"learning": False}
+    mind = {"learning": True, "lessons": b.lessons, "acc": accuracy(b), "acc_n": len(b.hits),
+            "accuracy": b.accuracy, "horizon": g.horizon, "listen": round(g.listen, 2),
+            "formula": round(sum(parts), 3), "guess": round(b.guess, 3), "feel": round(b.feel, 3),
+            "school": human(SCHOOL * candle)} if learning else {"learning": False}
     if goal == "hold":
         status, rules, (buy, buy_label, sell_label) = hold_rules(b, score)
         return {"rows": rows, "score": round(score, 3), "buy": buy, "sell": round(g.sell_at, 3),
@@ -219,7 +225,7 @@ def bot_cards(world):
             "acc": accuracy(b) if world.cfg.brain == "learning" else None,
             "invested": round(100 * b.held / b.seen) if b.seen else 0,
             "clone": b.genome.clone_rule(world.cfg.start_money),
-            "brain": brain(b, world.cfg.signals, world.cfg.goal, world.cfg.brain == "learning"),
+            "brain": brain(b, world.cfg.signals, world.cfg.goal, world.cfg.brain == "learning", world.candle),
             "spark": b.values,
         })
     return cards
@@ -655,23 +661,28 @@ function brainPanel(card, b, color) {
   if (!x) { el("p", { class: "desc" }, d).textContent = "עוד לא חישב כלום. מחכה לנר הבא."; return; }
   el("p", { class: "status" }, d).textContent = bidi(x.status);
   if (x.learning) {
+    const ear = Math.round(x.listen * 100);
     el("div", { class: "lbl" }, d).textContent = "מה המוח למד";
-    el("p", { class: "desc" }, d).textContent = `למד מ-${x.lessons.toLocaleString("en-US")} דוגמאות ` +
-      "(כולל \"בית ספר\" על השנה שלפני שנולד, ומה שעבר אליו מההורה). " +
+    el("p", { class: "desc" }, d).textContent = "המוח עובר בירושה מהורה לילד (עם שינוי קטן), וכל דור ממשיך ללמוד ממה שקורה. " +
+      `עד עכשיו המוח הזה למד מ-${x.lessons.toLocaleString("en-US")} דוגמאות. ` +
+      `(מוח חדש לגמרי מתחיל ב"בית ספר" על ${x.school} שלפני שהבוט נולד.) ` +
       (x.acc === null ? "עוד אין מספיק ניחושים כדי לדעת כמה הוא צודק." :
-       `ב-100 הניחושים האחרונים צדק בכיוון ב-${x.acc}% מהפעמים (50% = כמו להטיל מטבע).`);
+       `ב-${x.acc_n} הניחושים האחרונים הוא צדק בכיוון ב-${x.acc}% מהפעמים (50% = כמו להטיל מטבע).`);
     if (x.accuracy.length > 1) {
       el("div", { class: "lbl" }, d).textContent = "כמה הוא צודק לאורך הזמן";
       accChart(el("svg", { class: "score", role: "img", "aria-label": "כמה המוח צודק לאורך הזמן" }, d), x.accuracy, color);
     }
+    el("div", { class: "lbl" }, d).textContent = "כמה הוא מקשיב למוח";
+    el("p", { class: "desc" }, d).textContent = `מקשיב ${ear}% למוח ו-${100 - ear}% לנוסחה הקבועה שירש. ` +
+      "גם זה עובר בירושה ומשתנה: אם להקשיב למוח עוזר להרוויח, הצאצאים מקשיבים לו יותר, ואם לא - פחות.";
   }
-  el("div", { class: "lbl" }, d).textContent = x.learning ? "הניחוש שלו לאורך הזמן" : "הציון שלו לאורך הזמן";
+  el("div", { class: "lbl" }, d).textContent = "הציון שלו לאורך הזמן";
   scoreChart(el("svg", { class: "score", role: "img", "aria-label": "הציון לאורך הזמן" }, d), x, color);
-  el("div", { class: "lbl" }, d).textContent = x.learning ? "איך יצא הניחוש עכשיו" : "איך יצא הציון עכשיו";
+  el("div", { class: "lbl" }, d).textContent = "איך יצא הציון עכשיו";
   el("p", { class: "desc" }, d).textContent = x.learning
-    ? `המוח שלו הוא רשת עצבית קטנה: הוא מקבל את כל ${x.rows.length} הסימנים, מנחש לאן המחיר ילך ב-${x.horizon} הנרות הבאים, ` +
-      "ולומד מכל טעות. ליד כל סימן: כמה הוא משנה את הניחוש עכשיו (כחול = דוחף לקנות, אדום = דוחף למכור), " +
-      "וכמה הסימן חשוב למוח באופן כללי."
+    ? "הציון מחבר שני קולות: הנוסחה הקבועה (כל סימן כפול המשקל שהבוט ירש), והמוח - רשת עצבית קטנה שמקבלת את כל " +
+      `${x.rows.length} הסימנים, מנחשת לאן המחיר ילך ב-${x.horizon} הנרות הבאים, ולומדת מכל טעות. ` +
+      "ליד כל סימן: כמה הוא דוחף את הציון עכשיו (כחול = לקנות, אדום = למכור), המשקל שלו בנוסחה, וכמה הוא חשוב למוח."
     : `הבוט בודק ${x.rows.length} סימנים. כל סימן נותן מספר בין 1- ל-1, כפול המשקל שהבוט נותן לו (משקל שלילי = הוא עושה ההפך). ` +
       "הסכום הוא הציון. כחול = דוחף לקנות, אדום = דוחף למכור.";
   for (const r of x.rows) {
@@ -680,14 +691,26 @@ function brainPanel(card, b, color) {
     el("b", {}, top).textContent = r.name;
     el("span", { class: "ltr" }, top).textContent = signed(r.part);
     el("div", { class: "desc" }, row).textContent = bidi(x.learning
-      ? `${r.sees} · חשיבות במוח ${Math.round(r.weight * 100)}%` : `${r.sees} · משקל ${signed(r.weight)}`);
+      ? `${r.sees} · משקל בנוסחה ${signed(r.weight)} · חשיבות במוח ${Math.round(r.imp * 100)}%`
+      : `${r.sees} · משקל ${signed(r.weight)}`);
     const fill = el("i", {}, el("div", { class: "bar" }, row));
     fill.style.left = (r.part >= 0 ? 50 : 50 + r.part * 50) + "%";
     fill.style.width = Math.abs(r.part) * 50 + "%";
     fill.style.background = `var(${r.part >= 0 ? "--s1" : "--s8"})`;
   }
+  if (x.learning) {   // החשבון: נוסחה × כמה שמקשיבים לה + מוח × כמה שמקשיבים לו
+    const ear = Math.round(x.listen * 100);
+    for (const [name, v, w] of [["הנוסחה הקבועה", x.formula, 100 - ear],
+                                ["המוח (ממוצע הניחושים האחרונים)", x.feel, ear]]) {
+      const line = el("div", { class: "sigtop" }, d);
+      el("span", {}, line).textContent = `${name} × ${w}%`;
+      el("span", { class: "ltr" }, line).textContent = signed(v);
+    }
+    el("div", { class: "desc" }, d).textContent = bidi(`הניחוש של המוח בנר הזה: ${signed(x.guess)}. ` +
+      "הבוט משתמש בממוצע של הניחושים האחרונים, כדי לא לקפוץ מכל רעש קטן.");
+  }
   const tot = el("div", { class: "sigtop total" }, d);
-  el("b", {}, tot).textContent = x.learning ? "הניחוש של המוח" : "ציון כולל";
+  el("b", {}, tot).textContent = "ציון כולל";
   el("b", { class: "ltr" }, tot).textContent = signed(x.score);
   el("div", { class: "lbl" }, d).textContent = "הכללים שלו";
   const ul = el("ul", { class: "rules" }, d);

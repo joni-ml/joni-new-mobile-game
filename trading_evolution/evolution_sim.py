@@ -18,7 +18,7 @@ import os
 from collections import Counter
 from datetime import datetime
 
-from core import (MAX_WINDOW, World, align, candle_minutes, load_brains, load_prices,
+from core import (MAX_WINDOW, Bot, World, align, candle_minutes, load_brains, load_prices,
                   load_settings, run_history, save_brains, synthetic_prices)
 from dashboard import write_dashboard
 import internet as net
@@ -81,9 +81,12 @@ def summary(title, world, times, prices, warmup):
     print(f"רווח/הפסד נקי: {net:+.2f} ש\"ח ({net / last['invested'] * 100:+.0f}%) | "
           f"מבחנים {world.selections}, מתו {world.deaths}, שוכפלו {world.clones}, "
           f"בחרו לא להשתכפל {world.declined}, נולדו במקומות ריקים {world.refilled}, חיים {len(world.bots)}")
-    hits = [h for b in world.bots for h in b.hits]
-    if hits:
-        print(f"המוחות של הבוטים צדקו בכיוון ב-{100 * sum(hits) / len(hits):.1f}% מהניחושים האחרונים (50% = הטלת מטבע)")
+    checked, right, ups = world.brain_record()   # כל הבוטים אי פעם, גם אלה שמתו
+    if checked >= 100:
+        print(f"המוחות ניחשו {checked:,} פעמים לאן המחיר ילך וצדקו בכיוון ב-{100 * right / checked:.1f}% "
+              f"(מי שהיה מנחש תמיד \"יעלה\" היה צודק ב-{100 * ups / checked:.1f}%)")
+        ears = [b.genome.listen for b in world.bots]
+        print(f"כמה הבוטים מקשיבים למוח (בממוצע): {sum(ears) / len(ears):.0%} - השאר לנוסחה הקבועה")
     picks = Counter(b.genome.asset for b in world.bots)
     print("במה הבוטים בחרו לסחור: " + ", ".join(f"{a} ({n})" for a, n in picks.most_common()))
     return net
@@ -91,8 +94,10 @@ def summary(title, world, times, prices, warmup):
 
 def show_best(world, k=3):
     print("האסטרטגיות הכי מצליחות:")
+    learning = world.cfg.brain == "learning"
     for b in world.best(k):
-        print(f"  בוט #{b.id} ({b.genome.asset}, דור {b.generation}): {b.genome.describe(world.cfg.signals, world.cfg.goal, world.cfg.brain == "learning")}")
+        print(f"  בוט #{b.id} ({b.genome.asset}, דור {b.generation}): "
+              f"{b.genome.describe(world.cfg.signals, world.cfg.goal, learning)}")
         print(f"      {b.genome.clone_rule(world.cfg.start_money)}")
 
 
@@ -119,7 +124,7 @@ def main():
     date = lambda s: datetime.fromisoformat(s) if s else None
 
     if not args.split:
-        seeds = load_brains(args.brains) if args.use_brains else ()
+        seeds = load_brains(args.brains, candle_minutes(times)) if args.use_brains else ()
         t, pr, warm = cut_range(times, prices, date(args.start), date(args.end))
         world = simulate(t, pr, warm, cfg, args, seeds)
         summary("תוצאות", world, t, pr, warm)
@@ -128,13 +133,15 @@ def main():
         return
 
     # שלב 1: אימון. כל סבב מתחיל מהאסטרטגיות הכי טובות של הסבב הקודם.
+    # המוחות לא עוברים בין הסבבים (אחרת בסבב השני הם כבר היו "יודעים" מה יקרה בתקופה הזאת),
+    # רק מהסבב האחרון - אל המבחן ואל brains.json, בדיוק כמו בוט שממשיך לחיות.
     t, pr, warm = cut_range(times, prices, date(args.start), date(args.split))
     seeds = ()
     for r in range(1, args.rounds + 1):
-        world = simulate(t, pr, warm, cfg, args, seeds)
+        world = simulate(t, pr, warm, cfg, args, [Bot(0, b.genome, 0) for b in seeds])
         summary(f"אימון, סבב {r}", world, t, pr, warm)
-        seeds = [b.genome for b in world.best(cfg.max_bots)]
-    save_brains(args.brains, seeds)
+        seeds = world.best(cfg.max_bots)
+    save_brains(args.brains, seeds, candle_minutes(t))
     show_best(world)
     print(f"\nנשמרו {len(seeds)} אסטרטגיות ב-{os.path.abspath(args.brains)}")
 

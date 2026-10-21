@@ -17,7 +17,7 @@ import json
 import os
 import time
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from core import Market, World, load_brains, load_settings, minutes
 from dashboard import write_dashboard
@@ -46,7 +46,7 @@ def save_state(path, s):
 
 
 def new_state(cfg, brains):
-    seeds = load_brains(brains) if os.path.exists(brains) else ()
+    seeds = load_brains(brains, minutes(cfg.candle)) if os.path.exists(brains) else ()
     world = World(cfg, minutes(cfg.candle), seeds=seeds)
     world.populate()
     origin = f"מ-{len(seeds)} אסטרטגיות מאומנות" if seeds else "עם אסטרטגיות אקראיות"
@@ -79,6 +79,8 @@ def tick(s, cfg):
     mins = minutes(cfg.candle)
     if s["candle"] != mins:            # אורך הנר השתנה בהגדרות: לומדים היסטוריה מחדש
         s.update(candle=mins, times=[], prices={})
+        for b in world.bots:           # ניחושים על נרות באורך הישן כבר לא יתבררו
+            b.forget()
     world.candle = mins
     held = {b.genome.asset for b in world.bots}
     got = fetch(list(dict.fromkeys(cfg.assets + sorted(held))), mins, held)
@@ -100,6 +102,9 @@ def tick(s, cfg):
     new = sorted({t for c in got.values() for t in c if s["times"][-1] < t <= upto})
     if not new:
         return
+    if new[0] - s["times"][-1] > timedelta(minutes=mins):   # הפסקה ארוכה (המחשב היה כבוי): יש נרות שלא נראו
+        for b in world.bots:
+            b.forget()
     times, cols = s["times"] + new, {}
     for a, col in s["prices"].items():
         last, cols[a] = col[-1], list(col)
