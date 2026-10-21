@@ -23,7 +23,6 @@ MAX_WINDOW = 200        # הממוצע הנע הכי ארוך שבוט יכול 
 IMMIGRANT_RATE = 0.1    # חלק מהשכפולים מקבלים אסטרטגיה חדשה לגמרי, כדי להמשיך לחפש רעיונות
 MIX_RATE = 0.25         # חלק מהשכפולים לוקחים גם תכונות מבוט טוב אחר
 DROP_PENALTY = 0.5      # judge = "steady": כמה מענישים בוט על כל נפילה בדרך (0.5 = נפילה של 10% עולה 5%)
-CALM_RATE = 0.5         # הסיכוי שלבוט חדש יהיה "כוונון לפי סערה" (האבולוציה מחליטה אם זה עוזר)
 SWITCH_RATE = 0.1       # הסיכוי ששכפול יעבור לסחור במטבע אחר
 BASKET_RATE = 0.3       # הסיכוי שבוט חדש (או שכפול שעובר מטבע) יסחור בסל של 2-3 מטבעות במקום במטבע אחד
 CHART_POINTS = 2000     # כמה נקודות לשמור לגרף של הבעלים
@@ -56,7 +55,7 @@ class Settings:
     signals: list = field(default_factory=lambda: list(SIGNALS))
     refill: bool = True
     goal: str = "hold"
-    judge: str = "beat_hold"
+    judge: str = "steady"
     baskets: bool = False
     patience: str = "3d"
     brain: str = "learning"
@@ -345,7 +344,6 @@ class Genome:
     horizon: int = 7                # כמה נרות קדימה המוח מנסה לנחש
     listen: float = 0.5             # כמה הבוט מקשיב למוח: 0 = רק לנוסחה שירש, 1 = רק למוח
     keep: float = 0.0               # ביטוח (במצב "להחזיק"): איזה חלק מהמטבעות נשאר גם כשבורחים מסכנה
-    calm: float = 0.0               # כוונון לפי סערה: משקיע פחות כשהשוק סוער מהרגיל (0 = כבוי)
 
     def __post_init__(self):
         # בוט מגרסה ישנה (עם פחות שיטות) מקבל משקל 0 לשיטות החדשות, אז הוא ממשיך להתנהג כמו קודם
@@ -362,8 +360,7 @@ class Genome:
                       rng.uniform(0.03, 0.5), rng.uniform(0.5, 1.0) if hold else rng.uniform(0.2, 1.0),
                       rng.uniform(-0.2, 0.2), rng.uniform(0.0, 0.6), rng.randint(1, 20),
                       math.exp(rng.uniform(math.log(0.005), math.log(0.1))), rng.randint(3, 20), rng.uniform(0, 1),
-                      rng.uniform(0, 0.5) if hold else 0.0,
-                      rng.uniform(0.5, 1.5) if hold and rng.random() < CALM_RATE else 0.0).fix()
+                      rng.uniform(0, 0.5) if hold else 0.0).fix()
 
     def fix(self):
         self.fast = int(clamp(self.fast, 2, 50))
@@ -377,7 +374,6 @@ class Genome:
         self.horizon = int(clamp(self.horizon, 2, 30))
         self.listen = clamp(self.listen, 0.0, 1.0)
         self.keep = clamp(self.keep, 0.0, 0.6)
-        self.calm = clamp(self.calm, 0.3, 2.0) if self.calm else 0.0
         return self
 
     def mutate(self, rng, assets, strength=1.0, baskets=False):
@@ -395,13 +391,7 @@ class Genome:
                       j(self.clone_min_return, -0.5, 0.5, 0.03), j(self.clone_min_money, 0.0, 2.0, 0.1),
                       round(j(self.cooldown, 0, 60, 2)),
                       self.lr * math.exp(rng.gauss(0, 0.3 * strength)), round(j(self.horizon, 2, 30, 2)), j(self.listen, 0, 1, 0.1),
-                      j(self.keep, 0, 0.6, 0.05), self.mutate_calm(rng, strength)).fix()
-
-    def mutate_calm(self, rng, strength):
-        """כוונון לפי סערה: לפעמים נדלק או נכבה, ואם הוא דלוק - העוצמה שלו משתנה קצת."""
-        if rng.random() < 0.1:
-            return 0.0 if self.calm else rng.uniform(0.5, 1.5)
-        return self.calm + rng.gauss(0, 0.1 * strength) if self.calm else 0.0
+                      j(self.keep, 0, 0.6, 0.05)).fix()
 
     @staticmethod
     def crossover(a, b, rng):
@@ -458,8 +448,7 @@ class Genome:
         if goal == "hold":
             return (f"מחזיק לטווח ארוך; {'' if learning else 'מקשיב בעיקר ל: '}{style}; משקיע {self.bet:.0%} מהמזומן, "
                     f"בורח אם המחיר יורד {self.stop_loss:.0%} מהשיא" +
-                    (f", ומשאיר {self.keep:.0%} מושקע גם כשבורח (ביטוח)" if self.keep >= 0.01 else "") +
-                    ("; משקיע פחות כשהשוק סוער" if self.calm else ""))
+                    (f", ומשאיר {self.keep:.0%} מושקע גם כשבורח (ביטוח)" if self.keep >= 0.01 else ""))
         return (f"{style}; משקיע {self.bet:.0%} מהמזומן, "
                 f"סטופ-לוס {self.stop_loss:.0%}, לוקח רווח ב-{self.take_profit:.0%}")
 
@@ -564,7 +553,6 @@ class Bot:
     seen: int = 0               # כמה נרות הוא חי
     danger: int = 0             # כמה נרות ברצף הציון מתחת לקו הסכנה
     out: bool = False           # ברח מסכנה (אולי עם חלק קטן שנשאר מושקע - הביטוח), ומחכה לחזור
-    size: float = 1.0           # איזה חלק מהכסף הבוט רוצה שיהיה מושקע עכשיו (לפי כמה השוק סוער)
     mind: dict = None           # המוח הלומד (None = עוד לא למד כלום)
     memory: list = field(default_factory=list)     # [סימנים, מחיר, תנודתיות, ניחוש] של הנרות האחרונים, ללמוד מהם כשיתברר מה קרה
     lessons: int = 0            # מכמה דוגמאות המוח למד
@@ -598,8 +586,6 @@ class Bot:
         if i < max(g.slow, g.mom):
             return None
         price = self.price = m.p[i]
-        # כוונון לפי סערה (שיטה מוכרת, "volatility targeting"): כשהשוק קופץ יותר מהרגיל - משקיעים חלק קטן יותר
-        self.size = clamp(g.calm * m.vol100[i] / max(m.vol14[i], 1e-9), 0.2, 1.0) if g.calm else 1.0
         self.period_price = self.period_price or price   # בוט חדש: המחיר שממנו משווים ל"לקנות ולחכות"
         self.readings = g.readings(m, i)
         formula = sum(g.parts(Genome.signals(self.readings), allowed))
@@ -704,28 +690,19 @@ class Bot:
                 self.out, self.wait = self.units > 0, g.cooldown
                 kept = f" (השאיר {g.keep:.0%} מושקע - ביטוח למקרה שהמחיר יחזור לעלות מהר)" if self.out else ""
                 return f"זיהה סכנה ומכר {g.asset} ב-{fmt_price(price)} כי {why}{kept}"
-        if g.calm and self.units > 0 and not self.out:   # מחזיק עם כוונון לפי סערה: מתקרב לגודל הרצוי
-            have = self.units * price / self.value(price)
-            want = self.size * g.bet
-            if have > want + 0.1:
-                self.sell(price, 1 - want / have)
-            elif have < want - 0.1 and self.cash > 0.01 and self.score > g.sell_at + CLEAR:
-                self.buy(price, (want - have) * self.value(price))
-            return None
         if self.cash > 0.01 and not self.wait and self.score > g.sell_at + CLEAR:
             if self.units > 0 and not self.out:   # כבר מחזיק: משקיע גם כסף שנשאר בצד, אם הוא לא זניח
                 if TOP_UP and self.cash > 0.05 * self.value(price):
                     self.buy(price)
                 return None
-            self.buy(price, self.size * g.bet * self.value(price) if g.calm else None)
+            self.buy(price)
             self.out, self.peak = False, price
             return (f"קנה {g.asset} ב-{fmt_price(price)} כי אין סימני סכנה "
                     f"(הציון {self.score:+.2f} מעל {g.sell_at + CLEAR:+.2f})")
         return None
 
-    def buy(self, price, amount=None):
-        """קונה ב-bet מהמזומן, או בסכום מסוים (amount), אם יש מספיק מזומן."""
-        spend = self.cash * self.genome.bet if amount is None else min(max(amount, 0.0), self.cash)
+    def buy(self, price):
+        spend = self.cash * self.genome.bet
         if self.units == 0:
             self.entry = self.peak = price
         self.units += spend * (1 - FEE) / price
