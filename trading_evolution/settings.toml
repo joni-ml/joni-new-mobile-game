@@ -61,8 +61,9 @@ losers_money = "me"
 #   attention  - כמה אנשים קוראים על ביטקוין בוויקיפדיה
 #   activity   - כמה כתובות פעילות יש ברשת של המטבע (Coin Metrics)
 #   valuation  - כמה המטבע יקר לעומת מה שאנשים שילמו עליו (MVRV, Coin Metrics)
+#   stablecoins - כמה דולרים דיגיטליים (USDT, USDC ועוד) יש בקריפטו: האם נכנס כסף חדש או יוצא
 signals = ["trend", "dip", "momentum", "stretch", "macd", "bollinger", "channel", "breakout", "calm", "pattern",
-           "fear_greed", "stocks", "vix", "attention", "activity", "valuation"]
+           "fear_greed", "stocks", "vix", "attention", "activity", "valuation", "stablecoins"]
 
 # כל כמה זמן הבוטים מקבלים מחיר חדש במסחר החי: 1m / 5m / 15m / 1h
 # נר קצר = הרבה יותר אקשן (טוב כדי לראות מה קורה), נר ארוך = פחות רעש.

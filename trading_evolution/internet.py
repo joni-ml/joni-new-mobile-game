@@ -75,13 +75,13 @@ def coinmetrics_history(metric, assets):
     return out
 
 
-def coinmetrics_live(metric, assets, days):
-    """ה-API החינמי של Coin Metrics (בלי מפתח). בקשה אחת לכל המטבעות ולשני המדדים ביחד,
+def coinmetrics_api(assets, metrics, days):
+    """ה-API החינמי של Coin Metrics (בלי מפתח): בקשה אחת לכמה מטבעות ומדדים ביחד,
     כי מותר רק 10 בקשות ב-6 שניות. מטבע שהאתר לא מכיר פשוט מדלגים עליו."""
-    key = ("live", tuple(assets), days)
+    key = ("api", tuple(assets), metrics, days)
     if key not in _cm_cache:
         start = (date.today() - timedelta(days=days)).isoformat()
-        url = (f"{CM_API}?assets={','.join(a.lower() for a in assets)}&metrics=AdrActCnt,CapMVRVCur"
+        url = (f"{CM_API}?assets={','.join(a.lower() for a in assets)}&metrics={metrics}"
                f"&frequency=1d&start_time={start}&page_size=10000&ignore_unsupported_errors=true")
         rows = []
         while url:
@@ -91,11 +91,56 @@ def coinmetrics_live(metric, assets, days):
             if url:
                 time.sleep(0.7)
         _cm_cache[key] = rows
+    return _cm_cache[key]
+
+
+def by_asset(rows, metric):
     out = {}
-    for x in _cm_cache[key]:
+    for x in rows:
         if x.get(metric):
             out.setdefault(x["asset"].upper(), []).append((date.fromisoformat(x["time"][:10]), float(x[metric])))
     return out
+
+
+def coinmetrics_live(metric, assets, days):
+    return by_asset(coinmetrics_api(assets, "AdrActCnt,CapMVRVCur", days), metric)
+
+
+# סטייבלקוינים: "דולרים דיגיטליים". כשנוצרים יותר מהם - בדרך כלל נכנס כסף חדש לקריפטו.
+# שומרים כל אחד בנפרד (data/internet/_stables) ומחשבים מהם את הסכום הכולל.
+STABLES = ["USDT", "USDC", "DAI", "BUSD", "TUSD", "PAX", "GUSD"]
+
+
+def stables_total():
+    """הסכום של כל הסטייבלקוינים לכל יום. מטבע שעוד לא היה קיים = 0; יום שחסר למטבע = הערך הקודם שלו."""
+    per = {c: dict(load("_stables", c)) for c in STABLES}
+    last = {c: 0.0 for c in STABLES}
+    out = []
+    for d in sorted({d for rows in per.values() for d in rows}):
+        for c in STABLES:
+            last[c] = per[c].get(d, last[c])
+        out.append((d, sum(last.values())))
+    return out
+
+
+def stables_history(assets):
+    for c in STABLES:
+        try:
+            rows = csv_rows(coinmetrics_csv(c), "time", "SplyCur")
+        except Exception:
+            continue
+        if rows:
+            save("_stables", c, rows)
+    return {"ALL": stables_total()}
+
+
+def stables_live(assets, days):
+    new = by_asset(coinmetrics_api(STABLES, "SplyCur", days), "SplyCur")
+    if not new:
+        return {}
+    for c, rows in new.items():
+        save("_stables", c, load("_stables", c) + rows)
+    return {"ALL": stables_total()}
 
 
 def fear_greed_live(assets, days):
@@ -160,6 +205,10 @@ SOURCES = {
         title="כמה המטבע יקר (MVRV)", kind="level", lag=1, ready=28,
         history=lambda assets: coinmetrics_history("CapMVRVCur", assets),
         live=lambda assets, days: coinmetrics_live("CapMVRVCur", assets, days)),
+    "stablecoins": dict(
+        title="כמה סטייבלקוינים (דולרים דיגיטליים) יש בקריפטו", kind="change", lag=1, ready=28,
+        history=stables_history,
+        live=stables_live),
 }
 
 
