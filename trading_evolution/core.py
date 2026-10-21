@@ -30,7 +30,7 @@ EVENTS = 30             # כמה אירועים אחרונים לזכור (מו�
 PATTERN_LEN = 5         # כמה נרות אחרונים יוצרים "דפוס"
 PATTERN_AHEAD = 5       # כמה נרות קדימה בודקים מה קרה אחרי כל דפוס
 PATTERN_MIN = 5         # כמה פעמים צריך לראות דפוס בעבר כדי לסמוך עליו
-TOP_UP = False          # במצב "להחזיק": להשקיע גם כסף שנשאר בצד בזמן שמחזיקים
+TOP_UP = True           # במצב "להחזיק": להשקיע גם כסף שנשאר בצד בזמן שמחזיקים
 CLEAR = 0.1             # במצב "להחזיק": כמה הציון צריך לעלות מעל קו הסכנה כדי לקנות שוב
 HIDDEN = 8              # כמה "תאי עצב" יש במוח של כל בוט
 SCHOOL = 365            # כמה נרות מהעבר בוט חדש לומד ("בית ספר") לפני שהוא מתחיל לסחור
@@ -55,6 +55,7 @@ class Settings:
     refill: bool = True
     goal: str = "hold"
     judge: str = "beat_hold"
+    baskets: bool = False
     patience: str = "3d"
     brain: str = "learning"
 
@@ -94,6 +95,8 @@ def load_settings(path):
         raise SystemExit(f"judge יכול להיות רק \"beat_hold\" או \"money\" (כתוב {s.judge!r})")
     if s.goal not in ("hold", "trade"):
         raise SystemExit(f"goal יכול להיות רק \"hold\" או \"trade\" (כתוב {s.goal!r})")
+    if not isinstance(s.baskets, bool):
+        raise SystemExit(f"baskets יכול להיות רק true או false (כתוב {s.baskets!r})")
     if not isinstance(s.refill, bool):
         raise SystemExit(f"refill יכול להיות רק true או false (כתוב {s.refill!r})")
     if s.losers_money not in ("me", "winners"):
@@ -345,10 +348,10 @@ class Genome:
         self.weights = list(self.weights) + [0.0] * (len(SIGNALS) - len(self.weights))
 
     @staticmethod
-    def random(rng, assets, goal="trade"):
+    def random(rng, assets, goal="trade", baskets=False):
         fast = rng.randint(2, 30)
         hold = goal == "hold"   # מחזיקים לטווח ארוך: בורחים רק מסכנה אמיתית, לא מכל ירידה קטנה
-        return Genome(pick_asset(rng, assets), fast, fast + rng.randint(5, 120), rng.randint(2, 60),
+        return Genome(pick_asset(rng, assets, baskets), fast, fast + rng.randint(5, 120), rng.randint(2, 60),
                       [rng.uniform(-1, 1) for _ in SIGNALS],
                       rng.uniform(0.05, 0.6), rng.uniform(-0.7, -0.2) if hold else rng.uniform(-0.6, 0.0),
                       rng.uniform(0.1, 0.4) if hold else rng.uniform(0.02, 0.25),
@@ -369,13 +372,13 @@ class Genome:
         self.listen = clamp(self.listen, 0.0, 1.0)
         return self
 
-    def mutate(self, rng, assets, strength=1.0):
+    def mutate(self, rng, assets, strength=1.0, baskets=False):
         """עותק עם שינויים קטנים - כך אסטרטגיות מתפתחות לאט לאט."""
         def j(v, lo, hi, s):
             return clamp(v + rng.gauss(0, s * strength), lo, hi)
         asset = self.asset
         if not tradable(asset, assets) or rng.random() < SWITCH_RATE:
-            asset = pick_asset(rng, assets)
+            asset = pick_asset(rng, assets, baskets)
         return Genome(asset, round(j(self.fast, 2, 50, 3)), round(j(self.slow, 5, MAX_WINDOW, 10)),
                       round(j(self.mom, 2, 100, 5)), [j(w, -1, 1, 0.2) for w in self.weights],
                       j(self.buy_at, -0.2, 0.9, 0.08), j(self.sell_at, -0.9, 0.2, 0.08),
@@ -717,9 +720,9 @@ def tradable(asset, assets):
     return all(a in assets for a in members(asset))
 
 
-def pick_asset(rng, assets):
+def pick_asset(rng, assets, baskets=False):
     """מטבע אחד, או (לפעמים) סל של 2-3 מטבעות - ככה נפילה של מטבע אחד לא הורגת את כל הכסף."""
-    if len(assets) > 1 and rng.random() < BASKET_RATE:
+    if baskets and len(assets) > 1 and rng.random() < BASKET_RATE:
         return "+".join(sorted(rng.sample(list(assets), rng.randint(2, min(3, len(assets))))))
     return rng.choice(assets)
 
@@ -780,9 +783,9 @@ class World:
                 teacher = self.seeds[k % len(self.seeds)]
                 g = teacher.genome
                 if k >= len(self.seeds) or not tradable(g.asset, assets):
-                    g = g.mutate(self.rng, assets, 0.5)
+                    g = g.mutate(self.rng, assets, 0.5, self.cfg.baskets)
             else:
-                g = Genome.random(self.rng, assets, self.cfg.goal)
+                g = Genome.random(self.rng, assets, self.cfg.goal, self.cfg.baskets)
             self.spawn(g, parent=teacher)
 
     def spawn(self, genome, money=None, generation=0, parent=None):
@@ -946,12 +949,12 @@ class World:
         """הגנום של ילד, והאם הוא מקבל גם את המוח של ההורה (רעיון חדש לגמרי מתחיל עם מוח חדש)."""
         r, assets = self.rng.random(), self.cfg.assets
         if r < IMMIGRANT_RATE:
-            return Genome.random(self.rng, assets, self.cfg.goal), False
+            return Genome.random(self.rng, assets, self.cfg.goal, self.cfg.baskets), False
         g = parent.genome
         others = [b for b in self.bots if b is not parent]
         if r < IMMIGRANT_RATE + MIX_RATE and others:
             g = Genome.crossover(g, self.rng.choice(others).genome, self.rng)
-        return g.mutate(self.rng, assets, 0.5), True
+        return g.mutate(self.rng, assets, 0.5, self.cfg.baskets), True
 
     def ranked(self, prices):
         """הבוטים לפי מי שהכי מצליח מאז המבחן האחרון: כמה הם ניצחו את "לקנות ולחכות" במטבע שלהם
