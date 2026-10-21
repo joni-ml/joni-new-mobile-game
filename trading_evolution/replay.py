@@ -6,6 +6,7 @@
   python replay.py                                   # השנה האחרונה שיש לה מחירים
   python replay.py --from 2024-01-01 --to 2025-01-01
   python replay.py --every 7                         # תמונה כל 7 ימים (קובץ קטן יותר)
+  python replay.py --brains brains.json              # מתחילים מהבוטים המאומנים (evolution_sim.py --split)
 """
 
 import argparse
@@ -13,7 +14,7 @@ import os
 from datetime import datetime, timedelta
 
 import internet as net
-from core import Market, World, candle_minutes, load_settings
+from core import Market, World, candle_minutes, load_brains, load_settings
 from dashboard import build, write_replay
 from evolution_sim import cut_range, load_data, warn_missing
 
@@ -38,6 +39,8 @@ def main():
     p.add_argument("--every", type=int, default=4, help="כל כמה נרות לצלם תמונה")
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--out", default="replay.html")
+    p.add_argument("--brains", help="להתחיל מבוטים מאומנים (הקובץ ש-evolution_sim.py שומר). "
+                                    "כדי שזה יהיה הוגן, כדאי שהאימון ייגמר לפני --from")
     args = p.parse_args()
 
     cfg = load_settings(args.settings)
@@ -49,7 +52,8 @@ def main():
     minutes = candle_minutes(t)
     extras = net.extras(cfg.assets, t, minutes < 1440)
     markets = {a: Market(col, extras.get(a)) for a, col in pr.items()}
-    world = World(cfg, minutes, args.seed)
+    seeds = load_brains(args.brains, minutes) if args.brains else ()
+    world = World(cfg, minutes, args.seed, seeds)
     world.populate()
 
     frames = []
