@@ -24,6 +24,7 @@ IMMIGRANT_RATE = 0.1    # חלק מהשכפולים מקבלים אסטרטגי�
 MIX_RATE = 0.25         # חלק מהשכפולים לוקחים גם תכונות מבוט טוב אחר
 DROP_PENALTY = 0.5      # judge = "steady": כמה מענישים בוט על כל נפילה בדרך (0.5 = נפילה של 10% עולה 5%)
 MAX_SHARE = 1.0         # גיוון: איזה חלק מהבוטים לכל היותר יכול להיות באותו מטבע (1 = בלי הגבלה)
+HUNT = False            # צייד קפיצות: בוטים שעוברים למטבע שמתפוצץ
 SWITCH_RATE = 0.1       # הסיכוי ששכפול יעבור לסחור במטבע אחר
 BASKET_RATE = 0.3       # הסיכוי שבוט חדש (או שכפול שעובר מטבע) יסחור בסל של 2-3 מטבעות במקום במטבע אחד
 CHART_POINTS = 2000     # כמה נקודות לשמור לגרף של הבעלים
@@ -349,6 +350,7 @@ class Genome:
     listen: float = 0.5             # כמה הבוט מקשיב למוח: 0 = רק לנוסחה שירש, 1 = רק למוח
     keep: float = 0.0               # ביטוח (במצב "להחזיק"): איזה חלק מהמטבעות נשאר גם כשבורחים מסכנה
     short: float = 0.0              # הימור נגד (במצב "להחזיק"): כשבורח מסכנה, מוכר בחסר חלק כזה מהכסף (0 = לא)
+    hunt: float = 0.0               # צייד קפיצות: עובר למטבע שקפץ ביותר מזה ב-20 נרות (0.3 = 30%), 0 = לא צד
 
     def __post_init__(self):
         # בוט מגרסה ישנה (עם פחות שיטות) מקבל משקל 0 לשיטות החדשות, אז הוא ממשיך להתנהג כמו קודם
@@ -366,7 +368,8 @@ class Genome:
                       rng.uniform(-0.2, 0.2), rng.uniform(0.0, 0.6), rng.randint(1, 20),
                       math.exp(rng.uniform(math.log(0.005), math.log(0.1))), rng.randint(3, 20), rng.uniform(0, 1),
                       rng.uniform(0, 0.5) if hold else 0.0,
-                      rng.uniform(0, 0.5) if hold and SHORTS and rng.random() < 0.5 else 0.0).fix()
+                      rng.uniform(0, 0.5) if hold and SHORTS and rng.random() < 0.5 else 0.0,
+                      rng.uniform(0.2, 1.0) if HUNT and rng.random() < 0.5 else 0.0).fix()
 
     def fix(self):
         self.fast = int(clamp(self.fast, 2, 50))
@@ -381,6 +384,7 @@ class Genome:
         self.listen = clamp(self.listen, 0.0, 1.0)
         self.keep = clamp(self.keep, 0.0, 0.6)
         self.short = clamp(self.short, 0.0, 0.6) if SHORTS else 0.0
+        self.hunt = clamp(self.hunt, 0.1, 2.0) if self.hunt and HUNT else 0.0
         return self
 
     def mutate(self, rng, assets, strength=1.0, baskets=False):
@@ -398,7 +402,16 @@ class Genome:
                       j(self.clone_min_return, -0.5, 0.5, 0.03), j(self.clone_min_money, 0.0, 2.0, 0.1),
                       round(j(self.cooldown, 0, 60, 2)),
                       self.lr * math.exp(rng.gauss(0, 0.3 * strength)), round(j(self.horizon, 2, 30, 2)), j(self.listen, 0, 1, 0.1),
-                      j(self.keep, 0, 0.6, 0.05), j(self.short, 0, 0.6, 0.05) if self.short else 0.0).fix()
+                      j(self.keep, 0, 0.6, 0.05), j(self.short, 0, 0.6, 0.05) if self.short else 0.0,
+                      self.mutate_hunt(rng, strength)).fix()
+
+    def mutate_hunt(self, rng, strength):
+        """צייד הקפיצות: לפעמים נדלק או נכבה, ואם הוא דלוק - הסף שלו משתנה קצת."""
+        if not HUNT:
+            return 0.0
+        if rng.random() < 0.1:
+            return 0.0 if self.hunt else rng.uniform(0.2, 1.0)
+        return self.hunt * math.exp(rng.gauss(0, 0.2 * strength)) if self.hunt else 0.0
 
     @staticmethod
     def crossover(a, b, rng):
@@ -876,6 +889,8 @@ class World:
         self.now = when.isoformat(timespec="minutes")
         prices = {a: m.p[i] for a, m in markets.items()}
         self.market_start = self.market_start or self.market_price(prices)
+        if HUNT:
+            self.hunt_jumps(markets, i, prices)
         for bot in self.bots:
             did = bot.step(self.market(markets, bot.genome.asset), i, self.cfg.signals, self.cfg.goal,
                            self.cfg.brain == "learning", self.rng, self.every(self.cfg.patience))
@@ -1043,6 +1058,30 @@ class World:
             return g
         least = min(self.cfg.assets, key=lambda a: (count.get(a, 0), self.rng.random()))
         return replace(g, asset=least)
+
+    def hunt_jumps(self, markets, i, prices):
+        """צייד קפיצות: אם מטבע אחר קפץ חזק ב-20 הנרות האחרונים (ופרץ לשיא של 55 נרות),
+        בוט צייד שעדיין לא בו מוכר את מה שיש לו ועובר אליו - כדי לא לפספס מטבע שמתפוצץ."""
+        if i < 60:
+            return
+        jump = {a: m.p[i] / m.p[i - 20] - 1 for a, m in markets.items()
+                if a in self.cfg.assets and m.p[i] >= m.hi55[i - 1]}
+        if not jump:
+            return
+        hot = max(jump, key=jump.get)
+        for b in self.bots:
+            g = b.genome
+            if not g.hunt or g.asset == hot or jump[hot] < g.hunt or "+" in g.asset:
+                continue
+            own = self.market(markets, g.asset)
+            if jump[hot] < own.p[i] / own.p[i - 20] - 1 + g.hunt / 2:
+                continue
+            if b.units > 0:
+                b.sell(price_of(prices, g.asset))
+            b.genome = replace(g, asset=hot)
+            b.forget()
+            b.out, b.wait, b.period_price = False, 0, 0.0
+            b.last = [self.now, f"צד קפיצה: עבר ל-{hot}, שעלה {jump[hot]:.0%} ב-20 נרות"]
 
     def market_price(self, prices):
         """המחיר של "כל המטבעות שווה בשווה" (ממוצע גאומטרי)."""
