@@ -37,6 +37,8 @@ def main():
     p.add_argument("--from", dest="start", help="מתי להתחיל (ברירת מחדל: שנה לפני המחיר האחרון)")
     p.add_argument("--to", dest="end")
     p.add_argument("--every", type=int, default=4, help="כל כמה נרות לצלם תמונה")
+    p.add_argument("--assets", nargs="+", help="לסחור רק במטבעות האלה (למשל XLM), במקום מה שכתוב בהגדרות")
+    p.add_argument("--goal", choices=["hold", "trade"], help="המטרה: להחזיק (hold) או לקנות ולמכור (trade)")
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--out", default="replay.html")
     p.add_argument("--brains", help="להתחיל מבוטים מאומנים (הקובץ ש-evolution_sim.py שומר). "
@@ -44,6 +46,10 @@ def main():
     args = p.parse_args()
 
     cfg = load_settings(args.settings)
+    if args.assets:
+        cfg.assets = [x.upper() for x in args.assets]
+    if args.goal:
+        cfg.goal = args.goal
     times, prices = load_data(args.data, cfg.assets, args.seed)
     cfg.assets = list(prices)
     warn_missing(cfg.assets)

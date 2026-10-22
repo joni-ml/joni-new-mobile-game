@@ -149,12 +149,18 @@ def main():
                    help="כל סבב אימון על קטע אקראי באורך כזה (בימים) מתוך תקופת האימון, במקום על כולה")
     p.add_argument("--brains", default="brains.json", help="איפה לשמור/לטעון אסטרטגיות מאומנות")
     p.add_argument("--use-brains", action="store_true", help="להתחיל מהאסטרטגיות השמורות")
+    p.add_argument("--assets", nargs="+", help="לסחור רק במטבעות האלה (למשל XLM), במקום מה שכתוב בהגדרות")
+    p.add_argument("--goal", choices=["hold", "trade"], help="המטרה: להחזיק (hold) או לקנות ולמכור (trade)")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--verbose", action="store_true", help="להראות כל מוות ושכפול")
     p.add_argument("--chart", default="dashboard.html", help="איפה לשמור את דף הגרפים")
     args = p.parse_args()
 
     cfg = load_settings(args.settings)
+    if args.assets:
+        cfg.assets = [x.upper() for x in args.assets]
+    if args.goal:
+        cfg.goal = args.goal
     times, prices = load_data(args.data, cfg.assets, args.seed)
     cfg.assets = list(prices)
     warn_missing(cfg.assets)
