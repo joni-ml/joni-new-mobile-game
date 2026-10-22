@@ -895,7 +895,7 @@ class World:
             self.invested += money      # בוט חדש מאפס = הבעלים משקיע עוד כסף
         bot = Bot(self.next_id, genome, self.tick, generation, cash=money, period_start=money, prev_value=money,
                   parent=parent.id if parent is not None else 0)
-        self.lineage[str(bot.id)] = [bot.parent, generation, genome.asset, self.now[:10]]
+        self.lineage[str(bot.id)] = [bot.parent, generation, genome.asset, self.now[:10] or "בהתחלה"]
         if parent is not None and parent.mind:
             bot.mind = brain_copy(parent.mind, self.rng)
             if GROW_RATE and self.rng.random() < GROW_RATE:
