@@ -1,0 +1,11 @@
+{
+  "name": "rls",
+  "private": true,
+  "description": "RLS — הסימולטור עצמו הוא rls3d.html ואין לו שום תלות. התלות כאן היא רק כדי להריץ אותו בדפדפן ללא מסך ולמדוד: רתיחה, זיקוק, שימור אטומים, מפת חום.",
+  "scripts": {
+    "setup": "npm install"
+  },
+  "devDependencies": {
+    "playwright": "^1.64.1"
+  }
+}
