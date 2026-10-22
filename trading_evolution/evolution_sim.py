@@ -15,10 +15,11 @@
 
 import argparse
 import os
+import random
 from collections import Counter
 from datetime import datetime
 
-from core import (MAX_WINDOW, Bot, World, align, candle_minutes, load_brains, load_prices,
+from core import (MAX_WINDOW, Bot, World, align, candle_minutes, every, load_brains, load_prices,
                   load_settings, run_history, save_brains, synthetic_prices)
 from dashboard import write_dashboard
 import internet as net
@@ -58,17 +59,47 @@ def cut_range(times, prices, start=None, end=None):
 _extras = {}
 
 
-def simulate(times, prices, warmup, cfg, args, seeds=()):
+def extras_for(times, cfg, args):
+    """החושים מהאינטרנט, מיושרים לנרות (מחשבים פעם אחת לכל תקופה)."""
     key = (times[0], times[-1], len(times), tuple(cfg.assets))
-    if key not in _extras:     # החושים מהאינטרנט, מיושרים לנרות (מחשבים פעם אחת לכל תקופה)
+    if key not in _extras:
         fake = getattr(args, "data", "daily") == "fake"   # למחירים מדומים אין חושים אמיתיים שמתאימים להם
         _extras[key] = {} if fake else net.extras(cfg.assets, times, candle_minutes(times) < 1440)
+    return _extras[key]
+
+
+def simulate(times, prices, warmup, cfg, args, seeds=(), extras=None):
     world = World(cfg, candle_minutes(times), args.seed, seeds)
     world.out = print if args.verbose else None
     world.verbose = args.verbose
     world.populate()
-    run_history(times, prices, world, warmup, _extras[key])
+    run_history(times, prices, world, warmup, extras_for(times, cfg, args) if extras is None else extras)
     return world
+
+
+def train(times, prices, start, split, cfg, args, rounds, windows=0, report=None):
+    """אימון: כל סבב מתחיל מהאסטרטגיות הכי טובות של הסבב הקודם.
+    windows = כמה ימים: כל סבב מתאמן על קטע אקראי באורך הזה מתוך תקופת האימון (ולא על כולה).
+    ככה הבוטים לא לומדים בעל פה תקופה אחת, אלא מה שעובד בהרבה מצבים שונים.
+    המוחות לא עוברים בין הסבבים (אחרת בסבב השני הם כבר היו "יודעים" מה יקרה בתקופה הזאת),
+    רק מהסבב האחרון - אל המבחן ואל brains.json, בדיוק כמו בוט שממשיך לחיות."""
+    t, pr, warm = cut_range(times, prices, start, split)
+    ex = extras_for(t, cfg, args)
+    size = every(f"{windows}d", candle_minutes(t)) if windows else 0
+    rng = random.Random(f"windows-{args.seed}")
+    seeds, world = [], None
+    for r in range(1, rounds + 1):
+        if size and len(t) - warm > size:
+            e = rng.randint(warm + size, len(t))
+            tt, pp, ww = t[:e], {a: p[:e] for a, p in pr.items()}, e - size
+            xx = {a: {n: (raw[:e], sig[:e]) for n, (raw, sig) in d.items()} for a, d in ex.items()}
+        else:
+            tt, pp, ww, xx = t, pr, warm, ex
+        world = simulate(tt, pp, ww, cfg, args, [Bot(0, b.genome, 0) for b in seeds], xx)
+        if report:
+            report(r, world, tt, pp, ww)
+        seeds = world.best(cfg.max_bots)
+    return seeds, world
 
 
 def summary(title, world, times, prices, warmup):
@@ -114,6 +145,8 @@ def main():
     p.add_argument("--to", dest="end", help="תאריך סיום")
     p.add_argument("--split", help="מתאמנים לפני התאריך הזה, נבחנים אחריו")
     p.add_argument("--rounds", type=int, default=3, help="כמה פעמים לעבור על תקופת האימון")
+    p.add_argument("--windows", type=int, default=0,
+                   help="כל סבב אימון על קטע אקראי באורך כזה (בימים) מתוך תקופת האימון, במקום על כולה")
     p.add_argument("--brains", default="brains.json", help="איפה לשמור/לטעון אסטרטגיות מאומנות")
     p.add_argument("--use-brains", action="store_true", help="להתחיל מהאסטרטגיות השמורות")
     p.add_argument("--seed", type=int, default=42)
@@ -136,16 +169,10 @@ def main():
         save(args.chart, "בוטי מסחר: תוצאות", [("הבוטים", world)], cfg)
         return
 
-    # שלב 1: אימון. כל סבב מתחיל מהאסטרטגיות הכי טובות של הסבב הקודם.
-    # המוחות לא עוברים בין הסבבים (אחרת בסבב השני הם כבר היו "יודעים" מה יקרה בתקופה הזאת),
-    # רק מהסבב האחרון - אל המבחן ואל brains.json, בדיוק כמו בוט שממשיך לחיות.
-    t, pr, warm = cut_range(times, prices, date(args.start), date(args.split))
-    seeds = ()
-    for r in range(1, args.rounds + 1):
-        world = simulate(t, pr, warm, cfg, args, [Bot(0, b.genome, 0) for b in seeds])
-        summary(f"אימון, סבב {r}", world, t, pr, warm)
-        seeds = world.best(cfg.max_bots)
-    save_brains(args.brains, seeds, candle_minutes(t))
+    # שלב 1: אימון
+    seeds, world = train(times, prices, date(args.start), date(args.split), cfg, args, args.rounds, args.windows,
+                         lambda r, w, t, pr, warm: summary(f"אימון, סבב {r}", w, t, pr, warm))
+    save_brains(args.brains, seeds, candle_minutes(times))
     show_best(world)
     print(f"\nנשמרו {len(seeds)} אסטרטגיות ב-{os.path.abspath(args.brains)}")
 

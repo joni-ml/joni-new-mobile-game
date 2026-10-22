@@ -14,24 +14,20 @@ import argparse
 import os
 from datetime import datetime
 
-from core import Bot, load_settings
+from core import load_settings
 from dashboard import hold_series
-from evolution_sim import cut_range, load_data, simulate
+from evolution_sim import cut_range, load_data, simulate, train
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
-def run(times, prices, cfg, year, seed, rounds):
+def run(times, prices, cfg, year, seed, rounds, windows=0):
     """מתאמן עד תחילת השנה, נבחן על השנה. מחזיר (רווח הבוטים, רווח של לקנות ולחכות) בשקלים."""
     class Args:
         verbose = False
     Args.seed = seed
     start, split, end = datetime(2018, 1, 1), datetime(year, 1, 1), datetime(year + 1, 1, 1)
-    t, pr, warm = cut_range(times, prices, start, split)
-    best = []
-    for _ in range(rounds):   # המוחות לא עוברים בין סבבי אימון, רק מהאחרון אל המבחן (כמו ב-evolution_sim)
-        world = simulate(t, pr, warm, cfg, Args, [Bot(0, b.genome, 0) for b in best])
-        best = world.best(cfg.max_bots)
+    best, _ = train(times, prices, start, split, cfg, Args, rounds, windows)
     t, pr, warm = cut_range(times, prices, split, end)
     world = simulate(t, pr, warm, cfg, Args, best)
     last = world.history[-1]
@@ -44,6 +40,7 @@ def main():
     p.add_argument("--years", type=int, nargs="+", default=[2020, 2021, 2022, 2023, 2024, 2025])
     p.add_argument("--seeds", type=int, default=3, help="כמה פעמים לבדוק כל שנה (עם מזל אחר)")
     p.add_argument("--rounds", type=int, default=2, help="כמה סבבי אימון לפני כל מבחן")
+    p.add_argument("--windows", type=int, default=0, help="כל סבב אימון על קטע אקראי באורך כזה (בימים)")
     args = p.parse_args()
 
     cfg = load_settings(args.settings)
@@ -54,7 +51,7 @@ def main():
     wins = total = 0
     edge = 0.0
     for year in years:
-        rows = [run(times, prices, cfg, year, seed, args.rounds) for seed in range(1, args.seeds + 1)]
+        rows = [run(times, prices, cfg, year, seed, args.rounds, args.windows) for seed in range(1, args.seeds + 1)]
         bots = sum(r[0] for r in rows) / len(rows)
         hold = sum(r[1] for r in rows) / len(rows)
         beat = sum(r[0] > r[1] for r in rows)
