@@ -140,6 +140,9 @@ input[type=range]{flex:1;accent-color:#d4632f;height:26px;direction:ltr}
 .lang{background:#171d26;border:1px solid #283040;border-radius:9px;
   padding:8px 11px;font-size:13px;text-align:start}
 .lang.on{background:#c9822e;border-color:#e8a44f;color:#fff}
+#pickDesc{display:block;width:100%;margin-top:3px;font-size:11.5px;line-height:1.35;
+  opacity:.62;font-weight:400;white-space:normal}
+#pickBar{flex-wrap:wrap;height:auto;min-height:52px;padding-top:8px;padding-bottom:8px}
 </style>
 </head>
 <body>
@@ -186,6 +189,7 @@ input[type=range]{flex:1;accent-color:#d4632f;height:26px;direction:ltr}
     <button id="pickBar">
       <i id="pickDot"></i>
       <span id="pickName">מימן</span><span id="pickKey">H₂</span>
+      <span id="pickDesc"></span>
       <span id="pickUp"></span>
     </button>
   </div>
@@ -286,6 +290,9 @@ const ELEM = {
   H:{ name:{he:'מימן',en:'Hydrogen'}, col:[0.94,0.96,0.99], r:0.052, m:1.008 },
   O:{ name:{he:'חמצן',en:'Oxygen'}, col:[0.86,0.35,0.22], r:0.082, m:16.00 },
   N:{ name:{he:'חנקן',en:'Nitrogen'}, col:[0.32,0.50,0.86], r:0.075, m:14.007 },
+  C:{ name:{he:'פחמן',en:'Carbon'}, col:[0.22,0.23,0.26], r:0.085, m:12.011 },
+  Na:{ name:{he:'נתרן',en:'Sodium'}, col:[0.68,0.52,0.86], r:0.102, m:22.990 },
+  Cl:{ name:{he:'כלור',en:'Chlorine'}, col:[0.45,0.78,0.36], r:0.088, m:35.45 },
 };
 
 /* ---- כמה קטנה מולקולה ----
@@ -304,10 +311,14 @@ try { const v=+localStorage.getItem('rls.scale'); if (LEVELS.includes(v)) MSCALE
 const A = 0.911;      /* חצי מזווית הקשר במים, 104.5° */
 const SPECIES = {
   H2: { key:'H₂', name:{he:'מימן',en:'Hydrogen'}, boil:-253, melt:-259, liq:0.071,
+        desc:{he:'הקל ביותר שיש. עם חמצן וניצוץ הוא נותן מים ומשחרר הרבה אנרגיה.',
+              en:'The lightest there is. With oxygen and a spark it gives water and a lot of energy.'},
         /* מימן נוזלי חסר צבע לגמרי */
         absorb:[0.10,0.10,0.11],
         atoms:[['H',[-0.065,0,0]],['H',[0.065,0,0]]] },
   O2: { key:'O₂', name:{he:'חמצן',en:'Oxygen'}, boil:-183, melt:-218, liq:1.141,
+        desc:{he:'בלעדיו שום דבר לא בוער. נוזלי הוא תכלת — זה הצבע האמיתי שלו.',
+              en:'Nothing burns without it. As a liquid it is pale blue — that is its real colour.'},
         /* חמצן נוזלי הוא תכלת. זה לא סגנון — זה הצבע שלו */
         absorb:[1.35,0.42,0.10],
         atoms:[['O',[-0.080,0,0]],['O',[0.080,0,0]]] },
@@ -315,9 +326,70 @@ const SPECIES = {
      הוא גם אינרטי לחלוטין כאן — אין סידור אטומים עם H או O שמשחרר
      אנרגיה — ולכן הוא יושב באוויר ולא עושה כלום, בדיוק כמו במציאות. */
   N2: { key:'N₂', name:{he:'חנקן',en:'Nitrogen'}, boil:-196, melt:-210, liq:0.807,
+        desc:{he:'78% מהאוויר. כמעט לא מגיב — חוץ ממימן בחום גבוה מאוד.',
+              en:'78% of the air. Almost inert — except with hydrogen at very high heat.'},
         absorb:[0.09,0.09,0.10],
         atoms:[['N',[-0.055,0,0]],['N',[0.055,0,0]]] },
+  /* אתנול. רותח ב-78.4 — מתחת למים — וזו כל הסיבה שאפשר לזקק:
+     מחממים תערובת, האתנול עובר לגז ראשון, והמים נשארים. */
+  C2H6O:{ key:'C₂H₆O', name:{he:'אתנול',en:'Ethanol'}, boil:78.4, melt:-114, liq:0.789,
+        desc:{he:'רותח ב-78° — נמוך ממים. לכן אפשר להפריד אותו מהם בזיקוק.',
+              en:'Boils at 78°, below water. That is why distillation can separate them.'},
+        absorb:[0.30,0.16,0.10],
+        atoms:[['C',[-0.115,0,0]],['C',[0.030,0,0]],['O',[0.165,0.030,0]],
+               ['H',[-0.165,0.105,0]],['H',[-0.165,-0.105,0]],['H',[-0.095,-0.090,0.095]],
+               ['H',[0.010,0.105,0]],['H',[0.010,-0.105,0]],['H',[0.245,-0.020,0]]] },
+
+  /* מתאן. זה הגז שמבער בונזן באמת שורף. */
+  CH4:{ key:'CH₄', name:{he:'מתאן',en:'Methane'}, boil:-162, melt:-182, liq:0.422,
+        desc:{he:'הגז שהמבער באמת שורף. בוער עם חמצן ונותן מים ופחמן דו-חמצני.',
+              en:'The gas a burner actually burns. With oxygen it gives water and carbon dioxide.'},
+        absorb:[0.12,0.13,0.14],
+        atoms:[['C',[0,0,0]],['H',[0.109,0.109,0.109]],['H',[-0.109,-0.109,0.109]],
+               ['H',[0.109,-0.109,-0.109]],['H',[-0.109,0.109,-0.109]]] },
+
+  /* פחמן דו-חמצני. כבד מאוויר, ולכן הוא שוקע ונאסף בתחתית הכלי.
+     ובלחץ רגיל הוא עובר מוצק לגז בלי להיות נוזל — קרח יבש. */
+  CO2:{ key:'CO₂', name:{he:'פחמן דו-חמצני',en:'Carbon dioxide'}, boil:-78.5, melt:-78.6, liq:1.56,
+        desc:{he:'כבד מאוויר ולכן שוקע. מוצק שלו הוא קרח יבש — הוא הופך לגז בלי להימס.',
+              en:'Heavier than air, so it sinks. Its solid is dry ice: it becomes gas without melting.'},
+        absorb:[0.20,0.20,0.22],
+        atoms:[['C',[0,0,0]],['O',[-0.116,0,0]],['O',[0.116,0,0]]] },
+
+  /* מי חמצן. מתפרק מעצמו כשמחממים, ומשחרר חמצן. */
+  H2O2:{ key:'H₂O₂', name:{he:'מי חמצן',en:'Hydrogen peroxide'}, boil:150, melt:-0.4, liq:1.45,
+        desc:{he:'מתפרק מעצמו בחימום קל ומשחרר חמצן. לא צריך ניצוץ.',
+              en:'Breaks down on gentle warming and releases oxygen. No spark needed.'},
+        absorb:[0.45,0.22,0.14],
+        atoms:[['O',[-0.073,0,0]],['O',[0.073,0,0]],
+               ['H',[-0.120,0.090,0.040]],['H',[0.120,-0.090,0.040]]] },
+
+  /* אמוניה. נוצרת מחנקן ומימן בחום גבוה — תהליך הבר, שממנו באים
+     כמעט כל הדשנים בעולם. */
+  NH3:{ key:'NH₃', name:{he:'אמוניה',en:'Ammonia'}, boil:-33, melt:-78, liq:0.682,
+        desc:{he:'נוצרת מחנקן ומימן בחום גבוה. ככה מייצרים דשן לכל העולם.',
+              en:'Made from nitrogen and hydrogen at high heat. This is how the world makes fertiliser.'},
+        absorb:[0.18,0.26,0.20],
+        atoms:[['N',[0,0,0]],['H',[0.101,0.038,0]],
+               ['H',[-0.050,0.038,0.087]],['H',[-0.050,0.038,-0.087]]] },
+
+  /* פחמן מוצק. נמס רק ב-3550 מעלות, ולכן הוא נשאר גוש ובוער. */
+  C:{ key:'C', name:{he:'פחמן',en:'Carbon'}, boil:4027, melt:3550, liq:2.27,
+        desc:{he:'פחם. נמס רק ב-3550 מעלות, אז הוא נשאר מוצק ופשוט בוער.',
+              en:'Charcoal. It melts only at 3550°, so it stays solid and simply burns.'},
+        absorb:[0.80,0.80,0.80],
+        atoms:[['C',[0,0,0]]] },
+
+  /* מלח בישול. נמס ב-801 — הכי גבוה מכל מה שיש כאן חוץ מפחמן. */
+  NaCl:{ key:'NaCl', name:{he:'מלח',en:'Salt'}, boil:1465, melt:801, liq:2.16,
+        desc:{he:'נמס רק ב-801 מעלות. הלהבה שלנו לא מגיעה לשם — תצטרך משהו חזק יותר.',
+              en:'Melts at 801°. Our flame does not reach that — you will need something stronger.'},
+        absorb:[0.30,0.30,0.34],
+        atoms:[['Na',[-0.094,0,0]],['Cl',[0.094,0,0]]] },
+
   H2O:{ key:'H₂O', name:{he:'מים',en:'Water'}, boil:100, melt:0, liq:1.000,
+        desc:{he:'רותח ב-100 ונמס ב-0. בולע אדום, ולכן בכמות גדולה הוא כחול.',
+              en:'Boils at 100, melts at 0. It absorbs red, which is why a lot of it looks blue.'},
         /* מים בולעים אדום. בכוס הם שקופים, בבריכה הם כחולים */
         absorb:[0.62,0.13,0.07],
         atoms:[['O',[0,0,0]],
@@ -1916,36 +1988,116 @@ function neighbours(dt){
 const IGNITION=560;
 let flash=0;
 
+/* ---------------------------------------------------------------------------
+   תגובות כימיות.
+
+   קודם הייתה תגובה אחת כתובה ביד. עכשיו יש טבלה, וכל שורה בה היא משוואה
+   מאוזנת: אותם אטומים משני הצדדים, בלי יוצא מן הכלל. אם לא, חומר היה
+   נעלם או נברא, והמונה למעלה היה משקר.
+
+   needs = כמה חם צריך להיות כדי שזה יתחיל. heat = כמה מעלות משתחררות
+   במקום שבו זה קרה — לא לכל הכלי.
+   --------------------------------------------------------------------------- */
+const RX = [
+  { in:{H2:2, O2:1},   out:{H2O:2},        needs:560, heat:900,
+    name:{he:'בעירת מימן', en:'Hydrogen burns'} },
+  /* זה מה שמבער בונזן באמת שורף */
+  { in:{CH4:1, O2:2},  out:{CO2:1, H2O:2}, needs:580, heat:1000,
+    name:{he:'בעירת מתאן', en:'Methane burns'} },
+  { in:{C:1, O2:1},    out:{CO2:1},        needs:700, heat:820,
+    name:{he:'בעירת פחם', en:'Carbon burns'} },
+  /* לא צריך ניצוץ — מספיק חימום קל */
+  { in:{H2O2:2},       out:{H2O:2, O2:1},  needs:80,  heat:260,
+    name:{he:'פירוק מי חמצן', en:'Peroxide breaks down'} },
+  /* תהליך הבר. במציאות צריך גם לחץ עצום וזרז, וזה לא מדומה כאן. */
+  { in:{N2:1, H2:3},   out:{NH3:2},        needs:450, heat:190,
+    name:{he:'תהליך הבר', en:'Haber process'} },
+];
+
+/* בדיקה שכל שורה מאוזנת. רצה פעם אחת בטעינה, וצועקת בקונסול אם לא —
+   עדיף לגלות משוואה שבורה כאן מאשר דרך מונה שסופר אטומים שלא קיימים. */
+(function checkRX(){
+  for (const r of RX){
+    const side=o=>{ const c={};
+      for (const [sp,n] of Object.entries(o))
+        for (const [el,k] of Object.entries(SPECIES[sp].count)) c[el]=(c[el]||0)+k*n;
+      return c; };
+    const a=side(r.in), b=side(r.out);
+    for (const el of new Set([...Object.keys(a),...Object.keys(b)]))
+      if ((a[el]||0)!==(b[el]||0))
+        console.error('משוואה לא מאוזנת:', r.name.he, el, a[el]||0, '≠', b[el]||0);
+  }
+})();
+
+const rxBuckets = {};
 function react(){
-  if (flash<=0){
-    let hot=false;
-    for (let i=0;i<mol.n && !hot;i++) if (mol.T[i]>=IGNITION) hot=true;
-    if (!hot) return;
-  }
-  const h=[],o=[];
-  for (let i=0;i<mol.n;i++){
-    if (mol.where[i]===IN_TUBE) continue;
-    if (mol.sp[i]==='H2') h.push(i); else if (mol.sp[i]==='O2') o.push(i);
-  }
-  let made=0;
-  for (const oi of o){
-    if (h.length<2 || made>6) break;
-    const near=[];
-    for (const hi of h){
-      if (Math.hypot(mol.x[hi]-mol.x[oi],mol.y[hi]-mol.y[oi],mol.z[hi]-mol.z[oi])<2.2*R0) near.push(hi);
-      if (near.length===2) break;
+  const hot = flash>0;
+  for (const r of RX){
+    /* הסף הנמוך ביותר נבדק ראשון; אם אף מולקולה לא הגיעה אליו, אין
+       טעם לאסוף רשימות */
+    let any=false;
+    for (let i=0;i<mol.n;i++) if (mol.T[i]>=r.needs){ any=true; break; }
+    if (!any && !(hot && r.needs<=IGNITION)) continue;
+
+    const names=Object.keys(r.in);
+    for (const sp of names) rxBuckets[sp]=[];
+    for (let i=0;i<mol.n;i++){
+      if (mol.where[i]===IN_TUBE) continue;
+      if (rxBuckets[mol.sp[i]]) rxBuckets[mol.sp[i]].push(i);
     }
-    if (near.length<2) continue;
-    /* שני H₂ הופכים לשני H₂O, וה-O₂ נבלע. ארבעה H ושני O — לפני ואחרי. */
-    /* התגובה משחררת אנרגיה במקום שבו היא קרתה, לא לכל הכלי */
-    for (const hi of near){ mol.sp[hi]='H2O'; mol.vy[hi]+=rand(1.5,3.4); mol.T[hi]+=900; }
-    mol.T[oi]=mol.T[oi];
-    h.splice(h.indexOf(near[0]),1);
-    h.splice(h.indexOf(near[1]),1);
-    kill(oi);
-    made++; flash=0.45;
+
+    const anchorSp=names[0];
+    let made=0;
+    const used=new Set();
+    for (const ai of rxBuckets[anchorSp]){
+      if (made>5) break;
+      if (used.has(ai) || mol.T[ai]<r.needs) continue;
+
+      /* אוספים את כל המשתתפים בסביבה הקרובה */
+      const pick=[];
+      let ok=true;
+      for (const sp of names){
+        const want = r.in[sp] - (sp===anchorSp ? 1 : 0);
+        const got=[];
+        if (sp===anchorSp) got.push(ai);
+        for (const j of rxBuckets[sp]){
+          if (got.length>=r.in[sp]) break;
+          if (j===ai || used.has(j)) continue;
+          if (Math.hypot(mol.x[j]-mol.x[ai],mol.y[j]-mol.y[ai],mol.z[j]-mol.z[ai])<2.6*R0) got.push(j);
+        }
+        if (got.length<r.in[sp]){ ok=false; break; }
+        pick.push(...got);
+      }
+      if (!ok) continue;
+
+      /* ממחזרים את התאים: הראשונים הופכים לתוצרים, המיותרים נמחקים */
+      const outs=[];
+      for (const [sp,n] of Object.entries(r.out)) for (let k=0;k<n;k++) outs.push(sp);
+      for (let k=0;k<pick.length;k++){
+        const i=pick[k];
+        used.add(i);
+        if (k<outs.length){
+          mol.sp[i]=outs[k];
+          mol.T[i]+=r.heat;
+          mol.vy[i]+=rand(0.8,2.6);
+          mol.phase[i]=GAS;
+        }
+      }
+      /* מה שנשאר בלי תפקיד נמחק, ומה שחסר נולד ליד */
+      const extra=pick.slice(outs.length).sort((a,b)=>b-a);
+      for (const i of extra) kill(i);
+      for (let k=pick.length;k<outs.length;k++){
+        const i=spawn(outs[k], mol.x[pick[0]]+rand(-R0,R0),
+                      mol.y[pick[0]]+rand(-R0,R0), mol.z[pick[0]]+rand(-R0,R0),
+                      mol.where[pick[0]]);
+        if (i>=0){ mol.T[i]=mol.T[pick[0]]+r.heat; mol.phase[i]=GAS; }
+      }
+      made++; flash=0.45; lastRx=r;
+    }
+    if (made) syncAtoms();
   }
 }
+let lastRx=null;
 
 /* ===========================================================================
    5.7) שדה החום
@@ -3363,6 +3515,8 @@ function syncPick(){
   const S=SPECIES[picked];
   $('pickName').textContent=nm(S.name);
   $('pickKey').textContent=S.key;
+  /* ההסבר. בלעדיו "NaCl" זו סתם מחרוזת. */
+  $('pickDesc').textContent = S.desc ? nm(S.desc) : '';
   $('pickDot').style.background='rgb('+ELEM[S.atoms[0][0]].col.map(v=>Math.round(v*255)).join(',')+')';
   for (const b of document.querySelectorAll('.pt.live')) b.classList.toggle('on', b.dataset.sp===picked);
 }
