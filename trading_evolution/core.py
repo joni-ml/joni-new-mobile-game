@@ -38,6 +38,8 @@ TOP_UP = True           # במצב "להחזיק": להשקיע גם כסף שנ
 CLEAR = 0.1             # במצב "להחזיק": כמה הציון צריך לעלות מעל קו הסכנה כדי לקנות שוב
 TEACH = 0.0             # הכי טוב מלמד את השאר: כמה מהמוח והנוסחה שלהם זז לכיוון שלו בכל מבחן
 STUDY = False           # החכמים (הרבע העליון) לומדים שוב על העבר הקרוב אחרי כל מבחן
+GROW_RATE = 0.0         # הסיכוי שמוח של ילד יוסיף או יוריד תא עצב (0 = המוח תמיד באותו גודל)
+MIN_NEURONS, MAX_NEURONS = 2, 32
 HIDDEN = 8              # כמה "תאי עצב" יש במוח של כל בוט
 SCHOOL = 365            # כמה נרות מהעבר בוט חדש לומד ("בית ספר") לפני שהוא מתחיל לסחור
 ACC_POINTS = 60         # כמה נקודות לשמור לגרף "כמה המוח צודק לאורך הזמן"
@@ -545,6 +547,23 @@ def brain_copy(b, rng, noise=0.02):
     return c
 
 
+def brain_grow(b, rng):
+    """המוח משנה את הגודל של עצמו: מוסיף תא עצב חדש (שמתחיל "שקט" ולומד בהמשך),
+    או מוריד את התא שהכי פחות משפיע. אם זה עוזר - הצאצאים עם המוח בגודל הזה שורדים."""
+    n = len(b["w2"])
+    if rng.random() < 0.5 and n < MAX_NEURONS:
+        b["w1"].append([rng.gauss(0, 0.1) for _ in b["w1"][0]])
+        b["b1"].append(0.0)
+        b["w2"].append(0.0)
+        return +1
+    if n > MIN_NEURONS:
+        k = min(range(n), key=lambda i: abs(b["w2"][i]))
+        for key in ("w1", "b1", "w2"):
+            del b[key][k]
+        return -1
+    return 0
+
+
 def brain_importance(b, xs):
     """כמה כל סימן משפיע על המוח באופן כללי: עוצמת החיבורים שלו כפול כמה הסימן באמת זז (xs = קלטים אחרונים).
     סימן שתמיד 0 (אסור בהגדרות או שאין לו נתונים) לא משפיע בכלל, גם אם נשארו לו משקלים אקראיים מהלידה."""
@@ -879,6 +898,8 @@ class World:
         self.lineage[str(bot.id)] = [bot.parent, generation, genome.asset, self.now[:10]]
         if parent is not None and parent.mind:
             bot.mind = brain_copy(parent.mind, self.rng)
+            if GROW_RATE and self.rng.random() < GROW_RATE:
+                brain_grow(bot.mind, self.rng)
             bot.lessons, bot.hits, bot.accuracy = parent.lessons, list(parent.hits), list(parent.accuracy)
         self.next_id += 1
         self.bots.append(bot)

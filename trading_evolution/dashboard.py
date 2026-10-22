@@ -189,7 +189,7 @@ def brain(b, allowed, goal="trade", learning=False, candle=1440, patience=1):
                 for s, w, p in zip(SIGNALS, g.weights, parts) if s in allowed]
     score = b.score
     mind = {"learning": True, "lessons": b.lessons, "acc": accuracy(b), "acc_n": len(b.hits),
-            "accuracy": b.accuracy, "horizon": g.horizon, "listen": round(g.listen, 2),
+            "accuracy": b.accuracy, "horizon": g.horizon, "listen": round(g.listen, 2), "neurons": len(b.mind["w2"]),
             "formula": round(sum(parts), 3), "guess": round(b.guess, 3), "feel": round(b.feel, 3),
             "school": human(SCHOOL * candle), "danger": goal == "hold"} if learning else {"learning": False}
     if goal == "hold":
@@ -700,7 +700,7 @@ function brainPanel(card, b, color) {
     const ear = Math.round(x.listen * 100);
     el("div", { class: "lbl" }, d).textContent = "מה המוח למד";
     el("p", { class: "desc" }, d).textContent = "המוח עובר בירושה מהורה לילד (עם שינוי קטן), וכל דור ממשיך ללמוד ממה שקורה. " +
-      `עד עכשיו המוח הזה למד מ-${x.lessons.toLocaleString("en-US")} דוגמאות. ` +
+      `יש לו ${x.neurons} תאי עצב, ועד עכשיו הוא למד מ-${x.lessons.toLocaleString("en-US")} דוגמאות. ` +
       `(מוח חדש לגמרי מתחיל ב"בית ספר" על ${x.school} שלפני שהבוט נולד.) ` +
       (x.acc === null ? "עוד אין מספיק ניחושים כדי לדעת כמה הוא צודק." : x.danger
        ? `ב-${x.acc_n} הניחושים האחרונים הוא צדק ב-${x.acc}% מהפעמים אם תהיה נפילה או לא ` +
