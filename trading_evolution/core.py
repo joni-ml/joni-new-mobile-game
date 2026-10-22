@@ -64,6 +64,11 @@ class Settings:
     baskets: bool = False
     patience: str = "3d"
     brain: str = "learning"
+    cash_interest: float = 0.0      # ריבית שנתית (באחוזים) על מזומן שהבוטים לא משקיעים
+    stop_all: float = 0.0           # עצירה של כל המשחק אם ההפסד הכולל מגיע לכך (באחוזים מההשקעה), 0 = בלי
+    report_every: str = "7d"        # כל כמה זמן לכתוב דוח (במסחר החי)
+    telegram_token: str = ""        # התראות לטלפון בטלגרם (ריק = בלי)
+    telegram_chat: str = ""
 
 
 def load_settings(path):
@@ -105,6 +110,11 @@ def load_settings(path):
         raise SystemExit(f"baskets יכול להיות רק true או false (כתוב {s.baskets!r})")
     if not isinstance(s.refill, bool):
         raise SystemExit(f"refill יכול להיות רק true או false (כתוב {s.refill!r})")
+    minutes(s.report_every)
+    if s.cash_interest < 0 or s.cash_interest > 20:
+        raise SystemExit(f"cash_interest צריך להיות בין 0 ל-20 (כתוב {s.cash_interest!r})")
+    if s.stop_all < 0 or s.stop_all >= 100:
+        raise SystemExit(f"stop_all צריך להיות בין 0 ל-99 (כתוב {s.stop_all!r})")
     if s.losers_money not in ("me", "winners"):
         raise SystemExit(f"losers_money יכול להיות רק \"me\" או \"winners\" (כתוב {s.losers_money!r})")
     return s
@@ -574,6 +584,7 @@ class Bot:
     seen: int = 0               # כמה נרות הוא חי
     danger: int = 0             # כמה נרות ברצף הציון מתחת לקו הסכנה
     study: bool = False         # הוא מהחכמים: בנר הבא הוא לומד שוב על העבר הקרוב
+    parent: int = 0             # מאיזה בוט הוא שוכפל (0 = מייסד, אסטרטגיה חדשה)
     out: bool = False           # ברח מסכנה (אולי עם חלק קטן שנשאר מושקע - הביטוח), ומחכה לחזור
     mind: dict = None           # המוח הלומד (None = עוד לא למד כלום)
     memory: list = field(default_factory=list)     # [סימנים, מחיר, תנודתיות, ניחוש] של הנרות האחרונים, ללמוד מהם כשיתברר מה קרה
@@ -832,6 +843,9 @@ class World:
         self.refilled = 0             # כמה בוטים חדשים נולדו כדי למלא מקומות ריקים
         self.selections = 0
         self.market_start = None      # מחיר "כל המטבעות שווה בשווה" בתחילת תקופת המבחן
+        self.lineage = {}             # עץ המשפחה: {מספר בוט: [ההורה, דור, מטבע, תאריך לידה]}
+        self.stopped = False          # כל המשחק נעצר (stop_all) - מחכה לבעלים
+        self.live = False             # מסחר חי (רק שם יש כפתור עצירה; באימון על העבר אין)
         self.past_brains = [0, 0, 0]  # ניחושים שנבדקו / צדקו / המחיר עלה - של בוטים שכבר מתו
         self.history = []             # תמונת מצב אחרי כל נר, בשביל הגרפים
         self.events = []              # מה קרה לאחרונה
@@ -860,7 +874,9 @@ class World:
         if money is None:
             money = self.cfg.start_money
             self.invested += money      # בוט חדש מאפס = הבעלים משקיע עוד כסף
-        bot = Bot(self.next_id, genome, self.tick, generation, cash=money, period_start=money, prev_value=money)
+        bot = Bot(self.next_id, genome, self.tick, generation, cash=money, period_start=money, prev_value=money,
+                  parent=parent.id if parent is not None else 0)
+        self.lineage[str(bot.id)] = [bot.parent, generation, genome.asset, self.now[:10]]
         if parent is not None and parent.mind:
             bot.mind = brain_copy(parent.mind, self.rng)
             bot.lessons, bot.hits, bot.accuracy = parent.lessons, list(parent.hits), list(parent.accuracy)
@@ -889,6 +905,13 @@ class World:
         self.now = when.isoformat(timespec="minutes")
         prices = {a: m.p[i] for a, m in markets.items()}
         self.market_start = self.market_start or self.market_price(prices)
+        if self.stopped:      # המשחק עצור: אף אחד לא סוחר, רק רושמים את המצב
+            self.record(prices)
+            return
+        if self.cfg.cash_interest:   # ריבית על מזומן (כמו דולרים דיגיטליים שמלווים בבורסה)
+            rate = (1 + self.cfg.cash_interest / 100) ** (self.candle / 525600) - 1
+            for bot in self.bots:
+                bot.cash += max(bot.cash, 0.0) * rate
         if HUNT:
             self.hunt_jumps(markets, i, prices)
         for bot in self.bots:
@@ -912,6 +935,11 @@ class World:
             self.populate()
             self.note(f"כל הבוטים מתו. נוצרו {len(self.bots)} בוטים חדשים", True)
 
+        self.record(prices)
+        self.check_stop(prices)
+
+    def record(self, prices):
+        """תמונת מצב אחרי הנר, בשביל הגרפים."""
         inside = 0.0
         for bot in self.bots:
             v = bot.value(price_of(prices, bot.genome.asset))
@@ -922,6 +950,37 @@ class World:
         self.history = thin(self.history + [{
             "time": self.now, "prices": prices, "alive": len(self.bots), "inside": round(inside, 4),
             "collected": round(self.owner_profit, 4), "invested": round(self.invested, 4)}], CHART_POINTS)
+        if len(self.lineage) > 3000:
+            self.prune_lineage()
+
+    def check_stop(self, prices):
+        """כפתור עצירה: אם ההפסד הכולל הגיע ל-stop_all אחוז מההשקעה, כולם מוכרים ועוצרים עד שהבעלים מחליט."""
+        last = self.history[-1] if self.history else None
+        if not self.live or not self.cfg.stop_all or not last or not last["invested"]:
+            return
+        net = last["collected"] + last["inside"] - last["invested"]
+        if net / last["invested"] * 100 > -self.cfg.stop_all:
+            return
+        for bot in self.bots:
+            if bot.units:
+                bot.sell(price_of(prices, bot.genome.asset))
+        self.stopped = True
+        self.note(f"עצירה! ההפסד הכולל הגיע ל-{-net:.2f} ש\"ח ({net / last['invested']:+.0%}), "
+                  f"יותר מ-{self.cfg.stop_all:g}% שהגדרת. כל הבוטים מכרו ועוצרים עד שתחליט להמשיך", True)
+
+    def family(self, bot_id):
+        """השרשרת של בוט עד המייסד: [הבוט, ההורה, הסבא, ...]."""
+        chain, seen = [], set()
+        while bot_id and str(bot_id) in self.lineage and bot_id not in seen:
+            seen.add(bot_id)
+            chain.append(bot_id)
+            bot_id = self.lineage[str(bot_id)][0]
+        return chain
+
+    def prune_lineage(self):
+        """שומרים בעץ המשפחה רק את מי שהוא אב קדמון של בוט חי (אחרת הוא גדל בלי סוף)."""
+        keep = {str(i) for b in self.bots for i in self.family(b.id)}
+        self.lineage = {k: v for k, v in self.lineage.items() if k in keep}
 
     def pay(self, prices):
         share = self.cfg.pay_percent / 100
@@ -1114,7 +1173,7 @@ class World:
     # --- שמירה וטעינה (בשביל המסחר החי, שרץ לאורך ימים) ---
 
     def to_dict(self):
-        skip = ("rng", "seeds", "cfg", "out", "verbose", "bots", "_baskets")
+        skip = ("rng", "seeds", "cfg", "out", "verbose", "bots", "_baskets", "live")
         d = {k: v for k, v in vars(self).items() if k not in skip}
         d["bots"] = [asdict(b) for b in self.bots]
         return d

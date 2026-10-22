@@ -7,6 +7,10 @@
   python live.py --once     # בדיקה אחת ויציאה (טוב לתזמון אוטומטי)
   python live.py --status   # רק להראות מה המצב, בלי להתחבר לבורסה
   python live.py --reset    # להתחיל מחדש
+  python live.py --resume   # להמשיך אחרי עצירה (stop_all)
+  python live.py --report   # לכתוב דוח עכשיו (ולשלוח לטלגרם אם הוא מחובר)
+
+התראות לטלפון ודוח שבועי: ראה alerts.py (חיבור לטלגרם, פעם אחת).
 
 את הבוטים רואים בדף live_dashboard.html: חלון לכל בוט, והוא מתרענן לבד.
 אם קיים brains.json (מהאימון ב-evolution_sim.py), הבוטים הראשונים יתחילו ממנו.
@@ -22,6 +26,7 @@ from datetime import datetime, timedelta
 from core import Market, World, load_brains, load_settings, members, minutes
 from dashboard import write_dashboard
 from exchanges import latest
+import alerts
 import internet as net
 from phone import announce, serve
 
@@ -145,6 +150,8 @@ def main():
     p.add_argument("--once", action="store_true")
     p.add_argument("--status", action="store_true")
     p.add_argument("--reset", action="store_true")
+    p.add_argument("--resume", action="store_true", help="להמשיך לסחור אחרי שהמשחק נעצר (stop_all)")
+    p.add_argument("--report", action="store_true", help="לכתוב דוח עכשיו")
     p.add_argument("--verbose", action="store_true", help="להראות כל מוות ושכפול")
     p.add_argument("--phone", action="store_true", help="לפתוח את הדף גם בטלפון (באותו Wi-Fi)")
     p.add_argument("--port", type=int, default=8000, help="הפורט של הדף בשביל הטלפון")
@@ -156,6 +163,18 @@ def main():
     s = load_state(args.state, cfg) if os.path.exists(args.state) else new_state(cfg, args.brains)
     if args.status:
         return status(s, cfg, args.chart)
+    if args.report:
+        text = alerts.report(s["world"], cfg, s.setdefault("report_since", {}))
+        print(text + f"\n\nנשמר ב-{alerts.save_report(text)}")
+        alerts.send(cfg, text)
+        return save_state(args.state, s)
+    if args.resume and s["world"].stopped:
+        s["world"].stopped = False
+        print("ממשיכים לסחור אחרי העצירה.")
+    if "alerts" not in s:                      # בפעם הראשונה רק זוכרים מה כבר קרה, בלי לשלוח
+        s["alerts"] = {}
+        alerts.news(s["world"], s["alerts"])
+        s.setdefault("report_at", time.time())
 
     print(f"הדף עם הבוטים: {os.path.abspath(args.chart)} (לפתוח בדפדפן, הוא מתרענן לבד)")
     if args.phone:
@@ -166,7 +185,7 @@ def main():
         except SystemExit as e:
             print(f"{e} - ממשיך עם ההגדרות הקודמות")
         world = s["world"]
-        world.out, world.verbose = print, args.verbose
+        world.out, world.verbose, world.live = print, args.verbose, True
         if time.time() - s.get("net_updated", 0) > 6 * 3600:   # החושים מהאינטרנט: פעם ב-6 שעות
             held = sorted({a for b in world.bots for a in members(b.genome.asset)})  # גם מטבעות שבוטים מחזיקים
             failed = net.update_live(list(dict.fromkeys(cfg.assets + held)))
@@ -176,6 +195,14 @@ def main():
                 print("לא הצלחתי לעדכן עכשיו: " + ", ".join(failed) + ". ממשיך עם הנתונים שיש.")
         try:
             tick(s, cfg)
+            new = alerts.news(world, s["alerts"])
+            if new:                                       # קניות, מכירות ומבחנים - הודעה אחת לטלפון
+                alerts.send(cfg, "\n".join(new[-20:]))
+            if time.time() - s.get("report_at", 0) > minutes(cfg.report_every) * 60:
+                text = alerts.report(world, cfg, s.setdefault("report_since", {}))
+                print(f"דוח חדש: {alerts.save_report(text)}")
+                alerts.send(cfg, text)
+                s["report_at"] = time.time()
             save_state(args.state, s)
             write_dashboard(args.chart, TITLE, [("הבוטים", world)], world.cfg, live=True)
         except (OSError, RuntimeError, ValueError) as e:

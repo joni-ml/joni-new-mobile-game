@@ -252,7 +252,7 @@ def write_replay(path, title, frames):
     """דף שמנגן את הבוטים כמו סרטון. frames: רשימה של מה ש-build החזיר, מהישן לחדש.
     הקווים בגרפים נשמרים פעם אחת (מהתמונה האחרונה), וכל תמונה שומרת רק כמה נקודות מהם להראות."""
     full = {k: frames[-1][k] for k in ("times", "money", "coins")}
-    keep = ("title", "rules", "tiles", "bots", "events", "updated")
+    keep = ("title", "rules", "tiles", "bots", "events", "updated", "tree", "stopped")
     write_page(path, title, {**frames[-1], "refresh": 0},
                {"full": full, "frames": [{**{k: f[k] for k in keep}, "n": len(f["times"])} for f in frames]})
 
@@ -304,7 +304,27 @@ def build(title, runs, cfg, live=False):
         "tiles": tiles,
         "bots": bot_cards(world),
         "events": world.events[::-1][:12],
+        "tree": family_tree(world),
+        "stopped": bool(getattr(world, "stopped", False)),
     }
+
+
+def family_tree(world):
+    """עץ המשפחה של הבוטים המובילים: לכל אחד השרשרת עד המייסד, ומי האב הקדמון שהכי הרבה בוטים חיים באים ממנו."""
+    prices = world.history[-1]["prices"]
+    chains = []
+    for b in world.ranked(prices)[:8]:
+        chain = world.family(b.id)
+        if chain:
+            chains.append({"bots": [[i] + world.lineage[str(i)][1:] for i in chain],
+                           "founder": world.lineage[str(chain[-1])][0] == 0})
+    count = {}
+    for b in world.bots:
+        for i in world.family(b.id)[1:]:
+            count[i] = count.get(i, 0) + 1
+    top = max(count, key=lambda i: (count[i], -i)) if count else None
+    return {"chains": chains, "ancestor": [top, count[top]] + world.lineage[str(top)][1:] if top else None,
+            "alive": len(world.bots)}
 
 
 TEMPLATE = r"""<!doctype html>
@@ -439,6 +459,12 @@ h2 { font-size: 16px; margin: 0 0 2px; }
   <h2>הבוטים</h2>
   <p class="sub">חלון לכל בוט, לפי הסדר במבחן הבא: הראשון הכי קרוב לשרוד ולהשתכפל</p>
   <div class="bots" id="bots"></div>
+
+  <section class="card">
+    <h2>עץ המשפחה</h2>
+    <p class="sub" id="treeSub"></p>
+    <ul class="events" id="tree"></ul>
+  </section>
 
   <section class="card">
     <h2>מה קרה לאחרונה</h2>
@@ -792,6 +818,23 @@ function renderAll() {
     el("div", { class: "label" }, t).textContent = label;
     el("div", { class: "value ltr" }, t).textContent = value;
   });
+  const tree = document.getElementById("tree"), T2 = DATA.tree;
+  tree.textContent = "";
+  if (T2) {
+    const a = T2.ancestor;
+    document.getElementById("treeSub").textContent = a
+      ? `${a[1]} מתוך ${T2.alive} הבוטים החיים באים מבוט #${a[0]} (${a[3]}, דור ${a[2]}, נולד ${a[4]}). ` +
+        "כל שורה: בוט מוביל, ההורה שלו, הסבא... עד המייסד (בוט עם אסטרטגיה חדשה לגמרי)."
+      : "עוד אין משפחות - כל הבוטים הם מייסדים.";
+    for (const { bots: chain, founder } of T2.chains) {
+      const li = el("li", {}, tree);
+      el("span", {}, li).textContent = chain.map((c, k) =>
+        k === 0 ? `בוט #${c[0]} (${c[2]}, דור ${c[1]})` : `#${c[0]}${c[2] !== chain[k - 1][2] ? " (" + c[2] + ")" : ""}`
+      ).join(" ← ") + (founder ? (chain.length > 1 ? " (המייסד)" : " · מייסד בעצמו") : " ← ...");
+    }
+  }
+  if (DATA.stopped) document.getElementById("rules").textContent =
+    "⏸ המשחק עצור: ההפסד הגיע לגבול שהגדרת (stop_all). כדי להמשיך: python live.py --resume · " + DATA.rules;
   const events = document.getElementById("events");
   events.textContent = "";
   if (!DATA.events.length) el("li", {}, events).textContent = "עוד לא קרה כלום";

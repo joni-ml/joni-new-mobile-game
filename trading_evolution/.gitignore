@@ -6,3 +6,9 @@ dashboard.html
 live_dashboard.html
 *.tmp
 replay.html
+reports/
+results/
+results.zip
+lab.html
+lab_results.json
+train_log.txt
