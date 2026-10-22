@@ -14,7 +14,7 @@ import random
 from collections import deque
 
 import internet
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, replace
 from datetime import datetime, timedelta
 
 FEE = 0.0015            # כל קנייה/מכירה עולה 0.15%: עמלה של 0.1% + "החלקה" (המחיר זז קצת עד שהעסקה מתבצעת)
@@ -23,6 +23,7 @@ MAX_WINDOW = 200        # הממוצע הנע הכי ארוך שבוט יכול 
 IMMIGRANT_RATE = 0.1    # חלק מהשכפולים מקבלים אסטרטגיה חדשה לגמרי, כדי להמשיך לחפש רעיונות
 MIX_RATE = 0.25         # חלק מהשכפולים לוקחים גם תכונות מבוט טוב אחר
 DROP_PENALTY = 0.5      # judge = "steady": כמה מענישים בוט על כל נפילה בדרך (0.5 = נפילה של 10% עולה 5%)
+MAX_SHARE = 1.0         # גיוון: איזה חלק מהבוטים לכל היותר יכול להיות באותו מטבע (1 = בלי הגבלה)
 SWITCH_RATE = 0.1       # הסיכוי ששכפול יעבור לסחור במטבע אחר
 BASKET_RATE = 0.3       # הסיכוי שבוט חדש (או שכפול שעובר מטבע) יסחור בסל של 2-3 מטבעות במקום במטבע אחד
 CHART_POINTS = 2000     # כמה נקודות לשמור לגרף של הבעלים
@@ -1028,7 +1029,20 @@ class World:
         others = [b for b in self.bots if b is not parent]
         if r < IMMIGRANT_RATE + MIX_RATE and others:
             g = Genome.crossover(g, self.rng.choice(others).genome, self.rng)
-        return g.mutate(self.rng, assets, 0.5, self.cfg.baskets), True
+        return self.spread(g.mutate(self.rng, assets, 0.5, self.cfg.baskets)), True
+
+    def spread(self, g):
+        """גיוון: אם כבר יותר מדי בוטים במטבע של הילד, הוא עובר למטבע שיש בו פחות בוטים.
+        ככה לא כולם יושבים באותו מטבע, ואם מטבע אחר מתפוצץ - יש מי שמחזיק אותו."""
+        if MAX_SHARE >= 1 or not self.bots:
+            return g
+        count = {}
+        for b in self.bots:
+            count[b.genome.asset] = count.get(b.genome.asset, 0) + 1
+        if count.get(g.asset, 0) < MAX_SHARE * len(self.bots):
+            return g
+        least = min(self.cfg.assets, key=lambda a: (count.get(a, 0), self.rng.random()))
+        return replace(g, asset=least)
 
     def market_price(self, prices):
         """המחיר של "כל המטבעות שווה בשווה" (ממוצע גאומטרי)."""
