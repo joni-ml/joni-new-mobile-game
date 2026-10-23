@@ -27,7 +27,8 @@ def main():
     out = os.path.join(WEB, "bot-trainer.html")
     pre = open(os.path.join(WEB, "pretrained.json"), encoding="utf-8").read().strip()   # הבוטים ש-Claude אימן
     with open(out, "w", encoding="utf-8") as f:
-        f.write(page.replace("__PRICES__", json.dumps(data, separators=(",", ":"))).replace("__PRETRAINED__", pre))
+        f.write(page.replace("__PRICES__", json.dumps(data, separators=(",", ":"))).replace("__PRETRAINED__", pre)
+                .replace("__SENSES__", open(os.path.join(WEB, "senses.json"), encoding="utf-8").read().strip()))   # חושים מהאינטרנט
     print(f"הדף: {out} ({len(prices)} מטבעות, {times[0]:%d/%m/%Y} עד {times[-1]:%d/%m/%Y}) - לפתוח בדפדפן")
 
 

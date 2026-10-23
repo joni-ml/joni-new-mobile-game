@@ -187,6 +187,10 @@ td.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
     <ul class="coins" id="livePrices"></ul>
     <h3 class="charttitle">ביטקוין - 120 הימים האחרונים</h3>
     <svg class="chart" id="liveChart" viewBox="0 0 600 200" role="img" aria-label="המחיר של ביטקוין ב-120 הימים האחרונים"></svg>
+    <h3 class="charttitle" id="senseTitle">מה החושים מהאינטרנט אומרים</h3>
+    <ul class="coins" id="senseList"></ul>
+    <p class="note">כל חוש הוא מספר בין −100 ל-+100: כמה הוא גבוה או נמוך במיוחד ביחס לשנה האחרונה (מדד הפחד: מ-0 עד 100, 50 = רגיל).
+      הבוטים מקבלים אותם כסימנים נוספים, והאבולוציה מחליטה למי להקשיב. כשיש אינטרנט, מדד הפחד והחמדנות מתעדכן לבד; השאר נשארים עד <span class="dEnd ltr"></span>.</p>
     <p class="note"><a class="livelink" href="https://www.google.com/search?q=bitcoin+price" target="_blank" rel="noopener">לראות את המחיר של ביטקוין עכשיו בגוגל ↗</a></p>
     <h3 class="charttitle">מה הבוטים שלך עושים עכשיו</h3>
     <ul class="trades now" id="liveNow"><li>מחשב...</li></ul>
@@ -219,9 +223,13 @@ td.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
 
 <script type="application/json" id="prices">__PRICES__</script>
 <script type="application/json" id="pretrained">__PRETRAINED__</script>
+<script type="application/json" id="senses">__SENSES__</script>
 <script id="engine" type="text/plain">
 // ===== המנוע: אותם חוקים כמו בקוד הפייתון (core.py), בגרסה לדפדפן =====
-const SIG = ["trend", "dip", "momentum", "stretch", "macd", "bollinger", "channel", "breakout", "calm"];
+const PRICE_SIG = ["trend", "dip", "momentum", "stretch", "macd", "bollinger", "channel", "breakout", "calm"];
+// חושים מהאינטרנט (כמו internet.py): כל אחד סימן בין -1 ל-1, רק מספר שכבר פורסם באותו יום. אין מספר = 0
+const SENSES = ["fear_greed", "stocks", "vix", "attention", "activity", "valuation", "stablecoins"];
+const SIG = [...PRICE_SIG, ...SENSES];
 const NAMES = {trend: "מגמה", dip: "ירידה חדה (RSI)", momentum: "תנופה", stretch: "מרחק מהממוצע", macd: "MACD",
   bollinger: "רצועות בולינגר", channel: "ערוץ 20 יום", breakout: "פריצה של 55 יום", calm: "כמה השוק סוער"};
 const FEE = 0.0015, DEATH = 0.05, MAXW = 200, CLEAR = 0.1, SCHOOL = 365;
@@ -277,7 +285,8 @@ function fixG(g) {
   g.sell = clamp(g.sell, -0.9, 0.2); g.stop = clamp(g.stop, 0.005, 0.4); g.bet = clamp(g.bet, 0.1, 1);
   g.cmr = clamp(g.cmr, -0.5, 0.5); g.cmm = clamp(g.cmm, 0, 2); g.cool = Math.round(clamp(g.cool, 0, 60));
   g.lr = clamp(g.lr, 0.001, 0.3); g.hz = Math.round(clamp(g.hz, 2, 30)); g.listen = clamp(g.listen, 0, 1); g.keep = clamp(g.keep, 0, 0.6);
-  g.nn = Math.round(clamp(g.nn || 8, NN_MIN, NN_MAX));   // בוטים ישנים (לפני שהיה הגן) - 8 נוירונים
+  g.nn = Math.round(clamp(g.nn || 8, NN_MIN, NN_MAX));
+  if (g.w.length < SIG.length) g.w = [...g.w, ...new Array(SIG.length - g.w.length).fill(0)];   // בוט ישן: לא מקשיב לחושים החדשים   // בוטים ישנים (לפני שהיה הגן) - 8 נוירונים
   return g;
 }
 function mutate(g, r, assets, s = 0.5) {
@@ -300,7 +309,8 @@ function brainNew(r, n, g) {
   return {L: sizes.slice(1).map((out, k) => ({w: Array.from({length: out}, () => Array.from({length: sizes[k]}, () => r.gauss(0, 1 / Math.sqrt(sizes[k])))),
     b: new Array(out).fill(0)}))};
 }
-function brainOk(b, g) { const ls = layersOf(g); return !!(b && b.L && b.L.length === ls.length + 1 && ls.every((n, k) => b.L[k].w.length === n)); }
+function brainOk(b, g) { const ls = layersOf(g);
+  return !!(b && b.L && b.L.length === ls.length + 1 && b.L[0].w[0].length === SIG.length && ls.every((n, k) => b.L[k].w.length === n)); }
 // מחזיר את הניחוש (בין -1 ל-1) ואת מה שכל שכבה "הרגישה" בדרך
 function think(b, x) {
   const acts = [x];
@@ -324,7 +334,8 @@ function readings(g, m, i) {
   const p = m.p[i], slow = m.ma(i, g.slow), ch = (lo, hi) => hi > lo ? (p - lo) / (hi - lo) : 0.5;
   return [clamp((m.ma(i, g.fast) / slow - 1) * 20), (50 - m.rsi[i]) / 50, clamp((p / m.p[i - g.mom] - 1) * 10), clamp((p / slow - 1) * 10),
     clamp((m.macd[i] - m.sig[i]) / p * 200), clamp((p - slow) / (m.std(i, g.slow) || 1e-9) / 2), clamp(ch(m.lo20[i], m.hi20[i]) * 2 - 1),
-    clamp(ch(m.lo55[i], m.hi55[i]) * 2 - 1), clamp(1 - m.vol14[i] / (m.vol100[i] || 1e-9))];
+    clamp(ch(m.lo55[i], m.hi55[i]) * 2 - 1), clamp(1 - m.vol14[i] / (m.vol100[i] || 1e-9)),
+    ...SENSES.map(s => { const v = m.sense && m.sense[s] ? m.sense[s][i] : null; return v == null ? 0 : v / 100; })];
 }
 
 class Bot {
@@ -392,7 +403,7 @@ class World {
   populate(teachers) {
     for (let k = 0; k < CFG.startBots; k++) {
       const t = teachers.length ? teachers[k % teachers.length] : null;
-      let g = t ? JSON.parse(JSON.stringify(t.g)) : randomGenome(this.rng, this.d.assets);
+      let g = t ? fixG(JSON.parse(JSON.stringify(t.g))) : randomGenome(this.rng, this.d.assets);
       if (t && k >= teachers.length) g = mutate(g, this.rng, this.d.assets);
       this.spawn(g, null, 0, t);
     }
@@ -465,8 +476,10 @@ function flatData(seed, assets, pull = 1 / 30) {   // pull: כמה חזק המח
   return {assets, m, n: FLAT_N, idx: () => FLAT_FROM, day: i => `יום ${i - FLAT_FROM + 1}`};
 }
 
-function setup(raw) {
-  const assets = Object.keys(raw.coins), m = {}; for (const a of assets) m[a] = Market(raw.coins[a]);
+function setup(raw, senses) {
+  const assets = Object.keys(raw.coins), m = {};
+  for (const a of assets) { m[a] = Market(raw.coins[a]);
+    if (senses && senses.start === raw.start) m[a].sense = {...senses.all, ...(senses.coins[a] || {})}; }
   const t0 = Date.parse(raw.start + "T00:00:00Z"), idx = s => Math.round((Date.parse(s + "T00:00:00Z") - t0) / 864e5);
   return {assets, m, n: raw.n, idx, day: i => new Date(t0 + i * 864e5).toISOString().slice(0, 10)};
 }
@@ -490,17 +503,17 @@ function runSolo(D, from, to, t, seed) {
   const every = CFG.selectEvery; CFG.selectEvery = Infinity;
   try {
     const w = new World(D, seed);
-    w.spawn(JSON.parse(JSON.stringify(t.g)), null, t.gen || 0, t.mind ? t : null);
+    w.spawn(fixG(JSON.parse(JSON.stringify(t.g))), null, t.gen || 0, t.mind ? t : null);
     for (let i = from; i < to; i++) w.step(i, D.day(i));
     return w.bots.find(x => x.id === 1) || w.bots[0];
   } finally { CFG.selectEvery = every; }
 }
 
-let DATA = null, stop = false, WATCH = 0;   // WATCH: על איזה בוט (לפי מקום) מסתכלים
+let DATA = null, stop = false, WATCH = 0, USE_SENSES = true;   // WATCH: על איזה בוט (לפי מקום) מסתכלים
 self.onmessage = e => {
   const msg = e.data;
   if (msg.type === "ping") { self.postMessage({type: "ready"}); return; }
-  if (msg.type === "init") { DATA = setup(msg.raw); return; }
+  if (msg.type === "init") { DATA = setup(msg.raw, USE_SENSES ? msg.senses : null); return; }
   if (msg.type === "stop") { stop = true; return; }
   if (msg.type === "watch") { WATCH = msg.k; return; }
   if (msg.type === "train") {
@@ -559,7 +572,7 @@ self.onmessage = e => {
   const send = m => engine ? engine.postMessage(m) : queue.push(m);
   function useEngine(e) {
     if (engine) return; engine = e; e.onmessage = onEngine;
-    e.postMessage({type: "init", raw}); queue.forEach(m => e.postMessage(m)); queue = [];
+    e.postMessage({type: "init", raw, senses}); queue.forEach(m => e.postMessage(m)); queue = [];
   }
   function inPage() {
     // שני צדדים: מה שהדף שולח מגיע למנוע (inner), ומה שהמנוע שולח מגיע לדף (page)
@@ -580,7 +593,9 @@ self.onmessage = e => {
     w.postMessage({type: "ping"});
     setTimeout(fallback, 4000);
   } catch (e) { useEngine(inPage()); }
-  const SIGN = ["מגמה", "ירידה חדה (RSI)", "תנופה", "מרחק מהממוצע", "MACD", "רצועות בולינגר", "ערוץ 20 יום", "פריצה של 55 יום", "כמה השוק סוער"];
+  const SIGN = ["מגמה", "ירידה חדה (RSI)", "תנופה", "מרחק מהממוצע", "MACD", "רצועות בולינגר", "ערוץ 20 יום", "פריצה של 55 יום", "כמה השוק סוער",
+    "פחד וחמדנות", "הבורסה (S&P 500)", "פחד בוול סטריט (VIX)", "קוראים על ביטקוין", "כתובות פעילות", "כמה המטבע יקר", "דולרים דיגיטליים"];
+  let senses = JSON.parse($("senses").textContent);
   let state = {rounds: 0, team: [], history: []}, db = null, docRef = null, busy = false;
   let trainChoice = "r40", testChoice = "year", toChoice = "fair", worldChoice = "real";
   const PULL = {flat: 1 / 30, flat2: 1 / 60};
@@ -897,13 +912,14 @@ self.onmessage = e => {
       }
       const added = last + 1 - raw.n; raw = next;
       try { localStorage.setItem(PRICES, JSON.stringify(raw)); } catch (e) {}
-      send({type: "init", raw}); showDates();
+      send({type: "init", raw, senses}); showDates();
       $("liveStatus").textContent = `נוספו ${added.toLocaleString("en-US")} ימים חדשים. המחירים עכשיו עד ${fmtDate(endDay())} (היום שעוד לא נגמר לא נכנס לאימון).`;
       if (!busy) runTest();
     } else {
       $("liveStatus").textContent = `המחירים מעודכנים (נבדק ב-${new Date().toLocaleTimeString("he-IL", {hour: "2-digit", minute: "2-digit"})}). ` +
         `לאימון נכנסים ימים שנגמרו, עד ${fmtDate(endDay())}; למעלה רואים גם את המחיר של עכשיו.`;
     }
+    if (await fetchFearGreed()) send({type: "init", raw, senses});
     showCoins(); liveRuns();
   }
   function liveChart() {
@@ -912,8 +928,31 @@ self.onmessage = e => {
     lineChart($("liveChart"), [{values: vals, color: "--accent"}], {noZero: true, fmt: usd,
       xLabels: [[0, fmtDate(dayOf(raw.n - 120))], [vals.length - 1, livePrice.BTC ? "עכשיו" : fmtDate(endDay())]]});
   }
+  function showSenses() {
+    const ul = $("senseList"); ul.textContent = "";
+    senses.names.forEach((name, k) => {
+      const arr = senses.all[name] || (senses.coins.BTC || {})[name]; if (!arr) return;
+      let i = Math.min(raw.n, arr.length) - 1; while (i > 0 && arr[i] == null) i--;
+      const v = arr[i]; if (v == null) return;
+      const li = document.createElement("li"), s = document.createElement("span"), b = document.createElement("b");
+      s.textContent = senses.titles[k] + (senses.all[name] ? "" : " (ביטקוין)");
+      b.className = "ltr";
+      b.textContent = name === "fear_greed" ? `${Math.round(50 + v / 2)}/100 ${v < -20 ? "פחד" : v > 20 ? "חמדנות" : "רגיל"}` : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v);
+      li.append(s, b); ul.appendChild(li);
+    });
+    $("senseTitle").textContent = `מה החושים מהאינטרנט אומרים (נכון ל-${fmtDate(endDay())})`;
+  }
+  // מדד הפחד והחמדנות מהאתר שלו (alternative.me). המספר של יום מסוים נכנס לבוטים רק ביום שאחריו, כמו בפייתון
+  async function fetchFearGreed() {
+    try {
+      const d = await getJSON("https://api.alternative.me/fng/?limit=0"), fg = senses.all.fear_greed; let changed = false;
+      for (const r of d.data || []) { const i = Math.round((+r.timestamp * 1000 - T0) / 864e5) + 1;
+        if (i >= 0 && i < raw.n && fg[i] == null) { fg[i] = Math.round((+r.value - 50) * 2); changed = true; } }
+      return changed;
+    } catch (e) { return false; }
+  }
   function showCoins() {
-    liveChart();
+    liveChart(); showSenses();
     const ul = $("livePrices"); ul.textContent = "";
     for (const c of Object.keys(raw.coins)) {
       const a = raw.coins[c], p = livePrice[c] || a[a.length - 1], ago = a[a.length - 8], ch = ago ? p / ago - 1 : 0;
