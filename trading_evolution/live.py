@@ -50,7 +50,13 @@ def save_state(path, s):
     os.replace(path + ".tmp", path)   # שמירה בטוחה גם אם המחשב נכבה באמצע
 
 
+TRAINED = os.path.join(HERE, "trained_bots.json")   # בוטים שכבר התאמנו (40 סבבים על 2018-2025), מגיעים עם הקוד
+
+
 def new_state(cfg, brains):
+    if not os.path.exists(brains) and os.path.exists(TRAINED):
+        print("אין brains.json משלך - מתחילים מהבוטים המאומנים שמגיעים עם הקוד (trained_bots.json).")
+        brains = TRAINED
     seeds = load_brains(brains, minutes(cfg.candle)) if os.path.exists(brains) else ()
     world = World(cfg, minutes(cfg.candle), seeds=seeds)
     world.populate()
