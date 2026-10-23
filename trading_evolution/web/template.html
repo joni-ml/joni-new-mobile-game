@@ -44,7 +44,8 @@ button:focus-visible, .choice:focus-visible { outline: 3px solid var(--accent); 
 .bar { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; }
 .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
 .note { color: var(--muted); font-size: 14px; }
-svg.chart { width: 100%; height: auto; display: block; }
+[hidden] { display: none !important; }
+svg.chart { width: 100%; height: auto; display: block; direction: ltr; }
 .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 14px; color: var(--muted); }
 .legend span.faint::before { opacity: .35; height: 2px; }
 .charttitle { font-size: 15px; font-weight: 600; margin: 14px 0 6px; }
@@ -65,13 +66,20 @@ td.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
 .trades time { color: var(--muted); font-family: var(--f-num); white-space: nowrap; }
 .confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .ltr { direction: ltr; unicode-bidi: isolate; display: inline-block; }
+.coins { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px 16px; font-size: 14px; }
+.coins li { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; border-bottom: 1px solid var(--line); padding: 4px 0; }
+.coins b { font-family: var(--f-num); font-weight: 600; color: var(--ink); }
+.coins small { display: block; font-size: 12px; text-align: end; }
+.now li { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; }
+.now .what { font-weight: 600; }
+.now .why { grid-column: 2; color: var(--muted); font-size: 13px; }
 @media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
 </style>
 
-<main>
+<main dir="rtl" lang="he">
   <header style="display:grid;gap:6px">
     <h1>חדר האימון של הבוטים</h1>
-    <p class="lead">כאן מאמנים את בוטי המסחר על מחירים אמיתיים של 7 מטבעות (2018 עד מאי 2025), ובודקים אותם על השנה האחרונה, שהם לא ראו.
+    <p class="lead">כאן מאמנים את בוטי המסחר על מחירים אמיתיים של 7 מטבעות (מ-2018 עד <span class="dEnd ltr"></span>), ובודקים אותם על תקופה שהם לא ראו.
       הכסף מזויף. אחרי כל סבב אימון הבוטים הכי טובים נשמרים - כשתחזור, הם ממשיכים מאותה נקודה.</p>
   </header>
 
@@ -87,7 +95,7 @@ td.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
   <div class="grid2">
     <section class="card" aria-labelledby="hTrain">
       <h2 id="hTrain">1. לאמן</h2>
-      <p class="note">כל סבב: 10 בוטים סוחרים מ-2018 עד מאי 2025. כל 30 יום יש מבחן - הרבע הכי פחות טוב מת, והטובים משתכפלים.
+      <p class="note">כל סבב: 10 בוטים סוחרים מ-2018 עד התאריך שבחרת למטה. כל 30 יום יש מבחן - הרבע הכי פחות טוב מת, והטובים משתכפלים.
         הבוטים הכי טובים עוברים לסבב הבא, והמוח שלהם ממשיך ללמוד.</p>
       <div class="choices" role="group" aria-label="כמה לאמן">
         <button class="choice" data-train="r10" aria-pressed="false" id="t1">10 סבבים</button>
@@ -95,13 +103,19 @@ td.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
         <button class="choice" data-train="m3" aria-pressed="false" id="t3">3 דקות</button>
         <button class="choice" data-train="m10" aria-pressed="false" id="t4">10 דקות</button>
       </div>
+      <div class="choices" role="group" aria-label="עד איפה לאמן">
+        <button class="choice" data-to="fair" aria-pressed="true" id="to1">עד לפני שנה (<span class="dFair ltr"></span>)</button>
+        <button class="choice" data-to="today" aria-pressed="false" id="to2">עד היום (<span class="dEnd ltr"></span>)</button>
+      </div>
+      <p class="note">"עד לפני שנה" משאיר שנה שהם לא ראו, כדי שהבדיקה תהיה הוגנת. "עד היום" מלמד אותם גם את מה שקרה ממש עכשיו - טוב למסחר החי,
+        אבל אז הבדיקה על השנה האחרונה כבר לא הוגנת (הם ראו אותה).</p>
       <div class="row">
         <button class="main" id="trainBtn">אמן אותם</button>
         <button class="ghost" id="stopBtn" hidden>עצור ושמור</button>
       </div>
       <div class="bar" aria-hidden="true"><i id="progress"></i></div>
       <p class="note" id="trainStatus">מוכן לאימון.</p>
-      <h3 class="charttitle">התוצאה של כל סבב (משחק שלם 2018–2025, מ-₪50)</h3>
+      <h3 class="charttitle">התוצאה של כל סבב (משחק שלם מ-2018, מ-₪50)</h3>
       <div class="legend"><span style="--c:var(--accent)">הבוטים - ממוצע</span><span class="faint" style="--c:var(--accent)">כל סבב לבד</span><span style="--c:var(--hold)">לקנות ולחכות - ממוצע</span></div>
       <svg class="chart" id="trainChart" viewBox="0 0 600 220" role="img" aria-label="תוצאות סבבי האימון"></svg>
       <p class="note">הקו הדק והחיוור הוא כל סבב לבד - הוא קופץ כי בכל סבב יש מזל אחר. הקו העבה הוא הממוצע של 20 הסבבים האחרונים:
@@ -110,7 +124,7 @@ td.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
 
     <section class="card" aria-labelledby="hTest">
       <h2 id="hTest">2. לבדוק בפעולה</h2>
-      <p class="note">הבוטים שלך סוחרים על תקופה שהם לא ראו אף פעם, עם ₪50. זו הבדיקה האמיתית.</p>
+      <p class="note">הבוטים שלך סוחרים עם ₪50 על התקופה שבחרת (עד <span class="dEnd ltr"></span>). אם הם לא ראו אותה באימון - זו הבדיקה האמיתית.</p>
       <div class="choices" role="group" aria-label="על איזו תקופה">
         <button class="choice" data-test="year" aria-pressed="true" id="p1">השנה האחרונה</button>
         <button class="choice" data-test="m3" aria-pressed="false" id="p2">3 החודשים האחרונים</button>
@@ -128,15 +142,32 @@ td.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
     </section>
   </div>
 
+  <section class="card" aria-labelledby="hLive">
+    <h2 id="hLive">3. קריפטו חי</h2>
+    <p class="note">מביא את המחירים הכי חדשים מהבורסה (Binance), כדי לאמן ולבדוק את הבוטים על מה שקורה באמת. הכסף עדיין מזויף.</p>
+    <div class="row"><button class="main" id="liveFetch">עדכן מחירים מהבורסה</button></div>
+    <p class="note" id="liveStatus"></p>
+    <ul class="coins" id="livePrices"></ul>
+    <h3 class="charttitle">מה הבוטים שלך עושים עכשיו</h3>
+    <ul class="trades now" id="liveNow"><li>מחשב...</li></ul>
+    <h3 class="charttitle">תיק חי על נייר</h3>
+    <p class="note" id="paperInfo">פותחים תיק עם ₪50 והבוטים שלך כמו שהם היום. בכל פעם שתחזור ותעדכן מחירים, תראה כמה הם הרוויחו או הפסידו מאז -
+      על ימים שאף אחד עוד לא ראה כשהתיק נפתח.</p>
+    <div class="big" id="paperBig" hidden>
+      <div><b id="pBots">-</b><span>הבוטים</span></div>
+      <div><b id="pHold">-</b><span>לקנות ולחכות</span></div>
+    </div>
+    <svg class="chart" id="paperChart" viewBox="0 0 600 200" role="img" aria-label="התיק החי לאורך הזמן" hidden></svg>
+    <div class="row"><button class="main" id="paperStart">פתח תיק חי מהיום</button><button class="ghost" id="paperStop" hidden>סגור את התיק</button></div>
+  </section>
+
   <section class="card" aria-labelledby="hBots">
     <h2 id="hBots">הבוטים הכי טובים שלך</h2>
     <p class="note">מה כל אחד למד (הגנים שלו). ביטוח = כמה מהמטבעות הוא משאיר גם כשהוא בורח מסכנה.</p>
-    <div class="tablewrap">
-      <div class="tablewrap"><table>
+    <div class="tablewrap"><table>
         <thead><tr><th>#</th><th>מטבע</th><th>בורח בירידה של</th><th>ביטוח</th><th>משקיע</th><th>מקשיב למוח</th><th>המוח למד מ-</th><th>מקשיב בעיקר ל</th></tr></thead>
         <tbody id="botRows"></tbody>
       </table></div>
-    </div>
     <div class="confirm" id="resetBox">
       <button class="ghost" id="resetBtn">התחל מאפס</button>
     </div>
@@ -269,11 +300,11 @@ class Bot {
       this.peak = Math.max(this.peak, price); const drop = price / this.peak - 1;
       const why = this.danger >= PATIENCE ? "סימני סכנה כמה ימים ברצף" : drop < -g.stop ? `ירידה של ${Math.round(-drop * 100)}% מהשיא` : null;
       if (why) { this.sell(price, 1 - g.keep); this.out = this.units > 0; this.wait = g.cool;
-        this.log.push([day, `מכר ${g.asset} ב-$${fmtP(price)} (${why})` + (this.out ? `, השאיר ${Math.round(g.keep * 100)}% ביטוח` : "")]); return; }
+        this.log.push([day, `מכר ${g.asset} (${why})` + (this.out ? `, השאיר ${Math.round(g.keep * 100)}% ביטוח` : "") + `. מחיר: \u2066$${fmtP(price)}\u2069`]); return; }
     }
     if (this.cash > 0.01 && !this.wait && this.score > g.sell + CLEAR) {
       if (this.units > 0 && !this.out) { if (this.cash > 0.05 * this.value(price)) this.buy(price); return; }
-      this.buy(price); this.out = false; this.peak = price; this.log.push([day, `קנה ${g.asset} ב-$${fmtP(price)} (אין סימני סכנה)`]);
+      this.buy(price); this.out = false; this.peak = price; this.log.push([day, `קנה ${g.asset} (אין סימני סכנה). מחיר: \u2066$${fmtP(price)}\u2069`]);
     }
   }
   buy(price) { const spend = this.cash * this.g.bet; if (this.units === 0) this.entry = this.peak = price;
@@ -368,7 +399,7 @@ self.onmessage = e => {
   if (msg.type === "stop") { stop = true; return; }
   if (msg.type === "train") {
     stop = false;
-    const from = Math.max(MAXW, DATA.idx("2018-01-01")), to = DATA.idx("2025-05-23");
+    const from = Math.max(MAXW, DATA.idx("2018-01-01")), to = Math.min(DATA.n, DATA.idx(msg.to) + 1);
     let team = msg.team, r = 0; const t0 = Date.now();
     const done = () => msg.rounds ? r >= msg.rounds : Date.now() - t0 >= msg.seconds * 1000;
     const next = () => {   // סבב אחד בכל פעם, כדי שאפשר יהיה לעצור באמצע
@@ -387,8 +418,11 @@ self.onmessage = e => {
   if (msg.type === "test") {
     const from = DATA.idx(msg.from), to = DATA.n;
     const w = runPeriod(DATA, from, to, msg.team, 7);
-    const inv = w.invested || 1, lead = w.best(1)[0];
-    self.postMessage({type: "tested", series: w.series.map(([a, b]) => [a / inv * 50, b / inv * 50]),
+    const inv = w.invested || 1, lead = w.best(1)[0], last = to - 1;
+    // איפה כל אחד מהבוטים המובילים עומד ביום האחרון
+    const now = w.best(5).map(b => { const p = DATA.m[b.g.asset].p[last], v = b.value(p);
+      return {asset: b.g.asset, inCoin: v > 0 ? b.units * p / v : 0, value: v, last: b.log[b.log.length - 1] || null}; });
+    self.postMessage({type: "tested", tag: msg.tag, now, series: w.series.map(([a, b]) => [a / inv * 50, b / inv * 50]),
       start: DATA.day(from), end: DATA.day(to - 1), log: lead ? lead.log.slice(-40) : [], lead: lead ? pack(lead) : null});
   }
 };
@@ -397,7 +431,16 @@ self.onmessage = e => {
 <script>
 (() => {
   const $ = id => document.getElementById(id);
-  const raw = JSON.parse($("prices").textContent);
+  let raw = JSON.parse($("prices").textContent);
+  const PRICES = "botTrainer.prices";   // מחירים חדשים שהבאנו מהבורסה, שמורים בדפדפן
+  try { const s = JSON.parse(localStorage.getItem(PRICES) || "null"); if (s && s.start === raw.start && s.n > raw.n) raw = s; } catch (e) {}
+  const T0 = Date.parse(raw.start + "T00:00:00Z");
+  const dayOf = i => new Date(T0 + i * 864e5).toISOString().slice(0, 10);
+  const endDay = () => dayOf(raw.n - 1), fairDay = () => dayOf(raw.n - 366), m3Day = () => dayOf(raw.n - 91);
+  function showDates() {
+    document.querySelectorAll(".dEnd").forEach(e => e.textContent = fmtDate(endDay()));
+    document.querySelectorAll(".dFair").forEach(e => e.textContent = fmtDate(fairDay()));
+  }
   // המנוע רץ ברקע (Worker). אם הדפדפן לא מרשה - הוא רץ בתוך הדף עצמו.
   let engine = null, queue = [];
   const send = m => engine ? engine.postMessage(m) : queue.push(m);
@@ -426,14 +469,15 @@ self.onmessage = e => {
   } catch (e) { useEngine(inPage()); }
   const SIGN = ["מגמה", "ירידה חדה (RSI)", "תנופה", "מרחק מהממוצע", "MACD", "רצועות בולינגר", "ערוץ 20 יום", "פריצה של 55 יום", "כמה השוק סוער"];
   let state = {rounds: 0, team: [], history: []}, db = null, docRef = null, busy = false;
-  let trainChoice = "r40", testChoice = "year";
+  let trainChoice = "r40", testChoice = "year", toChoice = "fair";
   const money = v => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)} ₪`;
 
   // ---- זיכרון: בחשבון (אם אפשר), ואם לא - בדפדפן הזה ----
   const LS = "botTrainer.v1";
   function loadLocal() { try { const s = JSON.parse(localStorage.getItem(LS) || "null"); if (s && s.team) state = s; } catch (e) {} }
   async function save() {
-    const clean = {rounds: state.rounds, team: state.team, history: state.history.slice(-150), saved: new Date().toISOString()};
+    const clean = {rounds: state.rounds, team: state.team, history: state.history.slice(-150), seenTo: state.seenTo || null,
+      paper: state.paper || null, saved: new Date().toISOString()};
     try { localStorage.setItem(LS, JSON.stringify(clean)); } catch (e) {}
     if (docRef) { try { await docRef.set(clean); setMemory("הזיכרון נשמר בחשבון שלך", false); return; }
       catch (e) { setMemory("לא הצלחתי לשמור בחשבון - נשמר בדפדפן הזה", true); return; } }
@@ -452,7 +496,7 @@ self.onmessage = e => {
       const snap = await docRef.get();
       // מה שחוזר מהחשבון "קפוא" (אי אפשר לשנות אותו), אז עובדים על העתק
       const s = snap && snap.exists ? JSON.parse(JSON.stringify(snap.data())) : null;
-      if (s && s.team && (s.rounds || 0) >= (state.rounds || 0)) { state = {rounds: s.rounds || 0, team: s.team, history: s.history || []}; }
+      if (s && s.team && (s.rounds || 0) >= (state.rounds || 0)) { state = {rounds: s.rounds || 0, team: s.team, history: s.history || [], seenTo: s.seenTo || null, paper: s.paper || null}; }
       setMemory(state.rounds ? "הזיכרון נטען מהחשבון שלך" : "מחובר - האימון יישמר בחשבון שלך", false);
       render();
     } catch (e) { setMemory("הזיכרון נשמר בדפדפן הזה", false); }
@@ -520,8 +564,9 @@ self.onmessage = e => {
   }
   document.querySelectorAll("[data-train]").forEach(b => b.addEventListener("click", () => { trainChoice = b.dataset.train; press("train", trainChoice); }));
   document.querySelectorAll("[data-test]").forEach(b => b.addEventListener("click", () => { testChoice = b.dataset.test; press("test", testChoice); }));
+  document.querySelectorAll("[data-to]").forEach(b => b.addEventListener("click", () => { toChoice = b.dataset.to; press("to", toChoice); }));
 
-  function setBusy(on) { busy = on; $("trainBtn").disabled = on; $("testBtn").disabled = on; $("resetBtn").disabled = on; $("stopBtn").hidden = !on; }
+  function setBusy(on) { busy = on; for (const id of ["trainBtn", "testBtn", "resetBtn", "liveFetch", "paperStart", "paperStop"]) $(id).disabled = on; $("stopBtn").hidden = !on; }
 
   let pending = null;
   function onEngine(e) {
@@ -530,36 +575,43 @@ self.onmessage = e => {
       state.rounds++; state.team = msg.team; state.history.push([state.rounds, +msg.net.toFixed(2), +msg.hold.toFixed(2)]);
       if (state.history.length > 150) state.history.shift();
       $("progress").style.width = Math.min(100, msg.part * 100).toFixed(1) + "%";
-      $("trainStatus").textContent = `סבב ${state.rounds.toLocaleString("en-US")}: הבוטים ${money(msg.net)} מול לקנות ולחכות ${money(msg.hold)} (על כל 2018-2025)`;
+      $("trainStatus").textContent = `סבב ${state.rounds.toLocaleString("en-US")}: הבוטים ${money(msg.net)} מול לקנות ולחכות ${money(msg.hold)} (על כל תקופת האימון)`;
       render();
       if (msg.round % 5 === 0) save();
     }
     if (msg.type === "trained") {
       setBusy(false); $("progress").style.width = "100%";
       $("trainStatus").textContent = `סיימתי ${msg.rounds} סבבים. הבוטים הכי טובים נשמרו - עכשיו אפשר לבדוק אותם בפעולה.`;
-      save(); render(); runTest();
+      save(); render(); runTest(); liveRuns();
     }
-    if (msg.type === "tested") { setBusy(false); showTest(msg); }
+    if (msg.type === "tested") {
+      if (msg.tag === "now") showNow(msg);
+      else if (msg.tag === "paper") showPaper(msg);
+      else { setBusy(false); showTest(msg); }
+    }
   }
 
   $("trainBtn").addEventListener("click", () => {
     if (busy) return; setBusy(true); $("progress").style.width = "0%";
     $("trainStatus").textContent = "מאמן...";
     const map = {r10: {rounds: 10}, r40: {rounds: 40}, m3: {seconds: 180}, m10: {seconds: 600}};
-    send({type: "train", team: state.team, seedBase: (state.rounds + 1) * 1000, ...map[trainChoice]});
+    const to = toChoice === "today" ? endDay() : fairDay();
+    if (!state.seenTo || to > state.seenTo) state.seenTo = to;   // עד איזה יום הבוטים כבר ראו מחירים
+    send({type: "train", team: state.team, seedBase: (state.rounds + 1) * 1000, to, ...map[trainChoice]});
   });
   $("stopBtn").addEventListener("click", () => send({type: "stop"}));
 
   function runTest() {
     if (busy) return; setBusy(true);
     $("tVerdict").textContent = "הבוטים סוחרים...";
-    send({type: "test", team: state.team, from: testChoice === "year" ? "2025-05-23" : "2026-02-23"});
+    send({type: "test", tag: "main", team: state.team, from: testChoice === "year" ? fairDay() : m3Day()});
   }
   $("testBtn").addEventListener("click", runTest);
 
   let anim = 0;
   function showTest(msg) {
     cancelAnimationFrame(anim);
+    lastFrom = msg.start;
     const bots = msg.series.map(s => s[0]), hold = msg.series.map(s => s[1]), n = bots.length;
     const labels = [[0, fmtDate(msg.start)], [n - 1, fmtDate(msg.end)]];
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -581,12 +633,125 @@ self.onmessage = e => {
   }
   function setBig(b, h) { const eb = $("tBots"), eh = $("tHold");
     eb.textContent = money(b); eh.textContent = money(h); eb.className = b >= 0 ? "up" : "down"; eh.className = h >= 0 ? "up" : "down"; }
+  let lastFrom = "";
   function verdict(b, h) {
-    $("tVerdict").textContent = b > h
+    const seen = state.seenTo && lastFrom && state.seenTo > lastFrom
+      ? ` שים לב: הבוטים כבר ראו את התקופה הזאת באימון (אימנת אותם עד ${fmtDate(state.seenTo)}), אז זו לא בדיקה הוגנת.` : "";
+    $("tVerdict").textContent = (b > h
       ? `הבוטים ניצחו את "לקנות ולחכות" ב-${(b - h).toFixed(2)} ₪ (מתוך ₪50).`
-      : `"לקנות ולחכות" ניצח הפעם ב-${(h - b).toFixed(2)} ₪. נסה לאמן אותם עוד, ובדוק שוב.`;
+      : `"לקנות ולחכות" ניצח הפעם ב-${(h - b).toFixed(2)} ₪. נסה לאמן אותם עוד, ובדוק שוב.`) + seen;
   }
   function fmtDate(s) { const [y, m, d] = s.split("-"); return `${d}/${m}/${y}`; }
+
+  // ---- קריפטו חי ----
+  const GECKO = {BTC: "bitcoin", ETH: "ethereum", XRP: "ripple", DOGE: "dogecoin", LTC: "litecoin", ADA: "cardano", LINK: "chainlink"};
+  let livePrice = {};   // המחיר של עכשיו (גם של היום שעוד לא נגמר)
+  async function getJSON(url) {
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 12000);
+    try { const r = await fetch(url, {signal: ctl.signal}); if (!r.ok) throw new Error("HTTP " + r.status); return await r.json(); }
+    finally { clearTimeout(timer); }
+  }
+  // כל מקור מחזיר לכל מטבע: {days: Map(מספר יום -> מחיר סגירה של יום שנגמר), now: המחיר עכשיו}
+  const SOURCES = ["https://data-api.binance.vision", "https://api.binance.com", "https://api.binance.us"].map(host => async (coin, fromDay) => {
+    const rows = await getJSON(`${host}/api/v3/klines?symbol=${coin}USDT&interval=1d&startTime=${T0 + fromDay * 864e5}&limit=1000`);
+    const days = new Map(); for (const r of rows) if (r[6] < Date.now()) days.set(Math.round((r[0] - T0) / 864e5), +r[4]);
+    return {days, now: rows.length ? +rows[rows.length - 1][4] : null};
+  });
+  SOURCES.push(async (coin, fromDay) => {
+    const back = Math.min(365, Math.ceil((Date.now() - (T0 + fromDay * 864e5)) / 864e5) + 2);
+    const d = await getJSON(`https://api.coingecko.com/api/v3/coins/${GECKO[coin]}/market_chart?vs_currency=usd&days=${back}&interval=daily`);
+    const days = new Map();
+    for (const [ms, p] of d.prices) if (ms % 864e5 < 36e5) days.set(Math.round((ms - T0) / 864e5) - 1, p);   // המחיר בחצות = הסגירה של אתמול
+    return {days, now: d.prices.length ? d.prices[d.prices.length - 1][1] : null};
+  });
+  async function fetchPrices() {
+    if (busy) return; const coins = Object.keys(raw.coins);
+    $("liveFetch").disabled = true; $("liveStatus").textContent = "מביא מחירים מהבורסה...";
+    let got = null;
+    for (const source of SOURCES) {
+      try { got = {}; for (const c of coins) got[c] = await source(c, raw.n); break; } catch (e) { got = null; }
+    }
+    $("liveFetch").disabled = busy;
+    if (!got) {
+      $("liveStatus").textContent = `לא הצלחתי להגיע לבורסה, אז המחירים כאן עד ${fmtDate(endDay())}. ` +
+        "כשהדף פתוח בתוך Claude אין לו גישה לאינטרנט - כדי לקבל מחירים חיים צריך לפתוח אותו מכתובת רגילה באינטרנט (למשל GitHub Pages).";
+      return;
+    }
+    livePrice = {}; for (const c of coins) if (got[c].now) livePrice[c] = got[c].now;
+    const last = Math.min(...coins.map(c => Math.max(raw.n - 1, ...got[c].days.keys())));
+    if (last >= raw.n) {
+      const next = {start: raw.start, n: last + 1, coins: {}};
+      for (const c of coins) {
+        const a = raw.coins[c].slice();
+        for (let i = raw.n; i <= last; i++) { const p = got[c].days.get(i); a.push(p ? +p.toPrecision(5) : a[a.length - 1]); }
+        next.coins[c] = a;
+      }
+      const added = last + 1 - raw.n; raw = next;
+      try { localStorage.setItem(PRICES, JSON.stringify(raw)); } catch (e) {}
+      send({type: "init", raw}); showDates();
+      $("liveStatus").textContent = `נוספו ${added.toLocaleString("en-US")} ימים חדשים. המחירים עכשיו עד ${fmtDate(endDay())} (היום שעוד לא נגמר לא נכנס לאימון).`;
+      if (!busy) runTest();
+    } else {
+      $("liveStatus").textContent = `המחירים כבר מעודכנים, עד ${fmtDate(endDay())}. היום שעוד לא נגמר לא נכנס לאימון.`;
+    }
+    showCoins(); liveRuns();
+  }
+  function showCoins() {
+    const ul = $("livePrices"); ul.textContent = "";
+    for (const c of Object.keys(raw.coins)) {
+      const a = raw.coins[c], p = livePrice[c] || a[a.length - 1], ago = a[a.length - 8], ch = ago ? p / ago - 1 : 0;
+      const li = document.createElement("li"), name = document.createElement("span"), box = document.createElement("span");
+      const val = document.createElement("b"), week = document.createElement("small");
+      name.textContent = c; val.className = "ltr";
+      val.textContent = `$${p >= 100 ? Math.round(p).toLocaleString("en-US") : p >= 1 ? p.toFixed(2) : p.toFixed(4)}`;
+      week.className = ch >= 0 ? "up" : "down";
+      week.textContent = `השבוע: \u2066${ch >= 0 ? "+" : "−"}${Math.abs(ch * 100).toFixed(1)}%\u2069`;
+      box.append(val, week); li.append(name, box); ul.appendChild(li);
+    }
+  }
+  // "מה הבוטים עושים עכשיו": הבוטים שלך סוחרים על 3 החודשים האחרונים, ומראים איפה כל אחד עומד ביום האחרון
+  function liveRuns() {
+    send({type: "test", tag: "now", team: state.team, from: m3Day()});
+    if (state.paper && state.paper.start < endDay()) send({type: "test", tag: "paper", team: state.paper.team, from: state.paper.start});
+    showPaperInfo();
+  }
+  function showNow(msg) {
+    const ul = $("liveNow"); ul.textContent = "";
+    if (!state.team.length) { const li = document.createElement("li"); li.textContent = "עוד אין בוטים מאומנים - אמן אותם קודם."; ul.appendChild(li); return; }
+    msg.now.forEach((b, k) => {
+      const li = document.createElement("li"), who = document.createElement("time"), what = document.createElement("span"), why = document.createElement("span");
+      who.textContent = `בוט ${k + 1}`; what.className = "what"; why.className = "why";
+      what.textContent = b.inCoin > 0.9 ? `מחזיק ${b.asset}` : b.inCoin > 0.05 ? `בחוץ, עם ${Math.round(b.inCoin * 100)}% ביטוח ב-${b.asset}` : `במזומן (מחכה לקנות ${b.asset})`;
+      why.textContent = b.last ? `${fmtDate(b.last[0])}: ${b.last[1]}` : "עוד לא קנה ולא מכר";
+      li.append(who, what, why); ul.appendChild(li);
+    });
+  }
+  function showPaperInfo() {
+    const p = state.paper;
+    $("paperStart").hidden = !!p; $("paperStop").hidden = !p;
+    if (!p) { $("paperBig").hidden = true; $("paperChart").hidden = true; return; }
+    if (p.start >= endDay()) $("paperInfo").textContent = `התיק נפתח ב-${fmtDate(p.start)} עם ₪50. תחזור בעוד כמה ימים, לחץ "עדכן מחירים", ותראה איך הבוטים הולכים.`;
+  }
+  function showPaper(msg) {
+    const bots = msg.series.map(s => s[0]), hold = msg.series.map(s => s[1]), n = bots.length;
+    $("paperBig").hidden = false; $("paperChart").hidden = false;
+    const eb = $("pBots"), eh = $("pHold"), b = bots[n - 1], h = hold[n - 1];
+    eb.textContent = money(b); eh.textContent = money(h); eb.className = b >= 0 ? "up" : "down"; eh.className = h >= 0 ? "up" : "down";
+    $("paperInfo").textContent = `התיק פתוח מ-${fmtDate(msg.start)} (${n} ימים, עד ${fmtDate(msg.end)}). ` +
+      (b > h ? `הבוטים מנצחים את "לקנות ולחכות" ב-${(b - h).toFixed(2)} ₪.` : `"לקנות ולחכות" מוביל ב-${(h - b).toFixed(2)} ₪.`) +
+      (n < 30 ? " זה עוד מעט ימים - יש פה הרבה מזל." : "");
+    lineChart($("paperChart"), [{values: hold, color: "--hold", width: 1.5}, {values: bots, color: "--accent"}],
+      {xLabels: [[0, fmtDate(msg.start)], [n - 1, fmtDate(msg.end)]]});
+  }
+  $("liveFetch").addEventListener("click", () => fetchPrices());
+  $("paperStart").addEventListener("click", async () => {
+    if (!state.team.length) { $("paperInfo").textContent = "קודם צריך לאמן את הבוטים (חלק 1)."; return; }
+    state.paper = {start: endDay(), team: state.team}; await save(); showPaperInfo();
+  });
+  $("paperStop").addEventListener("click", async () => {
+    state.paper = null; await save(); showPaperInfo();
+    $("paperInfo").textContent = "התיק נסגר. אפשר לפתוח תיק חדש מתי שתרצה.";
+  });
 
   // ---- התחלה מאפס (עם אישור בתוך הדף) ----
   $("resetBtn").addEventListener("click", () => {
@@ -602,8 +767,11 @@ self.onmessage = e => {
   // הדף מתחיל מוכן: בדיקה אחת של הבוטים כמו שהם עכשיו (מאומנים או לא) על השנה האחרונה,
   // ועוד אחת אם מהחשבון נטען אימון אחר מזה שבדפדפן
   const before = () => state.rounds;
-  loadLocal(); const startRounds = before(); runTest();
-  connect().then(() => { if (state.rounds !== startRounds) { const again = () => busy ? setTimeout(again, 500) : runTest(); again(); } });
+  loadLocal(); const startRounds = before(); showDates(); showCoins(); runTest(); liveRuns();
+  connect().then(() => {
+    if (state.rounds !== startRounds) { const again = () => busy ? setTimeout(again, 500) : runTest(); again(); liveRuns(); }
+    const later = () => busy ? setTimeout(later, 500) : fetchPrices(); later();   // מנסה להביא מחירים חדשים בכל פתיחה
+  });
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
 })();
 </script>
