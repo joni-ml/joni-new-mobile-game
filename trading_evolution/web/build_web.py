@@ -25,8 +25,9 @@ def main():
             "coins": {a: [float(f"{x:.5g}") for x in p] for a, p in prices.items()}}
     page = open(os.path.join(WEB, "template.html"), encoding="utf-8").read()
     out = os.path.join(WEB, "bot-trainer.html")
+    pre = open(os.path.join(WEB, "pretrained.json"), encoding="utf-8").read().strip()   # הבוטים ש-Claude אימן
     with open(out, "w", encoding="utf-8") as f:
-        f.write(page.replace("__PRICES__", json.dumps(data, separators=(",", ":"))))
+        f.write(page.replace("__PRICES__", json.dumps(data, separators=(",", ":"))).replace("__PRETRAINED__", pre))
     print(f"הדף: {out} ({len(prices)} מטבעות, {times[0]:%d/%m/%Y} עד {times[-1]:%d/%m/%Y}) - לפתוח בדפדפן")
 
 

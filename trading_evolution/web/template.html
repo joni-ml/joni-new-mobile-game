@@ -208,6 +208,9 @@ td.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
         <thead><tr><th>#</th><th>מטבע</th><th>בורח בירידה של</th><th>ביטוח</th><th>משקיע</th><th>מקשיב למוח</th><th>מוח</th><th>המוח למד מ-</th><th>מקשיב בעיקר ל</th></tr></thead>
         <tbody id="botRows"></tbody>
       </table></div>
+    <div class="confirm" id="loadBox">
+      <button class="ghost" id="loadBtn">טען את הבוטים ש-Claude אימן (400 סבבים)</button>
+    </div>
     <div class="confirm" id="resetBox">
       <button class="ghost" id="resetBtn">התחל מאפס</button>
     </div>
@@ -215,6 +218,7 @@ td.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
 </main>
 
 <script type="application/json" id="prices">__PRICES__</script>
+<script type="application/json" id="pretrained">__PRETRAINED__</script>
 <script id="engine" type="text/plain">
 // ===== המנוע: אותם חוקים כמו בקוד הפייתון (core.py), בגרסה לדפדפן =====
 const SIG = ["trend", "dip", "momentum", "stretch", "macd", "bollinger", "channel", "breakout", "calm"];
@@ -442,10 +446,10 @@ function runPeriod(data, from, to, teachers, seed) {
   for (let i = from; i < to; i++) w.step(i, data.day(i));
   return w;
 }
-function pack(b) { const r4 = x => Math.round(x * 1e4) / 1e4;
+function pack(b) { const r4 = x => Math.round(x * 1e4) / 1e4, r3 = x => Math.round(x * 1e3) / 1e3;
   return {g: {...b.g, w: b.g.w.map(r4), sell: r4(b.g.sell), stop: r4(b.g.stop), bet: r4(b.g.bet), cmr: r4(b.g.cmr), cmm: r4(b.g.cmm),
     lr: r4(b.g.lr), listen: r4(b.g.listen), keep: r4(b.g.keep)}, lessons: b.lessons, gen: b.gen,
-    mind: b.mind ? {L: b.mind.L.map(l => ({w: l.w.map(row => row.map(r4)), b: l.b.map(r4)}))} : null}; }
+    mind: b.mind ? {L: b.mind.L.map(l => ({w: l.w.map(row => row.map(r3)), b: l.b.map(r3)}))} : null}; }   // 3 ספרות: שהזיכרון ייכנס לחשבון
 // --- עולם שטוח: המחיר עולה ויורד בגלים (ועוד רעש אקראי), אבל בסוף חוזר בדיוק למקום שהתחיל.
 // "לקנות ולחכות" מרוויח בו כלום, אז מי שמרוויח - מרוויח רק כי הוא קונה בזול ומוכר ביוקר.
 const FLAT_N = 1500, FLAT_FROM = 400;   // 400 הימים הראשונים רק כדי שיהיו ממוצעים ו"בית ספר"
@@ -720,7 +724,7 @@ self.onmessage = e => {
     render();
   }));
 
-  function setBusy(on) { busy = on; for (const id of ["trainBtn", "testBtn", "resetBtn", "liveFetch", "paperStart", "paperStop"]) $(id).disabled = on; $("stopBtn").hidden = !on; }
+  function setBusy(on) { busy = on; for (const id of ["trainBtn", "testBtn", "resetBtn", "loadBtn", "liveFetch", "paperStart", "paperStop"]) $(id).disabled = on; $("stopBtn").hidden = !on; }
 
   let pending = null, trainingWorld = "real";
   function onEngine(e) {
@@ -964,6 +968,21 @@ self.onmessage = e => {
   $("paperStop").addEventListener("click", async () => {
     state.paper = null; await save(); showPaperInfo();
     $("paperInfo").textContent = "התיק נסגר. אפשר לפתוח תיק חדש מתי שתרצה.";
+  });
+
+  // ---- בוטים ש-Claude אימן: 400 סבבים על מחירים אמיתיים עד 23/05/2025 ----
+  const PRE = JSON.parse($("pretrained").textContent);
+  $("loadBtn").addEventListener("click", () => {
+    const box = $("loadBox"), load = async () => {
+      state = {rounds: PRE.rounds, team: PRE.team, history: [], seenTo: PRE.to, paper: state.paper || null};
+      await save(); location.reload();
+    };
+    if (!state.rounds) { load(); return; }
+    box.textContent = "";
+    const q = document.createElement("span"); q.textContent = `זה יחליף את הבוטים שלך (${state.rounds.toLocaleString("en-US")} סבבים). להמשיך?`;
+    const yes = Object.assign(document.createElement("button"), {className: "ghost", textContent: "כן, להחליף"});
+    const no = Object.assign(document.createElement("button"), {className: "ghost", textContent: "ביטול"});
+    box.append(q, yes, no); yes.addEventListener("click", load); no.addEventListener("click", () => location.reload());
   });
 
   // ---- התחלה מאפס (עם אישור בתוך הדף) ----
