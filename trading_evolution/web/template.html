@@ -46,6 +46,8 @@ button:focus-visible, .choice:focus-visible { outline: 3px solid var(--accent); 
 .note { color: var(--muted); font-size: 14px; }
 svg.chart { width: 100%; height: auto; display: block; }
 .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 14px; color: var(--muted); }
+.legend span.faint::before { opacity: .35; height: 2px; }
+.charttitle { font-size: 15px; font-weight: 600; margin: 14px 0 6px; }
 .legend span::before { content: ""; display: inline-block; width: 14px; height: 3px; border-radius: 2px; background: var(--c); margin-inline-end: 6px; vertical-align: middle; }
 .big { display: flex; gap: 22px; flex-wrap: wrap; }
 .big div { display: grid; }
@@ -99,9 +101,11 @@ td.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
       </div>
       <div class="bar" aria-hidden="true"><i id="progress"></i></div>
       <p class="note" id="trainStatus">מוכן לאימון.</p>
-      <div class="legend"><span style="--c:var(--accent)">הבוטים בסבב</span><span style="--c:var(--hold)">לקנות ולחכות</span></div>
+      <h3 class="charttitle">התוצאה של כל סבב (משחק שלם 2018–2025, מ-₪50)</h3>
+      <div class="legend"><span style="--c:var(--accent)">הבוטים - ממוצע</span><span class="faint" style="--c:var(--accent)">כל סבב לבד</span><span style="--c:var(--hold)">לקנות ולחכות - ממוצע</span></div>
       <svg class="chart" id="trainChart" viewBox="0 0 600 220" role="img" aria-label="תוצאות סבבי האימון"></svg>
-      <p class="note">כל נקודה היא סבב אימון: כמה הבוטים הרוויחו על כל התקופה (מ-₪50), מול מה שהיה קורה אם היית קונה את כל המטבעות ומחכה.</p>
+      <p class="note">הקו הדק והחיוור הוא כל סבב לבד - הוא קופץ כי בכל סבב יש מזל אחר. הקו העבה הוא הממוצע של 20 הסבבים האחרונים:
+        אם הוא עולה, הבוטים באמת משתפרים. אם הוא שטוח, הם הגיעו לתקרה ועוד אימון כבר לא עוזר.</p>
     </section>
 
     <section class="card" aria-labelledby="hTest">
@@ -470,11 +474,14 @@ self.onmessage = e => {
       mk("line", {x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: css(Math.abs(v) < 1e-9 ? "--muted" : "--line"), "stroke-width": 1});
       const t = mk("text", {x: W - m.r + 6, y: y(v) + 4, "font-size": 11, fill: css("--muted"), "font-family": "IBM Plex Mono, monospace"}); t.textContent = (v > 0 ? "+" : "") + v.toFixed(Math.abs(step) < 1 ? 1 : 0);
     }
-    if (opts && opts.xLabels) opts.xLabels.forEach(([i, label]) => { const t = mk("text", {x: x(i), y: H - 6, "font-size": 11, fill: css("--muted"), "text-anchor": "middle"}); t.textContent = label; });
+    if (opts && opts.xLabels) opts.xLabels.forEach(([i, label]) => {   // תווית בקצה נצמדת פנימה, כדי שלא תיחתך
+      const anchor = i === 0 ? "start" : i === n - 1 ? "end" : "middle";
+      const t = mk("text", {x: x(i), y: H - 6, "font-size": 11, fill: css("--muted"), "text-anchor": anchor, direction: "ltr"}); t.textContent = label; });
     for (const s of seriesList) {
       const pts = s.values.map((v, i) => [i, v]).filter(([, v]) => Number.isFinite(v));
       if (!pts.length) continue;
-      mk("path", {d: pts.map(([i, v], k) => (k ? "L" : "M") + x(i).toFixed(1) + "," + y(v).toFixed(1)).join(""), fill: "none", stroke: css(s.color), "stroke-width": s.width || 2, "stroke-linejoin": "round", "stroke-linecap": "round"});
+      mk("path", {d: pts.map(([i, v], k) => (k ? "L" : "M") + x(i).toFixed(1) + "," + y(v).toFixed(1)).join(""), fill: "none", stroke: css(s.color), "stroke-width": s.width || 2, "stroke-linejoin": "round", "stroke-linecap": "round", "stroke-opacity": s.opacity || 1});
+      if (s.noDot) continue;
       const [li, lv] = pts[pts.length - 1];
       mk("circle", {cx: x(li), cy: y(lv), r: 3.5, fill: css(s.color), stroke: css("--surface"), "stroke-width": 1.5});
     }
@@ -498,9 +505,12 @@ self.onmessage = e => {
        (b.lessons || 0).toLocaleString("en-US") + " דוגמאות", SIGN[main[1]] + (main[2] < 0 ? " (הפוך)" : "")].forEach((v, i) => {
         const td = tr.insertCell(); td.textContent = v; if (i >= 2 && i <= 5) td.className = "n"; });
     });
+    const avg = vals => vals.map((_, i) => { const w = vals.slice(Math.max(0, i - 19), i + 1); return w.reduce((s, v) => s + v, 0) / w.length; });
+    const bots = state.history.map(h => h[1]);
     lineChart($("trainChart"), [
-      {values: state.history.map(h => h[2]), color: "--hold", width: 1.5},
-      {values: state.history.map(h => h[1]), color: "--accent"}],
+      {values: bots, color: "--accent", width: 1, opacity: 0.3, noDot: true},
+      {values: avg(state.history.map(h => h[2])), color: "--hold", width: 2},
+      {values: avg(bots), color: "--accent", width: 3}],
       {xLabels: state.history.length > 1 ? [[0, "סבב " + state.history[0][0]], [state.history.length - 1, "סבב " + state.history[state.history.length - 1][0]]] : []});
   }
 
