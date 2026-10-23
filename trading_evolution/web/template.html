@@ -1,0 +1,598 @@
+<title>חדר האימון של הבוטים</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&family=Secular+One&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/* פריסה: מחברת מעבדה - פס סטטוס למעלה, שני כרטיסי פעולה (לאמן / לבדוק) וטבלת הבוטים מתחת */
+:root {
+  --bg: #f3f5f2; --surface: #ffffff; --ink: #18211e; --muted: #5c6a64; --line: #dde3df;
+  --accent: #0d7a63; --accent-ink: #ffffff; --hold: #8a8f8c; --up: #13804f; --down: #c23b2b; --soft: #e7f2ee;
+  --f-display: "Secular One", "Assistant", system-ui, sans-serif;
+  --f-body: "Assistant", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  --f-num: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111614; --surface: #1a211e; --ink: #e6ece9; --muted: #9aa8a2; --line: #2b3531;
+  --accent: #3cc3a0; --accent-ink: #0c1512; --hold: #8d9692; --up: #4fcf8f; --down: #ff7d6b; --soft: #1f2d28; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #111614; --surface: #1a211e; --ink: #e6ece9; --muted: #9aa8a2; --line: #2b3531;
+  --accent: #3cc3a0; --accent-ink: #0c1512; --hold: #8d9692; --up: #4fcf8f; --down: #ff7d6b; --soft: #1f2d28; color-scheme: dark; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.55 var(--f-body); }
+main { max-width: 980px; margin: 0 auto; padding-block: 20px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 18px; }
+h1 { font: 34px/1.15 var(--f-display); margin: 0; text-wrap: balance; }
+h2 { font: 21px/1.25 var(--f-display); margin: 0 0 6px; }
+p { margin: 0; }
+.lead { color: var(--muted); max-width: 65ch; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: grid; gap: 12px; min-width: 0; }
+.status { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: baseline; }
+.stat { display: grid; gap: 0; }
+.stat b { font: 600 22px/1.2 var(--f-num); font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 13px; letter-spacing: .02em; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 99px; background: var(--soft); color: var(--accent); font-size: 13px; font-weight: 600; }
+.pill.warn { color: var(--down); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+.choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.choice { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 10px; padding: 8px 12px; font: 600 15px var(--f-body); cursor: pointer; }
+.choice[aria-pressed="true"] { border-color: var(--accent); background: var(--soft); color: var(--accent); }
+button.main { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 10px; padding: 11px 18px; font: 700 17px var(--f-body); cursor: pointer; }
+button.main:disabled { opacity: .55; cursor: default; }
+button.ghost { background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 10px; padding: 8px 12px; font: 600 14px var(--f-body); cursor: pointer; }
+button:focus-visible, .choice:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.bar { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+.note { color: var(--muted); font-size: 14px; }
+svg.chart { width: 100%; height: auto; display: block; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 14px; color: var(--muted); }
+.legend span::before { content: ""; display: inline-block; width: 14px; height: 3px; border-radius: 2px; background: var(--c); margin-inline-end: 6px; vertical-align: middle; }
+.big { display: flex; gap: 22px; flex-wrap: wrap; }
+.big div { display: grid; }
+.big b { font: 600 26px var(--f-num); font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate; text-align: start; }
+.big span { color: var(--muted); font-size: 13px; }
+.up { color: var(--up); } .down { color: var(--down); }
+.tablewrap { overflow-x: auto; }
+.tablewrap { overflow-x: auto; margin-inline: -4px; padding-inline: 4px; }
+table { width: 100%; border-collapse: collapse; font-size: 15px; }
+th, td { text-align: start; padding: 8px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--muted); font-weight: 600; font-size: 13px; }
+td.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
+.trades { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 14px; max-height: 210px; overflow: auto; }
+.trades li { display: flex; gap: 10px; }
+.trades time { color: var(--muted); font-family: var(--f-num); white-space: nowrap; }
+.confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ltr { direction: ltr; unicode-bidi: isolate; display: inline-block; }
+@media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
+</style>
+
+<main>
+  <header style="display:grid;gap:6px">
+    <h1>חדר האימון של הבוטים</h1>
+    <p class="lead">כאן מאמנים את בוטי המסחר על מחירים אמיתיים של 7 מטבעות (2018 עד מאי 2025), ובודקים אותם על השנה האחרונה, שהם לא ראו.
+      הכסף מזויף. אחרי כל סבב אימון הבוטים הכי טובים נשמרים - כשתחזור, הם ממשיכים מאותה נקודה.</p>
+  </header>
+
+  <section class="card" aria-label="הבוטים שלך">
+    <div class="status">
+      <div class="stat"><b id="sRounds">0</b><span>סבבי אימון עד עכשיו</span></div>
+      <div class="stat"><b id="sLessons">0</b><span>דוגמאות שהמוח של המוביל למד</span></div>
+      <div class="stat"><b id="sCoin">-</b><span>המטבע של רוב הבוטים</span></div>
+      <span class="pill" id="memory">טוען את הזיכרון...</span>
+    </div>
+  </section>
+
+  <div class="grid2">
+    <section class="card" aria-labelledby="hTrain">
+      <h2 id="hTrain">1. לאמן</h2>
+      <p class="note">כל סבב: 10 בוטים סוחרים מ-2018 עד מאי 2025. כל 30 יום יש מבחן - הרבע הכי פחות טוב מת, והטובים משתכפלים.
+        הבוטים הכי טובים עוברים לסבב הבא, והמוח שלהם ממשיך ללמוד.</p>
+      <div class="choices" role="group" aria-label="כמה לאמן">
+        <button class="choice" data-train="r10" aria-pressed="false" id="t1">10 סבבים</button>
+        <button class="choice" data-train="r40" aria-pressed="true" id="t2">40 סבבים</button>
+        <button class="choice" data-train="m3" aria-pressed="false" id="t3">3 דקות</button>
+        <button class="choice" data-train="m10" aria-pressed="false" id="t4">10 דקות</button>
+      </div>
+      <div class="row">
+        <button class="main" id="trainBtn">אמן אותם</button>
+        <button class="ghost" id="stopBtn" hidden>עצור ושמור</button>
+      </div>
+      <div class="bar" aria-hidden="true"><i id="progress"></i></div>
+      <p class="note" id="trainStatus">מוכן לאימון.</p>
+      <div class="legend"><span style="--c:var(--accent)">הבוטים בסבב</span><span style="--c:var(--hold)">לקנות ולחכות</span></div>
+      <svg class="chart" id="trainChart" viewBox="0 0 600 220" role="img" aria-label="תוצאות סבבי האימון"></svg>
+      <p class="note">כל נקודה היא סבב אימון: כמה הבוטים הרוויחו על כל התקופה (מ-₪50), מול מה שהיה קורה אם היית קונה את כל המטבעות ומחכה.</p>
+    </section>
+
+    <section class="card" aria-labelledby="hTest">
+      <h2 id="hTest">2. לבדוק בפעולה</h2>
+      <p class="note">הבוטים שלך סוחרים על תקופה שהם לא ראו אף פעם, עם ₪50. זו הבדיקה האמיתית.</p>
+      <div class="choices" role="group" aria-label="על איזו תקופה">
+        <button class="choice" data-test="year" aria-pressed="true" id="p1">השנה האחרונה</button>
+        <button class="choice" data-test="m3" aria-pressed="false" id="p2">3 החודשים האחרונים</button>
+      </div>
+      <div class="row"><button class="main" id="testBtn">הפעל אותם</button></div>
+      <div class="big">
+        <div><b id="tBots">-</b><span>הבוטים</span></div>
+        <div><b id="tHold">-</b><span>לקנות ולחכות</span></div>
+      </div>
+      <p class="note" id="tVerdict"></p>
+      <div class="legend"><span style="--c:var(--accent)">הבוטים</span><span style="--c:var(--hold)">לקנות את כל המטבעות ולחכות</span></div>
+      <svg class="chart" id="testChart" viewBox="0 0 600 240" role="img" aria-label="הכסף לאורך תקופת הבדיקה"></svg>
+      <h2 style="font-size:17px">מה הבוט המוביל עשה</h2>
+      <ul class="trades" id="trades"><li>עוד לא הופעל.</li></ul>
+    </section>
+  </div>
+
+  <section class="card" aria-labelledby="hBots">
+    <h2 id="hBots">הבוטים הכי טובים שלך</h2>
+    <p class="note">מה כל אחד למד (הגנים שלו). ביטוח = כמה מהמטבעות הוא משאיר גם כשהוא בורח מסכנה.</p>
+    <div class="tablewrap">
+      <div class="tablewrap"><table>
+        <thead><tr><th>#</th><th>מטבע</th><th>בורח בירידה של</th><th>ביטוח</th><th>משקיע</th><th>מקשיב למוח</th><th>המוח למד מ-</th><th>מקשיב בעיקר ל</th></tr></thead>
+        <tbody id="botRows"></tbody>
+      </table></div>
+    </div>
+    <div class="confirm" id="resetBox">
+      <button class="ghost" id="resetBtn">התחל מאפס</button>
+    </div>
+  </section>
+</main>
+
+<script type="application/json" id="prices">__PRICES__</script>
+<script id="engine" type="text/plain">
+// ===== המנוע: אותם חוקים כמו בקוד הפייתון (core.py), בגרסה לדפדפן =====
+const SIG = ["trend", "dip", "momentum", "stretch", "macd", "bollinger", "channel", "breakout", "calm"];
+const NAMES = {trend: "מגמה", dip: "ירידה חדה (RSI)", momentum: "תנופה", stretch: "מרחק מהממוצע", macd: "MACD",
+  bollinger: "רצועות בולינגר", channel: "ערוץ 20 יום", breakout: "פריצה של 55 יום", calm: "כמה השוק סוער"};
+const FEE = 0.0015, DEATH = 0.05, MAXW = 200, CLEAR = 0.1, HIDDEN = 8, SCHOOL = 365;
+const IMM = 0.1, MIX = 0.25, SWITCH = 0.1, PATIENCE = 3;
+const CFG = {startBots: 10, maxBots: 20, startMoney: 5, selectEvery: 30, kill: 25};
+const clamp = (x, lo = -1, hi = 1) => Math.max(lo, Math.min(hi, x));
+
+function RNG(seed) {
+  let a = seed >>> 0;
+  const r = () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  r.uniform = (lo, hi) => lo + (hi - lo) * r();
+  r.int = (lo, hi) => lo + Math.floor(r() * (hi - lo + 1));
+  r.gauss = (m = 0, s = 1) => m + s * Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r());
+  r.pick = a => a[Math.floor(r() * a.length)];
+  return r;
+}
+
+function Market(p) {
+  const n = p.length, m = {p, cum: [0], cum2: [0]};
+  for (const x of p) { m.cum.push(m.cum[m.cum.length - 1] + x); m.cum2.push(m.cum2[m.cum2.length - 1] + x * x); }
+  m.rsi = new Array(n).fill(50); let g = 0, l = 0;
+  for (let i = 1; i < n; i++) { const d = p[i] - p[i - 1];
+    if (i <= 14) { g += Math.max(d, 0) / 14; l += Math.max(-d, 0) / 14; } else { g = (g * 13 + Math.max(d, 0)) / 14; l = (l * 13 + Math.max(-d, 0)) / 14; }
+    if (i >= 14) m.rsi[i] = l === 0 ? 100 : 100 - 100 / (1 + g / l); }
+  const ema = (xs, k) => { const a = 2 / (k + 1); let e = xs[0]; return xs.map(x => (e += a * (x - e))); };
+  const e12 = ema(p, 12), e26 = ema(p, 26); m.macd = e12.map((x, i) => x - e26[i]); m.sig = ema(m.macd, 9);
+  const ext = k => { const hi = new Array(n).fill(p[0]), lo = new Array(n).fill(p[0]);
+    for (let i = 1; i < n; i++) { let h = -Infinity, lw = Infinity; for (let j = Math.max(0, i - k); j < i; j++) { if (p[j] > h) h = p[j]; if (p[j] < lw) lw = p[j]; } hi[i] = h; lo[i] = lw; }
+    return [hi, lo]; };
+  [m.hi20, m.lo20] = ext(20); [m.hi55, m.lo55] = ext(55);
+  const ret = [0]; for (let i = 1; i < n; i++) ret.push(p[i] / p[i - 1] - 1);
+  const rstd = k => { let s1 = 0, s2 = 0; return ret.map((x, i) => { s1 += x; s2 += x * x; if (i >= k) { s1 -= ret[i - k]; s2 -= ret[i - k] ** 2; }
+    const c = Math.min(i + 1, k); return Math.sqrt(Math.max(s2 / c - (s1 / c) ** 2, 0)); }); };
+  m.vol14 = rstd(14); m.vol50 = rstd(50); m.vol100 = rstd(100);
+  m.ma = (i, k) => (m.cum[i + 1] - m.cum[i + 1 - k]) / k;
+  m.std = (i, k) => { const mean = m.ma(i, k); return Math.sqrt(Math.max((m.cum2[i + 1] - m.cum2[i + 1 - k]) / k - mean * mean, 0)); };
+  return m;
+}
+
+function randomGenome(r, assets) {
+  const fast = r.int(2, 30);
+  return fixG({asset: r.pick(assets), fast, slow: fast + r.int(5, 120), mom: r.int(2, 60), w: SIG.map(() => r.uniform(-1, 1)),
+    sell: r.uniform(-0.7, -0.2), stop: r.uniform(0.1, 0.4), bet: r.uniform(0.5, 1), cmr: r.uniform(-0.2, 0.2), cmm: r.uniform(0, 0.6),
+    cool: r.int(1, 20), lr: Math.exp(r.uniform(Math.log(0.005), Math.log(0.1))), hz: r.int(3, 20), listen: r.uniform(0, 1), keep: r.uniform(0, 0.5)});
+}
+function fixG(g) {
+  g.fast = Math.round(clamp(g.fast, 2, 50)); g.slow = Math.round(clamp(g.slow, g.fast + 3, MAXW)); g.mom = Math.round(clamp(g.mom, 2, 100));
+  g.sell = clamp(g.sell, -0.9, 0.2); g.stop = clamp(g.stop, 0.005, 0.4); g.bet = clamp(g.bet, 0.1, 1);
+  g.cmr = clamp(g.cmr, -0.5, 0.5); g.cmm = clamp(g.cmm, 0, 2); g.cool = Math.round(clamp(g.cool, 0, 60));
+  g.lr = clamp(g.lr, 0.001, 0.3); g.hz = Math.round(clamp(g.hz, 2, 30)); g.listen = clamp(g.listen, 0, 1); g.keep = clamp(g.keep, 0, 0.6);
+  return g;
+}
+function mutate(g, r, assets, s = 0.5) {
+  const j = (v, lo, hi, d) => clamp(v + r.gauss(0, d * s), lo, hi);
+  return fixG({asset: (!assets.includes(g.asset) || r() < SWITCH) ? r.pick(assets) : g.asset,
+    fast: j(g.fast, 2, 50, 3), slow: j(g.slow, 5, MAXW, 10), mom: j(g.mom, 2, 100, 5), w: g.w.map(x => j(x, -1, 1, 0.2)),
+    sell: j(g.sell, -0.9, 0.2, 0.08), stop: j(g.stop, 0.005, 0.4, 0.03), bet: j(g.bet, 0.1, 1, 0.1),
+    cmr: j(g.cmr, -0.5, 0.5, 0.03), cmm: j(g.cmm, 0, 2, 0.1), cool: j(g.cool, 0, 60, 2), lr: g.lr * Math.exp(r.gauss(0, 0.3 * s)),
+    hz: j(g.hz, 2, 30, 2), listen: j(g.listen, 0, 1, 0.1), keep: j(g.keep, 0, 0.6, 0.05)});
+}
+function crossover(a, b, r) {
+  const g = {}; for (const k in a) g[k] = r() < 0.5 ? a[k] : b[k];
+  g.w = a.w.map((x, i) => r() < 0.5 ? x : b.w[i]); return fixG(g);
+}
+
+// --- המוח: רשת עצבית קטנה שמנחשת אם תהיה נפילה גדולה, ולומדת מכל טעות ---
+function brainNew(r, n) { const s = 1 / Math.sqrt(n);
+  return {w1: Array.from({length: HIDDEN}, () => Array.from({length: n}, () => r.gauss(0, s))), b1: new Array(HIDDEN).fill(0),
+    w2: Array.from({length: HIDDEN}, () => r.gauss(0, 1 / Math.sqrt(HIDDEN))), b2: 0}; }
+function think(b, x) { const h = b.w1.map((row, k) => Math.tanh(row.reduce((s, w, j) => s + w * x[j], 0) + b.b1[k]));
+  return [Math.tanh(h.reduce((s, v, k) => s + v * b.w2[k], b.b2)), h]; }
+function learn(b, x, target, lr) { const [y, h] = think(b, x); const dy = (y - target) * (1 - y * y);
+  for (let k = 0; k < h.length; k++) { const dh = dy * b.w2[k] * (1 - h[k] * h[k]); b.w2[k] -= lr * dy * h[k];
+    const row = b.w1[k]; for (let j = 0; j < x.length; j++) row[j] -= lr * dh * x[j]; b.b1[k] -= lr * dh; }
+  b.b2 -= lr * dy; }
+function brainCopy(b, r, noise = 0.02) { return {w1: b.w1.map(row => row.map(w => w + r.gauss(0, noise))), b1: b.b1.slice(),
+  w2: b.w2.map(w => w + r.gauss(0, noise)), b2: b.b2}; }
+
+function readings(g, m, i) {
+  const p = m.p[i], slow = m.ma(i, g.slow), ch = (lo, hi) => hi > lo ? (p - lo) / (hi - lo) : 0.5;
+  return [clamp((m.ma(i, g.fast) / slow - 1) * 20), (50 - m.rsi[i]) / 50, clamp((p / m.p[i - g.mom] - 1) * 10), clamp((p / slow - 1) * 10),
+    clamp((m.macd[i] - m.sig[i]) / p * 200), clamp((p - slow) / (m.std(i, g.slow) || 1e-9) / 2), clamp(ch(m.lo20[i], m.hi20[i]) * 2 - 1),
+    clamp(ch(m.lo55[i], m.hi55[i]) * 2 - 1), clamp(1 - m.vol14[i] / (m.vol100[i] || 1e-9))];
+}
+
+class Bot {
+  constructor(id, g, born, gen, cash) { Object.assign(this, {id, g, born, gen, cash, units: 0, entry: 0, peak: 0, out: false, wait: 0, danger: 0,
+    held: 0, seen: 0, mind: null, mem: [], feel: null, lessons: 0, hits: [], periodStart: cash, prevValue: cash, logGrowth: 0, log: [], score: 0}); }
+  value(p) { return this.cash + this.units * p; }
+  step(m, i, rng, day) {
+    const g = this.g; if (i < Math.max(g.slow, g.mom)) return;
+    const price = m.p[i], x = readings(g, m, i);
+    const tot = g.w.reduce((s, w) => s + Math.abs(w), 0) || 1, formula = g.w.reduce((s, w, k) => s + w * x[k], 0) / tot;
+    if (!this.mind) this.school(m, i, rng);
+    const feel = this.observe(x, price, m.vol50[i]);
+    this.score = (1 - g.listen) * formula + g.listen * feel;
+    this.seen++; this.held += this.units > 0; this.wait = Math.max(0, this.wait - 1);
+    this.hold(price, day);
+  }
+  observe(x, price, vol) {
+    for (const e of this.mem) e[4] = Math.min(e[4], price);
+    while (this.mem.length >= this.g.hz) this.lesson(this.mem.shift(), price);
+    const guess = think(this.mind, x)[0];
+    this.mem.push([x, price, vol, guess, price]);
+    const a = 2 / (this.g.hz + 1); this.feel = this.feel === null ? guess : this.feel + a * (guess - this.feel);
+    return this.feel;
+  }
+  lesson([x, p0, vol, guess, low], now) {
+    const move = Math.log(Math.min(low, now) / p0) / (Math.max(vol, 1e-6) * Math.sqrt(this.g.hz)) + 1;
+    learn(this.mind, x, clamp(move), this.g.lr); this.lessons++;
+    this.hits.push((guess > 0) === (move > 0) ? 1 : 0); if (this.hits.length > 100) this.hits.shift();
+  }
+  school(m, i, rng) { const g = this.g; this.mind = brainNew(rng, SIG.length);
+    for (let t = Math.max(g.slow, g.mom, i - SCHOOL); t < i; t++) this.observe(readings(g, m, t), m.p[t], m.vol50[t]); }
+  hold(price, day) {
+    const g = this.g; this.danger = this.score < g.sell ? this.danger + 1 : 0;
+    this.out = this.out && this.units !== 0;
+    if (this.units > 0 && !this.out) {
+      this.peak = Math.max(this.peak, price); const drop = price / this.peak - 1;
+      const why = this.danger >= PATIENCE ? "סימני סכנה כמה ימים ברצף" : drop < -g.stop ? `ירידה של ${Math.round(-drop * 100)}% מהשיא` : null;
+      if (why) { this.sell(price, 1 - g.keep); this.out = this.units > 0; this.wait = g.cool;
+        this.log.push([day, `מכר ${g.asset} ב-$${fmtP(price)} (${why})` + (this.out ? `, השאיר ${Math.round(g.keep * 100)}% ביטוח` : "")]); return; }
+    }
+    if (this.cash > 0.01 && !this.wait && this.score > g.sell + CLEAR) {
+      if (this.units > 0 && !this.out) { if (this.cash > 0.05 * this.value(price)) this.buy(price); return; }
+      this.buy(price); this.out = false; this.peak = price; this.log.push([day, `קנה ${g.asset} ב-$${fmtP(price)} (אין סימני סכנה)`]);
+    }
+  }
+  buy(price) { const spend = this.cash * this.g.bet; if (this.units === 0) this.entry = this.peak = price;
+    this.units += spend * (1 - FEE) / price; this.cash -= spend; }
+  sell(price, part = 1) { const sold = part >= 1 ? this.units : this.units * part; this.cash += sold * price * (1 - FEE); this.units -= sold; if (part >= 1) this.units = 0; }
+  take(amount, price) { const c = Math.min(this.cash, amount); this.cash -= c;
+    const u = Math.min(Math.max(this.units, 0), (amount - c) / (price * (1 - FEE))); this.units -= u; return c + u * price * (1 - FEE); }
+}
+function fmtP(p) { return p >= 100 ? Math.round(p).toLocaleString("en-US") : p >= 1 ? p.toFixed(2) : p.toFixed(4); }
+
+class World {
+  constructor(data, seed) { this.d = data; this.rng = RNG(seed); this.bots = []; this.nextId = 1; this.tick = 0; this.invested = 0;
+    this.marketStart = 0; this.holdUnits = {}; this.series = []; this.newMoney = 0; }
+  marketPrice(i) { let s = 0; for (const a of this.d.assets) s += Math.log(this.d.m[a].p[i]); return Math.exp(s / this.d.assets.length); }
+  spawn(g, money = null, gen = 0, parent = null) {
+    if (money === null) { money = CFG.startMoney; this.invested += money; this.newMoney += money; }
+    const b = new Bot(this.nextId++, g, this.tick, gen, money);
+    if (parent && parent.mind) { b.mind = brainCopy(parent.mind, this.rng); b.lessons = parent.lessons || 0; }
+    this.bots.push(b); return b;
+  }
+  populate(teachers) {
+    for (let k = 0; k < CFG.startBots; k++) {
+      const t = teachers.length ? teachers[k % teachers.length] : null;
+      let g = t ? JSON.parse(JSON.stringify(t.g)) : randomGenome(this.rng, this.d.assets);
+      if (t && k >= teachers.length) g = mutate(g, this.rng, this.d.assets);
+      this.spawn(g, null, 0, t);
+    }
+  }
+  price(b, i) { return this.d.m[b.g.asset].p[i]; }
+  step(i, day) {
+    this.newMoney = this.newMoney || 0;
+    const mp = this.marketPrice(i); this.marketStart = this.marketStart || mp;
+    for (const b of this.bots) b.step(this.d.m[b.g.asset], i, this.rng, day);
+    this.tick++;
+    for (const b of this.bots) { const v = b.value(this.price(b, i)); b.logGrowth += Math.log(Math.max(v, 1e-9) / Math.max(b.prevValue, 1e-9)); }
+    if (this.tick % CFG.selectEvery === 0) this.select(i, mp);
+    this.bots = this.bots.filter(b => b.value(this.price(b, i)) >= DEATH);
+    if (!this.bots.length) this.populate([]);
+    let inside = 0; for (const b of this.bots) { const v = b.value(this.price(b, i)); inside += v; b.prevValue = v; }
+    if (this.newMoney) { for (const a of this.d.assets) this.holdUnits[a] = (this.holdUnits[a] || 0) + this.newMoney / this.d.assets.length / this.d.m[a].p[i]; this.newMoney = 0; }
+    let hold = 0; for (const a of this.d.assets) hold += (this.holdUnits[a] || 0) * this.d.m[a].p[i];
+    this.series.push([inside - this.invested, hold - this.invested]);
+  }
+  fitness(b) { return b.logGrowth / Math.max(this.tick - b.born, 30); }
+  best(k) { return [...this.bots].sort((a, b) => this.fitness(b) - this.fitness(a)).slice(0, k); }
+  select(i, mp) {
+    const mret = mp / this.marketStart - 1, r = this.rng;
+    const change = new Map(this.bots.map(b => [b, b.value(this.price(b, i)) / b.periodStart - 1]));
+    const ranked = [...this.bots].sort((a, b) => (change.get(b) - mret) - (change.get(a) - mret));
+    const keep = Math.max(1, Math.min(ranked.length - Math.floor(ranked.length * CFG.kill / 100), CFG.maxBots));
+    let loot = 0; for (const b of ranked.slice(keep)) loot += b.take(b.value(this.price(b, i)), this.price(b, i));
+    this.bots = ranked.slice(0, keep); for (const b of this.bots) b.cash += loot / this.bots.length;
+    for (const parent of ranked.slice(0, keep)) {
+      if (this.bots.length >= CFG.maxBots) break;
+      const g = parent.g, v = parent.value(this.price(parent, i));
+      if (change.get(parent) < g.cmr || v / 2 < Math.max(g.cmm * CFG.startMoney, DEATH)) continue;
+      const money = parent.take(v / 2, this.price(parent, i)); const [cg, inherit] = this.childGenome(parent);
+      this.spawn(cg, money, parent.gen + 1, inherit ? parent : null);
+    }
+    const parents = this.best(this.bots.length); let added = 0;
+    while (parents.length && this.bots.length < CFG.startBots) { const p = parents[added++ % parents.length]; const [cg, inherit] = this.childGenome(p);
+      this.spawn(cg, null, p.gen + 1, inherit ? p : null); }
+    for (const b of this.bots) b.periodStart = b.value(this.price(b, i));
+    this.marketStart = mp;
+  }
+  childGenome(parent) { const r = this.rng(); if (r < IMM) return [randomGenome(this.rng, this.d.assets), false];
+    let g = parent.g; const others = this.bots.filter(b => b !== parent);
+    if (r < IMM + MIX && others.length) g = crossover(g, this.rng.pick(others).g, this.rng);
+    return [mutate(g, this.rng, this.d.assets), true]; }
+}
+
+function runPeriod(data, from, to, teachers, seed) {
+  const w = new World(data, seed); w.populate(teachers);
+  for (let i = from; i < to; i++) w.step(i, data.day(i));
+  return w;
+}
+function pack(b) { const r4 = x => Math.round(x * 1e4) / 1e4;
+  return {g: {...b.g, w: b.g.w.map(r4), sell: r4(b.g.sell), stop: r4(b.g.stop), bet: r4(b.g.bet), cmr: r4(b.g.cmr), cmm: r4(b.g.cmm),
+    lr: r4(b.g.lr), listen: r4(b.g.listen), keep: r4(b.g.keep)}, lessons: b.lessons, gen: b.gen,
+    mind: b.mind ? {w1: b.mind.w1.map(row => row.map(r4)), b1: b.mind.b1.map(r4), w2: b.mind.w2.map(r4), b2: r4(b.mind.b2)} : null}; }
+function setup(raw) {
+  const assets = Object.keys(raw.coins), m = {}; for (const a of assets) m[a] = Market(raw.coins[a]);
+  const t0 = Date.parse(raw.start + "T00:00:00Z"), idx = s => Math.round((Date.parse(s + "T00:00:00Z") - t0) / 864e5);
+  return {assets, m, n: raw.n, idx, day: i => new Date(t0 + i * 864e5).toISOString().slice(0, 10)};
+}
+
+let DATA = null, stop = false;
+self.onmessage = e => {
+  const msg = e.data;
+  if (msg.type === "ping") { self.postMessage({type: "ready"}); return; }
+  if (msg.type === "init") { DATA = setup(msg.raw); return; }
+  if (msg.type === "stop") { stop = true; return; }
+  if (msg.type === "train") {
+    stop = false;
+    const from = Math.max(MAXW, DATA.idx("2018-01-01")), to = DATA.idx("2025-05-23");
+    let team = msg.team, r = 0; const t0 = Date.now();
+    const done = () => msg.rounds ? r >= msg.rounds : Date.now() - t0 >= msg.seconds * 1000;
+    const next = () => {   // סבב אחד בכל פעם, כדי שאפשר יהיה לעצור באמצע
+      if (done() || stop) { self.postMessage({type: "trained", team, rounds: r}); return; }
+      r++;
+      const teachers = team.map(t => ({g: t.g, mind: null, lessons: 0}));   // המוחות לא עוברים בין סבבים (כמו בפייתון)
+      const w = runPeriod(DATA, from, to, teachers, msg.seedBase + r);
+      team = w.best(CFG.maxBots).map(pack);
+      const last = w.series[w.series.length - 1], inv = w.invested || 1;
+      self.postMessage({type: "round", round: r, net: last[0] / inv * 50, hold: last[1] / inv * 50, team,
+        part: msg.rounds ? r / msg.rounds : (Date.now() - t0) / (msg.seconds * 1000)});
+      setTimeout(next, 40);   // הפסקה קטנה בין סבבים, כדי שהדף יישאר זמין ללחיצות
+    };
+    next();
+  }
+  if (msg.type === "test") {
+    const from = DATA.idx(msg.from), to = DATA.n;
+    const w = runPeriod(DATA, from, to, msg.team, 7);
+    const inv = w.invested || 1, lead = w.best(1)[0];
+    self.postMessage({type: "tested", series: w.series.map(([a, b]) => [a / inv * 50, b / inv * 50]),
+      start: DATA.day(from), end: DATA.day(to - 1), log: lead ? lead.log.slice(-40) : [], lead: lead ? pack(lead) : null});
+  }
+};
+</script>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const raw = JSON.parse($("prices").textContent);
+  // המנוע רץ ברקע (Worker). אם הדפדפן לא מרשה - הוא רץ בתוך הדף עצמו.
+  let engine = null, queue = [];
+  const send = m => engine ? engine.postMessage(m) : queue.push(m);
+  function useEngine(e) {
+    if (engine) return; engine = e; e.onmessage = onEngine;
+    e.postMessage({type: "init", raw}); queue.forEach(m => e.postMessage(m)); queue = [];
+  }
+  function inPage() {
+    // שני צדדים: מה שהדף שולח מגיע למנוע (inner), ומה שהמנוע שולח מגיע לדף (page)
+    const page = {onmessage: null}, inner = {onmessage: null};
+    page.postMessage = m => setTimeout(() => inner.onmessage && inner.onmessage({data: m}), 0);
+    inner.postMessage = m => setTimeout(() => page.onmessage && page.onmessage({data: m}), 0);
+    window.__engineSelf = inner;
+    const s = document.createElement("script");
+    s.textContent = "(function (self) {\n" + $("engine").textContent + "\n})(window.__engineSelf);";
+    document.body.appendChild(s);
+    return page;
+  }
+  try {
+    const w = new Worker(URL.createObjectURL(new Blob([$("engine").textContent], {type: "text/javascript"})));
+    const fallback = () => { if (!engine) { w.terminate(); useEngine(inPage()); } };
+    w.onmessage = e => { if (e.data.type === "ready") useEngine(w); };
+    w.onerror = fallback;
+    w.postMessage({type: "ping"});
+    setTimeout(fallback, 4000);
+  } catch (e) { useEngine(inPage()); }
+  const SIGN = ["מגמה", "ירידה חדה (RSI)", "תנופה", "מרחק מהממוצע", "MACD", "רצועות בולינגר", "ערוץ 20 יום", "פריצה של 55 יום", "כמה השוק סוער"];
+  let state = {rounds: 0, team: [], history: []}, db = null, docRef = null, busy = false;
+  let trainChoice = "r40", testChoice = "year";
+  const money = v => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)} ₪`;
+
+  // ---- זיכרון: בחשבון (אם אפשר), ואם לא - בדפדפן הזה ----
+  const LS = "botTrainer.v1";
+  function loadLocal() { try { const s = JSON.parse(localStorage.getItem(LS) || "null"); if (s && s.team) state = s; } catch (e) {} }
+  async function save() {
+    const clean = {rounds: state.rounds, team: state.team, history: state.history.slice(-150), saved: new Date().toISOString()};
+    try { localStorage.setItem(LS, JSON.stringify(clean)); } catch (e) {}
+    if (docRef) { try { await docRef.set(clean); setMemory("הזיכרון נשמר בחשבון שלך", false); return; }
+      catch (e) { setMemory("לא הצלחתי לשמור בחשבון - נשמר בדפדפן הזה", true); return; } }
+    setMemory("הזיכרון נשמר בדפדפן הזה", false);
+  }
+  function setMemory(text, warn) { const m = $("memory"); m.textContent = text; m.classList.toggle("warn", !!warn); }
+  async function connect() {
+    loadLocal(); render();
+    setMemory(state.rounds ? "הזיכרון נטען מהדפדפן הזה" : "אין עדיין אימון שמור", false);
+    if (!window.claude) return;
+    try {
+      const [d, user] = await Promise.all([window.claude.use("db"), window.claude.use("user")]);
+      const uid = user ? await user.id() : null;
+      if (!d || !uid) { setMemory(state.rounds ? "הזיכרון נשמר בדפדפן הזה (כדי לשמור בחשבון צריך להיות מחובר)" : "כדי שהזיכרון יישמר בחשבון צריך להיות מחובר", false); return; }
+      db = d; docRef = db.doc("data/users/" + uid + "/team");
+      const snap = await docRef.get();
+      const s = snap && snap.exists ? snap.data() : null;
+      if (s && s.team && (s.rounds || 0) >= (state.rounds || 0)) { state = {rounds: s.rounds || 0, team: s.team, history: s.history || []}; }
+      setMemory(state.rounds ? "הזיכרון נטען מהחשבון שלך" : "מחובר - האימון יישמר בחשבון שלך", false);
+      render();
+    } catch (e) { setMemory("הזיכרון נשמר בדפדפן הזה", false); }
+  }
+
+  // ---- גרפים ----
+  function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+  function lineChart(svg, seriesList, opts) {
+    const W = 600, H = +svg.getAttribute("viewBox").split(" ")[3], m = {l: 8, r: 64, t: 12, b: 24};
+    svg.textContent = "";
+    const all = seriesList.flatMap(s => s.values).filter(Number.isFinite);
+    if (!all.length) return;
+    let lo = Math.min(0, ...all), hi = Math.max(0, ...all); if (hi - lo < 1) { hi += 0.5; lo -= 0.5; }
+    const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+    const n = Math.max(...seriesList.map(s => s.values.length));
+    const x = i => m.l + (n < 2 ? 0 : i / (n - 1)) * (W - m.l - m.r), y = v => m.t + (1 - (v - lo) / (hi - lo)) * (H - m.t - m.b);
+    const ns = "http://www.w3.org/2000/svg", mk = (tag, a) => { const e = document.createElementNS(ns, tag); for (const k in a) e.setAttribute(k, a[k]); svg.appendChild(e); return e; };
+    const step = niceStep((hi - lo) / 4);
+    for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+      mk("line", {x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: css(Math.abs(v) < 1e-9 ? "--muted" : "--line"), "stroke-width": 1});
+      const t = mk("text", {x: W - m.r + 6, y: y(v) + 4, "font-size": 11, fill: css("--muted"), "font-family": "IBM Plex Mono, monospace"}); t.textContent = (v > 0 ? "+" : "") + v.toFixed(Math.abs(step) < 1 ? 1 : 0);
+    }
+    if (opts && opts.xLabels) opts.xLabels.forEach(([i, label]) => { const t = mk("text", {x: x(i), y: H - 6, "font-size": 11, fill: css("--muted"), "text-anchor": "middle"}); t.textContent = label; });
+    for (const s of seriesList) {
+      const pts = s.values.map((v, i) => [i, v]).filter(([, v]) => Number.isFinite(v));
+      if (!pts.length) continue;
+      mk("path", {d: pts.map(([i, v], k) => (k ? "L" : "M") + x(i).toFixed(1) + "," + y(v).toFixed(1)).join(""), fill: "none", stroke: css(s.color), "stroke-width": s.width || 2, "stroke-linejoin": "round", "stroke-linecap": "round"});
+      const [li, lv] = pts[pts.length - 1];
+      mk("circle", {cx: x(li), cy: y(lv), r: 3.5, fill: css(s.color), stroke: css("--surface"), "stroke-width": 1.5});
+    }
+  }
+  function niceStep(raw) { const p = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1e-9)))); for (const k of [1, 2, 5, 10]) if (raw <= k * p) return k * p; return 10 * p; }
+
+  // ---- תצוגה ----
+  function render() {
+    $("sRounds").textContent = state.rounds.toLocaleString("en-US");
+    const lead = state.team[0];
+    $("sLessons").textContent = lead ? (lead.lessons || 0).toLocaleString("en-US") : "0";
+    const count = {}; for (const b of state.team) count[b.g.asset] = (count[b.g.asset] || 0) + 1;
+    const top = Object.entries(count).sort((a, b) => b[1] - a[1])[0];
+    $("sCoin").textContent = top ? top[0] : "-";
+    const rows = $("botRows"); rows.textContent = "";
+    if (!state.team.length) { const tr = rows.insertRow(); const td = tr.insertCell(); td.colSpan = 8; td.textContent = "עוד אין בוטים מאומנים. לחץ על \"אמן אותם\" כדי להתחיל."; }
+    state.team.slice(0, 10).forEach((b, k) => {
+      const g = b.g, tr = rows.insertRow(), tot = g.w.reduce((s, w) => s + Math.abs(w), 0) || 1;
+      const main = g.w.map((w, i) => [Math.abs(w) / tot, i, w]).sort((a, c) => c[0] - a[0])[0];
+      [k + 1, g.asset, Math.round(g.stop * 100) + "%", Math.round(g.keep * 100) + "%", Math.round(g.bet * 100) + "%", Math.round(g.listen * 100) + "%",
+       (b.lessons || 0).toLocaleString("en-US") + " דוגמאות", SIGN[main[1]] + (main[2] < 0 ? " (הפוך)" : "")].forEach((v, i) => {
+        const td = tr.insertCell(); td.textContent = v; if (i >= 2 && i <= 5) td.className = "n"; });
+    });
+    lineChart($("trainChart"), [
+      {values: state.history.map(h => h[2]), color: "--hold", width: 1.5},
+      {values: state.history.map(h => h[1]), color: "--accent"}],
+      {xLabels: state.history.length > 1 ? [[0, "סבב " + state.history[0][0]], [state.history.length - 1, "סבב " + state.history[state.history.length - 1][0]]] : []});
+  }
+
+  function press(groupAttr, value) {
+    document.querySelectorAll(`[data-${groupAttr}]`).forEach(b => b.setAttribute("aria-pressed", String(b.dataset[groupAttr] === value)));
+  }
+  document.querySelectorAll("[data-train]").forEach(b => b.addEventListener("click", () => { trainChoice = b.dataset.train; press("train", trainChoice); }));
+  document.querySelectorAll("[data-test]").forEach(b => b.addEventListener("click", () => { testChoice = b.dataset.test; press("test", testChoice); }));
+
+  function setBusy(on) { busy = on; $("trainBtn").disabled = on; $("testBtn").disabled = on; $("resetBtn").disabled = on; $("stopBtn").hidden = !on; }
+
+  let pending = null;
+  function onEngine(e) {
+    const msg = e.data;
+    if (msg.type === "round") {
+      state.rounds++; state.team = msg.team; state.history.push([state.rounds, +msg.net.toFixed(2), +msg.hold.toFixed(2)]);
+      if (state.history.length > 150) state.history.shift();
+      $("progress").style.width = Math.min(100, msg.part * 100).toFixed(1) + "%";
+      $("trainStatus").textContent = `סבב ${state.rounds.toLocaleString("en-US")}: הבוטים ${money(msg.net)} מול לקנות ולחכות ${money(msg.hold)} (על כל 2018-2025)`;
+      render();
+      if (msg.round % 5 === 0) save();
+    }
+    if (msg.type === "trained") {
+      setBusy(false); $("progress").style.width = "100%";
+      $("trainStatus").textContent = `סיימתי ${msg.rounds} סבבים. הבוטים הכי טובים נשמרו - עכשיו אפשר לבדוק אותם בפעולה.`;
+      save(); render(); runTest();
+    }
+    if (msg.type === "tested") { setBusy(false); showTest(msg); }
+  }
+
+  $("trainBtn").addEventListener("click", () => {
+    if (busy) return; setBusy(true); $("progress").style.width = "0%";
+    $("trainStatus").textContent = "מאמן...";
+    const map = {r10: {rounds: 10}, r40: {rounds: 40}, m3: {seconds: 180}, m10: {seconds: 600}};
+    send({type: "train", team: state.team, seedBase: (state.rounds + 1) * 1000, ...map[trainChoice]});
+  });
+  $("stopBtn").addEventListener("click", () => send({type: "stop"}));
+
+  function runTest() {
+    if (busy) return; setBusy(true);
+    $("tVerdict").textContent = "הבוטים סוחרים...";
+    send({type: "test", team: state.team, from: testChoice === "year" ? "2025-05-23" : "2026-02-23"});
+  }
+  $("testBtn").addEventListener("click", runTest);
+
+  let anim = 0;
+  function showTest(msg) {
+    cancelAnimationFrame(anim);
+    const bots = msg.series.map(s => s[0]), hold = msg.series.map(s => s[1]), n = bots.length;
+    const labels = [[0, fmtDate(msg.start)], [n - 1, fmtDate(msg.end)]];
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let k = reduce ? n : 2; const t0 = performance.now();
+    const frame = () => {
+      k = reduce ? n : Math.min(n, Math.max(2, Math.round((performance.now() - t0) / 2200 * n)));
+      lineChart($("testChart"), [{values: hold.slice(0, k), color: "--hold", width: 1.5}, {values: bots.slice(0, k), color: "--accent"}], {xLabels: labels});
+      setBig(bots[k - 1], hold[k - 1]);
+      if (k < n) anim = requestAnimationFrame(frame);
+      else verdict(bots[n - 1], hold[n - 1]);
+    };
+    frame();
+    const ul = $("trades"); ul.textContent = "";
+    if (!msg.log.length) { const li = document.createElement("li"); li.textContent = "הבוט המוביל לא קנה ולא מכר בתקופה הזאת."; ul.appendChild(li); }
+    for (const [day, text] of msg.log.slice().reverse()) {
+      const li = document.createElement("li"), t = document.createElement("time"), s = document.createElement("span");
+      t.textContent = fmtDate(day); s.textContent = text; li.append(t, s); ul.appendChild(li);
+    }
+  }
+  function setBig(b, h) { const eb = $("tBots"), eh = $("tHold");
+    eb.textContent = money(b); eh.textContent = money(h); eb.className = b >= 0 ? "up" : "down"; eh.className = h >= 0 ? "up" : "down"; }
+  function verdict(b, h) {
+    $("tVerdict").textContent = b > h
+      ? `הבוטים ניצחו את "לקנות ולחכות" ב-${(b - h).toFixed(2)} ₪ (מתוך ₪50).`
+      : `"לקנות ולחכות" ניצח הפעם ב-${(h - b).toFixed(2)} ₪. נסה לאמן אותם עוד, ובדוק שוב.`;
+  }
+  function fmtDate(s) { const [y, m, d] = s.split("-"); return `${d}/${m}/${y}`; }
+
+  // ---- התחלה מאפס (עם אישור בתוך הדף) ----
+  $("resetBtn").addEventListener("click", () => {
+    const box = $("resetBox"); box.textContent = "";
+    const q = document.createElement("span"); q.textContent = "למחוק את כל מה שהבוטים למדו?";
+    const yes = Object.assign(document.createElement("button"), {className: "ghost", textContent: "כן, למחוק", id: "resetYes"});
+    const no = Object.assign(document.createElement("button"), {className: "ghost", textContent: "ביטול", id: "resetNo"});
+    box.append(q, yes, no);
+    no.addEventListener("click", () => location.reload());
+    yes.addEventListener("click", async () => { state = {rounds: 0, team: [], history: []}; await save(); location.reload(); });
+  });
+
+  // הדף מתחיל מוכן: בדיקה אחת של הבוטים כמו שהם עכשיו (מאומנים או לא) על השנה האחרונה,
+  // ועוד אחת אם מהחשבון נטען אימון אחר מזה שבדפדפן
+  const before = () => state.rounds;
+  loadLocal(); const startRounds = before(); runTest();
+  connect().then(() => { if (state.rounds !== startRounds) { const again = () => busy ? setTimeout(again, 500) : runTest(); again(); } });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+})();
+</script>
