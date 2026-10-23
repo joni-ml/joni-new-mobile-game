@@ -450,7 +450,8 @@ self.onmessage = e => {
       if (!d || !uid) { setMemory(state.rounds ? "הזיכרון נשמר בדפדפן הזה (כדי לשמור בחשבון צריך להיות מחובר)" : "כדי שהזיכרון יישמר בחשבון צריך להיות מחובר", false); return; }
       db = d; docRef = db.doc("data/users/" + uid + "/team");
       const snap = await docRef.get();
-      const s = snap && snap.exists ? snap.data() : null;
+      // מה שחוזר מהחשבון "קפוא" (אי אפשר לשנות אותו), אז עובדים על העתק
+      const s = snap && snap.exists ? JSON.parse(JSON.stringify(snap.data())) : null;
       if (s && s.team && (s.rounds || 0) >= (state.rounds || 0)) { state = {rounds: s.rounds || 0, team: s.team, history: s.history || []}; }
       setMemory(state.rounds ? "הזיכרון נטען מהחשבון שלך" : "מחובר - האימון יישמר בחשבון שלך", false);
       render();
