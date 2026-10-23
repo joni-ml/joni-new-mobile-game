@@ -207,7 +207,8 @@ td.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
 
   <section class="card" aria-labelledby="hBots">
     <h2 id="hBots">הבוטים הכי טובים שלך</h2>
-    <p class="note">מה כל אחד למד (הגנים שלו). ביטוח = כמה מהמטבעות הוא משאיר גם כשהוא בורח מסכנה.</p>
+    <p class="note">מה כל אחד למד (הגנים שלו). הבוטים מחזיקים את המטבע, ובורחים רק כשהמחיר יורד מהשיא יותר מ"בורח בירידה של".
+      ביטוח = כמה מהמטבעות הוא משאיר גם כשהוא בורח. אחרי שברח, הוא קונה שוב כשהסימנים והמוח אומרים שהמצב רגוע.</p>
     <div class="tablewrap"><table>
         <thead><tr><th>#</th><th>מטבע</th><th>בורח בירידה של</th><th>ביטוח</th><th>משקיע</th><th>מקשיב למוח</th><th>מוח</th><th>המוח למד מ-</th><th>מקשיב בעיקר ל</th></tr></thead>
         <tbody id="botRows"></tbody>
@@ -236,7 +237,9 @@ const FEE = 0.0015, DEATH = 0.05, MAXW = 200, CLEAR = 0.1, SCHOOL = 365;
 // גודל המוח הוא גן (nn): שכבה ראשונה של nn נוירונים ושנייה של חצי. האבולוציה מחליטה אם מוח גדול שווה את זה.
 const NN_MIN = 4, NN_MAX = 32;
 const layersOf = g => [g.nn, Math.max(2, Math.round(g.nn / 2))];
-const IMM = 0.1, MIX = 0.25, SWITCH = 0.1, PATIENCE = 3;
+// PATIENCE: כמה ימים ברצף של "סימני סכנה" עד שבורחים. בדקתי: המכירות האלה היו כמו הטלת מטבע (המחיר המשיך לרדת רק ב-48% מהפעמים)
+// ובלעדיהן הבוטים הרוויחו יותר (בדיקה הוגנת 2020-2026, 8 אימונים: +₪278 מול +₪236). אז עכשיו בורחים רק מירידה גדולה מהשיא.
+const IMM = 0.1, MIX = 0.25, SWITCH = 0.1, PATIENCE = Infinity;
 const CFG = {startBots: 10, maxBots: 20, startMoney: 5, selectEvery: 30, kill: 25};
 const clamp = (x, lo = -1, hi = 1) => Math.max(lo, Math.min(hi, x));
 
@@ -278,7 +281,7 @@ function randomGenome(r, assets) {
   return fixG({asset: r.pick(assets), fast, slow: fast + r.int(5, 120), mom: r.int(2, 60), w: SIG.map(() => r.uniform(-1, 1)),
     sell: r.uniform(-0.7, -0.2), stop: r.uniform(0.1, 0.4), bet: r.uniform(0.5, 1), cmr: r.uniform(-0.2, 0.2), cmm: r.uniform(0, 0.6),
     cool: r.int(1, 20), lr: Math.exp(r.uniform(Math.log(0.005), Math.log(0.1))), hz: r.int(3, 20), listen: r.uniform(0, 1), keep: r.uniform(0, 0.5),
-    nn: r.int(NN_MIN, NN_MAX)});
+    nn: r.int(NN_MIN, NN_MAX), rot: r(), rotEvery: r.int(5, 60), rotLook: r.int(7, 120)});
 }
 function fixG(g) {
   g.fast = Math.round(clamp(g.fast, 2, 50)); g.slow = Math.round(clamp(g.slow, g.fast + 3, MAXW)); g.mom = Math.round(clamp(g.mom, 2, 100));
@@ -286,6 +289,8 @@ function fixG(g) {
   g.cmr = clamp(g.cmr, -0.5, 0.5); g.cmm = clamp(g.cmm, 0, 2); g.cool = Math.round(clamp(g.cool, 0, 60));
   g.lr = clamp(g.lr, 0.001, 0.3); g.hz = Math.round(clamp(g.hz, 2, 30)); g.listen = clamp(g.listen, 0, 1); g.keep = clamp(g.keep, 0, 0.6);
   g.nn = Math.round(clamp(g.nn || 8, NN_MIN, NN_MAX));
+  // החלפת מטבעות: אם rot מעל 0.5, כל rotEvery ימים עובר למטבע שעלה הכי הרבה ב-rotLook הימים האחרונים (בוט ישן: לא מחליף)
+  g.rot = clamp(g.rot || 0, 0, 1); g.rotEvery = Math.round(clamp(g.rotEvery || 30, 5, 60)); g.rotLook = Math.round(clamp(g.rotLook || 30, 7, 120));
   if (g.w.length < SIG.length) g.w = [...g.w, ...new Array(SIG.length - g.w.length).fill(0)];   // בוט ישן: לא מקשיב לחושים החדשים   // בוטים ישנים (לפני שהיה הגן) - 8 נוירונים
   return g;
 }
@@ -296,7 +301,8 @@ function mutate(g, r, assets, s = 0.5) {
     sell: j(g.sell, -0.9, 0.2, 0.08), stop: j(g.stop, 0.005, 0.4, 0.03), bet: j(g.bet, 0.1, 1, 0.1),
     cmr: j(g.cmr, -0.5, 0.5, 0.03), cmm: j(g.cmm, 0, 2, 0.1), cool: j(g.cool, 0, 60, 2), lr: g.lr * Math.exp(r.gauss(0, 0.3 * s)),
     hz: j(g.hz, 2, 30, 2), listen: j(g.listen, 0, 1, 0.1), keep: j(g.keep, 0, 0.6, 0.05),
-    nn: r() < 0.2 ? (g.nn || 8) + Math.round(r.gauss(0, 4)) : g.nn});
+    nn: r() < 0.2 ? (g.nn || 8) + Math.round(r.gauss(0, 4)) : g.nn,
+    rot: j(g.rot || 0, 0, 1, 0.15), rotEvery: j(g.rotEvery || 30, 5, 60, 5), rotLook: j(g.rotLook || 30, 7, 120, 10)});
 }
 function crossover(a, b, r) {
   const g = {}; for (const k in a) g[k] = r() < 0.5 ? a[k] : b[k];
@@ -341,7 +347,8 @@ function readings(g, m, i) {
 class Bot {
   constructor(id, g, born, gen, cash) { Object.assign(this, {id, g, born, gen, cash, units: 0, entry: 0, peak: 0, out: false, wait: 0, danger: 0,
     held: 0, seen: 0, mind: null, mem: [], feel: null, lessons: 0, hits: [], periodStart: cash, prevValue: cash, logGrowth: 0, log: [], score: 0,
-    marks: [], vals: [], firstI: null}); }   // marks: מתי קנה (1) ומכר (-1). vals: כמה כסף היה לו בכל יום
+    marks: [], vals: [], firstI: null, cur: null}); }
+  coin() { return this.cur || this.g.asset; }   // המטבע שהוא סוחר בו עכשיו (מי שמחליף מטבעות - משתנה)   // marks: מתי קנה (1) ומכר (-1). vals: כמה כסף היה לו בכל יום
   value(p) { return this.cash + this.units * p; }
   step(m, i, rng, day) {
     const g = this.g; if (i < Math.max(g.slow, g.mom)) return;
@@ -374,12 +381,12 @@ class Bot {
     if (this.units > 0 && !this.out) {
       this.peak = Math.max(this.peak, price); const drop = price / this.peak - 1;
       const why = this.danger >= PATIENCE ? "סימני סכנה כמה ימים ברצף" : drop < -g.stop ? `ירידה של ${Math.round(-drop * 100)}% מהשיא` : null;
-      if (why) { this.sell(price, 1 - g.keep); this.out = this.units > 0; this.wait = g.cool; this.marks.push([i, -1]);
-        this.log.push([day, `מכר ${g.asset} (${why})` + (this.out ? `, השאיר ${Math.round(g.keep * 100)}% ביטוח` : "") + `. מחיר: \u2066$${fmtP(price)}\u2069`]); return; }
+      if (why) { this.sell(price, 1 - g.keep); this.out = this.units > 0; this.wait = g.cool; this.marks.push([i, -1, this.coin()]);
+        this.log.push([day, `מכר ${this.coin()} (${why})` + (this.out ? `, השאיר ${Math.round(g.keep * 100)}% ביטוח` : "") + `. מחיר: \u2066$${fmtP(price)}\u2069`]); return; }
     }
     if (this.cash > 0.01 && !this.wait && this.score > g.sell + CLEAR) {
       if (this.units > 0 && !this.out) { if (this.cash > 0.05 * this.value(price)) this.buy(price); return; }
-      this.buy(price); this.out = false; this.peak = price; this.marks.push([i, 1]); this.log.push([day, `קנה ${g.asset} (אין סימני סכנה). מחיר: \u2066$${fmtP(price)}\u2069`]);
+      this.buy(price); this.out = false; this.peak = price; this.marks.push([i, 1, this.coin()]); this.log.push([day, `קנה ${this.coin()} (הסימנים רגועים). מחיר: \u2066$${fmtP(price)}\u2069`]);
     }
   }
   buy(price) { const spend = this.cash * this.g.bet; if (this.units === 0) this.entry = this.peak = price;
@@ -408,11 +415,12 @@ class World {
       this.spawn(g, null, 0, t);
     }
   }
-  price(b, i) { return this.d.m[b.g.asset].p[i]; }
+  price(b, i) { return this.d.m[b.coin()].p[i]; }
   step(i, day) {
     this.newMoney = this.newMoney || 0;
     const mp = this.marketPrice(i); this.marketStart = this.marketStart || mp;
-    for (const b of this.bots) b.step(this.d.m[b.g.asset], i, this.rng, day);
+    for (const b of this.bots) if (b.g.rot > 0.5 && (this.tick - b.born) % b.g.rotEvery === 0 && i > b.g.rotLook) this.rotate(b, i, day);
+    for (const b of this.bots) b.step(this.d.m[b.coin()], i, this.rng, day);
     this.tick++;
     for (const b of this.bots) { const v = b.value(this.price(b, i)); b.logGrowth += Math.log(Math.max(v, 1e-9) / Math.max(b.prevValue, 1e-9)); }
     if (this.tick % CFG.selectEvery === 0) this.select(i, mp);
@@ -423,6 +431,15 @@ class World {
     if (this.newMoney) { for (const a of this.d.assets) this.holdUnits[a] = (this.holdUnits[a] || 0) + this.newMoney / this.d.assets.length / this.d.m[a].p[i]; this.newMoney = 0; }
     let hold = 0; for (const a of this.d.assets) hold += (this.holdUnits[a] || 0) * this.d.m[a].p[i];
     this.series.push([inside - this.invested, hold - this.invested]);
+  }
+  rotate(b, i, day) {   // עובר למטבע שעלה הכי הרבה לאחרונה (מוכר את הישן, והחוקים הרגילים קונים את החדש כשאין סכנה)
+    let best = b.coin(), top = -Infinity;
+    for (const a of this.d.assets) { const p = this.d.m[a].p, ch = p[i - b.g.rotLook] > 0 ? p[i] / p[i - b.g.rotLook] : 0; if (ch > top) { top = ch; best = a; } }
+    if (best === b.coin()) return;
+    const old = b.coin();
+    if (b.units > 0) { b.sell(this.d.m[old].p[i]); b.marks.push([i, -1, old]); }
+    b.log.push([day, `עבר מ-${old} ל-${best} (עלה הכי הרבה ב-${b.g.rotLook} הימים האחרונים: ${top >= 1 ? "+" : "−"}${Math.abs(Math.round((top - 1) * 100))}%)`]);
+    Object.assign(b, {cur: best, out: false, peak: 0, danger: 0, wait: 0, mem: [], feel: null});
   }
   fitness(b) { return b.logGrowth / Math.max(this.tick - b.born, 30); }
   best(k) { return [...this.bots].sort((a, b) => this.fitness(b) - this.fitness(a)).slice(0, k); }
@@ -487,13 +504,13 @@ function setup(raw, senses) {
 // "חלון לבוט": המחיר של המטבע שלו באותו עולם, מתי קנה ומכר, כמה כסף היה לו, והמוח שלו
 function view(D, b, from, to) {
   if (!b) return null;
-  const p = D.m[b.g.asset].p, step = Math.max(1, Math.ceil((to - from) / 360)), idx = [];
+  const coin = b.coin(), p = D.m[coin].p, step = Math.max(1, Math.ceil((to - from) / 360)), idx = [];
   for (let i = from; i < to; i += step) idx.push(i);
   if (idx[idx.length - 1] !== to - 1) idx.push(to - 1);
   const pk = pack(b);
-  return {asset: b.g.asset, start: D.day(from), end: D.day(to - 1), price: idx.map(i => +p[i].toPrecision(5)),
+  return {asset: coin, rotates: b.g.rot > 0.5, start: D.day(from), end: D.day(to - 1), price: idx.map(i => +p[i].toPrecision(5)),
     money: idx.map(i => { const k = i - b.firstI; return b.firstI !== null && k >= 0 && k < b.vals.length ? +b.vals[k].toFixed(3) : null; }),
-    marks: b.marks.filter(([i]) => i >= from && i < to).slice(-400).map(([i, s]) => [+((i - from) / Math.max(1, to - 1 - from)).toFixed(4), s]),
+    marks: b.marks.filter(([i, , c]) => i >= from && i < to && (!c || c === coin)).slice(-400).map(([i, s]) => [+((i - from) / Math.max(1, to - 1 - from)).toFixed(4), s]),
     born: b.firstI !== null && b.firstI > from ? D.day(b.firstI) : null, g: pk.g, mind: pk.mind, lessons: b.lessons, gen: b.gen,
     acc: b.hits.length ? b.hits.reduce((s, h) => s + h, 0) / b.hits.length : null, trades: b.marks.length};
 }
@@ -545,8 +562,8 @@ self.onmessage = e => {
     const inv = w.invested || 1, last = to - 1;
     const solo = msg.team.length ? runSolo(D, from, to, msg.team[0], 7) : null, lead = solo || w.best(1)[0];   // "בוט 1" לבד על כל התקופה
     // איפה כל אחד מהבוטים המובילים עומד ביום האחרון
-    const now = w.best(5).map(b => { const p = D.m[b.g.asset].p[last], v = b.value(p);
-      return {asset: b.g.asset, inCoin: v > 0 ? b.units * p / v : 0, value: v, last: b.log[b.log.length - 1] || null}; });
+    const now = w.best(5).map(b => { const p = D.m[b.coin()].p[last], v = b.value(p);
+      return {asset: b.coin(), inCoin: v > 0 ? b.units * p / v : 0, value: v, last: b.log[b.log.length - 1] || null}; });
     self.postMessage({type: "tested", tag: msg.tag, now, series: w.series.map(([a, b]) => [a / inv * 50, b / inv * 50]),
       start: D.day(from), end: D.day(to - 1), world: msg.world || "real",
       view: lead ? {...view(D, lead, from, to), k: msg.watch || 0, where: msg.world === "flat" ? "flat" : "real"} : null, log: lead ? lead.log.slice(-40) : [], lead: lead ? pack(lead) : null});
@@ -711,7 +728,7 @@ self.onmessage = e => {
       tr.className = "pickrow" + (k === watchK ? " sel" : ""); tr.addEventListener("click", () => { selectBot(k); $("inspect").scrollIntoView({behavior: "smooth"}); });
       const pick = document.createElement("button"); pick.textContent = `בוט ${k + 1}`; pick.setAttribute("aria-label", `לראות מה קורה בתוך בוט ${k + 1}`);
       tr.insertCell().appendChild(pick);
-      [g.asset, Math.round(g.stop * 100) + "%", Math.round(g.keep * 100) + "%", Math.round(g.bet * 100) + "%", Math.round(g.listen * 100) + "%",
+      [g.rot > 0.5 ? `מחליף (כל ${g.rotEvery} ימים)` : g.asset, Math.round(g.stop * 100) + "%", Math.round(g.keep * 100) + "%", Math.round(g.bet * 100) + "%", Math.round(g.listen * 100) + "%",
        brainSize(g), (b.lessons || 0).toLocaleString("en-US") + " דוגמאות", SIGN[main[1]] + (main[2] < 0 ? " (הפוך)" : "")].forEach((v, i) => {
         const td = tr.insertCell(); td.textContent = v; if (i >= 1 && i <= 4) td.className = "n"; });
     });
