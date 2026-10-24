@@ -151,6 +151,15 @@ td.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
         <div><b id="tHold">-</b><span>לקנות ולחכות</span></div>
       </div>
       <p class="note" id="tVerdict"></p>
+      <div class="row"><button class="ghost" id="learnBtn">האם הם באמת למדו?</button></div>
+      <div id="learnBox" hidden>
+        <p class="note" id="learnStatus"></p>
+        <div class="big">
+          <div><b id="lMine">-</b><span>הבוטים שלך (ממוצע)</span></div>
+          <div><b id="lRand">-</b><span>בוטים אקראיים, בלי אימון</span></div>
+        </div>
+        <p class="note" id="learnVerdict"></p>
+      </div>
       <div class="legend"><span style="--c:var(--accent)">הבוטים</span><span style="--c:var(--hold)">לקנות את כל המטבעות ולחכות</span></div>
       <svg class="chart" id="testChart" viewBox="0 0 600 240" role="img" aria-label="הכסף לאורך תקופת הבדיקה"></svg>
       <h3 class="charttitle" id="tPriceTitle">המחיר באותו זמן</h3>
@@ -558,8 +567,11 @@ self.onmessage = e => {
   if (msg.type === "test") {
     const D = msg.world === "flat" ? flatData(msg.seed, DATA.assets, msg.pull) : DATA;
     const from = D.idx(msg.from), to = msg.until && msg.world !== "flat" ? D.idx(msg.until) : D.n;
-    const w = runPeriod(D, from, to, msg.team, 7);
+    const w = runPeriod(D, from, to, msg.team, msg.wseed ?? 7);
     const inv = w.invested || 1, last = to - 1;
+    if (msg.light) {   // רק התוצאה הסופית (מ-₪50), בלי גרפים
+      const e = w.series[w.series.length - 1]; self.postMessage({type: "tested", tag: msg.tag, k: msg.k, mine: msg.mine, net: e[0] / inv * 50, hold: e[1] / inv * 50}); return;
+    }
     const solo = msg.team.length ? runSolo(D, from, to, msg.team[0], 7) : null, lead = solo || w.best(1)[0];   // "בוט 1" לבד על כל התקופה
     // איפה כל אחד מהבוטים המובילים עומד ביום האחרון
     const now = w.best(5).map(b => { const p = D.m[b.coin()].p[last], v = b.value(p);
@@ -756,7 +768,7 @@ self.onmessage = e => {
     render();
   }));
 
-  function setBusy(on) { busy = on; for (const id of ["trainBtn", "testBtn", "resetBtn", "loadBtn", "liveFetch", "paperStart", "paperStop"]) $(id).disabled = on; $("stopBtn").hidden = !on; }
+  function setBusy(on) { busy = on; for (const id of ["trainBtn", "testBtn", "learnBtn", "resetBtn", "loadBtn", "liveFetch", "paperStart", "paperStop"]) $(id).disabled = on; $("stopBtn").hidden = !on; }
 
   let pending = null, trainingWorld = "real";
   function onEngine(e) {
@@ -779,6 +791,7 @@ self.onmessage = e => {
       if (msg.tag === "inspect") showView(msg.view, "סוחר לבד על כל התקופה");
       else if (msg.tag === "now") showNow(msg);
       else if (msg.tag === "paper") showPaper(msg);
+      else if (msg.tag === "learn") learnResult(msg);
       else { setBusy(false); showTest(msg); }
     }
   }
@@ -840,6 +853,41 @@ self.onmessage = e => {
       : `"לקנות ולחכות" ניצח הפעם ב-${(h - b).toFixed(2)} ₪. נסה לאמן אותם עוד, ובדוק שוב.`) + seen;
   }
   function fmtDate(s) { if (!/^\d{4}-\d\d-\d\d$/.test(s)) return s; const [y, m, d] = s.split("-"); return `${d}/${m}/${y}`; }
+
+  // ---- "האם הם באמת למדו?": הבוטים שלך מול בוטים אקראיים, על אותה תקופה, 8 פעמים עם מזל אחר ----
+  const LEARN_N = 8; let learn = null;
+  $("learnBtn").addEventListener("click", () => {
+    if (busy) return;
+    if (!state.team.length) { $("learnBox").hidden = false; $("learnStatus").textContent = "עוד אין בוטים מאומנים - אמן אותם קודם (חלק 1)."; return; }
+    setBusy(true); $("learnBox").hidden = false; $("lMine").textContent = $("lRand").textContent = "-"; $("learnVerdict").textContent = "";
+    const flat = testChoice === "flat", from = testChoice === "year" ? fairDay() : m3Day();
+    learn = {flat, from, got: [], label: flat ? "עולמות שטוחים חדשים" : `${fmtDate(from)} עד ${fmtDate(endDay())}`};
+    $("learnStatus").textContent = `בודק על ${learn.label}...`;
+    for (let k = 0; k < LEARN_N; k++) for (const mine of [true, false]) {
+      const where = flat ? {world: "flat", pull: PULL[worldChoice] || PULL.flat, seed: 900000 + k} : {from};
+      send({type: "test", tag: "learn", light: true, k, mine, wseed: 100 + k, team: mine ? state.team : [], ...where});
+    }
+  });
+  function learnResult(msg) {
+    if (!learn) return;
+    learn.got.push(msg);
+    $("learnStatus").textContent = `בודק על ${learn.label}... ${learn.got.length}/${LEARN_N * 2}`;
+    if (learn.got.length < LEARN_N * 2) return;
+    setBusy(false);
+    const mine = learn.got.filter(m => m.mine), rand = learn.got.filter(m => !m.mine), avg = xs => xs.reduce((s, m) => s + m.net, 0) / xs.length;
+    const a = avg(mine), b = avg(rand), hold = mine[0].hold;
+    const wins = mine.filter(m => m.net > rand.find(r => r.k === m.k).net).length;
+    for (const [id, v] of [["lMine", a], ["lRand", b]]) { $(id).textContent = money(v); $(id).className = v >= 0 ? "up" : "down"; }
+    const seen = !learn.flat && state.seenTo && state.seenTo > learn.from;
+    $("learnStatus").textContent = `${learn.label}, ₪50 בהתחלה, ${LEARN_N} פעמים עם מזל אחר. "לקנות ולחכות": ${money(hold)}.`;
+    $("learnVerdict").textContent =
+      (wins >= 6 && a > b ? `כן, הם למדו משהו: הבוטים שלך היו טובים יותר מבוטים אקראיים ב-${wins} מתוך ${LEARN_N} פעמים.`
+       : wins <= 2 ? `לא: בוטים אקראיים היו טובים יותר ב-${LEARN_N - wins} מתוך ${LEARN_N} פעמים. כדאי לאמן אותם עוד, או להתחיל מאפס.`
+       : `לא ברור: הבוטים שלך היו טובים יותר רק ב-${wins} מתוך ${LEARN_N} פעמים - זה יכול להיות מזל.`) +
+      (seen ? ` שים לב: הם כבר ראו את התקופה הזאת באימון (עד ${fmtDate(state.seenTo)}), אז הבדיקה לא הוגנת - בחר "עד לפני שנה" באימון.` : "") +
+      (learn.flat && worldChoice === "real" ? " (הם התאמנו על מחירים אמיתיים, אז עולם שטוח הוא בשבילם משהו חדש לגמרי.)" : "");
+    learn = null;
+  }
 
   // ---- חלון של בוט ----
   let watchK = 0, training = false;
