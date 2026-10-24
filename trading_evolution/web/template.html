@@ -183,7 +183,8 @@ td.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
     <svg class="chart" id="iMoney" viewBox="0 0 600 140" role="img" aria-label="הכסף של הבוט לאורך הזמן"></svg>
     <h3 class="charttitle" id="iBrainTitle">המוח שלו</h3>
     <svg class="chart" id="iBrain" viewBox="0 0 600 380" role="img" aria-label="המוח של הבוט: הסימנים, הנוירונים והחיבורים"></svg>
-    <p class="note">משמאל: 9 הסימנים שהוא רואה. באמצע: שתי שכבות של נוירונים. מימין: הניחוש שלו אם תהיה נפילה.
+    <p class="note">משמאל: 16 הסימנים שהוא רואה (מחירים וחושים מהאינטרנט). באמצע: שתי שכבות של נוירונים. מימין: הניחוש שלו אם תהיה נפילה בימים הקרובים.
+      המוח עובר מסבב לסבב, וככל שהוא לומד יותר - כל שיעור חדש משנה אותו פחות.
       קו ירוק = חיבור שמגביר, קו אדום = חיבור שמחליש. ככל שהקו עבה יותר, החיבור חזק יותר (מוצגים רק החיבורים החזקים).</p>
     <ul class="coins" id="iGenes"></ul>
   </section>
@@ -244,7 +245,12 @@ const NAMES = {trend: "מגמה", dip: "ירידה חדה (RSI)", momentum: "ת�
   bollinger: "רצועות בולינגר", channel: "ערוץ 20 יום", breakout: "פריצה של 55 יום", calm: "כמה השוק סוער"};
 const FEE = 0.0015, DEATH = 0.05, MAXW = 200, CLEAR = 0.1, SCHOOL = 365;
 // גודל המוח הוא גן (nn): שכבה ראשונה של nn נוירונים ושנייה של חצי. האבולוציה מחליטה אם מוח גדול שווה את זה.
-const NN_MIN = 4, NN_MAX = 32;
+let NN_MIN = 4, NN_MAX = 32;
+// slow: מוח שקשה יותר לשנות - עובר מסבב לסבב, וככל שלמד יותר כל שיעור חדש משנה אותו פחות (כמו אדם עם ניסיון).
+// בבדיקה הוגנת (2020-2026, 8 אימונים לכל שנה) הוא לא הזיק: טוב מבלעדיו ב-32 מתוך 56 בדיקות, +₪8.7 בממוצע (בטווח של מזל).
+// (בדקתי גם ריבית על מזומן, השקעה קטנה יותר כשסוער, קנייה בפחד קיצוני, יציאה בשלבים, מוח שמנחש "יעלה?" במקום "תהיה נפילה?"
+//  ומוח גדול (16-64 נוירונים) שמתאמן 200 סבבים - אף אחד מהם לא עזר)
+const ABIL = {slow: true};
 const layersOf = g => [g.nn, Math.max(2, Math.round(g.nn / 2))];
 // PATIENCE: כמה ימים ברצף של "סימני סכנה" עד שבורחים. בדקתי: המכירות האלה היו כמו הטלת מטבע (המחיר המשיך לרדת רק ב-48% מהפעמים)
 // ובלעדיהן הבוטים הרוויחו יותר (בדיקה הוגנת 2020-2026, 8 אימונים: +₪278 מול +₪236). אז עכשיו בורחים רק מירידה גדולה מהשיא.
@@ -343,7 +349,19 @@ function learn(b, x, target, lr) {
     delta = back.map((v, j) => v * (1 - inp[j] * inp[j]));
   }
 }
-function brainCopy(b, r, noise = 0.02) { return {L: b.L.map(l => ({w: l.w.map(row => row.map(w => w + r.gauss(0, noise))), b: l.b.slice()}))}; }
+// ילד שהמוח שלו בגודל אחר מההורה: מקבל את המוח של ההורה ומתאים אותו, בלי לשכוח.
+// נוירון חדש מקבל חיבורים פנימה קטנים ואקראיים, אבל חיבור החוצה של 0 - אז בהתחלה הוא לא משנה כלום, רק יכול ללמוד.
+// נוירון שמתבטל פשוט יוצא. (קודם ילד כזה קיבל מוח חדש לגמרי, וכך המוחות נולדו מחדש כל הזמן.)
+function brainFit(b, g, r) {
+  if (brainOk(b, g)) return brainCopy(b, r);
+  if (!b || !b.L || b.L.length !== 3 || b.L[0].w[0].length !== SIG.length) return null;
+  const sizes = [SIG.length, ...layersOf(g), 1];
+  return {L: sizes.slice(1).map((out, k) => { const old = b.L[k], oldOut = old.w.length, oldIn = old.w[0].length;
+    return {w: Array.from({length: out}, (_, o) => Array.from({length: sizes[k]}, (_, j) =>
+              o < oldOut ? (j < oldIn ? old.w[o][j] : 0) : r.gauss(0, 0.1))),
+            b: Array.from({length: out}, (_, o) => o < oldOut ? old.b[o] : 0)}; })};
+}
+function brainCopy(b, r, noise = ABIL.slow ? 0.005 : 0.02) { return {L: b.L.map(l => ({w: l.w.map(row => row.map(w => w + r.gauss(0, noise))), b: l.b.slice()}))}; }
 
 function readings(g, m, i) {
   const p = m.p[i], slow = m.ma(i, g.slow), ch = (lo, hi) => hi > lo ? (p - lo) / (hi - lo) : 0.5;
@@ -378,8 +396,9 @@ class Bot {
     return this.feel;
   }
   lesson([x, p0, vol, guess, low], now) {
-    const move = Math.log(Math.min(low, now) / p0) / (Math.max(vol, 1e-6) * Math.sqrt(this.g.hz)) + 1;
-    learn(this.mind, x, clamp(move), this.g.lr); this.lessons++;
+    const move = Math.log(Math.min(low, now) / p0) / (Math.max(vol, 1e-6) * Math.sqrt(this.g.hz)) + 1;   // "כמה עמוק הוא נפל בדרך?" (גלאי סכנה)
+    // slow: ככל שהמוח למד יותר, כל שיעור חדש משנה אותו פחות (כמו אדם עם ניסיון)
+    learn(this.mind, x, clamp(move), ABIL.slow ? this.g.lr / (1 + this.lessons / 1000) : this.g.lr); this.lessons++;
     this.hits.push((guess > 0) === (move > 0) ? 1 : 0); if (this.hits.length > 100) this.hits.shift();
   }
   school(m, i, rng) { const g = this.g; this.mind = brainNew(rng, SIG.length, g);
@@ -387,15 +406,16 @@ class Bot {
   hold(price, day, i) {
     const g = this.g; this.danger = this.score < g.sell ? this.danger + 1 : 0;
     this.out = this.out && this.units !== 0;
+    const note = (s, text) => { this.marks.push([i, s, this.coin()]); this.log.push([day, `${text}. מחיר: \u2066$${fmtP(price)}\u2069`]); };
     if (this.units > 0 && !this.out) {
       this.peak = Math.max(this.peak, price); const drop = price / this.peak - 1;
       const why = this.danger >= PATIENCE ? "סימני סכנה כמה ימים ברצף" : drop < -g.stop ? `ירידה של ${Math.round(-drop * 100)}% מהשיא` : null;
-      if (why) { this.sell(price, 1 - g.keep); this.out = this.units > 0; this.wait = g.cool; this.marks.push([i, -1, this.coin()]);
-        this.log.push([day, `מכר ${this.coin()} (${why})` + (this.out ? `, השאיר ${Math.round(g.keep * 100)}% ביטוח` : "") + `. מחיר: \u2066$${fmtP(price)}\u2069`]); return; }
+      if (why) { this.sell(price, 1 - g.keep); this.out = this.units > 0; this.wait = g.cool;
+        note(-1, `מכר ${this.coin()} (${why})` + (this.out ? `, השאיר ${Math.round(g.keep * 100)}% ביטוח` : "")); return; }
     }
     if (this.cash > 0.01 && !this.wait && this.score > g.sell + CLEAR) {
       if (this.units > 0 && !this.out) { if (this.cash > 0.05 * this.value(price)) this.buy(price); return; }
-      this.buy(price); this.out = false; this.peak = price; this.marks.push([i, 1, this.coin()]); this.log.push([day, `קנה ${this.coin()} (הסימנים רגועים). מחיר: \u2066$${fmtP(price)}\u2069`]);
+      this.buy(price); this.out = false; this.peak = price; note(1, `קנה ${this.coin()} (הסימנים רגועים)`);
     }
   }
   buy(price) { const spend = this.cash * this.g.bet; if (this.units === 0) this.entry = this.peak = price;
@@ -413,7 +433,8 @@ class World {
   spawn(g, money = null, gen = 0, parent = null) {
     if (money === null) { money = CFG.startMoney; this.invested += money; this.newMoney += money; }
     const b = new Bot(this.nextId++, g, this.tick, gen, money);
-    if (parent && brainOk(parent.mind, b.g)) { b.mind = brainCopy(parent.mind, this.rng); b.lessons = parent.lessons || 0; }
+    const mind = parent ? brainFit(parent.mind, b.g, this.rng) : null;
+    if (mind) { b.mind = mind; b.lessons = parent.lessons || 0; }
     this.bots.push(b); return b;
   }
   populate(teachers) {
@@ -521,7 +542,8 @@ function view(D, b, from, to) {
     money: idx.map(i => { const k = i - b.firstI; return b.firstI !== null && k >= 0 && k < b.vals.length ? +b.vals[k].toFixed(3) : null; }),
     marks: b.marks.filter(([i, , c]) => i >= from && i < to && (!c || c === coin)).slice(-400).map(([i, s]) => [+((i - from) / Math.max(1, to - 1 - from)).toFixed(4), s]),
     born: b.firstI !== null && b.firstI > from ? D.day(b.firstI) : null, g: pk.g, mind: pk.mind, lessons: b.lessons, gen: b.gen,
-    acc: b.hits.length ? b.hits.reduce((s, h) => s + h, 0) / b.hits.length : null, trades: b.marks.length};
+    acc: b.hits.length ? b.hits.reduce((s, h) => s + h, 0) / b.hits.length : null, trades: b.marks.length,
+    stiff: ABIL.slow ? 1 / (1 + b.lessons / 1000) : null};   // כמה מהר המוח עוד משתנה, ביחס להתחלה
 }
 
 // בוט אחד לבד על כל התקופה (בלי מבחנים ובלי מוות), כדי לראות בדיוק מה הוא עושה מההתחלה עד הסוף
@@ -539,7 +561,11 @@ let DATA = null, stop = false, WATCH = 0, USE_SENSES = true;   // WATCH: על א
 self.onmessage = e => {
   const msg = e.data;
   if (msg.type === "ping") { self.postMessage({type: "ready"}); return; }
-  if (msg.type === "init") { DATA = setup(msg.raw, USE_SENSES ? msg.senses : null); return; }
+  if (msg.type === "init") {
+    if (msg.abil) Object.assign(ABIL, msg.abil);   // לבדיקות: אילו יכולות מודלקות
+    if (msg.nn) [NN_MIN, NN_MAX] = msg.nn;         // לבדיקות: גודל המוח
+    DATA = setup(msg.raw, USE_SENSES ? msg.senses : null); return;
+  }
   if (msg.type === "stop") { stop = true; return; }
   if (msg.type === "watch") { WATCH = msg.k; return; }
   if (msg.type === "train") {
@@ -551,7 +577,8 @@ self.onmessage = e => {
     const next = () => {   // סבב אחד בכל פעם, כדי שאפשר יהיה לעצור באמצע
       if (done() || stop) { self.postMessage({type: "trained", team, rounds: r}); return; }
       r++;
-      const teachers = team.map(t => ({g: t.g, mind: null, lessons: 0}));   // המוחות לא עוברים בין סבבים (בדקתי - לא עזר)
+      // slow: המוח עובר מסבב לסבב (עם כל מה שלמד). אחרת - כל בוט מתחיל כל סבב עם מוח חדש
+      const teachers = team.map(t => ABIL.slow ? t : {g: t.g, mind: null, lessons: 0});
       // בעולם השטוח: בכל סבב עולם חדש, כדי שילמדו את השיטה ולא ישננו גרף אחד
       const D = flat ? flatData(msg.seedBase + r, DATA.assets, msg.pull) : DATA;
       const w = runPeriod(D, from, to, teachers, msg.seedBase + r), best = w.best(CFG.maxBots);
@@ -925,7 +952,8 @@ self.onmessage = e => {
     const items = [["בורח בירידה של", Math.round(g.stop * 100) + "%"], ["ביטוח כשהוא בורח", Math.round(g.keep * 100) + "%"],
       ["משקיע מהכסף", Math.round(g.bet * 100) + "%"], ["מקשיב למוח", Math.round(g.listen * 100) + "%"],
       ["המוח למד מ-", (v.lessons || 0).toLocaleString("en-US") + " דוגמאות"],
-      ["המוח צדק", v.acc === null ? "-" : Math.round(v.acc * 100) + "% מהפעמים"], ["קנה ומכר", (v.trades || 0).toLocaleString("en-US") + " פעמים"]];
+      ["המוח צדק", v.acc === null ? "-" : Math.round(v.acc * 100) + "% מהפעמים"], ["קנה ומכר", (v.trades || 0).toLocaleString("en-US") + " פעמים"],
+      ...(v.stiff ? [["המוח עוד משתנה", `${Math.round(v.stiff * 100)}% מהקצב שבו התחיל`]] : [])];
     for (const [a, b] of items) { const li = document.createElement("li"), s = document.createElement("span"), x = document.createElement("b");
       s.textContent = a; x.textContent = b; li.append(s, x); ul.appendChild(li); }
   }
