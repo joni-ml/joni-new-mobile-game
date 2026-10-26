@@ -110,6 +110,13 @@ td.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
         <button class="choice" data-train="m3" aria-pressed="false" id="t3">3 דקות</button>
         <button class="choice" data-train="m10" aria-pressed="false" id="t4">10 דקות</button>
       </div>
+      <div class="choices" role="group" aria-label="כמה צוותים">
+        <button class="choice" data-squads="1" aria-pressed="false" id="q1">צוות אחד</button>
+        <button class="choice" data-squads="4" aria-pressed="true" id="q4">4 צוותים נפרדים</button>
+      </div>
+      <p class="note">4 צוותים מתאמנים כל אחד לבד (לוקח פי 4 זמן), ובמסחר הכסף מתחלק ביניהם, כמו לא לשים את כל הביצים בסל אחד.
+        הם לא חכמים יותר, אבל פחות תלויים במזל: בבדיקה הוגנת על 2020-2026 הפיזור בין אימונים ירד בחצי,
+        והם ניצחו את "לקנות ולחכות" ב-36 מתוך 56 בדיקות (צוות אחד: 33).</p>
       <div class="choices" role="group" aria-label="באיזה עולם לאמן">
         <button class="choice" data-world="real" aria-pressed="true" id="w1">מחירים אמיתיים</button>
         <button class="choice" data-world="flat" aria-pressed="false" id="w2">עולם שטוח</button>
@@ -224,7 +231,7 @@ td.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
         <tbody id="botRows"></tbody>
       </table></div>
     <div class="confirm" id="loadBox">
-      <button class="ghost" id="loadBtn">טען את הבוטים ש-Claude אימן (400 סבבים)</button>
+      <button class="ghost" id="loadBtn">טען את הבוטים ש-Claude אימן (4 צוותים, 400 סבבים כל אחד)</button>
     </div>
     <div class="confirm" id="resetBox">
       <button class="ghost" id="resetBtn">התחל מאפס</button>
@@ -572,21 +579,26 @@ self.onmessage = e => {
     stop = false;
     const flat = msg.world === "flat";
     const from = flat ? FLAT_FROM : Math.max(MAXW, DATA.idx("2018-01-01")), to = flat ? FLAT_N : Math.min(DATA.n, DATA.idx(msg.to) + 1);
-    let team = msg.team, r = 0; const t0 = Date.now();
-    const done = () => msg.rounds ? r >= msg.rounds : Date.now() - t0 >= msg.seconds * 1000;
+    // squads: כמה צוותים שמתאמנים בנפרד (כל אחד בעולם משלו, בתורות). בסוף לוקחים את הטובים של כל צוות.
+    const S = Math.max(1, msg.squads || 1);
+    const squads = S === 1 ? [msg.team] : Array.from({length: S}, (_, q) => msg.team.filter(t => (t.sq || 0) === q));
+    // מכל צוות שומרים את 10 הטובים (כמה שנכנסים לבדיקה), כדי שכל צוות יסחור בדיוק כמו צוות שלם
+    const combined = () => S === 1 ? squads[0] : squads.flatMap((tm, q) => tm.slice(0, CFG.startBots).map(t => ({...t, sq: q})));
+    let r = 0; const t0 = Date.now(), total = msg.rounds ? msg.rounds * S : 0;
+    const done = () => total ? r >= total : Date.now() - t0 >= msg.seconds * 1000;
     const next = () => {   // סבב אחד בכל פעם, כדי שאפשר יהיה לעצור באמצע
-      if (done() || stop) { self.postMessage({type: "trained", team, rounds: r}); return; }
-      r++;
+      if (done() || stop) { self.postMessage({type: "trained", team: combined(), rounds: r}); return; }
+      const q = r % S; r++;
       // slow: המוח עובר מסבב לסבב (עם כל מה שלמד). אחרת - כל בוט מתחיל כל סבב עם מוח חדש
-      const teachers = team.map(t => ABIL.slow ? t : {g: t.g, mind: null, lessons: 0});
+      const teachers = squads[q].map(t => ABIL.slow ? t : {g: t.g, mind: null, lessons: 0});
       // בעולם השטוח: בכל סבב עולם חדש, כדי שילמדו את השיטה ולא ישננו גרף אחד
       const D = flat ? flatData(msg.seedBase + r, DATA.assets, msg.pull) : DATA;
       const w = runPeriod(D, from, to, teachers, msg.seedBase + r), best = w.best(CFG.maxBots);
-      team = best.map(pack);
-      const last = w.series[w.series.length - 1], inv = w.invested || 1;
-      self.postMessage({type: "round", round: r, net: last[0] / inv * 50, hold: last[1] / inv * 50, team,
+      squads[q] = best.map(pack);
+      const team = combined(), last = w.series[w.series.length - 1], inv = w.invested || 1;
+      self.postMessage({type: "round", round: r, squad: q, net: last[0] / inv * 50, hold: last[1] / inv * 50, team,
         view: {...view(D, runSolo(D, from, to, team[Math.min(WATCH, team.length - 1)], 7), from, to), k: Math.min(WATCH, team.length - 1), where: flat ? "flat" : "real"},
-        part: msg.rounds ? r / msg.rounds : (Date.now() - t0) / (msg.seconds * 1000)});
+        part: total ? r / total : (Date.now() - t0) / (msg.seconds * 1000)});
       setTimeout(next, 40);   // הפסקה קטנה בין סבבים, כדי שהדף יישאר זמין ללחיצות
     };
     next();
@@ -594,16 +606,21 @@ self.onmessage = e => {
   if (msg.type === "test") {
     const D = msg.world === "flat" ? flatData(msg.seed, DATA.assets, msg.pull) : DATA;
     const from = D.idx(msg.from), to = msg.until && msg.world !== "flat" ? D.idx(msg.until) : D.n;
-    const w = runPeriod(D, from, to, msg.team, msg.wseed ?? 7);
-    const inv = w.invested || 1, last = to - 1;
+    // כמה צוותים: כל צוות סוחר לבד עם חלק שווה מהכסף, והתוצאה היא הסכום (כמו לא לשים את כל הביצים בסל אחד).
+    // בוטים בלי צוות - צוות אחד. בוטים אקראיים (בלי צוות) בשביל השוואה - אותו מספר עולמות כמו שביקשו
+    const S = msg.team.some(t => t.sq != null) ? Math.max(...msg.team.map(t => t.sq || 0)) + 1 : Math.max(1, msg.squads || 1);
+    const groups = Array.from({length: S}, (_, q) => S === 1 ? msg.team : msg.team.filter(t => (t.sq || 0) === q));
+    const worlds = groups.map((tm, q) => runPeriod(D, from, to, tm, (msg.wseed ?? 7) + q * 1000)), w = worlds[0];
+    const series = w.series.map((_, i) => [0, 1].map(j => worlds.reduce((s, x) => s + x.series[i][j] / (x.invested || 1) * 50, 0) / S));
+    const last = to - 1;
     if (msg.light) {   // רק התוצאה הסופית (מ-₪50), בלי גרפים
-      const e = w.series[w.series.length - 1]; self.postMessage({type: "tested", tag: msg.tag, k: msg.k, mine: msg.mine, net: e[0] / inv * 50, hold: e[1] / inv * 50}); return;
+      const e = series[series.length - 1]; self.postMessage({type: "tested", tag: msg.tag, k: msg.k, mine: msg.mine, net: e[0], hold: e[1]}); return;
     }
     const solo = msg.team.length ? runSolo(D, from, to, msg.team[0], 7) : null, lead = solo || w.best(1)[0];   // "בוט 1" לבד על כל התקופה
     // איפה כל אחד מהבוטים המובילים עומד ביום האחרון
-    const now = w.best(5).map(b => { const p = D.m[b.coin()].p[last], v = b.value(p);
+    const now = worlds.flatMap(x => x.best(5)).sort((a, b) => b.logGrowth - a.logGrowth).slice(0, 5).map(b => { const p = D.m[b.coin()].p[last], v = b.value(p);
       return {asset: b.coin(), inCoin: v > 0 ? b.units * p / v : 0, value: v, last: b.log[b.log.length - 1] || null}; });
-    self.postMessage({type: "tested", tag: msg.tag, now, series: w.series.map(([a, b]) => [a / inv * 50, b / inv * 50]),
+    self.postMessage({type: "tested", tag: msg.tag, now, squads: S, series,
       start: D.day(from), end: D.day(to - 1), world: msg.world || "real",
       view: lead ? {...view(D, lead, from, to), k: msg.watch || 0, where: msg.world === "flat" ? "flat" : "real"} : null, log: lead ? lead.log.slice(-40) : [], lead: lead ? pack(lead) : null});
   }
@@ -653,20 +670,49 @@ self.onmessage = e => {
     "פחד וחמדנות", "הבורסה (S&P 500)", "פחד בוול סטריט (VIX)", "קוראים על ביטקוין", "כתובות פעילות", "כמה המטבע יקר", "דולרים דיגיטליים"];
   let senses = JSON.parse($("senses").textContent);
   let state = {rounds: 0, team: [], history: []}, db = null, docRef = null, busy = false;
-  let trainChoice = "r40", testChoice = "year", toChoice = "fair", worldChoice = "real";
+  let trainChoice = "r40", testChoice = "year", toChoice = "fair", worldChoice = "real", squadChoice = 4;
+  const squadsOf = team => team.some(b => b.sq != null) ? Math.max(...team.map(b => b.sq || 0)) + 1 : 1;
+  // אילו בוטים מראים: 10 הראשונים, או כשיש צוותים - 5 הראשונים מכל צוות (k = המקום ברשימה המלאה)
+  const shown = () => { const S = squadsOf(state.team);
+    return S > 1 ? [...Array(S).keys()].flatMap(q => state.team.map((b, k) => [b, k]).filter(([b]) => (b.sq || 0) === q).slice(0, 5).map(([, k]) => k))
+      : state.team.slice(0, 10).map((_, k) => k); };
+  const botName = (b, k) => b && b.sq != null ? `צוות ${b.sq + 1}, בוט ${state.team.slice(0, k).filter(x => x.sq === b.sq).length + 1}` : `בוט ${k + 1}`;
   const PULL = {flat: 1 / 30, flat2: 1 / 60};
   const money = v => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)} ₪`;
 
   // ---- זיכרון: בחשבון (אם אפשר), ואם לא - בדפדפן הזה ----
   const LS = "botTrainer.v1";
-  function loadLocal() { try { const s = JSON.parse(localStorage.getItem(LS) || "null"); if (s && s.team) state = s; } catch (e) {} }
+  function loadLocal() { try { const s = JSON.parse(localStorage.getItem(LS) || "null");
+    if (s && s.team) state = {...s, team: unpackTeam(s.team), paper: unpackPaper(s.paper || null)}; } catch (e) {} }
+  // הבוטים וההיסטוריה במסמך אחד, והתיק החי במסמך נפרד (40 בוטים עם מוח לא נכנסים פעמיים במסמך אחד)
+  let paperRef = null;
+  // שמירה דחוסה של המוח: כל מספר נשמר כ-2 בתים (בערך פי 2.5 פחות מקום), בדיוק של 1/32767 מהמספר הכי גדול בשכבה
+  function packMind(m) {
+    if (!m || !m.L) return m;
+    return {z: m.L.map(l => { const v = l.w.flat().concat(l.b), s = Math.max(1e-9, ...v.map(Math.abs)) / 32767;
+      const bytes = new Uint8Array(new Int16Array(v.map(x => Math.round(x / s))).buffer);
+      return {o: l.w.length, i: l.w[0].length, s, d: btoa(String.fromCharCode(...bytes))}; })};
+  }
+  function unpackMind(m) {
+    if (!m || !m.z) return m;   // מוח שנשמר בלי דחיסה (גרסה ישנה) - כמו שהוא
+    return {L: m.z.map(l => { const v = Array.from(new Int16Array(Uint8Array.from(atob(l.d), c => c.charCodeAt(0)).buffer), x => +(x * l.s).toFixed(4));
+      return {w: Array.from({length: l.o}, (_, o) => v.slice(o * l.i, (o + 1) * l.i)), b: v.slice(l.o * l.i)}; })};
+  }
+  const packTeam = team => (team || []).map(b => ({...b, mind: packMind(b.mind)}));
+  const unpackTeam = team => (team || []).map(b => ({...b, mind: unpackMind(b.mind)}));
+  const packPaper = p => p ? {...p, team: packTeam(p.team)} : null;
+  const unpackPaper = p => p ? {...p, team: unpackTeam(p.team)} : null;
   async function save() {
-    const clean = {rounds: state.rounds, team: state.team, history: state.history.slice(-300), seenTo: state.seenTo || null,
-      paper: state.paper || null, saved: new Date().toISOString()};
-    try { localStorage.setItem(LS, JSON.stringify(clean)); } catch (e) {}
+    const clean = {rounds: state.rounds, team: packTeam(state.team), history: state.history.slice(-300), seenTo: state.seenTo || null,
+      saved: new Date().toISOString()};
+    try { localStorage.setItem(LS, JSON.stringify({...clean, paper: packPaper(state.paper)})); } catch (e) {}
     if (docRef) { try { await docRef.set(clean); setMemory("הזיכרון נשמר בחשבון שלך", false); return; }
       catch (e) { setMemory("לא הצלחתי לשמור בחשבון - נשמר בדפדפן הזה", true); return; } }
     setMemory("הזיכרון נשמר בדפדפן הזה", false);
+  }
+  async function savePaper() {
+    await save();
+    if (paperRef) { try { await paperRef.set({paper: packPaper(state.paper)}); } catch (e) { setMemory("לא הצלחתי לשמור את התיק בחשבון - נשמר בדפדפן הזה", true); } }
   }
   function setMemory(text, warn) { const m = $("memory"); m.textContent = text; m.classList.toggle("warn", !!warn); }
   async function connect() {
@@ -681,7 +727,11 @@ self.onmessage = e => {
       const snap = await docRef.get();
       // מה שחוזר מהחשבון "קפוא" (אי אפשר לשנות אותו), אז עובדים על העתק
       const s = snap && snap.exists ? JSON.parse(JSON.stringify(snap.data())) : null;
-      if (s && s.team && (s.rounds || 0) >= (state.rounds || 0)) { state = {rounds: s.rounds || 0, team: s.team, history: s.history || [], seenTo: s.seenTo || null, paper: s.paper || null}; }
+      if (s && s.team && (s.rounds || 0) >= (state.rounds || 0)) { state = {rounds: s.rounds || 0, team: unpackTeam(s.team), history: s.history || [], seenTo: s.seenTo || null, paper: state.paper || null}; }
+      paperRef = db.doc("data/users/" + uid + "/paper");
+      const ps = await paperRef.get(), pd = ps && ps.exists ? JSON.parse(JSON.stringify(ps.data())) : null;
+      if (pd) state.paper = unpackPaper(pd.paper || null);
+      else if (s && s.paper) { state.paper = unpackPaper(s.paper); await savePaper(); }   // זיכרון ישן: התיק היה בתוך המסמך של הבוטים
       setMemory(state.rounds ? "הזיכרון נטען מהחשבון שלך" : "מחובר - האימון יישמר בחשבון שלך", false);
       render();
     } catch (e) { setMemory("הזיכרון נשמר בדפדפן הזה", false); }
@@ -761,11 +811,11 @@ self.onmessage = e => {
     $("sCoin").textContent = top ? top[0] : "-";
     const rows = $("botRows"); rows.textContent = "";
     if (!state.team.length) { const tr = rows.insertRow(); const td = tr.insertCell(); td.colSpan = 9; td.textContent = "עוד אין בוטים מאומנים. לחץ על \"אמן אותם\" כדי להתחיל."; }
-    state.team.slice(0, 10).forEach((b, k) => {
+    shown().forEach(k => { const b = state.team[k];
       const g = b.g, tr = rows.insertRow(), tot = g.w.reduce((s, w) => s + Math.abs(w), 0) || 1;
       const main = g.w.map((w, i) => [Math.abs(w) / tot, i, w]).sort((a, c) => c[0] - a[0])[0];
       tr.className = "pickrow" + (k === watchK ? " sel" : ""); tr.addEventListener("click", () => { selectBot(k); $("inspect").scrollIntoView({behavior: "smooth"}); });
-      const pick = document.createElement("button"); pick.textContent = `בוט ${k + 1}`; pick.setAttribute("aria-label", `לראות מה קורה בתוך בוט ${k + 1}`);
+      const pick = document.createElement("button"); pick.textContent = botName(b, k); pick.setAttribute("aria-label", `לראות מה קורה בתוך ${botName(b, k)}`);
       tr.insertCell().appendChild(pick);
       [g.rot > 0.5 ? `מחליף (כל ${g.rotEvery} ימים)` : g.asset, Math.round(g.stop * 100) + "%", Math.round(g.keep * 100) + "%", Math.round(g.bet * 100) + "%", Math.round(g.listen * 100) + "%",
        brainSize(g), (b.lessons || 0).toLocaleString("en-US") + " דוגמאות", SIGN[main[1]] + (main[2] < 0 ? " (הפוך)" : "")].forEach((v, i) => {
@@ -789,6 +839,7 @@ self.onmessage = e => {
   document.querySelectorAll("[data-train]").forEach(b => b.addEventListener("click", () => { trainChoice = b.dataset.train; press("train", trainChoice); }));
   document.querySelectorAll("[data-test]").forEach(b => b.addEventListener("click", () => { testChoice = b.dataset.test; press("test", testChoice); }));
   document.querySelectorAll("[data-to]").forEach(b => b.addEventListener("click", () => { toChoice = b.dataset.to; press("to", toChoice); }));
+  document.querySelectorAll("[data-squads]").forEach(b => b.addEventListener("click", () => { squadChoice = +b.dataset.squads; press("squads", b.dataset.squads); }));
   document.querySelectorAll("[data-world]").forEach(b => b.addEventListener("click", () => {
     worldChoice = b.dataset.world; press("world", worldChoice);
     const flat = worldChoice !== "real"; $("worldNote").hidden = !flat; $("toGroup").hidden = flat; $("toNote").hidden = flat;
@@ -804,14 +855,15 @@ self.onmessage = e => {
       state.rounds++; state.team = msg.team; state.history.push([state.rounds, +msg.net.toFixed(2), +msg.hold.toFixed(2), trainingWorld]);
       if (state.history.length > 300) state.history.shift();
       $("progress").style.width = Math.min(100, msg.part * 100).toFixed(1) + "%";
-      $("trainStatus").textContent = `סבב ${state.rounds.toLocaleString("en-US")}: הבוטים ${money(msg.net)} מול לקנות ולחכות ${money(msg.hold)} ${trainingWorld === "real" ? " (על כל תקופת האימון)" : " (בעולם שטוח חדש)"}`;
+      $("trainStatus").textContent = `סבב ${state.rounds.toLocaleString("en-US")}${squadsOf(msg.team) > 1 ? ` (צוות ${msg.squad + 1})` : ""}: הבוטים ${money(msg.net)} מול לקנות ולחכות ${money(msg.hold)} ${trainingWorld === "real" ? " (על כל תקופת האימון)" : " (בעולם שטוח חדש)"}`;
       render();
       if (msg.view && msg.view.k === watchK) showView(msg.view, `העולם של סבב ${state.rounds.toLocaleString("en-US")} באימון, סוחר לבד מההתחלה עד הסוף`);
       if (msg.round % 5 === 0) save();
     }
     if (msg.type === "trained") {
       setBusy(false); training = false; $("progress").style.width = "100%";
-      $("trainStatus").textContent = `סיימתי ${msg.rounds} סבבים. הבוטים הכי טובים נשמרו - עכשיו אפשר לבדוק אותם בפעולה.`;
+      const S = squadsOf(msg.team);
+      $("trainStatus").textContent = `סיימתי ${msg.rounds} סבבים${S > 1 ? ` (${Math.round(msg.rounds / S)} לכל אחד מ-${S} הצוותים)` : ""}. הבוטים הכי טובים נשמרו - עכשיו אפשר לבדוק אותם בפעולה.`;
       save(); render(); runTest(); liveRuns();
     }
     if (msg.type === "tested") {
@@ -830,7 +882,10 @@ self.onmessage = e => {
     const to = toChoice === "today" ? endDay() : fairDay();
     if (worldChoice === "real" && (!state.seenTo || to > state.seenTo)) state.seenTo = to;   // עד איזה יום הבוטים כבר ראו מחירים
     const world = worldChoice === "real" ? {} : {world: "flat", pull: PULL[worldChoice]};
-    send({type: "train", team: state.team, seedBase: (state.rounds + 1) * 1000, to, ...world, ...map[trainChoice]});
+    // בוטים שעוד לא מחולקים לצוותים: מחלקים אותם בתורות. צוות אחד: בלי חלוקה
+    const team = squadChoice > 1 ? state.team.map((b, i) => ({...b, sq: b.sq != null && b.sq < squadChoice ? b.sq : i % squadChoice}))
+      : state.team.map(({sq, ...b}) => b);
+    send({type: "train", team, squads: squadChoice, seedBase: (state.rounds + 1) * 1000, to, ...world, ...map[trainChoice]});
   });
   $("stopBtn").addEventListener("click", () => send({type: "stop"}));
 
@@ -892,7 +947,7 @@ self.onmessage = e => {
     $("learnStatus").textContent = `בודק על ${learn.label}...`;
     for (let k = 0; k < LEARN_N; k++) for (const mine of [true, false]) {
       const where = flat ? {world: "flat", pull: PULL[worldChoice] || PULL.flat, seed: 900000 + k} : {from};
-      send({type: "test", tag: "learn", light: true, k, mine, wseed: 100 + k, team: mine ? state.team : [], ...where});
+      send({type: "test", tag: "learn", light: true, k, mine, wseed: 100 + k, team: mine ? state.team : [], squads: squadsOf(state.team), ...where});
     }
   });
   function learnResult(msg) {
@@ -920,8 +975,8 @@ self.onmessage = e => {
   let watchK = 0, training = false;
   function pickButtons() {
     const box = $("pickBot"); box.textContent = "";
-    state.team.slice(0, 10).forEach((b, k) => {
-      const btn = Object.assign(document.createElement("button"), {className: "choice", textContent: `בוט ${k + 1}`});
+    shown().forEach(k => { const b = state.team[k];
+      const btn = Object.assign(document.createElement("button"), {className: "choice", textContent: botName(b, k)});
       btn.setAttribute("aria-pressed", String(k === watchK)); btn.addEventListener("click", () => selectBot(k)); box.appendChild(btn);
     });
   }
@@ -939,7 +994,7 @@ self.onmessage = e => {
   function showView(v, source) {
     if (!v) return;
     const g = v.g, days = v.price.length;
-    $("iTitle").textContent = `בוט ${v.k + 1} · סוחר ב-${v.asset} · מוח של ${brainSize(g)} נוירונים · דור ${v.gen} · ${source}` +
+    $("iTitle").textContent = `${botName(state.team[v.k], v.k)} · סוחר ב-${v.asset} · מוח של ${brainSize(g)} נוירונים · דור ${v.gen} · ${source}` +
       (v.born ? ` · נולד באמצע (${fmtDate(v.born)})` : "");
     $("iPriceTitle").textContent = `המחיר של ${v.asset} בעולם הזה (${WORLD[v.where] || ""}, ${fmtDate(v.start)} עד ${fmtDate(v.end)})`;
     lineChart($("iPrice"), [{values: v.price, color: "--ink", width: 1.5, noDot: true}],
@@ -1095,10 +1150,10 @@ self.onmessage = e => {
   $("liveFetch").addEventListener("click", () => fetchPrices());
   $("paperStart").addEventListener("click", async () => {
     if (!state.team.length) { $("paperInfo").textContent = "קודם צריך לאמן את הבוטים (חלק 1)."; return; }
-    state.paper = {start: endDay(), team: state.team}; await save(); showPaperInfo();
+    state.paper = {start: endDay(), team: state.team}; await savePaper(); showPaperInfo();
   });
   $("paperStop").addEventListener("click", async () => {
-    state.paper = null; await save(); showPaperInfo();
+    state.paper = null; await savePaper(); showPaperInfo();
     $("paperInfo").textContent = "התיק נסגר. אפשר לפתוח תיק חדש מתי שתרצה.";
   });
 
@@ -1125,7 +1180,7 @@ self.onmessage = e => {
     const no = Object.assign(document.createElement("button"), {className: "ghost", textContent: "ביטול", id: "resetNo"});
     box.append(q, yes, no);
     no.addEventListener("click", () => location.reload());
-    yes.addEventListener("click", async () => { state = {rounds: 0, team: [], history: []}; await save(); location.reload(); });
+    yes.addEventListener("click", async () => { state = {rounds: 0, team: [], history: [], paper: null}; await savePaper(); location.reload(); });
   });
 
   // הדף מתחיל מוכן: בדיקה אחת של הבוטים כמו שהם עכשיו (מאומנים או לא) על השנה האחרונה,
