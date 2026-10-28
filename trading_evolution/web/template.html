@@ -231,7 +231,7 @@ td.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
         <tbody id="botRows"></tbody>
       </table></div>
     <div class="confirm" id="loadBox">
-      <button class="ghost" id="loadBtn">טען את הבוטים ש-Claude אימן (4 צוותים, 400 סבבים כל אחד)</button>
+      <button class="ghost" id="loadBtn">טען את הבוטים ש-Claude אימן (4 צוותים, כ-2,900 סבבים כל אחד, מוח עד 64 נוירונים)</button>
     </div>
     <div class="confirm" id="resetBox">
       <button class="ghost" id="resetBtn">התחל מאפס</button>
@@ -252,7 +252,7 @@ const NAMES = {trend: "מגמה", dip: "ירידה חדה (RSI)", momentum: "ת�
   bollinger: "רצועות בולינגר", channel: "ערוץ 20 יום", breakout: "פריצה של 55 יום", calm: "כמה השוק סוער"};
 const FEE = 0.0015, DEATH = 0.05, MAXW = 200, CLEAR = 0.1, SCHOOL = 365;
 // גודל המוח הוא גן (nn): שכבה ראשונה של nn נוירונים ושנייה של חצי. האבולוציה מחליטה אם מוח גדול שווה את זה.
-let NN_MIN = 4, NN_MAX = 32;
+let NN_MIN = 4, NN_MAX = 64;   // גודל המוח (גן): עד 64 נוירונים בשכבה הראשונה
 // slow: מוח שקשה יותר לשנות - עובר מסבב לסבב, וככל שלמד יותר כל שיעור חדש משנה אותו פחות (כמו אדם עם ניסיון).
 // בבדיקה הוגנת (2020-2026, 8 אימונים לכל שנה) הוא לא הזיק: טוב מבלעדיו ב-32 מתוך 56 בדיקות, +₪8.7 בממוצע (בטווח של מזל).
 // (בדקתי גם ריבית על מזומן, השקעה קטנה יותר כשסוער, קנייה בפחד קיצוני, יציאה בשלבים, מוח שמנחש "יעלה?" במקום "תהיה נפילה?"
@@ -686,25 +686,31 @@ self.onmessage = e => {
     if (s && s.team) state = {...s, team: unpackTeam(s.team), paper: unpackPaper(s.paper || null)}; } catch (e) {} }
   // הבוטים וההיסטוריה במסמך אחד, והתיק החי במסמך נפרד (40 בוטים עם מוח לא נכנסים פעמיים במסמך אחד)
   let paperRef = null;
-  // שמירה דחוסה של המוח: כל מספר נשמר כ-2 בתים (בערך פי 2.5 פחות מקום), בדיוק של 1/32767 מהמספר הכי גדול בשכבה
-  function packMind(m) {
+  // שמירה דחוסה של המוח: כל מספר נשמר כ-2 בתים (בדיוק של 1/32767 מהמספר הכי גדול בשכבה).
+  // כשהמוחות גדולים והמסמך לא נכנס לחשבון (256KB) - בית אחד לכל מספר (1/127), כמו שמקטינים מודלים של AI
+  function packMind(m, bits = 16) {
     if (!m || !m.L) return m;
-    return {z: m.L.map(l => { const v = l.w.flat().concat(l.b), s = Math.max(1e-9, ...v.map(Math.abs)) / 32767;
-      const bytes = new Uint8Array(new Int16Array(v.map(x => Math.round(x / s))).buffer);
-      return {o: l.w.length, i: l.w[0].length, s, d: btoa(String.fromCharCode(...bytes))}; })};
+    const top = bits === 8 ? 127 : 32767, Arr = bits === 8 ? Int8Array : Int16Array;
+    return {z: m.L.map(l => { const v = l.w.flat().concat(l.b), s = Math.max(1e-9, ...v.map(Math.abs)) / top;
+      const bytes = new Uint8Array(new Arr(v.map(x => Math.round(x / s))).buffer);
+      let bin = ""; for (let k = 0; k < bytes.length; k += 8192) bin += String.fromCharCode(...bytes.subarray(k, k + 8192));
+      return {o: l.w.length, i: l.w[0].length, s, d: btoa(bin), ...(bits === 8 ? {q: 8} : {})}; })};
   }
   function unpackMind(m) {
     if (!m || !m.z) return m;   // מוח שנשמר בלי דחיסה (גרסה ישנה) - כמו שהוא
-    return {L: m.z.map(l => { const v = Array.from(new Int16Array(Uint8Array.from(atob(l.d), c => c.charCodeAt(0)).buffer), x => +(x * l.s).toFixed(4));
+    return {L: m.z.map(l => { const bytes = Uint8Array.from(atob(l.d), c => c.charCodeAt(0));
+      const v = Array.from(l.q === 8 ? new Int8Array(bytes.buffer) : new Int16Array(bytes.buffer), x => +(x * l.s).toFixed(4));
       return {w: Array.from({length: l.o}, (_, o) => v.slice(o * l.i, (o + 1) * l.i)), b: v.slice(l.o * l.i)}; })};
   }
-  const packTeam = team => (team || []).map(b => ({...b, mind: packMind(b.mind)}));
+  const LIMIT = 240000;   // קצת מתחת ל-256KB של מסמך בחשבון
+  const packTeam = (team, bits = 16) => (team || []).map(b => ({...b, mind: packMind(b.mind, bits)}));
+  const fit = make => { const a = make(16); return JSON.stringify(a).length <= LIMIT ? a : make(8); };   // קודם 2 בתים, ואם לא נכנס - בית אחד
   const unpackTeam = team => (team || []).map(b => ({...b, mind: unpackMind(b.mind)}));
-  const packPaper = p => p ? {...p, team: packTeam(p.team)} : null;
+  const packPaper = p => p ? fit(bits => ({...p, team: packTeam(p.team, bits)})) : null;
   const unpackPaper = p => p ? {...p, team: unpackTeam(p.team)} : null;
   async function save() {
-    const clean = {rounds: state.rounds, team: packTeam(state.team), history: state.history.slice(-300), seenTo: state.seenTo || null,
-      saved: new Date().toISOString()};
+    const clean = fit(bits => ({rounds: state.rounds, team: packTeam(state.team, bits), history: state.history.slice(-300), seenTo: state.seenTo || null,
+      saved: new Date().toISOString()}));
     try { localStorage.setItem(LS, JSON.stringify({...clean, paper: packPaper(state.paper)})); } catch (e) {}
     if (docRef) { try { await docRef.set(clean); setMemory("הזיכרון נשמר בחשבון שלך", false); return; }
       catch (e) { setMemory("לא הצלחתי לשמור בחשבון - נשמר בדפדפן הזה", true); return; } }
@@ -983,8 +989,8 @@ self.onmessage = e => {
   function selectBot(k) {
     watchK = k; send({type: "watch", k}); pickButtons(); render();
     if (!state.team[k]) return;
-    if (training) { $("iTitle").textContent = `בוט ${k + 1}: מחכה לסבב הבא באימון...`; return; }
-    $("iTitle").textContent = `בוט ${k + 1}: מריץ אותו...`;
+    if (training) { $("iTitle").textContent = `${botName(state.team[k], k)}: מחכה לסבב הבא באימון...`; return; }
+    $("iTitle").textContent = `${botName(state.team[k], k)}: מריץ אותו...`;
     // כשלא מאמנים: מריצים אותו פעם אחת בעולם שנבחר באימון, כדי לראות מה הוא עושה
     const where = worldChoice === "real" ? {from: dayOf(200), until: toChoice === "today" ? null : dayOf(raw.n - 365)}
       : {world: "flat", pull: PULL[worldChoice], seed: 4242};
