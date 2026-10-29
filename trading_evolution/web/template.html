@@ -75,6 +75,12 @@ td.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
 .gtile { display: grid; gap: 2px; }
 .gtile b { font: 600 15px var(--f-num); }
 .livelink { color: var(--accent); font-weight: 600; }
+.lab td { white-space: normal; vertical-align: top; }
+.lab td small { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+.lab bdi { white-space: nowrap; }
+.lab .yes { color: var(--up); font-weight: 700; white-space: nowrap; }
+.lab .no { color: var(--muted); white-space: nowrap; }
+.lab tr.group td { background: var(--soft); font-weight: 700; font-size: 14px; }
 .coins b { font-family: var(--f-num); font-weight: 600; color: var(--ink); }
 .coins small { display: block; font-size: 12px; text-align: end; }
 .now li { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; }
@@ -237,6 +243,42 @@ td.n { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
       <button class="ghost" id="resetBtn">התחל מאפס</button>
     </div>
   </section>
+  <section class="card" aria-labelledby="hLab">
+    <h2 id="hLab">המעבדה: מה Claude בדק כדי לשפר אותם</h2>
+    <p class="note">כל רעיון נבדק בבדיקה הוגנת: מתאמנים רק על מה שהיה לפני השנה, ואז סוחרים בשנה עצמה (2020 עד 2026), כמה פעמים עם מזל אחר.
+      "X מתוך 28" = בכמה בדיקות הבוטים עם הרעיון הרוויחו יותר מאותם בוטים בלי הרעיון. בערך חצי = מזל.
+      הכסף = כמה יותר (או פחות) הם הרוויחו בממוצע בכל בדיקה, כשמתחילים עם ₪50. רעיון שנראה טוב נבדק שוב על אימונים חדשים - ורובם התהפכו.</p>
+    <div class="tablewrap"><table class="lab">
+        <thead><tr><th>רעיון</th><th>תוצאה</th><th>החלטה</th></tr></thead>
+        <tbody>
+          <tr class="group"><td colspan="3">מה עזר (או נשאר)</td></tr>
+          <tr><td>אימון בכלל<small>מול בוטים אקראיים בלי אימון</small></td><td>טובים יותר ב-41 מתוך 56</td><td class="yes">הם באמת לומדים</td></tr>
+          <tr><td>בורחים רק מירידה גדולה מהשיא<small>במקום למכור על "סימני סכנה", שהיו כמו הטלת מטבע</small></td><td>סה"כ על 7 השנים: <bdi dir="ltr">+₪278</bdi> מול <bdi dir="ltr">+₪236</bdi></td><td class="yes">נוסף</td></tr>
+          <tr><td>4 צוותים נפרדים<small>כל צוות סוחר לבד עם רבע מהכסף</small></td><td>פחות מזל: הפיזור בין אימונים ירד מ-25 ל-10</td><td class="yes">נוסף</td></tr>
+          <tr><td>המוח<small>מול בוטים שמחליטים רק לפי הנוסחה</small></td><td>בלי מוח: <bdi dir="ltr">−₪13</bdi> בממוצע (בעיקר ב-2020-2021)</td><td class="yes">נשאר</td></tr>
+          <tr><td>החושים מהאינטרנט<small>פחד וחמדנות, מניות, VIX ועוד</small></td><td>בלי חושים: <bdi dir="ltr">−₪10</bdi> בממוצע (בעיקר ב-2020-2021)</td><td class="yes">נשאר</td></tr>
+          <tr><td>מוח שקשה לשנות<small>כל שיעור חדש משנה אותו פחות</small></td><td>32 מתוך 56, <bdi dir="ltr">+₪8.7</bdi> (בטווח של מזל)</td><td class="yes">נשאר</td></tr>
+          <tr class="group"><td colspan="3">מה לא עזר</td></tr>
+          <tr><td>קנייה בחזרה בפריצה<small>קונה כשהמחיר עובר את השיא של 20 או 55 יום</small></td><td>ראשונה: <bdi dir="ltr">+₪8.7</bdi>, חוזרת: <bdi dir="ltr">−₪9.2</bdi> (28 מתוך 56)</td><td class="no">לא עזר</td></tr>
+          <tr><td>נקודת בריחה לפי כמה השוק סוער</td><td>ראשונה: <bdi dir="ltr">+₪6.8</bdi>, חוזרת: <bdi dir="ltr">−₪10</bdi> (28 מתוך 56)</td><td class="no">לא עזר</td></tr>
+          <tr><td>פילטר מגמה<small>מחזיק רק כשהמחיר מעל הממוצע של 50-250 יום</small></td><td>14 מתוך 28, <bdi dir="ltr">−₪11</bdi></td><td class="no">לא עזר</td></tr>
+          <tr><td>יציאת "צבים"<small>מוכר כשהמחיר יורד מתחת לשפל של 10 או 20 יום</small></td><td>15 מתוך 28, <bdi dir="ltr">−₪9.3</bdi></td><td class="no">לא עזר</td></tr>
+          <tr><td>פי 2 בוטים בכל צוות</td><td>13 מתוך 28, <bdi dir="ltr">−₪7</bdi></td><td class="no">לא עזר</td></tr>
+          <tr><td>מחיקה של 40% בכל בחירה<small>במקום 25%</small></td><td>8 מתוך 28, <bdi dir="ltr">−₪8.5</bdi></td><td class="no">לא עזר</td></tr>
+          <tr><td>בחירה כל 60 יום<small>במקום כל 30</small></td><td>10 מתוך 28, <bdi dir="ltr">−₪2.8</bdi></td><td class="no">לא עזר</td></tr>
+          <tr><td>אימון רק על השנתיים האחרונות</td><td>10 מתוך 28, <bdi dir="ltr">−₪4.4</bdi></td><td class="no">לא עזר</td></tr>
+          <tr><td>אימון ארוך יותר<small>עוד שעתיים, כ-2,400 סבבים לכל צוות</small></td><td>כמו לפני. רוב הלמידה קורית ב-10 הסבבים הראשונים</td><td class="no">לא עזר</td></tr>
+          <tr><td>מוח גדול שמתאמן 200 סבבים<small>16-64 נוירונים</small></td><td>16 מתוך 28, <bdi dir="ltr">−₪4.7</bdi></td><td class="no">לא עזר</td></tr>
+          <tr><td>אזהרה ממודל בסגנון GPT<small>טרנספורמר שמנבא נפילה, כחוש נוסף</small></td><td>29 מתוך 56</td><td class="no">לא עזר</td></tr>
+          <tr><td>מוח שמנחש "יעלה?"<small>במקום "תהיה נפילה?"</small></td><td>30 מתוך 56</td><td class="no">לא עזר</td></tr>
+          <tr><td>יציאה וכניסה בשלבים</td><td>12 מתוך 28, <bdi dir="ltr">−₪26.5</bdi></td><td class="no">לא עזר</td></tr>
+          <tr><td>השקעה קטנה יותר כשהשוק סוער</td><td>12 מתוך 28, <bdi dir="ltr">−₪9.7</bdi></td><td class="no">לא עזר</td></tr>
+          <tr><td>קנייה בפחד קיצוני</td><td>11 מתוך 28, <bdi dir="ltr">−₪1.3</bdi></td><td class="no">לא עזר</td></tr>
+          <tr><td>ריבית 4% על מזומן</td><td>13 מתוך 28</td><td class="no">לא עזר</td></tr>
+          <tr><td>עולמות מעורבבים<small>חתיכות אמיתיות של העבר בסדר אחר</small></td><td>לא שיפר, גם עם 200 סבבים</td><td class="no">לא עזר</td></tr>
+        </tbody>
+      </table></div>
+  </section>
 </main>
 
 <script type="application/json" id="prices">__PRICES__</script>
@@ -256,7 +298,9 @@ let NN_MIN = 4, NN_MAX = 64;   // גודל המוח (גן): עד 64 נוירונ
 // slow: מוח שקשה יותר לשנות - עובר מסבב לסבב, וככל שלמד יותר כל שיעור חדש משנה אותו פחות (כמו אדם עם ניסיון).
 // בבדיקה הוגנת (2020-2026, 8 אימונים לכל שנה) הוא לא הזיק: טוב מבלעדיו ב-32 מתוך 56 בדיקות, +₪8.7 בממוצע (בטווח של מזל).
 // (בדקתי גם ריבית על מזומן, השקעה קטנה יותר כשסוער, קנייה בפחד קיצוני, יציאה בשלבים, מוח שמנחש "יעלה?" במקום "תהיה נפילה?"
-//  ומוח גדול (16-64 נוירונים) שמתאמן 200 סבבים - אף אחד מהם לא עזר)
+//  ומוח גדול (16-64 נוירונים) שמתאמן 200 סבבים - אף אחד מהם לא עזר.
+//  וגם: פילטר מגמה (מחזיק רק מעל הממוצע של 50-250 יום), נקודת בריחה שתלויה בכמה השוק סוער, וקנייה בחזרה בפריצה מעל השיא
+//  של 20/55 יום - בבדיקה הראשונה חלק מהם נראו טובים, אבל בבדיקה החוזרת על 4 אימונים חדשים זה התהפך. מזל, לא שיפור)
 const ABIL = {slow: true};
 const layersOf = g => [g.nn, Math.max(2, Math.round(g.nn / 2))];
 // PATIENCE: כמה ימים ברצף של "סימני סכנה" עד שבורחים. בדקתי: המכירות האלה היו כמו הטלת מטבע (המחיר המשיך לרדת רק ב-48% מהפעמים)
